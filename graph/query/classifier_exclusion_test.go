@@ -10,12 +10,12 @@ import (
 )
 
 // TestKeywordExclusions: a negated, quoted or undecided operation gives no
-// hint, and other hints stand (#95 R28-R32, design D2). The expected results
-// are written by hand from #95's table and D2's rule.
+// hint, and other hints stand. The expected results are written by hand from
+// the exclusion rules KeywordClassifier.ClassifyQuery states.
 func TestKeywordExclusions(t *testing.T) {
 	similarity := map[string]any{"use_embeddings": true}
 	runAggregationCases(t, []aggregationCase{
-		// #95's four cases: no operation hint.
+		// Four cases with no operation hint.
 		{"R28 negated count", "Do not count sensors; list their names", nil},
 		{"R29 negated similarity", "Show pump-42 records, not devices similar to it", nil},
 		{"R30 quoted average", `Find documents containing the phrase "average temperature"`, nil},
@@ -69,7 +69,7 @@ func TestKeywordExclusions(t *testing.T) {
 		// "likely" is not the similarity word "like".
 		{"likely is no similarity", "Show sensors likely to fail", nil},
 
-		// R32: a partial path intent is kept and no node is invented.
+		// A partial path intent is kept and no node is invented.
 		{"R32 partial path intent", "Show connections from that device", map[string]any{"path_intent": true}},
 	})
 }
@@ -86,10 +86,8 @@ func TestKeywordExclusionKeepsOtherHints(t *testing.T) {
 	assert.NotContains(t, got.Options, "aggregation_type")
 }
 
-// exclusionDomains are the pin's iot example shapes (configs/domains/iot.json
-// at 8b99efe9): an operation in the caller's own words, so no framework hint
-// name says "count". The similarity example is design D2's "Find devices
-// similar to TEMP-001".
+// exclusionDomains are iot example shapes: an operation in the caller's own
+// words, so no framework hint name says "count".
 func exclusionDomains() []*DomainExamples {
 	return []*DomainExamples{{
 		Domain: "iot",
@@ -109,9 +107,9 @@ func exclusionDomains() []*DomainExamples {
 }
 
 // TestChainKeepsExclusions: a later tier cannot restore an operation the
-// keyword tier excluded (#95, design D2 option B).
+// keyword tier excluded.
 func TestChainKeepsExclusions(t *testing.T) {
-	const threshold = 0.7 // the measurement design D2 cites
+	const threshold = 0.7 // the unwanted examples' scores reach it; (1) checks that
 	excludedQuestions := []struct{ query, unwanted string }{
 		{"Do not count devices in error state", "Count devices in error state"},
 		{"Not devices similar to TEMP-001", "Find devices similar to TEMP-001"},
@@ -170,7 +168,7 @@ func TestChainKeepsExclusions(t *testing.T) {
 var quoteMarks = strings.NewReplacer(`"`, "", "“", "", "”", "")
 
 // FuzzKeywordClassify checks the two laws of the spec requirement "The keyword
-// tier accepts any text" (design D2): no input panics, and a question whose
+// tier accepts any text": no input panics, and a question whose
 // only triggers lie inside double quotes gives no operation hint.
 //
 // The second law's oracle does not read the trigger patterns: the question is

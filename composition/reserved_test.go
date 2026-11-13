@@ -14,10 +14,10 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// TestValidateRefusesStreamCapturingReservedSubject holds the composition share of #16: a stream
-// whose subject filter shares a concrete subject with a request subject graph-ingest serves, or
-// with the graph mutation family, would store those requests, so the composition is refused. The
-// expected messages are written out here, not built from the implementation's format.
+// TestValidateRefusesStreamCapturingReservedSubject: a stream whose subject filter shares a
+// concrete subject with a request subject graph-ingest serves, or with the graph mutation family,
+// would store those requests, so the composition is refused. The expected messages are written out
+// here, not built from the implementation's format.
 func TestValidateRefusesStreamCapturingReservedSubject(t *testing.T) {
 	registry := fakeRegistry(t,
 		fakeSpec{name: "crossing", typ: "output", outputs: []component.PortDefinition{jetStreamOut("out", "", "*.mutation.create")}},

@@ -97,8 +97,8 @@ func awaitIndexedInEnvelope(t *testing.T, client *natsclient.Client, rev uint64)
 // groups' records follow each write with entity_revision at that write's revision, and the group
 // its delete empties is removed while the groups it shares with another entity stay. Before each
 // tick, the graph-clustering key's indexed_revision already reaches the write while the record
-// still carries the earlier mark (graph-clustering spec, "Upsert, edit, delete" and "Applied
-// before the tick"; design D1). The expected records are worked out by hand from the writes.
+// still carries the earlier mark (graph-clustering spec, "Upsert, edit, delete" and "Applied before
+// the tick"). The expected records are worked out by hand from the writes.
 func TestRecordsFollowChanges(t *testing.T) {
 	client := fixtureClient(t)
 	c, states := startClustering(t, client, tickByHand)
@@ -146,9 +146,9 @@ func TestRecordsFollowChanges(t *testing.T) {
 // TestNothingPublishedBeforeReplay: graph-clustering started on a populated ENTITY_STATES with a
 // ticker every millisecond publishes nothing until the replay is applied, so the first record
 // written for every group already counts all its members (graph-clustering spec, "During the
-// replay"; design D2). A test watch on COMMUNITY_INDEX, opened before Start on the empty bucket,
-// sees every write in order; a tick that published during the replay would write a group before
-// all its members were applied. The replay of 2,000 entities spans many ticks.
+// replay"). A test watch on COMMUNITY_INDEX, opened before Start on the empty bucket, sees every
+// write in order; a tick that published during the replay would write a group before all its
+// members were applied. The replay of 2,000 entities spans many ticks.
 func TestNothingPublishedBeforeReplay(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
@@ -208,9 +208,9 @@ func TestNothingPublishedBeforeReplay(t *testing.T) {
 
 // TestLostFeedStopsPublication: once the follower declares the feed lost, a tick that starts
 // afterwards writes nothing, though the maintainer holds a change no tick has published (graph-
-// clustering spec, "A revision out of order"; design D2, D4). The trigger here is the one an
-// operator causes, ENTITY_STATES deleted under the running component; a revision delivered out of
-// order is declared lost by the same latch, which the follower's own test drives
+// clustering spec, "A revision out of order"). The trigger here is the one an operator causes,
+// ENTITY_STATES deleted under the running component; a revision delivered out of order is declared
+// lost by the same latch, which the follower's own test drives
 // (TestFollowerDeclaresLostFeedOnOutOfOrderDelivery).
 func TestLostFeedStopsPublication(t *testing.T) {
 	client := fixtureClient(t)
@@ -234,7 +234,8 @@ func TestLostFeedStopsPublication(t *testing.T) {
 	if err := js.DeleteKeyValue(t.Context(), graph.BucketEntityStates); err != nil {
 		t.Fatalf("delete %s: %v", graph.BucketEntityStates, err)
 	}
-	// The watch closes within two of nats.go's activity checks (measured 18 s, PR #414).
+	// The watch was observed to close within two of nats.go's activity checks (18 s at the pinned
+	// nats.go); nats.go does not promise it, so the wait has no deadline of its own.
 	await(t, "Health naming the lost feed",
 		func(context.Context) (component.HealthStatus, error) { return c.Health(), nil },
 		func(s component.HealthStatus) bool { return strings.Contains(s.LastError, "ENTITY_STATES feed lost") })
@@ -245,10 +246,9 @@ func TestLostFeedStopsPublication(t *testing.T) {
 	}
 }
 
-// TestResetStopsPublication: a stored entity the replay refuses latches the follower's reset, and
-// a tick that starts afterwards writes nothing, though the maintainer holds the valid entity
-// beside it (graph-clustering spec, "Publication waits for the replay and stops on a broken
-// feed"; design D2, the pin's sticky reset).
+// TestResetStopsPublication: a stored entity the replay refuses latches the follower's reset, and a
+// tick that starts afterwards writes nothing, though the maintainer holds the valid entity beside
+// it (graph-clustering spec, "Publication waits for the replay and stops on a broken feed").
 func TestResetStopsPublication(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
@@ -339,10 +339,10 @@ func publicationFailures(t *testing.T, c *Component) float64 {
 // Health is not healthy and names publication_failed, the envelope reads degraded with
 // publication_failed 1, and the counter rises by one per tick; once a tick succeeds, Health is
 // healthy, the record is written and the envelope is ready again (graph-clustering spec, "Every
-// write fails"; design D2, ADR-109 D2). The writes fail because COMMUNITY_INDEX is deleted under
-// the running component, and succeed once it is created again. Each failed tick is held in its
-// own log line, which the component writes after counting the failure and keeping it, so every
-// reading below is taken with that tick's outcome recorded and no later tick run.
+// write fails"; ADR-109). The writes fail because COMMUNITY_INDEX is deleted under the running
+// component, and succeed once it is created again. Each failed tick is held in its own log line,
+// which the component writes after counting the failure and keeping it, so every reading below is
+// taken with that tick's outcome recorded and no later tick run.
 func TestPersistentPublicationFailureIsStuck(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)

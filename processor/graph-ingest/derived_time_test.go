@@ -1,11 +1,10 @@
 package graphingest
 
-// The time of the statements graph-ingest derives (design D15, #98; owner ruling, #91 comment
-// 6066791396): the indexing profile, explicit or the floor, hierarchy statements and a hierarchy
-// container's statements carry the latest Timestamp among the write's own statements, on every
-// lane, reserved sources included, and never the clock. Each case drives a lane's production
-// entry: the input lane Start builds for the entity_stream port, the extract-then-ingest
-// path behind it, the canonical create handler and the in-process create.
+// The time of the statements graph-ingest derives: the indexing profile, explicit or the floor,
+// hierarchy statements and a hierarchy container's statements carry the latest Timestamp among
+// the write's own statements, on every lane, reserved sources included, and never the clock. Each
+// case drives a lane's production entry: the input lane Start builds for the entity_stream port,
+// the extract-then-ingest path behind it, the canonical create handler and the in-process create.
 
 import (
 	"context"
@@ -56,10 +55,10 @@ func assertDerivedStatements(t *testing.T, entity *graph.EntityState, at time.Ti
 	return profile, hierarchy
 }
 
-// assertBirthDerivations checks the birth of id with hierarchy on: the entity and every
-// container its birth created carry their derived statements at at, the entity has a profile and
-// a hierarchy statement, and each container has a profile. A refused hierarchy inference fails the
-// birth (design D21), which each caller's check of the birth itself catches.
+// assertBirthDerivations checks the birth of id with hierarchy on: the entity and every container
+// its birth created carry their derived statements at at, the entity has a profile and a hierarchy
+// statement, and each container has a profile. A refused hierarchy inference fails the birth,
+// which each caller's check of the birth itself catches.
 func assertBirthDerivations(t *testing.T, c *Component, id string, at time.Time, own ...string) {
 	t.Helper()
 	profile, hierarchy := assertDerivedStatements(t, storedEntity(t, c, id), at, own...)

@@ -59,7 +59,7 @@ func (l *Lifecycle) Initialize() error {
 // cleanup runs after a partial start as well as a complete one, so it must tolerate handles that
 // were never acquired. It must not panic: a cleanup that panics leaves the guard's state behind
 // it, so a later Stop cannot try again. The shell inherits that limitation from
-// internal/lifecycleguard (#309).
+// internal/lifecycleguard.
 func (l *Lifecycle) Start(ctx context.Context, start, cleanup func(context.Context) error) error {
 	l.mu.Lock()
 	initialized := l.initialized

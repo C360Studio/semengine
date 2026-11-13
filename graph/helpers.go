@@ -90,7 +90,7 @@ func ReplaceBySource(stored, arrival []message.Triple) ReplaceResult {
 }
 
 // statementKey is equal for two statements exactly when they are equal in
-// every field; within one write such statements count once (design D15).
+// every field; within one write such statements count once.
 type statementKey struct {
 	identity   string
 	timestamp  time.Time

@@ -10,7 +10,7 @@ import (
 )
 
 // Every stream CreateStream creates declares these bounds, so a runaway test fails on a ceiling
-// instead of filling the server (SemStreams test_client.go:911-927).
+// instead of filling the server.
 const (
 	streamMaxAge   = time.Hour
 	streamMaxBytes = 64 << 20

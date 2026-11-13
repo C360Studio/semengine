@@ -180,7 +180,7 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 
 	// A word question goes to graph.query.semantic. graph-query is configured with embedding_enabled
 	// false, so it refuses at once, invalid not_enabled naming the verb, and the refusal reaches the
-	// caller intact (graph-query, "Embedding verbs can be turned off"; #579). Never an empty answer.
+	// caller intact (graph-query, "Embedding verbs can be turned off"). Never an empty answer.
 	resp, err = engine.Fuse(t.Context(), fusion.Request{Query: "falcon", Want: wants}, fleetLens{fusion.ResolveModeNL})
 	var refusal *errs.ClassifiedError
 	if !errors.As(err, &refusal) {

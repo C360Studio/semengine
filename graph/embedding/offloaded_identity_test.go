@@ -27,7 +27,7 @@ func offloadedRef() *StorageRef {
 	return &StorageRef{StorageInstance: "objectstore", Key: "k"}
 }
 
-// TestGetSourceText_OffloadedIdentityFirst is the D1 core: an offloaded record that
+// TestGetSourceText_OffloadedIdentityFirst is the identity-first core: an offloaded record that
 // carries inline identity text embeds identity, then the frozen separator, then the
 // body — in that exact order.
 func TestGetSourceText_OffloadedIdentityFirst(t *testing.T) {
@@ -50,7 +50,7 @@ func TestGetSourceText_OffloadedIdentityFirst(t *testing.T) {
 }
 
 // TestGetSourceText_OffloadedNoIdentity_BodyOnly: an offloaded record with no inline
-// identity text embeds the body alone (today's behavior, no regression).
+// identity text embeds the body alone.
 func TestGetSourceText_OffloadedNoIdentity_BodyOnly(t *testing.T) {
 	const body = "device reports voltage and current at fixed intervals"
 
@@ -68,7 +68,7 @@ func TestGetSourceText_OffloadedNoIdentity_BodyOnly(t *testing.T) {
 }
 
 // TestGetSourceText_InlineLane_Unchanged: an inline record (no StorageRef) returns its
-// SourceText unchanged — the re-branch must not disturb the inline lane.
+// SourceText unchanged — the offloaded identity handling must not disturb the inline lane.
 func TestGetSourceText_InlineLane_Unchanged(t *testing.T) {
 	const text = "wholly inline text extracted from triples"
 
@@ -82,7 +82,7 @@ func TestGetSourceText_InlineLane_Unchanged(t *testing.T) {
 	}
 }
 
-// TestGetSourceText_CapKeepsIdentityTrimsBody is the D3 statement: when the combined
+// TestGetSourceText_CapKeepsIdentityTrimsBody is the cap statement: when the combined
 // identity+body exceeds the cap, identity-first ordering means the identity survives
 // and the body is trimmed from the END.
 func TestGetSourceText_CapKeepsIdentityTrimsBody(t *testing.T) {
@@ -107,7 +107,7 @@ func TestGetSourceText_CapKeepsIdentityTrimsBody(t *testing.T) {
 	}
 }
 
-// TestGetSourceText_OffloadedTruncationCountedOnce guards D3's no-double-count: an
+// TestGetSourceText_OffloadedTruncationCountedOnce guards the cap's no-double-count: an
 // over-cap offloaded body is counted once (in fetchTextFromStorage). Prepending
 // identity and re-truncating the combined text must NOT count it a second time.
 func TestGetSourceText_OffloadedTruncationCountedOnce(t *testing.T) {
@@ -126,19 +126,19 @@ func TestGetSourceText_OffloadedTruncationCountedOnce(t *testing.T) {
 		t.Fatalf("truncated = %d, want exactly 1: the offloaded lane must count the over-cap body once, "+
 			"not double-count when identity prepends push the combined back over the cap (#602/D3)", snap.truncated)
 	}
-	// getSourceText produces text; it does NOT count the offloaded-identity pair (that
-	// moved to the successful-persistence path, #635 retro F3). Assert it stays silent here.
+	// getSourceText produces text; it does NOT count the offloaded-identity pair (the
+	// successful-persistence path does). Assert it stays silent here.
 	if snap.identityIncluded != 0 || snap.identityAbsent != 0 {
 		t.Fatalf("getSourceText must not touch the identity counters: included=%d absent=%d, want both 0 (#635 F3)",
 			snap.identityIncluded, snap.identityAbsent)
 	}
 }
 
-// TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce is the FIX 1 edge: a body
+// TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce is the combined-cap edge: a body
 // that FITS the cap but whose identity+separator+body EXCEEDS it is truncated at the
 // combined stage — and that truncation MUST be counted exactly once (fetchTextFromStorage
-// did not truncate the body, so getSourceText owns the count here). Before the fix this
-// truncation was silent — the exact class #602 exists to prevent.
+// did not truncate the body, so getSourceText owns the count here). Uncounted, this
+// truncation would be silent, which the truncation metric exists to prevent.
 func TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce(t *testing.T) {
 	const capLen = 40
 	const identity = "Distinctive Title Phrase"   // 24 runes, survives at the front
@@ -170,10 +170,10 @@ func TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce(t *testing.T) {
 	}
 }
 
-// TestGetSourceText_EmptyBodyIdentityOnly is the FIX 2 edge: an offloaded record with a
+// TestGetSourceText_EmptyBodyIdentityOnly is the empty-body edge: an offloaded record with a
 // non-empty identity but an EMPTY body embeds the identity ALONE — no trailing separator
 // noise — so it dedup-collapses against an inline entity whose whole text is that same
-// identity. It still counts as identity-included.
+// identity. Once its vector is stored it still counts as identity-included.
 func TestGetSourceText_EmptyBodyIdentityOnly(t *testing.T) {
 	const identity = "Standalone Signature Identity"
 
@@ -190,8 +190,8 @@ func TestGetSourceText_EmptyBodyIdentityOnly(t *testing.T) {
 	if strings.Contains(got, identityBodySeparator) {
 		t.Fatalf("identity-alone must carry no trailing separator; got %q", got)
 	}
-	// getSourceText no longer counts the identity pair (moved to the persistence path,
-	// #635 retro F3) — this test asserts only the bytes it produces.
+	// getSourceText does not count the identity pair (the persistence path does) — this
+	// test asserts only the bytes it produces.
 	if snap := m.snapshot(); snap.identityIncluded != 0 || snap.identityAbsent != 0 {
 		t.Fatalf("getSourceText must not touch the identity counters: included=%d absent=%d, want both 0 (#635 F3)",
 			snap.identityIncluded, snap.identityAbsent)
@@ -210,11 +210,11 @@ func TestGetSourceText_EmptyBodyIdentityOnly(t *testing.T) {
 	}
 }
 
-// TestOffloadedIdentityMetric_CountsStoredVectorsOnly is the D5 observability pair AND
-// #635 retro F3: the offloaded-identity counters count STORED vectors, not text-production
-// attempts. They fire on the successful-persistence path (the same terminal path as
-// IncDedupHits), so this drives the whole worker (Run → SavePendingGuarded → terminal) rather
-// than calling getSourceText, and proves:
+// TestOffloadedIdentityMetric_CountsStoredVectorsOnly is the offloaded-identity
+// observability pair: the offloaded-identity counters count STORED vectors, not
+// text-production attempts. They fire on the successful-persistence path (the same
+// terminal path as IncDedupHits), so this drives the whole worker (Run →
+// SavePendingGuarded → terminal) rather than calling getSourceText, and proves:
 //
 //   - an offloaded entity with identity text whose embed STORES → included +1, absent 0;
 //   - an offloaded entity WITHOUT identity whose embed STORES → absent +1, included 0;
@@ -305,7 +305,7 @@ func TestOffloadedIdentityMetric_CountsStoredVectorsOnly(t *testing.T) {
 	})
 }
 
-// TestOffloadedIdentityMetric_DedupServedPathCountsBoth pins the #628 subset-metric
+// TestOffloadedIdentityMetric_DedupServedPathCountsBoth pins the subset-metric
 // invariant on the offloaded lane: the offloaded-identity counter is a subset of
 // resolutions and MUST fire on the SAME terminal path as IncDedupHits — including when
 // the vector is served from the DEDUP store (wasDedupHit), not freshly generated. The
@@ -396,11 +396,10 @@ func TestOffloadedIdentityMetric_DedupServedPathCountsBoth(t *testing.T) {
 	})
 }
 
-// TestDedupKey_TracksIdentityAndBody proves D4: the hop-2 dedup key is derived over
+// TestDedupKey_TracksIdentityAndBody: the hop-2 dedup key is derived over
 // getSourceText's combined output with NO extra machinery, so a change to EITHER the
 // identity OR the body changes the key (a correct re-embed), and byte-identical
-// combined content across the offloaded and inline lanes yields the SAME key (#627
-// stays moot).
+// combined content across the offloaded and inline lanes yields the SAME key.
 func TestDedupKey_TracksIdentityAndBody(t *testing.T) {
 	const identity = "Retry Policy"
 	const body = "waits between attempts"
@@ -433,7 +432,7 @@ func TestDedupKey_TracksIdentityAndBody(t *testing.T) {
 
 	// Cross-lane: an INLINE record whose whole SourceText equals the offloaded lane's
 	// combined bytes must derive the SAME key — the key is over the embedded bytes, not
-	// the lane (#627 stays moot).
+	// the lane.
 	combined := identity + identityBodySeparator + body
 	inlineWorker := &Worker{maxSourceTextLen: 4000}
 	inlineText, err := inlineWorker.getSourceText(t.Context(), &Record{SourceText: combined})

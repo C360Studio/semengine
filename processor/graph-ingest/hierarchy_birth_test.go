@@ -29,7 +29,7 @@ var errInjectedRefusal = errors.New("injected refusal")
 
 // refuseFirstContainer is the inference's store: graph-ingest's own adapter, except that the
 // first container it is asked to create is refused, once, with an error classified invalid. A
-// refusal the store classifies invalid must still leave the birth retryable (design D21).
+// refusal the store classifies invalid must still leave the birth retryable.
 type refuseFirstContainer struct {
 	inference.EntityStore
 	refused atomic.Bool
@@ -96,7 +96,7 @@ func assertEntityAbsent(t *testing.T, bucket *mockKVBucket) {
 
 // assertBornWithContainers checks the entity carries one membership edge to each of its three
 // containers, and each container is stored with no statement naming the entity: a birth writes
-// no inverse edge (ruling M, #91 comment 6080973822).
+// no inverse edge.
 func assertBornWithContainers(t *testing.T, c *Component) {
 	t.Helper()
 	stored := storedEntity(t, c, hierarchyBirthID)
@@ -142,11 +142,11 @@ func assertNakOnly(t *testing.T, msg *keyedIngestTestMsg) {
 }
 
 // TestHierarchyFailureFailsTheBirth holds graph-entity-writes, "Birth with hierarchy fails
-// closed" (design D21): with hierarchy on, an entity is born with its container edges or not at
-// all. When the inference's store fails once, the entity is absent and the failure is transient;
-// on the stream lane the message is not acknowledged, and its redelivery births the entity with
-// its container edges. On the in-process lane the caller gets the transient error, and its retry
-// births the entity.
+// closed": with hierarchy on, an entity is born with its container edges or not at all. When the
+// inference's store fails once, the entity is absent and the failure is transient; on the stream
+// lane the message is not acknowledged, and its redelivery births the entity with its container
+// edges. On the in-process lane the caller gets the transient error, and its retry births the
+// entity.
 func TestHierarchyFailureFailsTheBirth(t *testing.T) {
 	t.Run("stream lane", func(t *testing.T) {
 		c, bucket := hierarchyBirthComponent(t, true)
@@ -293,12 +293,11 @@ func containerRevisions(t *testing.T, bucket *mockKVBucket, containers []string)
 	return revisions
 }
 
-// TestMemberBirthKeepsContainerRevisions holds design D21's hierarchy paragraph (ruled M, #91
-// comment 6080973822; #145): a birth writes no inverse edge into its containers, so an existing
-// container's stored value does not change when a member is born. The first member's birth
-// creates the three containers; the second member's birth, on each lane that infers hierarchy,
-// leaves each container at the revision it had. Before ruling M each birth appended a contains
-// edge to each container, so a container's value grew with every member until the bucket's value
+// TestMemberBirthKeepsContainerRevisions: a birth writes no inverse edge into its containers, so
+// an existing container's stored value does not change when a member is born. The first member's
+// birth creates the three containers; the second member's birth, on each lane that infers
+// hierarchy, leaves each container at the revision it had. A birth that appended a contains edge
+// to each container would grow a container's value with every member until the bucket's value
 // limit refused the append and every later birth under that container failed.
 func TestMemberBirthKeepsContainerRevisions(t *testing.T) {
 	const secondID = "acme.ops.robotics.gcs.drone.002"

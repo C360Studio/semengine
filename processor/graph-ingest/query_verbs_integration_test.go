@@ -125,9 +125,9 @@ func hasResponder(t *testing.T, nc *nats.Conn, subject string) bool {
 	return true
 }
 
-// TestGraphIngestProvisionsNoSuffixIndex: after Start, the ENTITY_SUFFIX_INDEX bucket the
-// pin created does not exist, and a request on graph.ingest.query.suffix gets no
-// responder (design D19). ENTITY_STATES exists and the entity verb answers, so Start did
+// TestGraphIngestProvisionsNoSuffixIndex: graph-ingest keeps no suffix index, so after
+// Start no ENTITY_SUFFIX_INDEX bucket exists and a request on graph.ingest.query.suffix
+// gets no responder. ENTITY_STATES exists and the entity verb answers, so Start did
 // provision and subscribe.
 func TestGraphIngestProvisionsNoSuffixIndex(t *testing.T) {
 	client, _ := startGraphIngestOnFixture(t)
@@ -155,8 +155,8 @@ func TestGraphIngestProvisionsNoSuffixIndex(t *testing.T) {
 
 // TestGraphIngestServesExactlyTheDeclaredVerbs: the subjects graph-ingest lists as its
 // query request subscriptions equal the subjects of the verb table's entries for
-// responder graph-ingest, and each listed subject has a responder (design D20;
-// graph-transport-boundary, "Subscriptions match the table").
+// responder graph-ingest, and each listed subject has a responder
+// (graph-transport-boundary, "Subscriptions match the table").
 func TestGraphIngestServesExactlyTheDeclaredVerbs(t *testing.T) {
 	client, logs := startGraphIngestOnFixture(t)
 

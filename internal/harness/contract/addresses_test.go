@@ -10,10 +10,9 @@ import (
 	"testing"
 )
 
-// T-B6: SemEngine tests never reach a fixed broker. SemStreams tests dial the dev broker's fixed
-// address in 38 files (inventory A2.1(b)); any broker on that port, including SemStreams' own dev
-// NATS, would silently receive SemEngine test traffic. The literals are assembled at run time so
-// this file does not contain what it forbids.
+// SemEngine tests never reach a fixed broker: any broker on a fixed dev address, another
+// repository's dev NATS included, would silently receive SemEngine test traffic. The literals are
+// assembled at run time so this file does not contain what it forbids.
 var fixedAddressLiterals = []string{
 	"nats://" + "localhost:",
 	"nats://" + "127.0.0.1:",
@@ -46,8 +45,8 @@ func TestNoFixedAddressesInTestsSensitivity(t *testing.T) {
 	}
 }
 
-// TestLintTestPortsPasses runs the carried SemStreams guard (ledger L9) so a fixed net.Listen port
-// in any test fails the contract suite as well as `task lint`.
+// TestLintTestPortsPasses runs scripts/lint-test-ports.sh so a fixed net.Listen port in any test
+// fails the contract suite as well as `task lint`.
 func TestLintTestPortsPasses(t *testing.T) {
 	root := repoRoot(t)
 	if out, err := runLintTestPorts(root); err != nil {
@@ -55,7 +54,7 @@ func TestLintTestPortsPasses(t *testing.T) {
 	}
 }
 
-// fixedAddressViolations is the T-B6 literal check over every *_test.go file.
+// fixedAddressViolations is the fixed-broker literal check over every *_test.go file.
 func fixedAddressViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string
@@ -77,8 +76,8 @@ func fixedAddressViolations(t *testing.T, root string, files []string) []string 
 // harness-boundaries › "A port-0 pick on every address in test code says why": a net.Listen call
 // with network "tcp" and an every-address literal ("", or a host of "", 0.0.0.0 or [::] with port
 // "" or 0) in a *_test.go file or any Go file under internal/harness/ has, on the line above it, a
-// comment beginning "// Every address:" followed by a reason (#390, #391). The call text is
-// assembled at run time so this file does not contain what it checks for.
+// comment beginning "// Every address:" followed by a reason. The call text is assembled at run
+// time so this file does not contain what it checks for.
 var listenCall = "net." + "Listen("
 
 var tcpListenLiteral = regexp.MustCompile(regexp.QuoteMeta(listenCall+`"tcp",`) + `\s*"([^"]*)"\)`)

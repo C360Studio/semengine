@@ -233,7 +233,7 @@ func (h *harness) awaitPending(t *testing.T, id string, rev uint64) *embedding.R
 
 // TestReadinessWaitsForHopTwo: a revision whose pending record is written is not caught up until
 // the Worker reports its terminal outcome (graph-embedding spec, "A pending record is not caught
-// up"; design D1). A's body is offloaded to a store that holds the Worker's read until the test
+// up"). A's body is offloaded to a store that holds the Worker's read until the test
 // releases it, so A stays pending at hop 2 while B, inline, is embedded. Hop 1 runs serially on
 // the follower's goroutine, so B's record being generated means hop 1 has returned for A:
 // whatever it would complete for A is completed by then.
@@ -258,9 +258,9 @@ func TestReadinessWaitsForHopTwo(t *testing.T) {
 }
 
 // TestConfiguredTextSuffixesSelectText: hop 1 embeds the values of the predicates text_suffixes
-// names, and only those: a predicate only the defaults name (".title") is left out (design D4;
-// Codex review C2 on PR #550). The Worker has one lane, held on an earlier entity's body read, so
-// the record stays pending for the test to read.
+// names, and only those: a predicate only the defaults name (".title") is left out. The Worker
+// has one lane, held on an earlier entity's body read, so the record stays pending for the test
+// to read.
 func TestConfiguredTextSuffixesSelectText(t *testing.T) {
 	store := newGatedStore()
 	h := startEmbedding(t, fixtureClient(t), `{"text_suffixes": [".signature"], "workers": 1}`, store.stores(t))
@@ -287,7 +287,7 @@ func holdWorker(t *testing.T, h *harness, store *gatedStore) {
 
 // TestHopOneEndsTextlessAndDeletedRevisions: a revision with no text and a tombstone end at hop 1,
 // each removing the entity's record, so the floor reaches them with no terminal outcome from the
-// Worker (design D1).
+// Worker.
 func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 	a := entityID(1)
@@ -320,7 +320,7 @@ func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 
 // TestRestartCompletesGeneratedRevision: after a restart the follower replays ENTITY_STATES, and a
 // revision whose generated record already stands ends at hop 1, since SavePendingGuarded keeps
-// the generated record (pin #722 B2), so the floor reaches it with no terminal outcome from the
+// the generated record, so the floor reaches it with no terminal outcome from the
 // Worker; otherwise the replayed revision would hold the floor, and bootstrap, below it for good.
 // Hop 1 runs serially on the follower's goroutine and the watch delivers in revision order, so
 // B's record, written after the restart, being stored means hop 1 has returned for A's replay.
@@ -349,13 +349,11 @@ func TestRestartCompletesGeneratedRevision(t *testing.T) {
 
 // TestCoalescedRevisionsComplete: with coalesce_ms above zero, revisions of one entity collapse
 // into one pending record at the revision read, and completing it drains every lower delivered
-// revision of the entity (design D1; pin
-// derived_state_convergence_integration_test.go:TestIntegration_CoalescedLane_TombstoneConverges).
-// The coalescer applies batches one after another, so B's record, written after A's last
-// revision was read, orders the floor read after A's batch. A watch that opens after both of A's
-// writes delivers only the second, so a first entity's revision is awaited before them: the
-// watch is then live and delivers each of A's revisions. A's and B's bodies are offloaded to a
-// store that holds the Worker's read of each until the test releases it.
+// revision of the entity. The coalescer applies batches one after another, so B's record, written
+// after A's last revision was read, orders the floor read after A's batch. A watch that opens
+// after both of A's writes delivers only the second, so a first entity's revision is awaited
+// before them: the watch is then live and delivers each of A's revisions. A's and B's bodies are
+// offloaded to a store that holds the Worker's read of each until the test releases it.
 func TestCoalescedRevisionsComplete(t *testing.T) {
 	store := newGatedStore()
 	h := startEmbedding(t, fixtureClient(t), `{"coalesce_ms": 20}`, store.stores(t))
@@ -395,11 +393,10 @@ func TestCoalescedRevisionsComplete(t *testing.T) {
 
 // TestStorageRefLaneEmbedsIdentityThenBody: an entity whose body is offloaded to a registered
 // store is queued on the offloaded lane, its inline identity text in the record for hop 2 to embed
-// ahead of the fetched body and no source text (design D5; ADR-063; pin
-// offloaded_identity_integration_test.go:TestIntegration_OffloadedEntityEmbedsIdentityAlongsideBody).
-// Hop 2's join of the two is graph/embedding's (offloaded_identity_test.go). An entity whose store
-// is not registered is embedded from its inline text, and the excluded body is declared: counted
-// for each entity and warned about once. The Worker has one lane, held on an earlier entity's
+// ahead of the fetched body and no source text (ADR-063). Hop 2's join of the two is
+// graph/embedding's (offloaded_identity_test.go). An entity whose store is not registered is
+// embedded from its inline text, and the excluded body is declared: counted for each entity and
+// warned about once. The Worker has one lane, held on an earlier entity's
 // body read, so every record stays pending for the test to read.
 func TestStorageRefLaneEmbedsIdentityThenBody(t *testing.T) {
 	store := newGatedStore()
@@ -535,14 +532,14 @@ func TestStartContextEndStopsNothing(t *testing.T) {
 	}
 }
 
-// TestRecreatedRevisionWaitsForWorker (#555; Codex's final review of PR #550, F1): on the
-// coalesced lane a batch that reads an entity absent completes only the revisions delivered before
-// its read, so a re-creation the follower observes during that read stays outstanding until its
-// own terminal outcome. The test runs a batch's reconcileEntity with its ENTITY_STATES read held
-// once the read has found the entity absent, and re-creates the entity meanwhile: the await on
-// DataFlow's message count, which deliver counts after the watermark observes the revision,
-// orders the release, and so the completion, after that observation. The Worker is held on the
-// re-created entity's body, so its record stays pending and the floor must stay below it.
+// TestRecreatedRevisionWaitsForWorker: on the coalesced lane a batch that reads an entity absent
+// completes only the revisions delivered before its read, so a re-creation the follower observes
+// during that read stays outstanding until its own terminal outcome. The test runs a batch's
+// reconcileEntity with its ENTITY_STATES read held once the read has found the entity absent, and
+// re-creates the entity meanwhile: the await on DataFlow's message count, which deliver counts
+// after the watermark observes the revision, orders the release, and so the completion, after that
+// observation. The Worker is held on the re-created entity's body, so its record stays pending and
+// the floor must stay below it.
 func TestRecreatedRevisionWaitsForWorker(t *testing.T) {
 	store := newGatedStore()
 	// The coalescer never fires within the test, so the reconciles below are the only readers.

@@ -15,12 +15,12 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// TestSearchGraphAnswersAsGlobalSearch: searchGraph decodes and answers every request as globalSearch
-// does, with the same data under the same indexed_revision, and the same refusal, class, code and
-// message (design D7; spec "searchGraph answers as global search"). One request per outcome global
-// search has, over real ingest, index and community records. The empty text answer is the one the pin
-// followed with a semantic search; a spy on the embedding verbs holds that none is made. The refusals
-// carry the pin's searchgraph_test case that a request global search refuses is refused unchanged.
+// TestSearchGraphAnswersAsGlobalSearch: searchGraph decodes and answers every request as
+// globalSearch does, with the same data under the same indexed_revision, and the same refusal,
+// class, code and message (spec "searchGraph answers as global search"). One request per outcome
+// global search has, over real ingest, index and community records. No semantic search follows the
+// empty text answer: a spy on the embedding verbs holds that none is made. A request global search
+// refuses is refused unchanged.
 func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 	stack := startCommunityStack(t)
 	written := stack.write(t, drone1,
@@ -57,7 +57,7 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 	}{
 		{"an entity", `{"query":"held-1"}`, "entity", 0, ""},
 		{"a path", `{"query":"what is connected to held-1"}`, "path", 0, ""},
-		// The pin's fallback fired on this answer; here it is the answer.
+		// No semantic fallback follows this answer; it is the answer.
 		{"text that matches no group", `{"query":"zzz qqq"}`, "text", 0, ""},
 		{"text that matches", `{"query":"alpha drone"}`, "text", 0, ""},
 		{"a body that is not JSON", `{bad json`, "", errs.ErrorInvalid, graph.ErrorCodeInvalidRequest},

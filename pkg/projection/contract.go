@@ -3,7 +3,7 @@ package projection
 import "github.com/c360studio/semengine/pkg/projection/contract"
 
 // The contract data types live in the leaf package pkg/projection/contract so
-// the payload registry can hold a registered type's contracts (ADR-103). These
+// the payload registry can hold a registered type's contracts (SemStreams ADR-103). These
 // aliases keep every existing literal — projection.Contract{...},
 // projection.ModeReconcile — compiling unchanged.
 

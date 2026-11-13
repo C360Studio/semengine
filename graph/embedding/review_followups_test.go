@@ -10,12 +10,11 @@ import (
 )
 
 // TestFetchTextFromStorage_OverCapCountsTruncation is the offloaded-lane half of
-// the #602 "truncation MUST be observable" requirement. The offloaded
-// (ContentStorable) lane truncates via LimitReader in fetchTextFromStorage, NOT at
-// getSourceText's word-cut branch, so before this fix truncation of the primary
-// adopter's lane was silent (IncTruncated never fired). semsource drives exactly
-// this lane, so silence here means the metric reads ~0 for the lane that truncates
-// most.
+// the "truncation MUST be observable" requirement. The offloaded (ContentStorable)
+// lane truncates in fetchTextFromStorage, NOT at getSourceText's word-cut branch, so
+// it must count its own truncation (IncTruncated) or truncation of the primary
+// adopter's lane is silent. semsource drives exactly this lane, so silence here
+// means the metric reads ~0 for the lane that truncates most.
 func TestFetchTextFromStorage_OverCapCountsTruncation(t *testing.T) {
 	store := &mockStreamableStore{
 		data: map[string][]byte{
@@ -115,9 +114,9 @@ func TestSaveAndNotify_SupersededDropSkipsOnGenerated(t *testing.T) {
 // queue-health gate enforces: dedup_hits is a strict subset of
 // embeddings_generated_total. A dedup HIT whose save is then dropped as superseded
 // must NOT increment dedup_hits, because the drop skips onGenerated (so it does not
-// increment generated_total). Counting the hit eagerly at lookup time — as an
-// earlier revision did — let dedup_hits exceed generated_total under same-entity
-// churn and turned the semantic e2e tier red (dedup_hits 166 > generated 69).
+// increment generated_total). Counting the hit eagerly at lookup time would let
+// dedup_hits exceed generated_total under same-entity churn and turn the semantic
+// e2e tier red.
 func TestSaveAndNotify_SupersededDedupHitDoesNotCount(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStorage(t, newMemKV(), newMemKV())

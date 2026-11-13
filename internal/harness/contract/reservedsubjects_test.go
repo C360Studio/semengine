@@ -17,8 +17,8 @@ import (
 // reservedSubjectsRule is the requirement every violation names.
 const reservedSubjectsRule = "(graph-transport-boundary › Reserved request subjects have one declaration)"
 
-// reservedSubjectHomes are the two files that declare the reserved subjects (design D20): graph's
-// verb table and the mutation protocol. They may spell them; no other non-test Go file may.
+// reservedSubjectHomes are the two files that declare the reserved subjects: graph's verb table
+// and the mutation protocol. They may spell them; no other non-test Go file may.
 var reservedSubjectHomes = map[string]bool{
 	"graph/query_verbs.go":               true,
 	"internal/graphmutation/protocol.go": true,
@@ -69,7 +69,7 @@ func TestReservedSubjectsDeclaredOnceSensitivity(t *testing.T) {
 			"graph/y.go:3"},
 		{"prefix subject inside a longer literal", "graph/y.go",
 			"package graph\n\nvar s = \"no reply on graph.ingest.query.prefix\"\n", "graph/y.go:3"},
-		// graph-query's forwards and the derived-index verbs behind them (setup-04a-04 step 2, design D1).
+		// graph-query's forwards and the derived-index verbs behind them.
 		{"pathSearch subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.pathSearch\"\n", "processor/x/x.go:3"},
 		{"hierarchyStats subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.hierarchyStats\"\n", "processor/x/x.go:3"},
 		{"summary subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.summary\"\n", "processor/x/x.go:3"},

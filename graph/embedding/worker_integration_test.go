@@ -91,8 +91,8 @@ func TestWorkerRunLeavesNoWatchDelivery(t *testing.T) {
 // TestWorkerRunReportsLostWatch: when the bucket is deleted under a live Run, nats.go closes
 // the watch's update channel; Run returns an error saying the watch was lost (not the
 // context's), no goroutine is left in the Worker or its pool, and the delivery has ended.
-// nats.go's unsubscribe goroutine for the watch is released, not joined (notes/3.3.md), so the
-// test waits for its stack to go.
+// nats.go's unsubscribe goroutine for the watch is released, not joined (unsubscribeFrame,
+// measured at nats.go v1.55.0), so the test waits for its stack to go.
 func TestWorkerRunReportsLostWatch(t *testing.T) {
 	s, client := newWorkerStorage(t)
 	processed := make(chan string, 1)
@@ -211,10 +211,9 @@ func runNoText(t *testing.T, writeM func(context.Context, *Storage) error, wantM
 	return got
 }
 
-// TestNoTextDeleteKeepsNewerPending (design D3, changed; Codex's finding 1 on PR #458): N's
-// empty body fetch is held until hop 1 has written pending M. After release N removes nothing
-// and reports OutcomeDeleted; the record is still pending at M. The pin deleted the key
-// unconditionally.
+// TestNoTextDeleteKeepsNewerPending: N's empty body fetch is held until hop 1 has written
+// pending M. After release N removes nothing and reports OutcomeDeleted; the record is still
+// pending at M, because the removal is fenced at the KV revision N read.
 func TestNoTextDeleteKeepsNewerPending(t *testing.T) {
 	const id = "acme.ops.robotics.gcs.drone.notext"
 	pendingAtM := func(r *Record) bool { return r != nil && r.Status == StatusPending && r.SourceRevision == 2 }
@@ -229,7 +228,7 @@ func TestNoTextDeleteKeepsNewerPending(t *testing.T) {
 	}
 }
 
-// TestNoTextDeleteKeepsNewerGenerated (design D3, changed): as above, but M's generated record
+// TestNoTextDeleteKeepsNewerGenerated: as above, but M's generated record
 // is written directly through Storage, as another process's Worker would. After release N
 // removes nothing and reports OutcomeDeleted; the record is still generated at M with M's
 // vector.

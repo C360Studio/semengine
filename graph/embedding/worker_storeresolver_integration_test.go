@@ -9,11 +9,10 @@ import (
 	"github.com/c360studio/semengine/storage/storeregistry"
 )
 
-// TestWorkerResolvesLiveRegistryStatePerFetch (the pin's
-// TestIntegration_WorkerResolvesLiveRegistryStatePerFetch, on natsfixture, #195) proves the
-// registry lifecycle against a real NATS ObjectStore. A borrowed store works while its exact
-// owner is registered, a live deregistration excludes the body without failure, and
-// re-registration is observed on the next fetch without a cached handle or retry loop.
+// TestWorkerResolvesLiveRegistryStatePerFetch proves the registry lifecycle against a real
+// NATS ObjectStore. A borrowed store works while its exact owner is registered, a live
+// deregistration excludes the body without failure, and re-registration is observed on the
+// next fetch without a cached handle or retry loop.
 func TestWorkerResolvesLiveRegistryStatePerFetch(t *testing.T) {
 	client := fixtureClient(t)
 	ctx := t.Context()

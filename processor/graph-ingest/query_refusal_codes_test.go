@@ -16,9 +16,8 @@ import (
 )
 
 // TestQueryRefusalsCarryACode: every refusal of the entity, batch and prefix query verbs
-// carries a classified code, and giving it one does not change its class (#300 section B;
-// design D3). The wanted class and code are spelled out, not taken from the constants the
-// handlers use; the entity verb's rows hold its codes as they were.
+// carries a classified code and the class its kind of refusal calls for. The wanted class
+// and code are spelled out, not taken from the constants the handlers use.
 func TestQueryRefusalsCarryACode(t *testing.T) {
 	const (
 		stored = "acme.ops.robotics.gcs.drone.001"
@@ -224,8 +223,8 @@ func TestQueryRefusalsCarryACode(t *testing.T) {
 }
 
 // TestQueryBatchEmptyIDsRepliesAnEmptyResponse: a batch request with no IDs is answered with
-// an empty graph.EntityBatchResponse, encoded like every other batch reply (design D3), not
-// with a hand-written body.
+// an empty graph.EntityBatchResponse, encoded like every other batch reply, not with a
+// hand-written body.
 func TestQueryBatchEmptyIDsRepliesAnEmptyResponse(t *testing.T) {
 	c := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	reply, err := c.handleQueryBatchNATS(context.Background(), []byte(`{"ids":[]}`))

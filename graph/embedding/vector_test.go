@@ -7,7 +7,6 @@ import (
 
 // TestCosineSimilarity checks CosineSimilarity against values worked by hand from
 // cos(θ) = (A · B) / (||A|| × ||B||), and its documented 0 for vectors it cannot compare.
-// The pin had no test of vector.go; its BM25 tests only call it.
 func TestCosineSimilarity(t *testing.T) {
 	t.Parallel()
 

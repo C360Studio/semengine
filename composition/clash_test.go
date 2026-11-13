@@ -174,9 +174,7 @@ func TestValidateExclusiveClashMatchesAdmission(t *testing.T) {
 
 // TestValidateSelfClashIsPortDeclarationError: a component whose own claims
 // clash is refused by Registry.Declare, so Validate reports the refusal as
-// one port_declaration_error and never an exclusive_resource_conflict. At the
-// SemStreams pin the same composition gave a connection_pattern_error from the
-// flow graph's bind refusal, which SemEngine removed (#324).
+// one port_declaration_error and never an exclusive_resource_conflict.
 func TestValidateSelfClashIsPortDeclarationError(t *testing.T) {
 	registry := component.NewRegistry()
 	registerPortsFactory(t, registry, "gateway",

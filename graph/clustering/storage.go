@@ -150,7 +150,7 @@ func DecodeCommunity(key string, value []byte) (*Community, error) {
 	return &community, nil
 }
 
-// communityKey is a group record's key, {level}.{group ID} (pin storage.go:518-520).
+// communityKey is a group record's key, {level}.{group ID}.
 // The caller knows level is 0 to 2.
 func communityKey(level int, id string) string {
 	return levelPrefix(level) + id

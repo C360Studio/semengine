@@ -13,8 +13,8 @@ import (
 // unstartedHandlers returns the query handlers of a graph-embedding built through its factory and
 // never started: it has no vector cache, no embedder and no storage, so a request that got past
 // the entry checks to the embedder, the bucket or the cache panics rather than returns. A refusal
-// from these handlers is therefore made before anything is read or embedded (design D3, "before
-// the query is embedded"), which is also why the embedder's statistics cannot have changed.
+// from these handlers is therefore made before anything is read or embedded, which is also why
+// the embedder's statistics cannot have changed.
 func unstartedHandlers(t *testing.T) map[string]func(context.Context, []byte) ([]byte, error) {
 	t.Helper()
 	handlers := mustCreate(t, `{}`).queryHandlers()
@@ -55,8 +55,8 @@ func requireInvalidRequest(t *testing.T, what string, reply []byte, err error, n
 }
 
 // TestHandlersDecodeStrictly: a request holding a key its type does not define, or data after the
-// JSON object, is refused invalid_request naming what was refused, on both verbs (design D1;
-// graph-embedding spec, "Requests are decoded strictly"). The bodies are otherwise valid, so
+// JSON object, is refused invalid_request naming what was refused, on both verbs
+// (graph-embedding spec, "Requests are decoded strictly"). The bodies are otherwise valid, so
 // without the strict decoder each would reach the missing cache and panic.
 func TestHandlersDecodeStrictly(t *testing.T) {
 	handlers := unstartedHandlers(t)
@@ -80,8 +80,8 @@ func TestHandlersDecodeStrictly(t *testing.T) {
 }
 
 // TestMinRevisionAboveZeroRefused: a min_revision above 0 is refused class invalid,
-// invalid_request, saying the embedding verbs claim no revision, before anything is read (design
-// D4). Class invalid is what a retrying caller never retries (natsclient's
+// invalid_request, saying the embedding verbs claim no revision, before anything is read. Class
+// invalid is what a retrying caller never retries (natsclient's
 // RequestWithRetryClassified retries only an attempt that got no reply). That 0 is answered is
 // TestSearchAnswersEnveloped's.
 func TestMinRevisionAboveZeroRefused(t *testing.T) {
@@ -99,7 +99,7 @@ func TestMinRevisionAboveZeroRefused(t *testing.T) {
 }
 
 // TestRefusalsBeforeAnyRead: each request the entry checks refuse is refused invalid_request
-// naming what is wrong, before the embedder, the bucket or the cache is reached (design D3). The
+// naming what is wrong, before the embedder, the bucket or the cache is reached. The
 // limit is refused, never clamped, on both verbs; a blank query, a malformed scope prefix and a
 // malformed entity ID are refused too.
 func TestRefusalsBeforeAnyRead(t *testing.T) {

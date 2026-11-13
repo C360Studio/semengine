@@ -11,7 +11,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// benchRecords and benchDimensions size the cache benchmarks: 50,000 generated records (task 2.2)
+// benchRecords and benchDimensions size the cache benchmarks: 50,000 generated records
 // of the BM25 embedder's default 384 dimensions.
 const (
 	benchRecords    = 50_000

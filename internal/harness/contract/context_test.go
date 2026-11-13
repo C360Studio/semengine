@@ -15,10 +15,9 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// T-B2: no non-test struct retains a context.Context (adapted from SemStreams
-// test/contract/context_ownership_contract_test.go at 5457b345, ledger row L7). Context parameters
-// on callbacks remain valid; stored values and provider results are rejected, and an exported
-// context.CancelFunc field is rejected because a lifecycle record must not hand out cancellation.
+// No non-test struct retains a context.Context. Context parameters on callbacks remain valid;
+// stored values and provider results are rejected, and an exported context.CancelFunc field is
+// rejected because a lifecycle record must not hand out cancellation.
 func TestNoRetainedContext(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "context ownership", contextViolations(t, root))
@@ -90,8 +89,8 @@ type testOnly struct{ ctx context.Context }
 	}
 }
 
-// TestContextFieldDetectorMatrix is carried from SemStreams with the fixture package renamed; it
-// pins the detector's reach independently of any repository content.
+// TestContextFieldDetectorMatrix pins the detector's reach independently of any repository
+// content.
 func TestContextFieldDetectorMatrix(t *testing.T) {
 	contextPkg, err := importer.Default().Import("context")
 	if err != nil {
@@ -216,8 +215,8 @@ var contextExemptTypes = map[string]string{
 	"github.com/c360studio/semengine/internal/harness/probe.ObservedContext": "a derived Context that signals its first Done() observation (lifecycle-suite › Probes)",
 }
 
-// contextViolations is the T-B2 check over every non-test package in the module at root, built with
-// the integration tag so tagged files are type-checked too.
+// contextViolations is the retained-context check over every non-test package in the module at
+// root, built with the integration tag so tagged files are type-checked too.
 func contextViolations(t *testing.T, root string) []string {
 	t.Helper()
 	modulePath := modulePathOf(t, root)

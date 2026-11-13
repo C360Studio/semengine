@@ -18,14 +18,14 @@ import (
 )
 
 // TestStopJoinsCallbackAfterConnectionLoss holds graph-ingest-recovery, "Stop returns only after every
-// input callback has returned" (#441): a Stop never returns nil while a consume callback still runs,
-// even after the broker went away for good while the callback was in it. The callback is held by
-// pausing graph-ingest's logger on the warning deliver logs for a message it cannot decode. The
-// client does not reconnect (openFixtureClient), so the broker's restart closes its connection, and
-// the consume loop's native Closed() then reports the end while the callback is still held
+// input callback has returned": a Stop never returns nil while a consume callback still runs, even
+// after the broker went away for good while the callback was in it. The callback is held by pausing
+// graph-ingest's logger on the warning deliver logs for a message it cannot decode. The client does
+// not reconnect (openFixtureClient), so the broker's restart closes its connection, and the consume
+// loop's native Closed() then reports the end while the callback is still held
 // (natsclient/owned_delivery.go:217-225), which the test checks before it stops. A Stop whose context
-// ends first returns that error and keeps the inputs; once the callback returns, a later Stop
-// returns nil and holds nothing (lifecycle-suite, retained handles).
+// ends first returns that error and keeps the inputs; once the callback returns, a later Stop returns
+// nil and holds nothing (lifecycle-suite, retained handles).
 func TestStopJoinsCallbackAfterConnectionLoss(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()

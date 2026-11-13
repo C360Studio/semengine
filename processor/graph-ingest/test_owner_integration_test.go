@@ -18,7 +18,7 @@ func TestGraphIngestTestOwnerWaitsForObservedClosure(t *testing.T) {
 	defer cancelSetup()
 	component, pause := newFixtureInputComponent(t)
 	bindHeldInput(setupCtx, setupCtx, t, component, pause)
-	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
+	startGuardAcquiringNothing(t, component) // the guard is in use, as a started component's is
 
 	operationCtx, cancelOperation := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancelOperation()

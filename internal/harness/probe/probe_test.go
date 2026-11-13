@@ -141,8 +141,8 @@ func TestAwaitReturnsWhenConditionHolds(t *testing.T) {
 // TestAwaitReportsLastObservation is the spec scenario: the condition never holds, and the
 // failure carries the last value and the last error rather than only "timed out". Every observation
 // returns its own value and its own error, and the expectation is whatever the observer returned
-// last, so the result does not depend on how many observations fit before the deadline (flake #49:
-// the earlier version alternated errors and passed only when that count was even). The bubble's
+// last, so the result does not depend on how many observations fit before the deadline: an
+// expectation built from alternating errors would pass only when that count was even. The bubble's
 // clock makes the wait instant.
 func TestAwaitReportsLastObservation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

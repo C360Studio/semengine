@@ -1,8 +1,7 @@
-// Attack tests written for SemStreams by its Reviewer Agent; permanent CI fixtures designed to
-// break the CoalescingSet implementation. Repaired for SemEngine (design D8, R1a): every test but
-// TestAttack_CallbackLatency runs inside a synctest bubble, on a fake clock that advances only when
-// every goroutine in the bubble is blocked; t.Parallel cannot be called inside a bubble, so it is
-// gone.
+// Attack tests: permanent CI fixtures designed to break the CoalescingSet implementation. Every
+// test but TestAttack_CallbackLatency runs inside a synctest bubble, on a fake clock that advances
+// only when every goroutine in the bubble is blocked; t.Parallel cannot be called inside a bubble,
+// so none calls it.
 
 package cache
 
@@ -97,10 +96,9 @@ func TestAttack_HighVolumeBatching(t *testing.T) {
 //
 // It runs on the real clock, not in a bubble: an Add blocked on the set's mutex is not durably
 // blocked, so inside a bubble a regression would stall the fake clock. The callback is held on a
-// channel the test releases, never on a timer (design D8, R1b): the 100 Adds must all return while
-// it is held; a regression blocks them and go test -timeout fails the test with their stacks.
-// Every exit path releases the callback and joins the adds before anything takes the set's
-// mutex (Codex F6).
+// channel the test releases, never on a timer: the 100 Adds must all return while it is held; a
+// regression blocks them and go test -timeout fails the test with their stacks. Every exit path
+// releases the callback and joins the adds before anything takes the set's mutex.
 func TestAttack_CallbackLatency(t *testing.T) {
 	ctx := context.Background()
 	var callCount atomic.Int32
@@ -238,10 +236,10 @@ func TestAttack_ConcurrentAddRemove(t *testing.T) {
 		wg.Wait()
 
 		// System should not crash or deadlock. Whether any generated key is still pending depends
-		// on how the adders and removers interleaved, so the pin's "at least one callback" after a
-		// fixed 300 ms failed whenever the removers had emptied the set (design P19). A sentinel
-		// makes the next window's batch certain: exactly one callback, carrying the sentinel, and
-		// the set is empty after it.
+		// on how the adders and removers interleaved, so "at least one callback" after a fixed
+		// delay would fail whenever the removers had emptied the set. A sentinel makes the next
+		// window's batch certain: exactly one callback, carrying the sentinel, and the set is empty
+		// after it.
 		require.True(t, set.Add("sentinel"))
 		<-time.After(100 * time.Millisecond)
 		synctest.Wait()

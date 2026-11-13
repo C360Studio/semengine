@@ -20,7 +20,7 @@ type contextWriter[T any] interface {
 }
 
 // TestWriteWithContextRefusesNilContext: WriteWithContext(nil, item) returns an ErrorInvalid
-// error under every policy and writes nothing (design R5). Oracle: an empty buffer with room,
+// error under every policy and writes nothing. Oracle: an empty buffer with room,
 // so any write would show as Size 1 and one counted write.
 func TestWriteWithContextRefusesNilContext(t *testing.T) {
 	for _, policy := range []OverflowPolicy{DropOldest, DropNewest, Block} {
@@ -41,7 +41,7 @@ func TestWriteWithContextRefusesNilContext(t *testing.T) {
 }
 
 // TestDropCallbackMayUseBuffer: a drop callback runs after the buffer's lock is released, so
-// it may call a buffer method, under DropOldest, DropNewest and Clear (design R6). Oracle: the
+// it may call a buffer method, under DropOldest, DropNewest and Clear. Oracle: the
 // dropped items and the size the callback sees are fixed by each script, counted by hand.
 // On a buffer that runs the callback under its lock, the callback's Size call never returns
 // and the test hangs until go test -timeout.
@@ -148,7 +148,7 @@ type embeddingWrapper[T any] struct {
 
 // TestWriteWithTimeoutAssertable: the bounded writes are part of Buffer[T], so SemSource's
 // timeoutWriter matches both a Buffer[T] value and a type embedding Buffer[T], and a call
-// through each writes (design R11). Oracle: the items read back.
+// through each writes. Oracle: the items read back.
 func TestWriteWithTimeoutAssertable(t *testing.T) {
 	buf, err := NewCircularBuffer[int](4, WithOverflowPolicy[int](Block))
 	require.NoError(t, err)
@@ -166,7 +166,7 @@ func TestWriteWithTimeoutAssertable(t *testing.T) {
 
 // TestWriteWithTimeoutExpires: on a full Block buffer WriteWithTimeout is still waiting just
 // before its timeout, returns context.DeadlineExceeded itself once the timeout has passed, and
-// writes nothing (design R3). Oracle: the bubble's fake clock, advanced by the test; the
+// writes nothing. Oracle: the bubble's fake clock, advanced by the test; the
 // buffer's contents and write count from before the call.
 func TestWriteWithTimeoutExpires(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -192,7 +192,7 @@ func TestWriteWithTimeoutExpires(t *testing.T) {
 }
 
 // TestWriteWithTimeoutSucceedsWhenSpaceFrees: a WriteWithTimeout waiting on a full Block buffer
-// writes as soon as a read frees space, before its timeout (design R3). Oracle: the result is
+// writes as soon as a read frees space, before its timeout. Oracle: the result is
 // in hand with no fake time passed, and the contents read back.
 func TestWriteWithTimeoutSucceedsWhenSpaceFrees(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestWriteWithTimeoutSucceedsWhenSpaceFrees(t *testing.T) {
 
 // TestWriteWithContextLeavesNothing: whichever way WriteWithContext returns (written at once,
 // written after a Read, a ReadBatch or a Clear frees space, cancelled, deadline, closed), no
-// goroutine it started is still running (design R4). The three "written after" cases also pin
+// goroutine it started is still running. The three "written after" cases also pin
 // that each of those calls wakes a waiting writer: without the wake-up the write waits out its
 // minute and returns context.DeadlineExceeded. Oracle: the write's result, and after
 // synctest.Wait, no goroutine in the bubble runs buffer code.
@@ -270,7 +270,7 @@ func TestWriteWithContextLeavesNothing(t *testing.T) {
 	}
 }
 
-// TestCapacityBelowOneIsOne: a capacity below 1 becomes 1 (design R9). Oracle: Capacity, and
+// TestCapacityBelowOneIsOne: a capacity below 1 becomes 1. Oracle: Capacity, and
 // under DropOldest a second write evicting the first.
 func TestCapacityBelowOneIsOne(t *testing.T) {
 	for _, capacity := range []int{0, -3} {
@@ -284,7 +284,7 @@ func TestCapacityBelowOneIsOne(t *testing.T) {
 }
 
 // TestDropNewestRatesExceedOne: DropRate and OverflowRate are ratios to accepted writes with no
-// upper bound (#589). Under DropNewest a rejected write counts a drop and an overflow but no
+// upper bound. Under DropNewest a rejected write counts a drop and an overflow but no
 // write, so the ratios pass 1.
 //
 // Oracle: counted by hand. Capacity 1, four writes: the first is accepted, the other three find

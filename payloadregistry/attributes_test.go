@@ -233,9 +233,9 @@ func TestIndexingProfileFor(t *testing.T) {
 	}
 }
 
-// TestRegistryLooksUpByType: GetRegistration and IndexingProfileFor take the message type itself
-// (D6). A registered type is found by its value. A type differing in one component, and a dotted
-// type, whose key text has a fourth part and so equals no registered key, report not registered.
+// TestRegistryLooksUpByType: GetRegistration and IndexingProfileFor take the message type itself.
+// A registered type is found by its value. A type differing in one component, and a dotted type,
+// whose key text has a fourth part and so equals no registered key, report not registered.
 func TestRegistryLooksUpByType(t *testing.T) {
 	reg := New()
 	r := attrRegistration("agentic", "request", "v1")
@@ -289,7 +289,7 @@ func TestRegisterRejectsSchemaMismatch(t *testing.T) {
 	}
 }
 
-// TestRegisterRejectsMalformedComponent (Codex round, MEDIUM): a component
+// TestRegisterRejectsMalformedComponent: a component
 // holding the key separator would register a key nothing can bind a contract
 // to; Register refuses it at boot, naming the component.
 func TestRegisterRejectsMalformedComponent(t *testing.T) {

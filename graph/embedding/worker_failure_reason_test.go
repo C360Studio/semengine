@@ -15,7 +15,7 @@ import (
 
 // TestClassifyEmbedErr pins the bounded reason enum: each recognizable embedder error
 // shape maps to its bucket, and an unrecognized shape defaults to embedder_error. The
-// raw message is never returned — only a value from the closed enum (#613).
+// raw message is never returned — only a value from the closed enum.
 func TestClassifyEmbedErr(t *testing.T) {
 	cases := []struct {
 		name string
@@ -141,7 +141,7 @@ func TestGenerationFailureClassifiedThroughWorker(t *testing.T) {
 	}
 }
 
-// TestConcurrentIdenticalContentCollapsesToOneGenerate is the #630 statement: K
+// TestConcurrentIdenticalContentCollapsesToOneGenerate is the singleflight statement: K
 // concurrent workers holding byte-identical content under the same embedder identity
 // make exactly ONE embedder Generate call (process-local singleflight), and all K
 // share the resulting vector.
@@ -213,12 +213,11 @@ func TestConcurrentIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 	})
 }
 
-// TestOverCapContentDedupsAcrossLanes is the #627 regression lock (task 9.1): byte-
-// identical OVER-CAP content, delivered inline to one entity and via a StorageRef to
-// another, derives the SAME dedup key and the SAME embedded bytes — proving the
-// increment-1 truncateAtWord unification is lane-independent. It asserts the property
-// directly (no production change), so a future edit that re-splits the two lanes'
-// truncation reddens here.
+// TestOverCapContentDedupsAcrossLanes: byte-identical OVER-CAP content, delivered
+// inline to one entity and via a StorageRef to another, derives the SAME dedup key and
+// the SAME embedded bytes — proving the shared truncateAtWord is lane-independent. It
+// asserts the property directly, so an edit that splits the two lanes' truncation
+// reddens here.
 func TestOverCapContentDedupsAcrossLanes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

@@ -13,10 +13,9 @@ import (
 //
 // A port is a member when its interface type is InterfaceType, or when any one
 // of its NATS subjects starts with the family's prefix, graph.mutation., whatever
-// the port's kind (owner ruling, #323 comment 6279624359). A member is valid
-// when it is a required nats-request port whose subjects are exactly
-// SubjectFamily and whose interface is InterfaceType at InterfaceVersion. valid
-// implies member.
+// the port's kind. A member is valid when it is a required nats-request port
+// whose subjects are exactly SubjectFamily and whose interface is InterfaceType
+// at InterfaceVersion. valid implies member.
 //
 // Flowgraph and graph-ingest both call it; each keeps its own direction rule,
 // provider count and refusal text.

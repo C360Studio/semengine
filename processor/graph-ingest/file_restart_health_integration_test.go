@@ -17,9 +17,9 @@ import (
 )
 
 // TestIntegration_FileStreamRestartStaysHealthy is graph-ingest-recovery, "File stream
-// across a broker restart" (design D1 case c). The file stream and graph-ingest's durable
-// consumer survive the restart and the consume loop resumes, so a tick after the restart
-// reads healthy and a message published after it is applied.
+// across a broker restart". The file stream and graph-ingest's durable consumer survive
+// the restart and the consume loop resumes, so a tick after the restart reads healthy and
+// a message published after it is applied.
 func TestIntegration_FileStreamRestartStaysHealthy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()

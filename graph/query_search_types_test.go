@@ -16,10 +16,10 @@ func decodeStrictly(data string, into any) error {
 }
 
 // TestSearchRequestTypesWire proves the wire spelling of the requests global search sends to the
-// time-range and bounds verbs (design D4): start_time and end_time as RFC 3339, the four edges, limit,
-// and min_revision only when it is set. A strict decoder reads each literal back into the same value
-// and refuses the pin's startTime and endTime by name, so a responder decoding the pin's spelling
-// cannot be mistaken for one reading this one.
+// time-range and bounds verbs: start_time and end_time as RFC 3339, the four edges, limit, and
+// min_revision only when it is set. A strict decoder reads each literal back into the same value and
+// refuses startTime and endTime by name, so a responder decoding that camel-case spelling cannot be
+// mistaken for one reading this one.
 func TestSearchRequestTypesWire(t *testing.T) {
 	start := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 11, 7, 12, 0, 0, 500, time.FixedZone("", -8*3600))
@@ -81,12 +81,11 @@ func TestSearchRequestTypesWire(t *testing.T) {
 	}
 }
 
-// TestRequestsDecodeStrictly proves the embedding verbs' requests and replies on the wire (design D1,
-// D3, D4). Each request literal decodes strictly into the value it was marshalled from, min_revision
-// included, so a responder that refuses unknown keys still reads the forward graph-query sends. A key
-// one request defines and the other does not is refused by name: scope sent to similar, entity_id sent
-// to search. Both replies always carry the two record counts, 0 included, since a 0 is the answer that
-// nothing was skipped. The limit bounds are the spec's literals: 0 means 10, the largest is 100.
+// TestRequestsDecodeStrictly proves the embedding verbs' requests and replies on the wire. Each request literal decodes
+// strictly into the value it was marshalled from, min_revision included, so a responder that refuses unknown keys still
+// reads the forward graph-query sends. A key one request defines and the other does not is refused by name: scope sent
+// to similar, entity_id sent to search. Both replies always carry the two record counts, 0 included, since a 0 is the
+// answer that nothing was skipped. The limit bounds are the spec's literals: 0 means 10, the largest is 100.
 func TestRequestsDecodeStrictly(t *testing.T) {
 	if DefaultSimilarityLimit != 10 || MaxSimilarityLimit != 100 {
 		t.Errorf("limits = %d, %d; want 10, 100", DefaultSimilarityLimit, MaxSimilarityLimit)

@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestGlobalSearchTypesWire proves the wire spelling of the globalSearch request and reply (design D4,
-// D5): the request is query and min_revision, and a reply holds strategy and exactly the one result it
-// names, the entity's bytes unchanged.
+// TestGlobalSearchTypesWire proves the wire spelling of the globalSearch request and reply: the request
+// is query and min_revision, and a reply holds strategy and exactly the one result it names, the
+// entity's bytes unchanged.
 func TestGlobalSearchTypesWire(t *testing.T) {
 	cases := []struct {
 		name  string

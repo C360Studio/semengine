@@ -51,9 +51,9 @@ func captureStderr(t *testing.T, fn func()) string {
 	return string(written)
 }
 
-// TestValidateReadsNoTLSFile is Codex's #347 probe: the result does not depend
-// on whether a configured CA file exists on the machine running validation,
-// and validation writes nothing to standard error.
+// TestValidateReadsNoTLSFile: the result does not depend on whether a
+// configured CA file exists on the machine running validation, and validation
+// writes nothing to standard error.
 func TestValidateReadsNoTLSFile(t *testing.T) {
 	registry := fakeRegistry(t)
 	cfg := compositionOf(config.ComponentConfigs{})
@@ -78,9 +78,9 @@ func TestValidateReadsNoTLSFile(t *testing.T) {
 	}
 }
 
-// TestValidateConfigInvalidIsDeterministic is Codex's #348 probe: with several
-// invalid component entries, the config_invalid finding names the first in
-// instance-name order on every run.
+// TestValidateConfigInvalidIsDeterministic: with several invalid component
+// entries, the config_invalid finding names the first in instance-name order on
+// every run.
 func TestValidateConfigInvalidIsDeterministic(t *testing.T) {
 	registry := fakeRegistry(t)
 	bad := types.ComponentConfig{Name: "src", Type: "bogus", Enabled: true, Config: json.RawMessage(`{}`)}

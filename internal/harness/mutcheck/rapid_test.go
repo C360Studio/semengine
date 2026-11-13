@@ -16,7 +16,7 @@ const absSource = "package prop\n\n// Abs returns the absolute value of x.\nfunc
 
 // absWrong is Abs wrong only at x = -7. Measured with go1.26.6 and Rapid v1.3.0, TestAbs finds it
 // for seeds 1, 2, 4, 7 and 9 and misses it for seeds 3, 5, 6, 8 and 10 (calibrated over seeds 1
-// to 10 on this module, with RAPID_NOFAILFILE=true, recorded on PR #82 with task 2.10).
+// to 10 on this module, with RAPID_NOFAILFILE=true).
 var absWrong = strings.Replace(absSource, "func Abs(x int) int {\n", "func Abs(x int) int {\n\tif x == -7 {\n\t\treturn x\n\t}\n", 1)
 
 // rapidModule is a planted module whose property test TestAbs draws x from -1000 to 1000 with Rapid

@@ -39,10 +39,10 @@ var loadPaths = []loadPath{
 // validDocument is a document every loader accepts and Validate passes.
 const validDocument = `{"platform":{"org":"acme","id":"p1","type":"vessel"}}`
 
-// TestLoad_RefusesUnappliedNATSKeys pins D2 (Q1, #9 comment 6275744386): a
-// NATS setting nothing in SemEngine applies yet is refused at load, naming the
-// key, so an operator who sets one is never silently ignored (#74). A key is
-// refused when present, whatever its value, and in any letter case.
+// TestLoad_RefusesUnappliedNATSKeys: a NATS setting nothing in SemEngine applies
+// yet is refused at load, naming the key, so an operator who sets one is never
+// silently ignored. A key is refused when present, whatever its value, and in
+// any letter case.
 func TestLoad_RefusesUnappliedNATSKeys(t *testing.T) {
 	cases := []struct {
 		key      string
@@ -103,9 +103,9 @@ func TestLoad_AcceptsAppliedNATSKeys(t *testing.T) {
 	}
 }
 
-// TestLoad_RefusesNATSCredentialEnv pins D2's environment half: the pin applied
-// _NATS_USERNAME, _PASSWORD and _TOKEN; SemEngine applies none of them yet, so a
-// set credential fails the load, naming the variable, instead of being dropped.
+// TestLoad_RefusesNATSCredentialEnv is the environment half of the same rule:
+// SemEngine applies none of _NATS_USERNAME, _PASSWORD and _TOKEN yet, so a set
+// credential fails the load, naming the variable, instead of being dropped.
 func TestLoad_RefusesNATSCredentialEnv(t *testing.T) {
 	variables := []string{"SEMENGINE_NATS_USERNAME", "SEMENGINE_NATS_PASSWORD", "SEMENGINE_NATS_TOKEN"}
 	for _, path := range loadPaths {
@@ -126,8 +126,8 @@ func TestLoad_RefusesNATSCredentialEnv(t *testing.T) {
 	}
 }
 
-// TestLoad_EnvOverrideNames pins the SEMENGINE_ override names (#69 ruling 1,
-// D4): each of the four overrides replaces the document's value.
+// TestLoad_EnvOverrideNames pins the SEMENGINE_ override names: each of the four
+// overrides replaces the document's value.
 func TestLoad_EnvOverrideNames(t *testing.T) {
 	const document = `{
 		"platform": {"org": "acme", "id": "file-id", "type": "file-type", "region": "file-region"},
@@ -151,10 +151,10 @@ func TestLoad_EnvOverrideNames(t *testing.T) {
 	}
 }
 
-// TestLoad_RefusesMalformedDocument pins D3 (Q2, #9 comment 6275744386): a
-// document whose value does not fit its field fails the load with the decode
-// error. The pin returned the defaults instead, so a URL list written as a
-// string loaded as org="" and the default URL, with no error.
+// TestLoad_RefusesMalformedDocument: a document whose value does not fit its
+// field fails the load with the decode error. Returning the defaults instead
+// would load a URL list written as a string as org="" and the default URL, with
+// no error.
 func TestLoad_RefusesMalformedDocument(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -268,9 +268,9 @@ func TestLoad_PreservesNumbers(t *testing.T) {
 	}
 }
 
-// TestLoad_RefusesNumberThatDoesNotFitItsField pins D3 for numbers: a value
-// json.Unmarshal into the field refuses must not load, even where a float64
-// would round it to one that fits.
+// TestLoad_RefusesNumberThatDoesNotFitItsField is the same rule for numbers: a
+// value json.Unmarshal into the field refuses must not load, even where a
+// float64 would round it to one that fits.
 func TestLoad_RefusesNumberThatDoesNotFitItsField(t *testing.T) {
 	documents := map[string]string{
 		"nonintegral just above 1": `{"platform":{"org":"acme","id":"p1"},` +
@@ -319,10 +319,9 @@ func TestLoad_RefusesNullDocument(t *testing.T) {
 	}
 }
 
-// TestLoad_DefaultServicesAreHeartbeatOnly pins #384: a document that names no
-// services loads with one default service, heartbeat, enabled. The pin's
-// dormant discovery default named a service that exists neither at the pin nor
-// here.
+// TestLoad_DefaultServicesAreHeartbeatOnly: a document that names no services
+// loads with one default service, heartbeat, enabled, and no default names a
+// service that does not exist.
 func TestLoad_DefaultServicesAreHeartbeatOnly(t *testing.T) {
 	for _, path := range loadPaths {
 		t.Run(path.name, func(t *testing.T) {
@@ -334,11 +333,10 @@ func TestLoad_DefaultServicesAreHeartbeatOnly(t *testing.T) {
 	}
 }
 
-// TestLoad_RefusesKeyInAnotherLetterCase pins the #325 ruling (comment
-// 6294481629): a key that differs from its declared name only in letter case is
-// refused, naming the path as written and as declared. encoding/json would match
-// it to the field anyway, and the merge with the defaults would then drop or
-// apply it depending on what the defaults hold.
+// TestLoad_RefusesKeyInAnotherLetterCase: a key that differs from its declared
+// name only in letter case is refused, naming the path as written and as
+// declared. encoding/json would match it to the field anyway, and the merge with
+// the defaults would then drop or apply it depending on what the defaults hold.
 func TestLoad_RefusesKeyInAnotherLetterCase(t *testing.T) {
 	const pair = `"platform":{"org":"acme","id":"p1"}`
 	cases := []struct {

@@ -286,7 +286,7 @@ func TestFlowGraphAnalysis(t *testing.T) {
 
 		// The analysis reports facts, not severity: the isolated node is BOTH
 		// disconnected and orphaned, and what that means is composition.Analyze's
-		// call (ADR-100 D3).
+		// call (ADR-100 decision 3).
 		assert.Len(t, result.DisconnectedNodes, 1)
 		assert.Len(t, result.OrphanedPorts, 1) // isolated component has orphaned input port
 
@@ -361,13 +361,12 @@ func TestHTTPClientPortFlowGraph(t *testing.T) {
 }
 
 // TestTimerPortFlowGraph verifies the flowgraph behaviours required by the
-// TimerPort cadence-boundary contract (gh#312):
+// TimerPort cadence-boundary contract:
 //  1. canonical facts classify the timer as component.PatternTimer.
 //  2. findOrphanedPorts does NOT flag an unconnected TimerPort input as orphaned —
 //     a cadence/scheduler boundary has no internal publisher by design.
-//  3. extractPortInfo surfaces the polling cadence as the port's ConnectionID
-//     ("timer:<interval>") so operators can inspect it from the flowgraph,
-//     instead of the "unknown_type_*" fallthrough.
+//  3. the port's ConnectionID is its polling cadence ("timer:<interval>"),
+//     so operators can inspect it from the flowgraph.
 func TestTimerPortFlowGraph(t *testing.T) {
 	g := &FlowGraph{nodes: make(map[string]*componentNode), edges: []FlowEdge{}}
 
@@ -425,8 +424,7 @@ func TestTimerPortFlowGraph(t *testing.T) {
 
 	t.Run("TimerPort ConnectionID surfaces the interval", func(t *testing.T) {
 		// The stored portInfo.ConnectionID must expose the polling cadence
-		// ("timer:30s") so operators can inspect it from the flowgraph, rather
-		// than the "unknown_type_*" fallthrough it hit before gh#312.
+		// ("timer:30s") so operators can inspect it from the flowgraph.
 		comp := createMockComponentWithPorts("cap_poller", "input",
 			[]component.Port{{
 				Name:      "poll_tick",

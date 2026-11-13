@@ -70,9 +70,9 @@ func TestGraphMutationFlowRejectsUntypedLegacyRequester(t *testing.T) {
 	}
 }
 
-// TestGraphMutationFlowRejectsPrefixMembersOfEveryKind holds the ruling on #323
-// (Q1): a port with any one NATS subject on graph.mutation. is a graph-mutation
-// port whatever its kind, so a nats or JetStream port there is refused.
+// TestGraphMutationFlowRejectsPrefixMembersOfEveryKind: a port with any one
+// NATS subject on graph.mutation. is a graph-mutation port whatever its kind,
+// so a nats or JetStream port there is refused.
 func TestGraphMutationFlowRejectsPrefixMembersOfEveryKind(t *testing.T) {
 	const want = "component requester port legacy is not a required nats-request " +
 		"semengine.graph.mutation v1 port on graph.mutation.>: invalid configuration"

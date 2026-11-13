@@ -106,7 +106,7 @@ var wordPattern = regexp.MustCompile(`\S+`)
 // Detects temporal, spatial, similarity, path, and aggregation intents.
 // Always returns non-nil SearchOptions with the original query preserved.
 //
-// An excluded operation gives no hint and other hints stand (#95). The seven operations are
+// An excluded operation gives no hint and other hints stand. The seven operations are
 // count, avg, sum, min, max, similarity and ranking, each excluded on its own when one of its
 // triggers (a) follows not, no, never, don't, do not or without in the same clause, (b) lies
 // inside a balanced pair of straight (") or curly (“ ”) double quotes, or (c) is one of two
@@ -127,10 +127,10 @@ func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *Sear
 	return opts
 }
 
-// classify is ClassifyQuery at the instant now: every time range comes from now, in now's zone
-// (design D5). It also reports whether it excluded an operation, so the chain can keep the
-// exclusion from later tiers. A phrase whose number is out of range gives no hint; the chain
-// refuses such a question through numbersOutOfRange before it asks any tier (design D6).
+// classify is ClassifyQuery at the instant now: every time range comes from now, in now's zone.
+// It also reports whether it excluded an operation, so the chain can keep the exclusion from
+// later tiers. A phrase whose number is out of range gives no hint; the chain refuses such a
+// question through numbersOutOfRange before it asks any tier.
 func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOptions, bool) {
 	opts := &SearchOptions{
 		Query: query,
@@ -165,7 +165,7 @@ func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOption
 
 	// Detect zone intent - "in zone-A", "zone-cold-storage"
 	// A zone or area phrase is a path query from the zone; it adds no predicate filter,
-	// because a framework names no domain predicate (design D5).
+	// because a framework names no domain predicate.
 	// Only set zone as start node if path intent didn't already extract an entity
 	if !hasPathIntent || opts.PathStartNode == "" {
 		if matches := inZonePattern.FindStringSubmatch(query); matches != nil {
@@ -209,8 +209,8 @@ func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOption
 	return opts, len(excluded) > 0
 }
 
-// numbersOutOfRange returns an error naming each phrase of query whose number is out of range
-// (#479 item 2, design D6), or nil. Every "last N hours", "last N days" and "within R of
+// numbersOutOfRange returns an error naming each phrase of query whose number is out of range,
+// or nil. Every "last N hours", "last N days" and "within R of
 // lat,lon" phrase is checked, not only the one that would supply a hint. It reads no tier's
 // state, so the chain refuses such a question whichever tiers are composed.
 func numbersOutOfRange(query string) error {
@@ -238,11 +238,11 @@ func numbersOutOfRange(query string) error {
 // that phrase, an entity reference or a second zone or area phrase naming a different place, or
 // nil. classify answers a path from only one of them (the first entity reference with path words,
 // else the zone), so the other place would be dropped without a word; the chain refuses such a
-// question instead (PR #530 review, #535). A zone is named "zone-b" or "zone b", so places compare
+// question instead. A zone is named "zone-b" or "zone b", so places compare
 // as "<zone|area>-<name>", case folded: "zone b ... zone-b" is one place. An entity reference
 // inside the phrase ("zone-b" itself, "sensor-zone-1") is the same place. A word that is a valid
 // six-part entity ID once surrounding punctuation is trimmed is an entity reference too, so a full
-// ID with no hyphenated segment ("c360.test.x.y.z.001") is not dropped (owner ruling 2026-11-07).
+// ID with no hyphenated segment ("c360.test.x.y.z.001") is not dropped.
 func twoPlaces(query string) error {
 	zone := inZonePattern.FindStringSubmatchIndex(query)
 	if zone == nil {
@@ -369,9 +369,9 @@ func (k *KeywordClassifier) getTodayRange(now time.Time) *TimeRange {
 	}
 }
 
-// lastSpan reads the N of a "last N <unit>" phrase as a span (#479 item 2, design D6). N must
-// be at least 1, and N units must fit a time.Duration (about 292 years); past either bound it
-// returns an error naming the phrase and the bound.
+// lastSpan reads the N of a "last N <unit>" phrase as a span. N must be at least 1, and N units
+// must fit a time.Duration (about 292 years); past either bound it returns an error naming the
+// phrase and the bound.
 func lastSpan(phrase, digits string, unit time.Duration, unitName string) (time.Duration, error) {
 	limit := int64(time.Duration(math.MaxInt64) / unit)
 	// The patterns admit only an optional '-' and ASCII digits, so a parse error is a number
@@ -450,14 +450,12 @@ func (k *KeywordClassifier) extractEntityID(query string) string {
 // Converts radius-based queries to bounding boxes.
 //
 // A phrase with a latitude outside [-90, 90], a longitude outside [-180, 180] or a radius that is
-// not a finite number gives no box and an error naming the phrase and the bound (#479 item 2,
-// design D6). A radius of zero gives no box and no error, as at the pin. The rest is geometry:
-// North and South are clamped to 90 and -90, a box that reaches a pole spans every longitude
-// (West -180, East 180), and a box crossing the antimeridian is not wrapped, so its East can
-// exceed 180 or its West fall below -180.
+// not a finite number gives no box and an error naming the phrase and the bound. A radius of zero
+// gives no box and no error. The rest is geometry: North and South are clamped to 90 and -90, a box
+// that reaches a pole spans every longitude (West -180, East 180), and a box crossing the
+// antimeridian is not wrapped, so its East can exceed 180 or its West fall below -180.
 //
-// The first "within" phrase supplies the box, as at the pin; numbersOutOfRange names every phrase
-// past a bound.
+// The first "within" phrase supplies the box; numbersOutOfRange names every phrase past a bound.
 func (k *KeywordClassifier) extractSpatialBounds(query string) *SpatialBounds {
 	m := withinPattern.FindStringSubmatch(query)
 	if m == nil {
@@ -688,7 +686,7 @@ const (
 	operationRanking    = "ranking"
 )
 
-// Exclusion words (#95).
+// Exclusion words.
 var (
 	// negationPattern matches a word that negates a trigger after it in its clause. "do not" is
 	// matched by its "not"; "don't" with a straight or a typographic apostrophe.

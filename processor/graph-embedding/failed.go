@@ -8,8 +8,8 @@ import (
 )
 
 // strandedRevision is the revision of a failure no source revision names: a failed entity read,
-// or a failed record delete for an entity found absent (design D3). No terminal outcome from the
-// Worker clears or replaces it; only hop 1's convergence of the entity does.
+// or a failed record delete for an entity found absent. No terminal outcome from the Worker
+// clears or replaces it; only hop 1's convergence of the entity does.
 const strandedRevision = ^uint64(0)
 
 // outcome is one entity's entry in the failed map: the source revision of its latest terminal
@@ -25,11 +25,11 @@ type outcome struct {
 // hopOne reports whether o is a failure of hop 1's own, the kind hop 1's convergence clears.
 func (o outcome) hopOne() bool { return repaired(o.reason) }
 
-// failedMap is the per-entity failed map (design D3; pin component.go:1101-1157, :1657-1701): the
-// latest terminal outcome of each entity, so a failure older than it is not counted. The Worker's
-// outcomes reach it on the Worker's goroutines, hop 1's on the follower's or the coalescer's
-// under hop1Mu, and the follower reads it on its heartbeat, so every method takes mu. Lock
-// order: hop1Mu, then mu. The zero value is empty and ready to use.
+// failedMap is the per-entity failed map: the latest terminal outcome of each entity, so a
+// failure older than it is not counted. The Worker's outcomes reach it on the Worker's goroutines,
+// hop 1's on the follower's or the coalescer's under hop1Mu, and the follower reads it on its
+// heartbeat, so every method takes mu. Lock order: hop1Mu, then mu. The zero value is empty and
+// ready to use.
 type failedMap struct {
 	mu      sync.Mutex
 	entries map[string]outcome
@@ -39,7 +39,7 @@ type failedMap struct {
 }
 
 // repaired reports whether reason is one of hop 1's own failures, the three the repair lane
-// re-drives (pin component.go:1290-1300). They are in memory only and never in a stored record
+// re-drives. They are in memory only and never in a stored record
 // (graph/embedding/derived_reasons.go), so no Worker outcome carries one.
 func repaired(reason string) bool {
 	switch reason {
@@ -67,8 +67,8 @@ func (m *failedMap) failed(key string, revision uint64, reason string) bool {
 
 // succeeded records the Worker's success of key at revision. A success at strandedRevision is
 // the Worker's drain of a record it cannot decode (graph/embedding worker.go), which names no
-// source revision: it forgets an entity that is not stranded, as the pin does (pin
-// component.go:1152), so it never stands as a latest outcome no later failure can pass.
+// source revision: it forgets an entity that is not stranded, so it never stands as a latest
+// outcome no later failure can pass.
 func (m *failedMap) succeeded(key string, revision uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -95,9 +95,8 @@ func (m *failedMap) worker(key string, o outcome) bool {
 
 // mark records hop 1's own failure of key, under hop1Mu: at the revision hop 1 read or was
 // delivered, or stranded at strandedRevision when it has none. It replaces a stranded failure, so
-// a read that succeeds before a write that fails re-marks the entity at the revision read (pin
-// component.go:1864-1884, :1911-1941), and otherwise is not stored below the latest outcome.
-// It reports whether key entered the failed set.
+// a read that succeeds before a write that fails re-marks the entity at the revision read, and
+// otherwise is not stored below the latest outcome. It reports whether key entered the failed set.
 func (m *failedMap) mark(key string, revision uint64, reason string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -136,11 +135,10 @@ func (m *failedMap) ended(key string, revision uint64) {
 
 // absent records, under hop1Mu, that key is absent from ENTITY_STATES and its record is
 // removed: nothing is left to count, but the entity's revision stays as a success. A Worker
-// failure stored before the deletion can still have its callback to come (review R1 at stop
-// 2); it is older than the tombstone that ended the entity, so it is not counted. A re-created
-// entity's revisions are above the tombstone's (KV revisions are the stream's sequence), so the
-// fence never hides them. With no outcome, or one at strandedRevision, which names no revision,
-// the entity is forgotten.
+// failure stored before the deletion can still have its callback to come; it is older than the
+// tombstone that ended the entity, so it is not counted. A re-created entity's revisions are
+// above the tombstone's (KV revisions are the stream's sequence), so the fence never hides them.
+// With no outcome, or one at strandedRevision, which names no revision, the entity is forgotten.
 func (m *failedMap) absent(key string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -192,7 +190,7 @@ func (m *failedMap) counts() (int64, map[string]uint64) {
 }
 
 // withheld is the follower's Withhold: the number of entities whose failure is hop 1's own, the
-// failures that withhold the query verbs (design D5, F2).
+// failures that withhold the query verbs.
 func (m *failedMap) withheld() int64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -206,8 +204,8 @@ func (m *failedMap) withheld() int64 {
 }
 
 // repairTargets returns, sorted, the entities whose failure is hop 1's own: the repair lane
-// re-drives those, and the Worker's failures wait for a new revision or a restart (pin
-// TestRepairScope_EmbedderSideReasonNotReDriven). It releases mu before the caller takes hop1Mu.
+// re-drives those, and the Worker's failures wait for a new revision or a restart. It releases mu
+// before the caller takes hop1Mu.
 func (m *failedMap) repairTargets() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()

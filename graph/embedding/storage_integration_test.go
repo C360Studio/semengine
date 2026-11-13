@@ -27,7 +27,7 @@ func TestMain(m *testing.M) { os.Exit(run(m)) }
 
 func run(m *testing.M) int {
 	flag.Parse()
-	// Design D9 bounds TestRevisionGuardHistoryMatchesModel at 50 generated runs; an explicit
+	// TestRevisionGuardHistoryMatchesModel is bounded at 50 generated runs; an explicit
 	// -rapid.checks on the command line still wins.
 	checksSet := false
 	flag.Visit(func(f *flag.Flag) { checksSet = checksSet || f.Name == "rapid.checks" })
@@ -47,8 +47,7 @@ func run(m *testing.M) int {
 	return code
 }
 
-// clientTimeout is the request timeout of the fixture client, the value the pin's
-// NewTestClient family used.
+// clientTimeout is the request timeout of the fixture client.
 const clientTimeout = 15 * time.Second
 
 // fixtureClient resets the package's shared server and returns a Client connected to it,
@@ -113,7 +112,7 @@ type historyOp struct {
 
 var historyEntities = []string{"acme.ops.robotics.gcs.drone.h0", "acme.ops.robotics.gcs.drone.h1"}
 
-// The outcomes the model distinguishes, one per rule of design D3 and each side of its
+// The outcomes the model distinguishes, one per revision-guard rule and each side of its
 // boundaries. Each has a witness history in TestRevisionGuardHistoryMatchesModel.
 const (
 	outPendingSaved              = "pending saved"
@@ -301,11 +300,11 @@ func fenced(e int, current bool) historyOp {
 	return historyOp{op: opFenced, entity: e, current: current}
 }
 
-// TestRevisionGuardHistoryMatchesModel (design D3, D9): sequential histories of
+// TestRevisionGuardHistoryMatchesModel: sequential histories of
 // SavePendingGuarded, SaveGenerated, SaveFailed, DeleteEmbedding and the fenced no-text
 // removal over two entities and source revisions 1-4, on a real bucket. After every call,
 // its result and the entity's stored status, source revision and KV revision are checked
-// against a reference model written from D3:
+// against a reference model written from the revision-guard rules:
 //
 //   - pending is refused only over a generated record at the same or a newer source
 //     revision (an older pending record replaces a newer pending or failed one);
@@ -319,7 +318,7 @@ func fenced(e int, current bool) historyOp {
 // Coverage of every rule comes from the witnesses: one fixed history per outcome, whose
 // last call must reach it. The generated histories (Rapid, up to 30 calls) then explore
 // orderings against the same model and assert no coverage of their own, so no seed can
-// fail for lack of reach (#466; -rapid.seed=203 did, at 50 checks).
+// fail for lack of reach.
 func TestRevisionGuardHistoryMatchesModel(t *testing.T) {
 	client := fixtureClient(t)
 	dedup := client.NewKVStore(createBucket(t, client, "EMB_HIST_DEDUP"))
@@ -396,7 +395,7 @@ func TestRevisionGuardHistoryMatchesModel(t *testing.T) {
 }
 
 // drawRevision draws a source revision in 1-4, or the stored record's own revision: the
-// equal-revision boundary D3's pending and failed rules turn on.
+// equal-revision boundary the pending and failed rules turn on.
 func drawRevision(t *rapid.T, m *modelRecord) uint64 {
 	if m.present && rapid.Bool().Draw(t, "same revision") {
 		return m.source
@@ -404,7 +403,7 @@ func drawRevision(t *rapid.T, m *modelRecord) uint64 {
 	return rapid.Uint64Range(1, 4).Draw(t, "revision")
 }
 
-// TestSaveDedupKeepsSameSpaceReplacesOther (design D3, changed): on a real bucket, a
+// TestSaveDedupKeepsSameSpaceReplacesOther: on a real bucket, a
 // SaveDedup for a key holding a record of the same model and dimensions writes nothing (the
 // key's KV revision and bytes are unchanged), and one for a key holding another model's or
 // another width's record replaces it.

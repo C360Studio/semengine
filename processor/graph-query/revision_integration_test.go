@@ -193,10 +193,10 @@ func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
 	return nil
 }
 
-// TestGraphQueryRepliesDecodeByTheTable: every row the verb table declares for graph-query, not a list
-// kept here, gets a reply naming the entity written, and that reply has the row's shape and type
-// (design D1). The reply is real, from real ingest and index, except on the four forwards whose
-// responders changes 5 and 7 bring: there a stub sends the literal JSON the row declares.
+// TestGraphQueryRepliesDecodeByTheTable: every row the verb table declares for graph-query, not a
+// list kept here, gets a reply naming the entity written, and that reply has the row's shape and
+// type. The reply is real, from real ingest and index, except on the four forwards to the
+// embedding, time-range and bounds verbs: there a stub sends the literal JSON the row declares.
 // relationships is read both ways, its two reply paths.
 func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	stack := startCommunityStack(t)

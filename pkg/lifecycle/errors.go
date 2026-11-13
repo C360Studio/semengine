@@ -42,7 +42,7 @@ var (
 	// — i.e. Manager.Create was never called for it. Distinct from
 	// ErrEntityNotFound so callers can distinguish "no such entity" from
 	// "exists but not lifecycle-managed yet" (forward-reference case
-	// per ADR-049 Q5).
+	// per ADR-049).
 	ErrEntityNotLifecycleManaged = errors.New("lifecycle: entity not lifecycle-managed (no phase triple)")
 
 	// ErrAlreadyExists is returned by Manager.Create when the entity
@@ -139,7 +139,7 @@ var (
 	// for that reason.
 	ErrEmitFailed = errors.New("lifecycle: emit to graph-ingest failed")
 
-	// ErrEntityIDPatternMismatch is returned by Manager.Create (gh#814) and by
+	// ErrEntityIDPatternMismatch is returned by Manager.Create and by
 	// Manager.Despawn / DespawnWith when the given entityID is not a valid
 	// entity ID or does not match the named (and registered) workflow's
 	// EntityIDPattern; for a malformed ID the message carries the reason. Distinct from ErrWorkflowNotRegistered (the

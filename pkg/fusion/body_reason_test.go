@@ -55,12 +55,12 @@ func (errHydrateLens) Hydrate(context.Context, *fusion.Entity) (*message.Storage
 	return nil, errors.New("hydrate backend fault")
 }
 
-// TestNode_BodyReason pins gh#616/#600 at the corrected seam: a body that was
-// requested (WantBody) but could not be loaded is reported as an empty body AND a
-// bounded reason on the node itself, distinguishing an absent object (not_found)
-// from a read fault (error) from a Hydrate fault (error) — while an entity that
-// legitimately has NO body stays SILENT (no reason, no counter). The node always
-// still ships (partial result, no defer, no miss).
+// TestNode_BodyReason: a body that was requested (WantBody) but could not be
+// loaded is reported as an empty body AND a bounded reason on the node itself,
+// distinguishing an absent object (not_found) from a read fault (error) from a
+// Hydrate fault (error) — while an entity that legitimately has NO body stays
+// SILENT (no reason, no counter). The node always still ships (partial result, no
+// defer, no miss).
 func TestNode_BodyReason(t *testing.T) {
 	req := fusion.Request{Query: "q", Want: []fusion.Want{fusion.WantBody}}
 
@@ -212,8 +212,8 @@ func TestNode_BodyReason_RoundTrip(t *testing.T) {
 }
 
 // TestBodyReason_SharesUnhydratedVocabulary pins the closed set to the seed-
-// hydration vocabulary value-for-value (design D3 / task 3.1): body and seed are
-// distinct types but read identically on the wire.
+// hydration vocabulary value-for-value: body and seed are distinct types but
+// read identically on the wire.
 func TestBodyReason_SharesUnhydratedVocabulary(t *testing.T) {
 	assert.Equal(t, string(fusion.UnhydratedNotFound), string(fusion.BodyNotFound))
 	assert.Equal(t, string(fusion.UnhydratedError), string(fusion.BodyError))

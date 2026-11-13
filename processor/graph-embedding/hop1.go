@@ -16,19 +16,19 @@ import (
 // Hop 1 turns an ENTITY_STATES revision into a pending EMBEDDING_INDEX record, which the
 // Worker (hop 2) embeds. A revision completes in the follower when the Worker reports its
 // terminal outcome (onTerminal), or at once when hop 1 ends it: no text, deleted, a generated
-// record already standing (design D1; ADR-066 § 3). Every hop-1 mutation holds hop1Mu, so the
-// follower's deliveries, the coalescer's batches and the repair lane never interleave on one
-// entity (pin #629).
+// record already standing (ADR-066 § 3). Every hop-1 mutation holds hop1Mu, so the follower's
+// deliveries, the coalescer's batches and the repair lane never interleave on one entity.
 //
 // Hop 1's own failures (a failed record delete, pending write or entity read) go to the failed
 // map before the revision completes, so readiness never reads ready over them, and the repair
-// lane retries them; each convergence of an entity clears them (design D3).
+// lane retries them; each convergence of an entity clears them.
 
 // deliver is the follower's Deliver, on its Run goroutine. It counts the entry before any
 // coalescing. A delete goes through at once and drops the key's pending coalesced update;
 // an update is coalesced when coalesce_ms is above zero and reconciled at once otherwise.
 // Hop 1 reads the entity's current value rather than applying the entry's Value: a coalesced
-// update and the repair lane must see current truth, not the value one delivery carried (ADR-108 D4).
+// update and the repair lane must see current truth, not the value one delivery carried (ADR-108
+// Decision 4).
 func (c *Component) deliver(ctx context.Context, e follower.Entry) {
 	c.delivered.Store(e.Revision)
 	c.lifecycle.CountInput(e.Bytes)
@@ -60,9 +60,9 @@ func (c *Component) reconcileBatch(ctx context.Context, keys []string) {
 // reconcileEntity converges key's pending record on the value ENTITY_STATES holds now, at
 // the revision read; completing that revision drains every lower revision of the key the
 // watch delivered (revlag.Watermark.Complete). Reading inside hop1Mu means a tombstone delivered
-// meanwhile either ran first (the read finds the key absent) or runs after and wins (pin #629).
-// A read that finds no value ends only the revisions delivered before it began, so the highest
-// delivered revision is taken before the read (#555).
+// meanwhile either ran first (the read finds the key absent) or runs after and wins. A read
+// that finds no value ends only the revisions delivered before it began, so the highest
+// delivered revision is taken before the read.
 func (c *Component) reconcileEntity(ctx context.Context, key string) {
 	c.hop1Mu.Lock()
 	defer c.hop1Mu.Unlock()
@@ -79,15 +79,15 @@ func (c *Component) reconcileEntity(ctx context.Context, key string) {
 // highest revision the follower had delivered when the read began: the read ends key's revisions
 // at or below it and no later one. An absent key converges to no record and completes delivered;
 // a failed delete of its record is stranded in the failed map. Any other failure is stranded too
-// and completes delivered, so a transient read failure does not pin the floor (pin
-// component.go:1628-1670).
+// and completes delivered, so a transient read failure does not pin the floor.
 //
-// The pin completed at ^uint64(0) instead (#555). On the coalesced lane the follower keeps
-// delivering while the coalescer's goroutine reads, so that also drained a re-creation of key
-// observed during the read, and readiness read caught up while its record waited for hop 2. A
-// revision delivered after the read began reaches a batch of its own (or is a tombstone, which
-// completes itself), so it stays outstanding until its own outcome. On the inline lane the
-// follower is blocked in Deliver for the read, so delivered is the revision being reconciled.
+// It completes at delivered, not at every revision of key (^uint64(0)): on the coalesced lane the
+// follower keeps delivering while the coalescer's goroutine reads, so completing every revision
+// would also drain a re-creation of key observed during the read, and readiness would read caught
+// up while its record waited for hop 2. A revision delivered after the read began reaches a batch
+// of its own (or is a tombstone, which completes itself), so it stays outstanding until its own
+// outcome. On the inline lane the follower is blocked in Deliver for the read, so delivered is the
+// revision being reconciled.
 func (c *Component) readFailed(ctx context.Context, key string, delivered uint64, err error) {
 	if natsclient.IsKVNotFoundError(err) {
 		if delErr := c.storage.DeleteEmbedding(ctx, key); delErr != nil {
@@ -109,7 +109,7 @@ func (c *Component) readFailed(ctx context.Context, key string, delivered uint64
 // applyTombstone removes a deleted entity's record and completes the tombstone's revision,
 // which drains every earlier revision of the key. A failed delete is marked at the
 // tombstone's revision and still completes: a revision left pending would pin the floor
-// (ADR-066 § 3, pin #624).
+// (ADR-066 § 3).
 func (c *Component) applyTombstone(ctx context.Context, key string, revision uint64) {
 	c.hop1Mu.Lock()
 	defer c.hop1Mu.Unlock()
@@ -134,7 +134,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 	var state graph.EntityState
 	if err := graph.UnmarshalEntityState(key, data, &state); err != nil {
 		// Authoritative state this reader cannot trust is a latched reset, not a terminal
-		// skip: the revision stays pending (pin component.go:1795-1806).
+		// skip: the revision stays pending.
 		reason := graph.GraphStateReasonUnreadableEntity
 		var stateErr *graph.StateContractError
 		if errors.As(err, &stateErr) {
@@ -142,7 +142,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 		}
 		c.logger.Error("entity state refused; graph reset required",
 			slog.String("entity", key), slog.Any("error", err))
-		c.lifecycle.CountError() // the reset, as graph-index counts one (design D6)
+		c.lifecycle.CountError() // the reset, as graph-index counts one
 		c.follower.Load().Reset(reason)
 		return
 	}
@@ -171,7 +171,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 	saved, err := c.storage.SavePendingGuarded(ctx, record)
 	if err != nil {
 		// No durable record was written, so the revision is not done: it stays pending
-		// until the repair lane or a later write of the entity writes one (pin #613 F2).
+		// until the repair lane or a later write of the entity writes one.
 		c.logger.Error("pending embedding write failed; revision left uncompleted, the repair lane retries it",
 			slog.String("entity", key), slog.Any("error", err))
 		c.markFailed(key, revision, embedding.ReasonPendingWriteFailed)
@@ -179,7 +179,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 	}
 	if !saved {
 		// A generated record at this revision or a newer one already stands: nothing is
-		// left to do for this revision (pin #722 B2).
+		// left to do for this revision.
 		c.failed.ended(key, revision)
 		c.complete(key, revision)
 		return
@@ -198,7 +198,7 @@ func (c *Component) removeTextless(ctx context.Context, key string, revision uin
 
 // storeRegistered reports whether instance is a store the component may read offloaded
 // bodies from: one the store registry holds by that exact name. Another registered store is
-// not equivalent, since StorageInstance names the body's owner (pin #875).
+// not equivalent, since StorageInstance names the body's owner.
 func (c *Component) storeRegistered(instance string) bool {
 	if c.storeRegistry == nil {
 		return false
@@ -207,7 +207,7 @@ func (c *Component) storeRegistered(instance string) bool {
 	return ok
 }
 
-// reportOffloadedBodyExcluded declares a skipped body (pin gh#414): the entity's body is
+// reportOffloadedBodyExcluded declares a skipped body: the entity's body is
 // offloaded to a store the registry does not hold, so only its inline text is embedded.
 // Continuing is safe because the inline text is still the entity's; the counter counts each
 // such entity and the warning is logged once, so the log is one actionable line.
@@ -223,8 +223,8 @@ func (c *Component) reportOffloadedBodyExcluded(key, instance string) {
 }
 
 // extractText joins the entity's string values whose predicate ends with one of the
-// configured text suffixes, relationships excepted (pin component.go:2062-2090). For an
-// offloaded entity it is the identity text: the body is not a triple.
+// configured text suffixes, relationships excepted. For an offloaded entity it is the identity
+// text: the body is not a triple.
 func (c *Component) extractText(state *graph.EntityState) string {
 	var parts []string
 	for _, triple := range state.Triples {
@@ -263,8 +263,8 @@ func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevisio
 // markFailed records hop 1's own failure of key at revision in the failed map. ErrorCount counts
 // once per entity entering the failed set, as graph-index counts (index.go markEntityFailed): a
 // failure of an entity already failed, such as a repair pass failing again, and a failure refused
-// as older than the entity's latest outcome count nothing. ErrorCount never lowers Healthy (design
-// D6; ADR-109 Decision 2): the failed map's count, through the follower's stuck states, is what
+// as older than the entity's latest outcome count nothing. ErrorCount never lowers Healthy
+// (ADR-109 Decision 2): the failed map's count, through the follower's stuck states, is what
 // Health reads.
 func (c *Component) markFailed(key string, revision uint64, reason string) {
 	if c.failed.mark(key, revision, reason) {
@@ -277,11 +277,11 @@ func (c *Component) complete(key string, revision uint64) {
 	c.follower.Load().Complete(key, revision)
 }
 
-// repairInterval is how often the repair lane retries hop 1's failures (pin component.go:1248,
-// as graph-index's indexRepairInterval).
+// repairInterval is how often the repair lane retries hop 1's failures, as graph-index's
+// indexRepairInterval.
 const repairInterval = 30 * time.Second
 
-// repairLoop is the repair lane (design D3; pin component.go:1266-1278): every repairInterval
+// repairLoop is the repair lane: every repairInterval
 // it retries hop 1's failures, on a goroutine of its own so its reads and writes never delay
 // the follower's heartbeat, until ctx, the run context, ends. Retry is flat and unbounded: the
 // lane re-drives only failures of the component's own reads and writes, never the Worker's, so

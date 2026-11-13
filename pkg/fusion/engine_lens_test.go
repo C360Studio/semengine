@@ -36,11 +36,11 @@ type fakeGraph struct {
 
 	lastResolve fusion.ResolveQuery // captures the most recent Resolve args
 
-	// entitiesFn, when set, overrides the hydration result. The default below
-	// returns entities in the requested (resolve) order, which is what the
-	// production RetrievalClient owes the engine — a fake that can ONLY do that
-	// cannot exercise what happens when a transport breaks the promise, and the
-	// engine's ranking is position-based (see the resolve-order pin).
+	// entitiesFn, when set, overrides the hydration result. The default below returns
+	// entities in the requested (resolve) order, which is what the production
+	// RetrievalClient owes the engine — a fake that can ONLY do that cannot exercise
+	// what happens when a transport breaks the promise, and the engine's ranking is
+	// position-based (see TestEngine_RankingFollowsHydrationOrder).
 	entitiesFn func(ids []string) ([]*fusion.Entity, error)
 	// unreadable and failed are the search counts Resolve reports.
 	unreadable, failed int
@@ -320,9 +320,8 @@ func TestEngine_Miss(t *testing.T) {
 	// A genuine miss is RESOLUTION finding nothing — not resolution finding a seed we
 	// then failed to fetch. ADR-084 split those: the second case reports `unhydrated`
 	// and deliberately synthesizes no Miss, because a failed read cannot support the
-	// claim "the graph was asked and had nothing". This fixture used to be the second
-	// case and passed only because the fake silently dropped unfetchable IDs; that case
-	// now lives in TestResponse_Unhydrated.
+	// claim "the graph was asked and had nothing". That second case is
+	// TestResponse_Unhydrated's.
 	g := &fakeGraph{
 		seeds:    map[string][]string{}, // "Ghost" resolves to nothing at all
 		entities: map[string]*fusion.Entity{},
@@ -432,9 +431,9 @@ func TestEngine_IncomingRelations(t *testing.T) {
 
 // TestEngine_NilBodyResolver: a nil BodyResolver (NewEngine(graph, nil), a
 // documented-valid deployment with no verbatim-body store) omits bodies without
-// panicking — but it must NOT silently drop a real handle. #632's whole point is
-// that a node whose lens yields a resolvable handle it cannot deref is a REPORTED
-// config gap (BodyError + counter), while a genuinely body-less tier stays silent.
+// panicking — but it must NOT silently drop a real handle. The point is that a
+// node whose lens yields a resolvable handle it cannot deref is a REPORTED config
+// gap (BodyError + counter), while a genuinely body-less tier stays silent.
 func TestEngine_NilBodyResolver(t *testing.T) {
 	newGraph := func(ent *fusion.Entity) *fakeGraph {
 		return &fakeGraph{
@@ -472,7 +471,7 @@ func TestEngine_NilBodyResolver(t *testing.T) {
 	t.Run("body-less entity stays silent even with no resolver", func(t *testing.T) {
 		// No storage triples → refLens.Hydrate returns (nil, nil): the entity
 		// legitimately has NO verbatim body. The nil-resolver path must NOT spam
-		// BodyError for it — this is the body-less-tier safety the fix preserves.
+		// BodyError for it — body-less tiers stay silent.
 		ent := entity("acme.ops.code.repo.symbol.Bodyless", "Bodyless", "h/bodyless.go")
 		reg := metric.NewMetricsRegistry()
 		eng := mustEngine(t, newGraph(ent), nil, fusion.WithMetrics(reg))
@@ -529,7 +528,7 @@ func topName(t *testing.T, eng *fusion.Engine) string {
 }
 
 // TestEngine_NilSignals_ResolveOrderUnchanged: with no RankSignals, ranking is
-// exactly resolve-order — the increments 1–4 behavior (A resolved first wins).
+// exactly resolve-order (A resolved first wins).
 func TestEngine_NilSignals_ResolveOrderUnchanged(t *testing.T) {
 	g := rankingPair("http://x/Vague", "http://x/Specific")
 	eng := mustEngine(t, g, nil) // no signals
@@ -576,9 +575,9 @@ func TestEngine_Signals_TooSmallToReorder(t *testing.T) {
 }
 
 // TestEngine_Signals_NegativeSalienceDemotes: A (resolved first) carries a
-// negatively-weighted predicate — the tests/generated/mocks case (gh#441). The
-// demotion overcomes A's resolve-order lead, so B reorders ahead. Additive-only
-// salience could never do this: a max over non-negative weights can only boost.
+// negatively-weighted predicate — the tests/generated/mocks case. The demotion
+// overcomes A's resolve-order lead, so B reorders ahead. Additive-only salience
+// could never do this: a max over non-negative weights can only boost.
 func TestEngine_Signals_NegativeSalienceDemotes(t *testing.T) {
 	// A carries the demotion predicate; B is clean. Both same class (no ontology
 	// signal). A leads by resolveScale (4.0); demotion on A = salienceScale*1.5 =
@@ -599,7 +598,7 @@ func TestEngine_Signals_NegativeSalienceDemotes(t *testing.T) {
 	}
 }
 
-// TestEngine_Signals_BoostAndDemotionCompose: the issue's core case (gh#441) —
+// TestEngine_Signals_BoostAndDemotionCompose: the core case for signed weights —
 // impl and test carry the SAME salient (doc-comment) predicate, so additive
 // salience alone cannot separate them; the test ALSO carries a demotion
 // predicate, and boost+demotion compose so the impl sorts ahead of its test.
@@ -640,11 +639,11 @@ func TestEngine_Signals_BoostAndDemotionCompose(t *testing.T) {
 	}
 }
 
-// TestEngine_Signals_MaxNotSum_NoFactCountInflation: the anti-inflation
-// property the signed aggregation must preserve — a densely-annotated entity
-// must NOT outrank a sharply-identified one purely on fact count (the reason
-// entitySalience takes the positive EXTREME, not a sum). This is also the
-// backward-compat guard for every all-positive config from before gh#441.
+// TestEngine_Signals_MaxNotSum_NoFactCountInflation: the anti-inflation property
+// the signed aggregation must preserve — a densely-annotated entity must NOT
+// outrank a sharply-identified one purely on fact count (the reason
+// entitySalience takes the positive EXTREME, not a sum). It also guards every
+// all-positive config: with no negative weight, salience is the strongest boost.
 func TestEngine_Signals_MaxNotSum_NoFactCountInflation(t *testing.T) {
 	// A (resolved first, sharp): one +2.0 predicate → salience 2.0 either way.
 	// B (resolved second, dense): four +1.0 predicates → max 1.0, sum 4.0.

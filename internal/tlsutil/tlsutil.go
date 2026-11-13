@@ -143,7 +143,7 @@ func applyMTLSConfig(tlsConfig *tls.Config, mtlsCfg security.ServerMTLSConfig) e
 
 	tlsConfig.ClientCAs = clientCAs
 	// A client certificate is required unless the configuration says otherwise, so the
-	// zero value fails closed (owner ruling, #9 comment 5994720412, item 4).
+	// zero value fails closed.
 	if mtlsCfg.ClientCertOptional {
 		tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven
 	} else {
@@ -178,8 +178,8 @@ func verifyAllowedClientCN(chains [][]*x509.Certificate, allowedCNs []string) er
 }
 
 // parseTLSVersion converts version string to crypto/tls constant.
-// Empty means the default, TLS 1.2. Any other value is refused, as the pin's
-// config loader refused it at boot: a typo must not silently become TLS 1.2.
+// Empty means the default, TLS 1.2. Any other value is refused, as the config
+// package refuses it at boot: a typo must not silently become TLS 1.2.
 func parseTLSVersion(version string) (uint16, error) {
 	switch version {
 	case "1.3":

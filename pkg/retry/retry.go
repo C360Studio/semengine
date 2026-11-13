@@ -156,7 +156,7 @@ func Do(ctx context.Context, cfg Config, fn func() error) error {
 }
 
 // jitter returns a random duration below a quarter of delay. A delay under 4ns has no room for
-// jitter and gets none: Int64N panics on zero (Codex F34).
+// jitter and gets none: Int64N panics on zero.
 func jitter(delay time.Duration) time.Duration {
 	limit := int64(delay / 4)
 	if limit <= 0 {

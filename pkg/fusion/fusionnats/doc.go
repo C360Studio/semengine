@@ -30,5 +30,5 @@
 //
 // The client starts nothing and reads no readiness status: a read whose index
 // is not ready is refused with code index_not_ready, which the engine reads
-// from the reply (ADR-109 D1, D3).
+// from the reply (ADR-109).
 package fusionnats

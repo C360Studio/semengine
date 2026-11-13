@@ -467,8 +467,8 @@ func GenerateConfigSchema(configType reflect.Type) ConfigSchema {
 }
 
 // mustParseSchemaTag parses field's schema tag and panics, naming the struct
-// type, the field, the tag and the parse error, when ParseSchemaTag refuses it
-// (#281): a field dropped from the schema without a word is a silent failure.
+// type, the field, the tag and the parse error, when ParseSchemaTag refuses it:
+// a field dropped from the schema without a word is a silent failure.
 func mustParseSchemaTag(structType reflect.Type, field reflect.StructField) SchemaDirectives {
 	tag := field.Tag.Get("schema")
 	directives, err := ParseSchemaTag(tag)

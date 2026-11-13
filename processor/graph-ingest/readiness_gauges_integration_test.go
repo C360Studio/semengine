@@ -14,12 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntegration_ReadinessGaugesAreEmitted closes the #763 requirement for this
-// producer on the WIRE: the spec's minimum gauge set must actually be scrapeable, not
-// merely constructed. A field-level check would pass even if registration were skipped.
+// TestIntegration_ReadinessGaugesAreEmitted checks this producer's gauges on the WIRE:
+// the spec's minimum gauge set must actually be scrapeable, not merely constructed. A
+// field-level check would pass even if registration were skipped.
 //
-// The gauges are the component's own, registered on the registry it is built with
-// (design D4); the pin gathered from prometheus.DefaultGatherer.
+// The gauges are the component's own, registered on the registry it is built with.
 func gatheredValue(t *testing.T, g prometheus.Gatherer, name string) float64 {
 	t.Helper()
 	fams, err := g.Gather()

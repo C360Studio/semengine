@@ -8,6 +8,6 @@
 // Entity, StorageReference as the Hydrate handle), storage (the body store
 // interface), graph and pkg/errs (the classified codes it reads from replies),
 // and metric (its counters register only on a registry the caller passes). It
-// imports no NATS client and asks no readiness status: a read
-// whose index is not ready says so in its reply (ADR-109 D1).
+// imports no NATS client and asks no readiness status: a read whose index is
+// not ready says so in its reply (ADR-109).
 package fusion

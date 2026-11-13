@@ -42,7 +42,7 @@ func (p *projectionRequester) RequestClassified(
 }
 
 // A nil NATS client is a construction error like every other one, not a write's refusal: no
-// operation was asked for (design D4).
+// operation was asked for.
 func TestNewMutationClientRefusesANilNATSClient(t *testing.T) {
 	client, err := NewMutationClient(MutationClientConfig{Contracts: []Contract{projectionTestContract(t)}})
 	if err == nil || client != nil {
@@ -369,9 +369,9 @@ func projectionJSON(t *testing.T, value any) []byte {
 	return data
 }
 
-// TestCreateFillsMessageTypeFromContract (owner ruling O-17): an entity with an
-// empty MessageType is stamped from the bound contract before validation and
-// before the request is built — the caller predicts nothing the contract holds.
+// TestCreateFillsMessageTypeFromContract: an entity with an empty MessageType
+// is stamped from the bound contract before validation and before the request
+// is built — the caller predicts nothing the contract holds.
 func TestCreateFillsMessageTypeFromContract(t *testing.T) {
 	contract := projectionTestContract(t)
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
@@ -452,11 +452,10 @@ func TestCreateRejectsConflictingMessageType(t *testing.T) {
 	}
 }
 
-// TestCreateFillsFromRegisteredContract (Codex round, MEDIUM): the contract
-// set the composition root derives from the payload registry carries each
-// contract's STRUCTURED type, so Create fills a zero stamp from it directly —
-// no key is parsed. This is the path that used to fail once a registered key
-// could not be split back into three parts.
+// TestCreateFillsFromRegisteredContract: the contract set the composition root
+// derives from the payload registry carries each contract's STRUCTURED type,
+// so Create fills a zero stamp from it directly — no key is parsed back into
+// its three parts.
 func TestCreateFillsFromRegisteredContract(t *testing.T) {
 	t.Cleanup(vocabulary.SnapshotRegistry())
 	vocabulary.Register("test.identity.name")

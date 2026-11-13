@@ -14,7 +14,8 @@ const (
 )
 
 // The bounded-cleanup guard is a script so `task verify` runs it as its own step; this test proves
-// it fires on the #1417 shape and stays quiet on the bounded form, in a throwaway repository.
+// it fires on a stop, close or terminate under an unbounded context and stays quiet on the bounded
+// form, in a throwaway repository.
 func TestCleanupRootsCheckSensitivity(t *testing.T) {
 	script := filepath.Join(repoRoot(t), "scripts", "cleanup-roots-check.sh")
 	run := func(t *testing.T, files map[string]string) (string, error) {

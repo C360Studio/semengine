@@ -69,14 +69,14 @@ func awaitWatchConsumers(t *testing.T, ctx context.Context, client *natsclient.C
 }
 
 // managerSuiteOwner adapts Manager to the lifecycle suite (lifecycle-suite, "Observe adapter
-// contract"; design D2). Observe reads only state production code uses: the Manager's watcher
+// contract"). Observe reads only state production code uses: the Manager's watcher
 // slice, its subscriber map, and the done channel of each goroutine it started, listed while that
 // channel is open. Watcher stops are counted on the server: the configuration bucket's backing
 // stream lists one consumer per open watch, and a successful KeyWatcher.Stop deletes it before it
 // returns (nats.go v1.55.0 jetstream/kv.go:1240, nats.go:5495-5497). An ordered-consumer reset
 // deletes the old consumer in the background (js.go:2390, :2425), so the count is polled with
 // probe.Await under watchCountBound, never read once. Nothing is added to the Manager for this
-// adapter (#186, #190).
+// adapter.
 //
 // Calls is empty. The suite's no-op checks (a repeated Stop, a refused second Start, a Stop after
 // a failed Start) compare Calls before and after a call, so a count of the adapter's own Start and
@@ -156,7 +156,7 @@ func isClosed(done <-chan struct{}) bool {
 }
 
 // TestManagerPassesTheLifecycleSuite runs the lifecycle suite on the Manager through
-// managerSuiteOwner (design D2, ADR-113). Each owner is a fresh Manager on a connection of its own,
+// managerSuiteOwner (ADR-113). Each owner is a fresh Manager on a connection of its own,
 // declaring a pair of its own, so each has its own bucket and its own backing stream to count. The
 // must-fail owner's bucket records a foreign identity, so its Start acquires the bucket and then
 // refuses, before it opens a watch. The Manager is one-shot: no restart is promised.

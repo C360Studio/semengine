@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFuse_IncludeScores pins ADR-084 D5. The scores are opt-in and additive; the
+// TestFuse_IncludeScores pins ADR-084's scores. They are opt-in and additive; the
 // property worth guarding is the JOIN — similarity belongs to an entity, and ranking
 // reorders, so anything positional silently mislabels.
 func TestFuse_IncludeScores(t *testing.T) {

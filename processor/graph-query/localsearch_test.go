@@ -43,10 +43,9 @@ func searchTermsOf(t *testing.T, query string) []string {
 	return terms
 }
 
-// TestLocalSearchScoresAsThePin carries graphrag_test's TestScoreEntityQuery and
-// TestFilterEntitiesByQuery_* at the pin (8b99efe9, graphrag_test.go:347-458) and the step 3 pin probe
-// (notes/probes/step3-pin-probe.log). Scores are the pin's literals, except where this verb differs
-// from the pin by design (D4, D5), each said on its case.
+// TestLocalSearchScoresAsThePin checks the text score on fixed entities and queries against literal
+// scores, and each against the 0.3 threshold. A case that holds a deliberate choice of this verb's
+// rule says so.
 func TestLocalSearchScoresAsThePin(t *testing.T) {
 	const (
 		drone          = `{"id":"a.b.c.d.drone.001","triples":[]}`
@@ -66,14 +65,14 @@ func TestLocalSearchScoresAsThePin(t *testing.T) {
 		{"type match scores highest", drone, "drone", 1.0},
 		{"triple value match scores moderate", sensorLocation, "warehouse", 0.5},
 		{"no match scores zero", droneBattery, "warehouse logistics", 0},
-		// Only string values are searched: the pin read Object.(string).
+		// Only string values are searched.
 		{"a number is not text", droneBattery, "85", 0},
 		{"partial match proportional", droneActive, "drone operations", 0.5},
 		{"multiple matches accumulate", droneSurvey, "drone survey", 0.75},
-		// The pin asserts at least 0.5; by its formula, 1.0 for the type and 0.5 for the value, over two.
+		// 1.0 for the type and 0.5 for the value, over two terms.
 		{"case insensitive", droneACTIVE, "DRONE active", 0.75},
 		{"probe TWO_TERMS_ONE_TEXT", note, "alpha zzz", 0.25},
-		// The pin scored 0.3333333333333333 (probe DUP_TERMS) and kept it; the repeat now counts once (D4).
+		// A repeated term counts once, so the query scores as "alpha zzz" and is dropped.
 		{"probe DUP_TERMS", note, "alpha alpha zzz", 0.25},
 		{"probe TYPE_TERM", note, "note", 1},
 		{"probe PRED_TERM: a predicate name matches", note, "title", 0.5},
@@ -115,8 +114,8 @@ func TestLocalSearchScoresAsThePin(t *testing.T) {
 		}
 	})
 
-	// The pin's test ran at a threshold of 0 and kept both; this verb's threshold is the fixed 0.3, at
-	// which the sensor scores 0.25 and is dropped. "temperature sensor" keeps both, the type match first.
+	// This verb's threshold is the fixed 0.3, at which the sensor scores 0.25 and is dropped.
+	// "temperature sensor" keeps both, the type match first.
 	t.Run("FilterEntitiesByQuery_SortsByScore", func(t *testing.T) {
 		const (
 			sensor = `{"id":"a.b.c.d.sensor.001","triples":[{"predicate":"sensor.identity.type","object":"temperature"}]}`
@@ -242,7 +241,7 @@ func TestLocalSearchOrderIsDeterministic(t *testing.T) {
 		a = `{"id":"acme.ops.src.docs.alpha.a","triples":[]}`
 		c = `{"id":"acme.ops.src.docs.note.c","triples":[{"predicate":"dc.terms.title","object":"alpha"}]}`
 	)
-	// a scores 1.0 by its type; b, c and d tie at 0.5, read out of ID order, and b repeats (#512).
+	// a scores 1.0 by its type; b, c and d tie at 0.5, read out of ID order, and b repeats.
 	matches, scanned, err := rankEntities(rawEntities(d, b, a, c, b), searchTermsOf(t, "alpha"), nil)
 	if err != nil {
 		t.Fatal(err)

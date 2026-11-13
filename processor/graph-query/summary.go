@@ -15,11 +15,11 @@ import (
 // compact.
 const defaultExamplesPerType = 2
 
-// summary answers what the graph holds: its predicates, then one page of its entities by type (design
-// D5, D6). Predicates come first so an index that cannot answer, whose refusal reaches the caller as it
-// arrived, costs no scan. The page is read after them, so the two are not a snapshot. Predicates excluded,
-// no index is read and min_revision is ignored, and the answer's indexed_revision is 0, claiming nothing
-// (design D7). Counted as pathSearch is: a request is one input and at most one error.
+// summary answers what the graph holds: its predicates, then one page of its entities by type.
+// Predicates come first so an index that cannot answer, whose refusal reaches the caller as it
+// arrived, costs no scan. The page is read after them, so the two are not a snapshot. Predicates
+// excluded, no index is read and min_revision is ignored, and the answer's indexed_revision is 0,
+// claiming nothing. Counted as pathSearch is: a request is one input and at most one error.
 func (c *Component) summary(predicateSubject, prefixSubject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))

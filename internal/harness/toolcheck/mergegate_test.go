@@ -325,7 +325,7 @@ var (
 	}
 	mergeCheckPermissions = map[string]string{"contents": "read", "issues": "read", "pull-requests": "read"}
 	// The probe also reads the head's Merge check check run: ateam v0.4.0 answers awaiting=false
-	// once a successful one stands there (ateam #359).
+	// once a successful one stands there.
 	mergeCheckProbePermissions = map[string]string{"checks": "read", "contents": "read", "issues": "read", "pull-requests": "read"}
 	pullRequestTypes           = []string{"opened", "synchronize", "reopened", "ready_for_review"}
 	mergeCheckTypes            = []string{"opened", "synchronize", "reopened", "ready_for_review", "edited"}
@@ -503,7 +503,7 @@ jobs:
 		{"integration limit changed", "timeout-minutes: 20", "timeout-minutes: 15",
 			[]string{"job integration", "15", "20 minutes"}},
 		// "CI runs verify as two parallel jobs": a job loses its group, both run one group, a step
-		// follows the run line, or either job needs the other (Codex, #600 comment 6808069861).
+		// follows the run line, or either job needs the other.
 		{"integration runs verify with no group", "      - run: task verify -- integration\n", "      - run: task verify\n",
 			[]string{"job integration", "task verify -- integration"}},
 		{"both jobs run the checks group", "      - run: task verify -- integration\n", "      - run: task verify -- checks\n",
@@ -611,7 +611,7 @@ jobs:
 			[]string{"merge-check.yml", "job merge-check", "if:", "draft"}},
 		{"draft condition inverted", "!github.event.pull_request.draft", "github.event.pull_request.draft",
 			[]string{"merge-check.yml", "job merge-check", "if:", "draft"}},
-		// The probe (ateam #262): the scenarios "Code pull request awaiting its review" and "Probe
+		// The awaiting probe: the scenarios "Code pull request awaiting its review" and "Probe
 		// fails". The merge-check job is skipped on awaiting=true only, runs when the probe failed,
 		// and the probe is a job of its own from the base commit, never named Merge check.
 		{"awaiting skip dropped", " && needs.awaiting.outputs.awaiting != 'true'", "",

@@ -11,11 +11,10 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// TestClassifyWriteDisposition is the JetStream settlement table (design D4, the pin's
-// classifyWriteDisposition, pin component_ack_test.go): a write that returned nil is acked, even
-// under an ended context; any failure under an ended context is NAKed with the shutdown delay,
-// even an invalid one, so a shutdown never terminates a message it could still store; an invalid
-// failure is terminated; anything else is NAKed with the transient delay.
+// TestClassifyWriteDisposition is the JetStream settlement table: a write that returned nil is
+// acked, even under an ended context; any failure under an ended context is NAKed with the shutdown
+// delay, even an invalid one, so a shutdown never terminates a message it could still store; an
+// invalid failure is terminated; anything else is NAKed with the transient delay.
 func TestClassifyWriteDisposition(t *testing.T) {
 	invalid := errs.WrapInvalid(errors.New("bad entity id"), "Store", "StoreContent", "validate entity ID")
 	transient := errs.WrapTransient(errors.New("backend down"), "Store", "StoreContent", "store content")

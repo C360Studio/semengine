@@ -288,8 +288,8 @@ func TestResolvePredicateIRI_Empty(t *testing.T) {
 
 // TestSubjectToIRIFollowsCanonicalOrder pins the published IRI path
 // `…/entities/{org}/{platform}/{system}/{domain}/{type}/{instance}` — the
-// canonical order emitted from the named fields (owner item O-10; a
-// published-artifact break fresh state does not re-mint).
+// canonical order emitted from the named fields (a published-artifact break
+// fresh state does not re-mint).
 func TestSubjectToIRIFollowsCanonicalOrder(t *testing.T) {
 	base := "https://semengine.semanticstream.ing"
 	got := subjectToIRI("acme.dep1.src.git.commit.a1", base)
@@ -352,7 +352,7 @@ func TestRegisterPackWithExportPrefixRegistrar(t *testing.T) {
 		t.Errorf("expected compact diekm:hasAltitude predicate in Turtle output, got:\n%s", turtleOut)
 	}
 
-	// Late prefix conflict in a pack must not install earlier prefixes or predicates (#237).
+	// Late prefix conflict in a pack must not install earlier prefixes or predicates.
 	conflictingPack := vocabulary.PackSpec{
 		Name: "conflicting-pack",
 		Prefixes: []vocabulary.PrefixSpec{
@@ -373,7 +373,7 @@ func TestRegisterPackWithExportPrefixRegistrar(t *testing.T) {
 		t.Fatalf("expected review235 prefix to be unbound after rejected pack, got error: %v", err)
 	}
 
-	// Malformed namespace IRI (such as trailing '>') in a pack is rejected before mutating state (#237).
+	// Malformed namespace IRI (such as trailing '>') in a pack is rejected before mutating state.
 	malformedNSPack := vocabulary.PackSpec{
 		Name: "malformed-ns-pack",
 		Prefixes: []vocabulary.PrefixSpec{

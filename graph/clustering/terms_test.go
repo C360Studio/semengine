@@ -13,8 +13,8 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// TestExtractTerms is the pin's TestExtractTerms (summarizer_test.go:218), with the
-// cases the 2026-10-31 word definition adds.
+// TestExtractTerms checks the word definition on each kind of input: separators, stop
+// words, short and long runs, case and repeats.
 func TestExtractTerms(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -79,8 +79,8 @@ func TestLongLiteralIsNotAWord(t *testing.T) {
 	}
 }
 
-// TestRecordIsBounded builds the worst-case record design D4 names: more than MaxKeywords
-// types whose type positions are 246 bytes (the longest a 256-byte ID allows), more than
+// TestRecordIsBounded builds the worst-case record: more than MaxKeywords types whose
+// type positions are 246 bytes (the longest a 256-byte ID allows), more than
 // MaxKeywords 32-byte words, more than MaxRepEntities 256-byte representatives, a
 // 254-byte group ID, the largest member count and the largest entity revision. Its
 // encoding stays within MaxRecordBytes and every list stays at its bound.
@@ -165,7 +165,7 @@ func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
 }
 
 // TestEntityContributionIsCapped: an entity contributes its MaxEntityTerms most frequent
-// words, ties broken lexically (design D2, Words).
+// words, ties broken lexically.
 func TestEntityContributionIsCapped(t *testing.T) {
 	// w00 appears 40 times, w01 39 times, ..., w39 once, and v31 ties w31 at nine. The
 	// 32 slots go to w00..w30 and then v31, the lexically smaller of the tie at nine.
@@ -201,9 +201,8 @@ func TestEntityContributionIsCapped(t *testing.T) {
 	}
 }
 
-// TestSummaryTemplate is the pin's TestStatisticalSummarizer_SummaryGeneration
-// (summarizer_test.go:142) with the exact text the pin's template gives
-// (summarizer.go:388-461) and lexical tie-breaks.
+// TestSummaryTemplate checks the exact text the summary template gives, with lexical
+// tie-breaks.
 func TestSummaryTemplate(t *testing.T) {
 	record := newCommunity(0, "c360.platform.robotics.system", 5, 1,
 		map[string]int{"drone": 3, "sensor": 2},

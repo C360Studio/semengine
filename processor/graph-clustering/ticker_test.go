@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// TestDetectionIntervalIsRead: the ticker Start runs publishes every detection_interval, the
-// pin's 30 s by default, and not before; it stops when its context ends (graph-clustering spec,
-// "Kept keys are read"; design D2). The component is built through CreateGraphClustering, so the
-// interval is the one the configuration resolved. Inside a synctest bubble a wait on time.After
-// advances the fake clock exactly, and synctest.Wait returns once the ticker goroutine is blocked,
-// so each count is read after every tick due by then has run (docs/testing.md).
+// TestDetectionIntervalIsRead: the ticker Start runs publishes every detection_interval, 30 s by
+// default, and not before; it stops when its context ends (graph-clustering spec, "Kept keys are
+// read"). The component is built through CreateGraphClustering, so the interval is the one the
+// configuration resolved. Inside a synctest bubble a wait on time.After advances the fake clock
+// exactly, and synctest.Wait returns once the ticker goroutine is blocked, so each count is read
+// after every tick due by then has run (docs/testing.md).
 func TestDetectionIntervalIsRead(t *testing.T) {
 	for raw, every := range map[string]time.Duration{`{}`: 30 * time.Second, `{"detection_interval": "5m"}`: 5 * time.Minute} {
 		t.Run(raw, func(t *testing.T) {

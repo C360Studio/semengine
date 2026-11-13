@@ -9,12 +9,11 @@
 // the highest revision such that every delivered revision <= it is done and
 // nothing <= it is still in flight.
 //
-// It also answers "how OLD is the view I am serving?" (ADR-083 decision 3, as
-// amended for #408): IndexedAt pairs the floor with the KV COMMIT time of the
-// oldest delivered write not yet applied (the lowest in-flight revision), or, when
-// none is in flight, of the newest delivered write. A consumer can then bound
-// staleness in wall time instead of in revisions (a revision count is load- and
-// coalesce-dependent; see gh#590).
+// It also answers "how OLD is the view I am serving?" (ADR-083 decision 3):
+// IndexedAt pairs the floor with the KV COMMIT time of the oldest delivered write
+// not yet applied (the lowest in-flight revision), or, when none is in flight, of
+// the newest delivered write. A consumer can then bound staleness in wall time
+// instead of in revisions (a revision count is load- and coalesce-dependent).
 package revlag
 
 import (

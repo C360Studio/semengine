@@ -93,7 +93,7 @@ func sanitizeErrorMessage(err string) string {
 
 // FromComponentHealth converts a component.HealthStatus to a health.Status
 func FromComponentHealth(name string, ch component.HealthStatus) Status {
-	// Healthy alone decides the word; ch.Status is not read (owner ruling, #318 comment 6271450376).
+	// Healthy alone decides the word; ch.Status is not read.
 	status := "unhealthy"
 	message := "Component unhealthy"
 	if ch.Healthy {

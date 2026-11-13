@@ -26,7 +26,7 @@ import (
 
 // suiteOwner is graph-index as the lifecycle suite's owner. Observe lists what graph-index itself
 // holds; the follower's watch is private to graph/follower, so TestGraphIndexLifecycleSuite reads
-// it from the server instead (design D11, no test-only export, #186).
+// it from the server instead of through a test-only export.
 type suiteOwner struct{ c *Component }
 
 func (o suiteOwner) Start(ctx context.Context) error { return o.c.Start(ctx) }
@@ -82,8 +82,8 @@ func watchConsumers(ctx context.Context, client *natsclient.Client) (int, error)
 // coalescer is among the handles. The must-fail owner's environment has no ENTITY_STATES, so its
 // Start fails in the follower's Open, before it acquires anything, and the cleanup the failed
 // Start runs succeeds: lifecycle-suite's "Cleanup succeeds after a failed start". graph-index's
-// start acquires nothing it can fail to release (notes/4.3.md), so the branch where that cleanup
-// fails has no case here. graph-index is one-shot (a Start after Stop is refused), so no restart
+// start acquires nothing it can fail to release, so the branch where that cleanup fails has no
+// case here. graph-index is one-shot (a Start after Stop is refused), so no restart
 // is promised.
 func TestGraphIndexLifecycleSuite(t *testing.T) {
 	client := fixtureClient(t)
@@ -134,9 +134,9 @@ func TestGraphIndexLifecycleSuite(t *testing.T) {
 }
 
 // TestStopWritesAcceptedWork: work the keyed pool accepted before Stop is written before Stop
-// returns nil, with no error counted and no failure logged (spec "Stop writes accepted work";
-// design D4). The entities are stored before Start, so the replay hands them to the one lane far
-// faster than it writes them, and Stop runs with a backlog.
+// returns nil, with no error counted and no failure logged (spec "Stop writes accepted work").
+// The entities are stored before Start, so the replay hands them to the one lane far faster than
+// it writes them, and Stop runs with a backlog.
 func TestStopWritesAcceptedWork(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
@@ -244,7 +244,7 @@ func TestStopInterruptedThenRetriedWritesAcceptedWork(t *testing.T) {
 
 // TestStopWithAStuckHandlerStopsEveryOtherVerb: a handler that outlasts Stop's context does not
 // leave the other verbs answering. The stuck subscription is put first, so its drain is the first
-// to fail. A later Stop, once the handler has returned, finishes (#508).
+// to fail. A later Stop, once the handler has returned, finishes.
 func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 	client := fixtureClient(t)
 	h := startIndex(t, client, `{}`)
@@ -316,7 +316,7 @@ func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 
 // TestSecondStartIsRefused: a second Start on a running graph-index returns errs.ErrAlreadyStarted
 // and the component keeps running: it still indexes what is written (spec "One Start per
-// instance"; ADR-108 D3(a)). The pin returned nil.
+// instance"; ADR-108 D3(a)).
 func TestSecondStartIsRefused(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	if err := h.c.Start(t.Context()); !errors.Is(err, errs.ErrAlreadyStarted) {
@@ -326,7 +326,7 @@ func TestSecondStartIsRefused(t *testing.T) {
 }
 
 // TestStartContextEndStopsNothing: ending the context given to Start after Start returned stops
-// nothing; graph-index still indexes what is written (ADR-113; design D4).
+// nothing; graph-index still indexes what is written (ADR-113).
 func TestStartContextEndStopsNothing(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
@@ -399,10 +399,9 @@ func TestHealthIgnoresErrorCountAndTracksStuckStates(t *testing.T) {
 	})
 }
 
-// TestLatchBootstrap_ContinuousWrite (pin:processor/graph-index/watermark_test.go:271): the
-// bootstrap latch sets at the target fixed when the startup replay ended, while writes continue
-// and the live target stays ahead of the indexed floor, so the envelope never reads ready (ADR-109
-// D4). The pin set the follower's fields by hand; here graph-index replays 200 stored entities
+// TestLatchBootstrap_ContinuousWrite: the bootstrap latch sets at the target fixed when the
+// startup replay ended, while writes continue and the live target stays ahead of the indexed
+// floor, so the envelope never reads ready (ADR-109 D4). graph-index replays 200 stored entities
 // while a writer keeps writing faster than one lane indexes, and the envelope graph-index
 // publishes is read from GRAPH_STATUS.
 func TestLatchBootstrap_ContinuousWrite(t *testing.T) {

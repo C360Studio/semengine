@@ -15,17 +15,18 @@ import (
 	"testing"
 )
 
-// semstreamsModule is the sister repository SemEngine forks from at the pin and never imports.
+// semstreamsModule is the sister repository SemEngine's packages are copied from; it is never
+// imported.
 const semstreamsModule = "github.com/c360studio/semstreams"
 
 func underModule(importPath, module string) bool {
 	return importPath == module || strings.HasPrefix(importPath, module+"/")
 }
 
-// I8: no Go file in the module, test or non-test, imports SemStreams, no package in the build
-// graph (integration-tagged files and tests included) is under it, and go.mod does not require it
-// (harness-boundaries › "A file imports SemStreams"). SemEngine forks at the pin; it never links
-// the sister repository.
+// No Go file in the module, test or non-test, imports SemStreams, no package in the build graph
+// (integration-tagged files and tests included) is under it, and go.mod does not require it
+// (harness-boundaries › "A file imports SemStreams"). SemEngine copies code from the sister
+// repository; it never links it.
 func TestNoSemStreamsImport(t *testing.T) {
 	root := repoRoot(t)
 	files := repoFiles(t, root)
@@ -33,7 +34,7 @@ func TestNoSemStreamsImport(t *testing.T) {
 	requireNoViolations(t, "SemStreams in the build graph", semstreamsDeps(t, root))
 }
 
-// T-B8: no production package aggregates the Register functions of two component packages
+// No production package aggregates the Register functions of two component packages
 // (harness-boundaries › "An aggregator package appears"); the consumer's composition root is the
 // only aggregator.
 func TestNoAggregatorPackage(t *testing.T) {
@@ -57,7 +58,8 @@ func TestBoundarySensitivity(t *testing.T) {
 	const mod = "github.com/c360studio/semengine"
 	root, files := writeTree(t, map[string]string{
 		"go.mod": "module " + mod + "\n\nrequire (\n\tgithub.com/nats-io/nats.go v1.54.0\n\tgithub.com/c360studio/semstreams v1.0.0\n)\n",
-		// I8: a non-test file, a test file behind the integration tag, and an aliased import.
+		// SemStreams imports: a non-test file, a test file behind the integration tag, and an aliased
+		// import.
 		"pkg/a/a.go":                   "package a\n\nimport \"github.com/c360studio/semstreams/natsclient\"\n\nvar _ = natsclient.New\n",
 		"pkg/a/a_integration_test.go":  "//go:build integration\n\npackage a\n\nimport ss \"github.com/c360studio/semstreams\"\n\nvar _ = ss.X\n",
 		"pkg/a/near.go":                "package a\n\nimport _ \"github.com/c360studio/semstreamsish\"\n",
@@ -70,7 +72,7 @@ func TestBoundarySensitivity(t *testing.T) {
 		"pkg/agg/two.go":               "package agg\n\nimport b \"" + mod + "/component/beta\"\n\nfunc init() { _ = b.Register(nil) }\n",
 		"pkg/single/single.go":         "package single\n\nimport (\n\t\"" + mod + "/component/alpha\"\n\t\"" + mod + "/component/gamma\"\n)\n\nvar _, _ = alpha.Register, gamma.New\n",
 		"pkg/testagg/testagg_test.go":  "package testagg\n\nimport (\n\t\"" + mod + "/component/alpha\"\n\t\"" + mod + "/component/beta\"\n)\n\nvar _, _ = alpha.Register, beta.Register\n",
-		// The pin's payloadbuiltins shape: one Register chaining two packages' RegisterPayloads.
+		// A payloadbuiltins aggregator: one Register chaining two packages' RegisterPayloads.
 		"message/message.go":                 "package message\n\nfunc RegisterPayloads(r any) error { return nil }\n",
 		"storage/objectstore/objectstore.go": "package objectstore\n\nfunc RegisterPayloads(r any) error { return nil }\n",
 		"payloadbuiltins/builtins.go": "package payloadbuiltins\n\nimport (\n\t\"" + mod + "/message\"\n\t\"" + mod + "/storage/objectstore\"\n)\n\n" +
@@ -156,7 +158,8 @@ func fileImports(fset *token.FileSet, root, name string) ([]*ast.ImportSpec, err
 	return f.Imports, nil
 }
 
-// semstreamsViolations is I8's text half: every Go file, test or not, harness or not, and go.mod.
+// semstreamsViolations is the SemStreams-import check's text half: every Go file, test or not,
+// harness or not, and go.mod.
 func semstreamsViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string
@@ -193,8 +196,9 @@ func semstreamsViolations(t *testing.T, root string, files []string) []string {
 	return violations
 }
 
-// semstreamsDeps is I8's build-graph half: every package any build of the module reaches, tests
-// and integration-tagged files included, so a dependency cannot bring SemStreams in either.
+// semstreamsDeps is the SemStreams-import check's build-graph half: every package any build of the
+// module reaches, tests and integration-tagged files included, so a dependency cannot bring
+// SemStreams in either.
 func semstreamsDeps(t *testing.T, root string) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-test", "-tags", "integration", "-f", "{{.ImportPath}}", "./...")
@@ -242,12 +246,11 @@ func productionFilesByDir(files []string) map[string][]string {
 // registrations are the functions through which a package registers its factories or payloads.
 var registrations = []string{"Register", "RegisterPayloads"}
 
-// aggregatorViolations is T-B8: a registering package is a package of this module that declares a
-// top-level Register or RegisterPayloads; a production package (non-test files outside
-// internal/harness/, other than a main package) that refers to the registration of two or more of
-// them is an aggregator, as the pin's payloadbuiltins.Register was. A composition root is a main
-// package, and it is the one place that aggregates. Register functions outside the module
-// (prometheus.Register) are not counted.
+// aggregatorViolations is the aggregator check: a registering package is a package of this module
+// that declares a top-level Register or RegisterPayloads; a production package (non-test files
+// outside internal/harness/, other than a main package) that refers to the registration of two or
+// more of them is an aggregator. A composition root is a main package, and it is the one place that
+// aggregates. Register functions outside the module (prometheus.Register) are not counted.
 func aggregatorViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	mod := modulePath(t, root)

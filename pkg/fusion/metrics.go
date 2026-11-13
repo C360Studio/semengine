@@ -17,9 +17,8 @@ const metricService = "fusion"
 type Option func(*Engine)
 
 // WithSignals attaches the framework ranking signals — ontology specificity +
-// predicate salience (ADR-062 increment 5, gh#396) — folded into ranking on top
-// of resolve-order + lexical. nil (the default) keeps ranking at resolve-order +
-// lexical.
+// predicate salience (ADR-062) — folded into ranking on top of resolve-order +
+// lexical. nil (the default) keeps ranking at resolve-order + lexical.
 func WithSignals(s RankSignals) Option {
 	return func(e *Engine) { e.signals = s }
 }

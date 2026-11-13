@@ -317,8 +317,8 @@ func sortTriples(entities any) {
 }
 
 // TestGatewayAnswersFourOperations: on a real stack, each root field in the form semsource's UI and
-// smoke assertions send once migrated (inventory § 3) holds the seeded IDs and triples, and a root
-// field name inside an argument routes nowhere but the field asked.
+// smoke assertions will send once they move to this gateway holds the seeded IDs and triples, and a
+// root field name inside an argument routes nowhere but the field asked.
 func TestGatewayAnswersFourOperations(t *testing.T) {
 	s := startStack(t)
 	revisionA := s.create(t, droneA, [2]string{linkTo, droneB})
@@ -386,7 +386,7 @@ func TestGatewayAnswersFourOperations(t *testing.T) {
 }
 
 // TestPathsFollowEdgesBack: paths[k] leads from the start to entities[k] and paths[0] is empty, each
-// step naming the edge as the graph holds it, whichever way the walk crossed it (pin alignment).
+// step naming the edge as the graph holds it, whichever way the walk crossed it.
 func TestPathsFollowEdgesBack(t *testing.T) {
 	s := startStack(t)
 	// C -to-> B -to-> A: from A, incoming, the walk crosses each edge against its direction.

@@ -117,8 +117,7 @@ func defaultSubjectIRI(subject string) string {
 //	{base}/entities/{org}/{platform}/{system}/{domain}/{type}/{instance}
 //
 // The path follows the canonical entity-ID order from the named fields
-// (ADR-102, owner item O-10 on #1095): the exporter is not a second interpreter
-// of position order.
+// (ADR-102): the exporter is not a second interpreter of position order.
 //
 // For other non-empty subjects, it falls back to dot-to-slash conversion:
 //

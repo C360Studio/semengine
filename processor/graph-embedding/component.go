@@ -31,11 +31,11 @@ const key = readiness.KeyGraphEmbedding
 var _ component.Discoverable = (*Component)(nil)
 
 // workerWatchLost is the stuck state Health names once the Worker's Run has returned while the
-// run context was live (design D2): nothing embeds a pending record until the process restarts.
+// run context was live: nothing embeds a pending record until the process restarts.
 const workerWatchLost = "embedding worker watch lost; restart the process"
 
 // vectorCacheWatchLost is the stuck state Health names once the vector cache's Run has returned
-// while the run context was live (design D5): the verbs refuse until the process restarts.
+// while the run context was live: the verbs refuse until the process restarts.
 const vectorCacheWatchLost = "vector cache watch lost; restart the process"
 
 // Component implements the graph-embedding processor.
@@ -71,22 +71,22 @@ type Component struct {
 	offloadExcludedWarn sync.Once
 
 	// workerLost latches when the Worker's Run returns while the run context is live; nothing
-	// rebinds the watch, as for the follower's lost feed (design D2).
+	// rebinds the watch, as for the follower's lost feed.
 	workerLost atomic.Bool
 	// cacheLost latches when the vector cache's Run returns while the run context is live; the
-	// verbs refuse from then on (design D5).
+	// verbs refuse from then on.
 	cacheLost atomic.Bool
 
 	// The query side (query.go). embedder is the Worker's BM25 embedder, whose statistics the
 	// search verb reads without changing (GenerateQuery); cache is the in-memory view of the
-	// generated vectors in EMBEDDING_INDEX the verbs rank (design D2, D3). start sets both.
+	// generated vectors in EMBEDDING_INDEX the verbs rank. start sets both.
 	embedder *embedding.BM25Embedder
 	cache    *embedding.VectorCache
 	// subscriptions are the query request subscriptions, one per verb the table in graph declares
 	// for graph-embedding; cleanup drains them first.
 	subscriptions []*natsclient.Subscription
 
-	// failed is the failed map (failed.go, design D3): seeded at Start, changed by the Worker's
+	// failed is the failed map (failed.go): seeded at Start, changed by the Worker's
 	// terminal outcomes and hop 1, read by the follower through Failed and by the repair lane.
 	failed failedMap
 
@@ -118,14 +118,13 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 	var config Config
 	if len(rawConfig) > 0 {
 		// Strict decoding: a key Config does not define is refused, naming the key, where
-		// encoding/json would drop it (design D4). It replaces the pin's targeted cache_ttl
-		// probe. A port definition decodes through its own UnmarshalJSON.
+		// encoding/json would drop it. A port definition decodes through its own UnmarshalJSON.
 		decoder := json.NewDecoder(bytes.NewReader(rawConfig))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&config); err != nil {
 			return Config{}, nil, nil, errs.WrapInvalid(err, "CreateGraphEmbedding", "factory", "config unmarshal")
 		}
-		// json.Unmarshal, which the pin used, refused data after the object; keep that.
+		// Data after the object is refused, as json.Unmarshal refuses it.
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			return Config{}, nil, nil, errs.WrapInvalid(errors.New("data after the configuration object"),
 				"CreateGraphEmbedding", "factory", "config unmarshal")
@@ -263,7 +262,7 @@ func (c *Component) start(ctx context.Context) error {
 		Deliver:         c.deliver,
 		Failed:          c.failed.counts,
 		// Only hop 1's failures, which can leave a stale vector in the index, withhold the verbs;
-		// a Worker failure leaves no vector and is answered past (design D5, F2).
+		// a Worker failure leaves no vector and is answered past.
 		Withhold: c.failed.withheld,
 	})
 	if err != nil {
@@ -273,8 +272,8 @@ func (c *Component) start(ctx context.Context) error {
 		return err
 	}
 	// The failed records EMBEDDING_INDEX holds seed the failed map before the follower publishes,
-	// so the first envelope counts them (pin component.go:1063-1099). A seed that cannot be read
-	// fails Start: a map left short would let readiness read ready over failed records.
+	// so the first envelope counts them. A seed that cannot be read fails Start: a map left short
+	// would let readiness read ready over failed records.
 	failedRecords, err := c.storage.ScanFailed(ctx)
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "seed the failed map from "+graph.BucketEmbeddingIndex)
@@ -317,7 +316,7 @@ func (c *Component) start(ctx context.Context) error {
 
 	// Hop 2: the Worker embeds each pending record and reports its terminal outcome to
 	// onTerminal. Its embedder also embeds the search verb's queries: one instance serves both,
-	// as at the pin (design D3).
+	// so a query is weighed by the corpus statistics the Worker's embeddings built.
 	c.embedder = embedding.NewBM25Embedder(embedding.BM25Config{})
 	worker := embedding.NewWorker(c.storage, c.embedder, c.logger).
 		WithWorkers(c.config.Workers).

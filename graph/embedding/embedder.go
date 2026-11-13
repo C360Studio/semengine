@@ -19,7 +19,7 @@ type Embedder interface {
 	// as opposed to Generate which embeds documents at ingest. Asymmetric retrieval
 	// models (Snowflake arctic-embed, BGE, E5) are trained to embed a query with an
 	// instruction prefix while documents are embedded raw; omitting the query prefix
-	// is a measured retrieval-quality cliff, not a rounding error (gh#438). Symmetric
+	// costs retrieval quality sharply, not by a rounding error. Symmetric
 	// embedders (BM25) implement this identically to Generate.
 	GenerateQuery(ctx context.Context, texts []string) ([][]float32, error)
 

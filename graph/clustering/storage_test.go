@@ -38,8 +38,7 @@ func TestGetAllCommunitiesRefusesNilContext(t *testing.T) {
 	}
 }
 
-// TestCommunityKey: a record's key is its level, a dot, and its group ID (pin
-// storage.go:518-520).
+// TestCommunityKey: a record's key is its level, a dot, and its group ID.
 func TestCommunityKey(t *testing.T) {
 	if got, want := communityKey(2, "acme.dep1"), "2.acme.dep1"; got != want {
 		t.Fatalf("communityKey = %q, want %q", got, want)

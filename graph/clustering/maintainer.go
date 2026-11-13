@@ -15,7 +15,7 @@ import (
 )
 
 // levels is the number of group levels: 0 org.platform.system.domain, 1 the source
-// org.platform.system, 2 the deployment org.platform (ADR-102 d6).
+// org.platform.system, 2 the deployment org.platform (ADR-102 decision 6).
 const levels = 3
 
 // ErrBootstrapIncomplete is returned by Tick before BootstrapDone: a record built from a

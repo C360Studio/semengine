@@ -12,10 +12,10 @@ import (
 
 var _ component.LifecycleComponent = (*Component)(nil)
 
-// TestLifecycleBeforeStart carries the pin's lifecycle unit tests that need no server
-// (pin:processor/graph-index/component_test.go:598-742): before Start the component is stopped
-// and unhealthy with nothing counted, Initialize may be called again, Start before Initialize
-// and Start without a NATS client are refused, and Stop before Start returns nil.
+// TestLifecycleBeforeStart covers the lifecycle checks that need no server: before Start the
+// component is stopped and unhealthy with nothing counted, Initialize may be called again, Start
+// before Initialize and Start without a NATS client are refused, and Stop before Start returns
+// nil.
 func TestLifecycleBeforeStart(t *testing.T) {
 	newComponent := func(t *testing.T) *Component {
 		t.Helper()
@@ -36,8 +36,7 @@ func TestLifecycleBeforeStart(t *testing.T) {
 		if health.Healthy || health.Status != "stopped" || health.ErrorCount != 0 {
 			t.Errorf("Health before Start = %+v, want stopped, not healthy, no errors", health)
 		}
-		// The pin asserted a non-zero LastActivity here; the shell reports the zero time before the
-		// first input (component.Lifecycle.DataFlow).
+		// LastActivity is the zero time before the first input (component.Lifecycle.DataFlow).
 		if flow := c.DataFlow(); flow != (component.FlowMetrics{}) {
 			t.Errorf("DataFlow before Start = %+v, want zero", flow)
 		}

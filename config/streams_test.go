@@ -52,25 +52,23 @@ func TestMaxDeliveryEventsComponentCollisionIsRejected(t *testing.T) {
 	}
 }
 
-// TestExtractPortsFromConfig_JSONRoundTripPopulatesStreamName closes the
-// shadow-struct gap surfaced 2026-05-08 (semspec). Stream extraction now
-// decodes the canonical component-package definitions directly. Pre-fix, a
-// parallel definition lacked the StreamName field, so a JSON config like
+// TestExtractPortsFromConfig_JSONRoundTripPopulatesStreamName proves
+// stream_name survives decoding a JSON port config. Stream extraction decodes
+// the canonical component-package definitions directly; a parallel definition
+// without the StreamName field would silently drop stream_name from a config
+// like
 //
 //	{"ports":{"outputs":[{
 //	    "name":"tool.result", "config":{"kind":"jetstream",
 //	    "subjects":["tool.result.*"], "stream_name":"AGENT"}}]}}
 //
-// silently dropped stream_name on unmarshal. EnsureStreams would then fall
-// back to DeriveStreamName("tool.result.*") = "TOOL" and create a colliding
-// TOOL stream. At the time, AGENT's broad "tool.>" coverage already captured
-// the subject, so tool.result publishes never reached subscribers. Current
-// shipped guidance uses the explicit "tool.execute.>" and "tool.result.>"
-// families; the historical shadow-struct regression remains the test target.
+// EnsureStreams would then fall back to DeriveStreamName("tool.result.*") =
+// "TOOL" and create a colliding TOOL stream, whose subjects a broad stream such
+// as AGENT's "tool.>" already captures, so tool.result publishes would never
+// reach subscribers.
 //
-// Test discipline (per feedback memory):
-// "For every operator-configurable field, there must be a test that loads
-// it from JSON (not Go-constructed) and asserts it reaches its consumer."
+// Every operator-configurable field needs a test that loads it from JSON (not
+// Go-constructed) and asserts it reaches its consumer.
 func TestExtractPortsFromConfig_JSONRoundTripPopulatesStreamName(t *testing.T) {
 	tests := []struct {
 		name           string

@@ -346,9 +346,8 @@ func TestClassifierChain_DefaultResult(t *testing.T) {
 }
 
 // TestClassifierChain_ContextCancellation: a context that has already ended,
-// by cancel or by deadline, yields nil (design D4). The pin accepted either nil
-// or the default result here and waited out a 1ns timeout with a sleep; the
-// deadline below is already in the past, so no wait is needed.
+// by cancel or by deadline, yields nil, never the default result. The deadline
+// below is already in the past, so no wait is needed.
 func TestClassifierChain_ContextCancellation(t *testing.T) {
 	keyword := NewKeywordClassifier()
 	embedding := createTestEmbeddingClassifier(t)

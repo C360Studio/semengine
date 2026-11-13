@@ -17,12 +17,11 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// A payload that fails validation or panics in its own code on the Graphable lane
-// is poison: counted, logged with its payload type and subject, and terminated,
-// never returned for redelivery (design D8 Q13; graph-ingest-recovery, "A failing
-// payload is poison, not a redelivery loop"). Carried from SemStreams PR #1437 at
-// 0ea823a6 (processor/graph-ingest/fact_lane_fence_test.go), on a payload type the
-// test registers, as a product registers its own.
+// A payload that fails validation or panics in its own code on the Graphable
+// lane is poison: counted, logged with its payload type and subject, and
+// terminated, never returned for redelivery (graph-ingest-recovery, "A failing
+// payload is poison, not a redelivery loop"). The test drives it with a
+// payload type it registers, as a product registers its own.
 
 // fenceTestMode selects how a decoded fenceTestPayload misbehaves. It travels
 // on the wire, so the decoded copy carries it.

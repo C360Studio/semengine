@@ -8,8 +8,7 @@ import (
 	"github.com/c360studio/semengine/component"
 )
 
-// TestCreateGraphEmbeddingRequiresNATSClient: a missing NATS client is a construction
-// error (pin component_test.go:722).
+// TestCreateGraphEmbeddingRequiresNATSClient: a missing NATS client is a construction error.
 func TestCreateGraphEmbeddingRequiresNATSClient(t *testing.T) {
 	built, err := CreateGraphEmbedding(json.RawMessage(`{}`), component.Dependencies{})
 	if err == nil {
@@ -17,10 +16,9 @@ func TestCreateGraphEmbeddingRequiresNATSClient(t *testing.T) {
 	}
 }
 
-// TestRegisterAddsGraphEmbedding: Register adds the graph-embedding factory, whose schema
-// lists the eight kept keys and not batch_size, which asks boot for no model registry (no
-// provider at tier 0), and whose port declarer reports the ports the factory builds (pin
-// component_test.go:770).
+// TestRegisterAddsGraphEmbedding: Register adds the graph-embedding factory, whose schema lists
+// the eight keys Config defines and not batch_size, which asks boot for no model registry (no
+// provider at tier 0), and whose port declarer reports the ports the factory builds.
 func TestRegisterAddsGraphEmbedding(t *testing.T) {
 	registry := component.NewRegistry()
 	if err := Register(registry); err != nil {

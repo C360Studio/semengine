@@ -289,13 +289,10 @@ func describeSource(explicitSource string, explicit bool, derived []portAttribut
 // An explicit stream_name from the port definition wins over subject-derived
 // naming. The canonical port type carries stream_name (e.g. agentic-tools'
 // tool.result port declares stream_name: "AGENT" so its publishes land on the
-// existing AGENT stream rather than spawning a derived TOOL stream). The
-// historical failure involved broad AGENT "tool.>" coverage; current shipped
-// guidance uses the explicit "tool.execute.>" and "tool.result.>" families.
-// This relies on the shadow struct
-// having been retired in favour of component.PortDefinition; a previous shadow
-// stripped this field on JSON unmarshal and silently swallowed every tool.result
-// publish in semspec (project_open_work_2026_05_08.md, bug class 3).
+// existing AGENT stream rather than spawning a derived TOOL stream). Derivation
+// reads component.PortDefinition, never a parallel port struct: one without the
+// stream_name field drops it on JSON decode, and every publish on that port
+// then lands on a stream nothing reads.
 func derivePortStream(stream component.StreamFacts) (string, []string, error) {
 	subjects := stream.Subjects()
 	if len(subjects) == 0 {
@@ -463,8 +460,8 @@ func validateExceptionDeclarations(cfg *Config) ([]ArchivalStreamStatus, map[str
 // archival_streams entry, sorted by stream name, nil when there is none.
 //
 // It is pure and I/O-free, which is what lets Config.Validate run it: without
-// that, `semstreams --validate` would print "✓ Configuration is valid" for a
-// configuration that hard-fails at boot.
+// that, a validation run would report a configuration valid that hard-fails at
+// boot.
 func ValidateStreamDeclarations(cfg *Config) ([]ArchivalStreamStatus, error) {
 	_, archival, err := planStreams(cfg, nil)
 	return archival, err

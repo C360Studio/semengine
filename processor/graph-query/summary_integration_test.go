@@ -60,10 +60,10 @@ func TestSummaryPredicates(t *testing.T) {
 	requireSameJSON(t, data, `{"total_entities":2,"entities_scanned":2,"truncated":false,`+entityTypes+`,"predicates":null}`)
 }
 
-// TestAuthorityOnlyAnswerClaimsNoRevision: with predicates left out, no index is read, so a min_revision
-// far above any revision is answered, and the answer claims revision 0 (spec, "A summary that read only
-// the authority"; design D7). The same request with predicates is refused, so it is leaving them out that
-// answered.
+// TestAuthorityOnlyAnswerClaimsNoRevision: with predicates left out, no index is read, so a
+// min_revision far above any revision is answered, and the answer claims revision 0 (spec, "A
+// summary that read only the authority"). The same request with predicates is refused, so it is
+// leaving them out that answered.
 func TestAuthorityOnlyAnswerClaimsNoRevision(t *testing.T) {
 	stack := startStack(t)
 	stack.awaitIndexed(t, stack.create(t, drone1))
@@ -79,9 +79,9 @@ func TestAuthorityOnlyAnswerClaimsNoRevision(t *testing.T) {
 	requireRefusal(t, raw, err, errs.ErrorTransient, "revision_not_reached")
 }
 
-// TestSummaryTypeBuckets: carried from the pin's HappyPath, TieBreak and CanonicalOrder cases in
-// summary_test.go, through real graph-ingest. Type is system.domain.type (ADR-102), highest count first
-// with ties by type, and examples are capped per type.
+// TestSummaryTypeBuckets: through real graph-ingest, a plain group, a tie and the canonical order.
+// Type is system.domain.type (ADR-102), highest count first with ties by type, and examples are
+// capped per type.
 func TestSummaryTypeBuckets(t *testing.T) {
 	stack := startStack(t)
 	for _, id := range []string{
@@ -117,9 +117,9 @@ func TestSummaryTypeBuckets(t *testing.T) {
 	}
 }
 
-// TestSummaryOrdersTypes: all counts tied, so type alone decides, written in reverse. Twenty, as with
-// hierarchyStats' children: with few ties a missing tie-break passes some runs (notes/4.3.md). Go promises
-// no map order, so this detection is a measure, not a proof.
+// TestSummaryOrdersTypes: all counts tied, so type alone decides, written in reverse. Twenty, as
+// with hierarchyStats' children: with few ties a missing tie-break passes some runs. Go promises no
+// map order, so this detection is a measure, not a proof.
 func TestSummaryOrdersTypes(t *testing.T) {
 	stack := startStack(t)
 	systems := strings.Fields("aa ab ac ad ae af ag ah ai aj ak al am an ao ap aq ar as at")
@@ -237,10 +237,10 @@ func TestSummaryRequestsOneOfEach(t *testing.T) {
 	}
 }
 
-// TestSummaryRefusesWhenPredicatesCannot: the pin's PredicateFailure_StillReturnsEntityFacet reversed. A
-// real index's refusal reaches the caller with class, code and detail, and an index that is gone is
-// graph-query's own refusal naming the verb. Neither costs a page, so predicateList ran first (spec, "An
-// index that cannot answer").
+// TestSummaryRefusesWhenPredicatesCannot: a predicate failure refuses the summary, never answers
+// with the entity counts alone. A real index's refusal reaches the caller with class, code and
+// detail, and an index that is gone is graph-query's own refusal naming the verb. Neither costs a
+// page, so predicateList ran first (spec, "An index that cannot answer").
 func TestSummaryRefusesWhenPredicatesCannot(t *testing.T) {
 	t.Run("the index refuses", func(t *testing.T) {
 		stack := startStack(t)
@@ -278,8 +278,8 @@ func TestSummaryRefusesWhenPredicatesCannot(t *testing.T) {
 	})
 }
 
-// TestSummaryRefusesABrokenPredicateReply: a stub sends what no real graph-index does (#111 item 2). Each
-// is one transient internal refusal and one error, not an empty list, and reads no page. A good reply on
+// TestSummaryRefusesABrokenPredicateReply: a stub sends what no real graph-index does. Each is one
+// transient internal refusal and one error, not an empty list, and reads no page. A good reply on
 // the same stub answers, so the refusals are the replies' doing.
 func TestSummaryRefusesABrokenPredicateReply(t *testing.T) {
 	client := fixtureClient(t)
@@ -332,8 +332,8 @@ func TestSummaryRefusesABrokenPredicateReply(t *testing.T) {
 	}
 }
 
-// TestSummaryRefusesABrokenPage: the page read is hierarchyStats' (TestCountsRefuseABrokenPage), and a
-// summary refuses what it refuses. The pin refused a bad ID too; the class and code are new.
+// TestSummaryRefusesABrokenPage: the page read is hierarchyStats' (TestCountsRefuseABrokenPage),
+// and a summary refuses what it refuses.
 func TestSummaryRefusesABrokenPage(t *testing.T) {
 	client := fixtureClient(t)
 	c := startComponent(t, client, `{}`)
@@ -387,10 +387,10 @@ func TestSummaryRefusesPrefixWithPredicates(t *testing.T) {
 	}
 }
 
-// TestSummaryRefusesABadRequest: with nothing behind it, a request the verb refuses is its own refusal
-// and not the no-responders one, so no read went out. The pin's keys are refused by name, and a negative
-// count, which the pin read as the default, is refused too (spec, "A summary has its predicates or says
-// why not").
+// TestSummaryRefusesABadRequest: with nothing behind it, a request the verb refuses is its own
+// refusal and not the no-responders one, so no read went out. Keys the verb does not define are
+// refused by name, and a negative count is refused too, never read as the default (spec, "A summary
+// has its predicates or says why not").
 func TestSummaryRefusesABadRequest(t *testing.T) {
 	client := fixtureClient(t)
 	c := startComponent(t, client, `{}`)

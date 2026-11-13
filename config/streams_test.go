@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/c360studio/semengine/component"
@@ -37,6 +38,9 @@ func TestMaxDeliveryEventsOperatorCollisionFailsBeforeNATSAccess(t *testing.T) {
 		err := manager.EnsureStreams(context.Background(), cfg)
 		if !errors.Is(err, errFixedFrameworkStreamCollision) {
 			t.Fatalf("collision error = %v, want fixed-framework collision", err)
+		}
+		if !strings.Contains(err.Error(), "allow SemEngine to provision its fixed policy") {
+			t.Fatalf("collision error = %q, want remediation naming SemEngine", err.Error())
 		}
 	}
 }

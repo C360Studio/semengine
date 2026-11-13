@@ -198,9 +198,9 @@ func isValidDataType(s string) bool {
 // legacy-spelling map here:
 // a normalizer on a Tier 1 frozen package is an undated permanent bridge, and
 // the whole adopter story is migration instead —
-// docs/operations/migration-predicate-datatype.md carries the family-wide
-// site list. So an adopter who declared a legacy spelling or a Go struct name
-// is refused at registration and told what to write.
+// vocabulary/README.md (WithDataType) lists the accepted values and the
+// replacements for non-canonical spellings. So an adopter who declared a legacy
+// spelling or a Go struct name is refused at registration and told what to write.
 //
 // The empty string is accepted: an absent datatype is a legitimate
 // registration shape (three sister repositories register nothing but a
@@ -210,7 +210,7 @@ func validateDataType(declared string) error {
 		return nil
 	}
 	return fmt.Errorf("unrecognized data type %q: expected one of %s, or none "+
-		"(see docs/operations/migration-predicate-datatype.md)",
+		"(see vocabulary/README.md, WithDataType)",
 		declared, strings.Join(canonicalDataTypes(), ", "))
 }
 

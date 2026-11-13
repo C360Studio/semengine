@@ -59,4 +59,4 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
   tree. It also states the query rules: a single leading `-` excludes (`go test -race` excludes `race`, while
   `--force` is text; quote the flag to search for it), quoting makes any text literal, which syntax is reserved,
   and that `withretry` finds nothing.
-- [ ] 3.2 Archive and spec sync.
+- [x] 3.2 Archive and spec sync.

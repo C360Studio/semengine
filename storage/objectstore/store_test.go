@@ -259,7 +259,7 @@ func TestNilRegistryRecordsNothing(t *testing.T) {
 }
 
 // TestRetentionGuardFailsClosed is reconcileNoLifecycleRetention's fatal case: a stream update that
-// does not take (real NATS always takes it, so a fake stands in for the denial) leaves the
+// does not take (a fake forces the denial) leaves the
 // retention binding, and the guard fails with a fatal retention error.
 func TestRetentionGuardFailsClosed(t *testing.T) {
 	js := &deniedUpdateJS{info: jetstream.StreamInfo{Config: jetstream.StreamConfig{

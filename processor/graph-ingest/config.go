@@ -14,12 +14,12 @@ import (
 type Config struct {
 	Ports           *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
 	EnableHierarchy bool                  `json:"enable_hierarchy" schema:"type:bool,description:Enable hierarchy inference,default:false,category:advanced"`
-	// IngestLanes is the number of keyed-concurrent ingest lanes (SemStreams ADR-072,
-	// SemStreams gh#480). Messages are partitioned by entity ID (same entity → one lane →
+	// IngestLanes is the number of keyed-concurrent ingest lanes (SemStreams ADR-072).
+	// Messages are partitioned by entity ID (same entity → one lane →
 	// serial in arrival order, preserving the arrival-order merge; different
-	// entities → parallel), so ingest is no longer bound to a single serial
-	// Get+CAS round-trip chain. Default 8 (concurrent); `1` selects the prior
-	// fully-serial behavior.
+	// entities → parallel), so ingest is not bound to a single serial
+	// Get+CAS round-trip chain. Default 8 (concurrent); `1` selects fully
+	// serial ingest.
 	IngestLanes int `json:"ingest_lanes" schema:"type:int,description:Keyed-concurrent ingest lane count (same entity ID → one lane → ordered; 1 = serial),default:8,category:advanced"`
 }
 
@@ -35,7 +35,7 @@ func (c *Config) Validate() error {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "at least one output port required")
 	}
 	// graph-ingest names each JetStream input's durable consumer from its subject
-	// (consume.go), so a declared consumer_name would be dropped; it is refused (#442).
+	// (consume.go), so a declared consumer_name would be dropped; it is refused.
 	for _, definition := range c.Ports.Inputs {
 		port, err := definition.Resolve(component.DirectionInput)
 		if err != nil {
@@ -48,7 +48,7 @@ func (c *Config) Validate() error {
 	}
 	// graph-ingest writes entity state to ENTITY_STATES only (initStorage opens it by
 	// its fixed name) and publishes nowhere else, so any other output would be
-	// declared and reported while nothing is written there (checkpoint 3 H2).
+	// declared and reported while nothing is written there.
 	for _, definition := range c.Ports.Outputs {
 		port, err := definition.Resolve(component.DirectionOutput)
 		if err != nil {
@@ -65,17 +65,16 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ApplyDefaults sets default values for configuration. Validate only checks
-// (ruling K, #91 comment 6062681355).
+// ApplyDefaults sets default values for configuration. Validate only checks.
 func (c *Config) ApplyDefaults() {
 	// A configuration with no ports takes DefaultConfig's; a ports block that is
-	// present is used as written, never merged with the defaults (ruling K).
+	// present is used as written, never merged with the defaults.
 	if c.Ports == nil {
 		c.Ports = DefaultConfig().Ports
 	}
 	// Concurrent-by-default (SemStreams ADR-072): 0 (unset) → 8 lanes. An explicit 1 opts
 	// back into serial and is preserved. A negative count clamps to serial rather
-	// than failing boot (owner ruling, #91 comment 6059144952).
+	// than failing boot.
 	switch {
 	case c.IngestLanes == 0:
 		c.IngestLanes = defaultIngestLanes
@@ -108,11 +107,11 @@ func DefaultConfig() Config {
 	}
 }
 
-// Keyed-concurrent ingest sizing (SemStreams ADR-072, SemStreams gh#480).
+// Keyed-concurrent ingest sizing (SemStreams ADR-072).
 const (
 	// defaultIngestLanes is the default keyed-concurrent lane count. 8 overlaps
-	// the KV Get+CAS round-trips on the ~11/12-idle box the issue profiled;
-	// tune against the semboids repro via the inflight/queue-wait metrics.
+	// the KV Get+CAS round-trips of a host that is otherwise mostly idle;
+	// tune it against the inflight/queue-wait metrics.
 	defaultIngestLanes = 8
 
 	// ingestLaneQueueDepth bounds each lane's in-memory submit queue. Total
@@ -123,7 +122,7 @@ const (
 
 	// ingestGuardMemMaxPerLane bounds the in-memory redelivery-guard cache per
 	// lane. This is a CACHE-SIZE knob only, not correctness: an eviction just
-	// costs a durable-tier read on the next access (SemStreams ADR-072 B3). Sized to hold
+	// costs a durable-tier read on the next access (SemStreams ADR-072). Sized to hold
 	// the working set of recently-active entities per lane under load.
 	ingestGuardMemMaxPerLane = 65536
 )

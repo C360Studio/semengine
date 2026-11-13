@@ -19,11 +19,8 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The storage observability service's configuration, registration and lifecycle edges (design D2,
-// D3, D7 U-b). Configuration and registration tests are carried from the pin
-// (storage_observability_test.go:128-235); the pin's refusal tests on the applied form
-// (:193-224, :237-241) become TestStorageObservabilityConstructionRefusals, which drives every
-// refusal through the one constructor.
+// The storage observability service's configuration, registration and lifecycle edges.
+// TestStorageObservabilityConstructionRefusals drives every refusal through the one constructor.
 
 // The two warnings the loops log when the account cannot be read: the inventory collector's
 // (natsclient/storagereport/storage_inventory.go:329) and the report consumer's
@@ -34,8 +31,7 @@ const (
 )
 
 // storageLoopBound bounds a wait for a loop's first warning: the collector collects at once and
-// the consumer's first watch is attempted at once, so 10 s is ten one-second intervals of slack
-// (design D7, the real-clock windows).
+// the consumer's first watch is attempted at once, so 10 s is ten one-second intervals of slack.
 const storageLoopBound = 10 * time.Second
 
 // storageLoopsConfig collects every second and gives a collection one second, so a loop's retry
@@ -44,7 +40,7 @@ const storageLoopsConfig = `{"interval":"1s","timeout":"1s"}`
 
 // awaitStorageHealthy waits, within storageLoopBound, for s.Health() to report healthy and returns
 // that status. The base service is unhealthy until its first health check, which runs on its own
-// goroutine and is not ordered before anything else a test observes (#385). A service that never
+// goroutine and is not ordered before anything else a test observes. A service that never
 // becomes healthy fails the test with the last status seen.
 func awaitStorageHealthy(t *testing.T, s *StorageObservabilityService, why string) health.Status {
 	t.Helper()
@@ -70,9 +66,9 @@ func stopStorageObservabilityAtCleanup(t *testing.T, s *StorageObservabilityServ
 	})
 }
 
-// --- configuration (pin :128-224) -------------------------------------------
+// --- configuration ----------------------------------------------------------
 
-// TestStorageObservabilityConfig_JSONRoundTrip carries pin :128-176: the collection interval and
+// TestStorageObservabilityConfig_JSONRoundTrip: the collection interval and
 // every threshold are reachable from a config block, survive a re-encode, and reach the applied
 // form the pressure evaluation reads.
 func TestStorageObservabilityConfig_JSONRoundTrip(t *testing.T) {
@@ -124,10 +120,9 @@ func TestStorageObservabilityConfig_JSONRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestStorageObservabilityConfig_OmittedFieldsTakeDocumentedDefaults carries pin :178-191: an
-// empty block applies a one-minute interval, a 15 s timeout and the shipped thresholds (design D3,
-// "Defaults have one home"). The oracle is the literal durations and storagereport's own defaults,
-// resolved, in place of the pin's two constants that are unexported there now.
+// TestStorageObservabilityConfig_OmittedFieldsTakeDocumentedDefaults: an empty block
+// applies a one-minute interval, a 15 s timeout and the shipped thresholds. The oracle is the
+// literal durations and storagereport's own defaults, resolved.
 func TestStorageObservabilityConfig_OmittedFieldsTakeDocumentedDefaults(t *testing.T) {
 	var cfg StorageObservabilityConfig
 	require.NoError(t, json.Unmarshal([]byte(`{}`), &cfg))
@@ -144,7 +139,7 @@ func TestStorageObservabilityConfig_OmittedFieldsTakeDocumentedDefaults(t *testi
 	assert.Equal(t, want, got)
 }
 
-// TestStorageObservabilityService_IsRegistered carries pin :226-235: RegisterAll offers the
+// TestStorageObservabilityService_IsRegistered: RegisterAll offers the
 // service under its config-block name, the only way an operator turns it on.
 func TestStorageObservabilityService_IsRegistered(t *testing.T) {
 	registry := NewServiceRegistry()
@@ -155,9 +150,8 @@ func TestStorageObservabilityService_IsRegistered(t *testing.T) {
 	require.NotNil(t, constructor)
 }
 
-// TestStorageObservabilityConstructionRefusals is design D3's refusal list, replacing pin
-// :193-224 and :237-241. Each refusal is invalid data (errs.IsInvalid) and names the input it
-// refuses. The pin accepted the three key cases (probe § 3) and refused the rest unclassified.
+// TestStorageObservabilityConstructionRefusals: each refusal is invalid data (errs.IsInvalid) and
+// names the input it refuses.
 func TestStorageObservabilityConstructionRefusals(t *testing.T) {
 	type refusal struct {
 		config string
@@ -200,15 +194,15 @@ func TestStorageObservabilityConstructionRefusals(t *testing.T) {
 	}
 }
 
-// --- lifecycle edges (design D2) ---------------------------------------------
+// --- lifecycle edges --------------------------------------------------------
 
-// TestStorageObservabilityFailedStopIsRetried is D2's "Stop": a Stop whose context ends before
+// TestStorageObservabilityFailedStopIsRetried: a Stop whose context ends before
 // the loops return reports that context's error, and the next Stop waits for them again. The
 // composition's logger holds the collector's first failure record, so the collector's goroutine
 // is inside its log call and cannot return until released.
 //
-// The two 200 ms windows are this file's only real-clock windows besides the loop bound (design
-// D7). The first Stop's deadline cannot fail a correct service: the held loop keeps the join from
+// The two 200 ms windows are this file's only real-clock windows besides the loop bound.
+// The first Stop's deadline cannot fail a correct service: the held loop keeps the join from
 // finishing, so it can only end at the deadline. The second window is an observation: a service
 // that forgets its loops after a failed Stop returns nil from the second Stop at once; a correct
 // one waits for the held loop.
@@ -246,13 +240,11 @@ func TestStorageObservabilityFailedStopIsRetried(t *testing.T) {
 	assert.Empty(t, owner.Observe().Unresolved, "a stopped service holds no loop and no base status")
 }
 
-// TestStorageObservabilityBootsWithoutAReachableAccount is D2's "Startup work", carrying pin
-// storage_observability_integration_test.go:318-346 onto a client that never connects: Start does
-// no I/O and returns nil, both loops fail and log, and the service stays healthy and says it has
-// read nothing. The pin's three-second sleep is replaced by the two warnings themselves, and its
-// Snapshot accessor by the operator's route.
+// TestStorageObservabilityBootsWithoutAReachableAccount: on a client that never connects, Start
+// does no I/O and returns nil, both loops fail and log, and the service stays healthy and says it
+// has read nothing. The test waits on the two warnings themselves and reads the operator's route.
 //
-// The test waits for a healthy verdict rather than reading one (awaitStorageHealthy, #385). A
+// The test waits for a healthy verdict rather than reading one (awaitStorageHealthy). A
 // service an unreadable account made unhealthy never gives one.
 func TestStorageObservabilityBootsWithoutAReachableAccount(t *testing.T) {
 	handler := newHoldingHandler(t, "")

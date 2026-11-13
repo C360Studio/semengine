@@ -363,9 +363,9 @@ func TestStorageReportPublisher_DisappearedResourceIsDeletedNotExpired(t *testin
 	assert.Equal(t, []string{"STAYS"}, store.liveResourceKeys())
 }
 
-// TestStorageReportPublisher_GrowthComesFromSuccessivePublications is task 3.1
-// end to end: the rate is Δbytes over Δt across published observations, so the
-// FIRST publication of a resource can only report unknown.
+// TestStorageReportPublisher_GrowthComesFromSuccessivePublications, end to end:
+// the rate is Δbytes over Δt across published observations, so the FIRST
+// publication of a resource can only report unknown.
 func TestStorageReportPublisher_GrowthComesFromSuccessivePublications(t *testing.T) {
 	store := newFakeReportStore(10)
 	publisher := newTestPublisher(t, store, defaultSource())
@@ -502,15 +502,13 @@ func TestStorageReportPublisher_BaselineIsNotAdvancedByAnUnusableObservation(t *
 	assert.Equal(t, first, row.Growth.ObservedFrom.UTC())
 }
 
-// TestStorageReportPublisher_ThresholdsResolveAtEvaluationTime is task 3.4.
-//
-// SemStreams is flow-based and its components are runtime-reconfigurable —
-// watchConfigUpdates is launched after the boot barrier precisely so post-boot
-// component edits reach running components. A threshold captured at
-// construction would apply the stale number successfully and silently, which is
-// the failure class that is hardest to notice: nothing errors, the report just
-// answers the wrong question. The SAME publisher instance is used across the
-// edit here, with no reconstruction and no restart.
+// TestStorageReportPublisher_ThresholdsResolveAtEvaluationTime: a threshold can
+// change while the publisher runs, so it is resolved when the report is
+// evaluated. A threshold captured at construction would apply the stale number
+// successfully and silently, which is the failure class that is hardest to
+// notice: nothing errors, the report just answers the wrong question. The SAME
+// publisher instance is used across the edit here, with no reconstruction and
+// no restart.
 func TestStorageReportPublisher_ThresholdsResolveAtEvaluationTime(t *testing.T) {
 	store := newFakeReportStore(10)
 
@@ -745,9 +743,9 @@ func TestNewStorageReportPublisher_FailsClosedOnWiring(t *testing.T) {
 // history BEFORE it writes: the row it is about to compact is the one it just
 // read.
 //
-// The depth becomes load-bearing exactly where the design says the projection
-// matters most — a crash loop or a deploy loop. A process restarting faster
-// than minGrowthSampleInterval publishes a row that is too close to the newest
+// The depth becomes load-bearing exactly where the projection matters most — a
+// crash loop or a deploy loop. A process restarting faster than
+// minGrowthSampleInterval publishes a row that is too close to the newest
 // retained one to measure against, and at depth 1 that row replaces the only
 // baseline that existed. Every restart repeats it, and the rate is unknown
 // forever. Retained depth is what lets the walk reach back past the too-close
@@ -812,7 +810,7 @@ func (p *recordingPublisher) count() int {
 // advances at the cadence the operator configured and there is no second timer
 // that could drift from it.
 func TestStorageInventory_RunPublishesEveryCollection(t *testing.T) {
-	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
 	// limit expires only when Run never publishes or never returns.
 	synctest.Test(t, func(t *testing.T) {
 		publisher := &recordingPublisher{}
@@ -857,7 +855,7 @@ func TestStorageInventory_RunPublishesEveryCollection(t *testing.T) {
 // loop down with it — the next tick is the recovery, and the in-process
 // last-good inventory stays readable throughout.
 func TestStorageInventory_PublicationFailureDoesNotStopCollection(t *testing.T) {
-	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
 	// limit expires only when the loop stops after a failed publication or never returns.
 	synctest.Test(t, func(t *testing.T) {
 		publisher := &recordingPublisher{err: errors.New("nats: no responders")}
@@ -897,7 +895,7 @@ func TestStorageInventory_PublicationFailureDoesNotStopCollection(t *testing.T) 
 // but a call per tick would log the same failure twice and make a failing
 // server look like a failing report.
 func TestStorageInventory_FailedCollectionPublishesNothing(t *testing.T) {
-	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
 	// limit expires only when the loop stops attempting or never returns.
 	synctest.Test(t, func(t *testing.T) {
 		publisher := &recordingPublisher{}
@@ -968,8 +966,8 @@ func TestStorageReportPublisher_ReclamationFailureIsReportedNotSwallowed(t *test
 		assert.Equal(t, 0, result.Deleted)
 	})
 
-	// Design D3 test 4: a listing that ends before its end marker, with the
-	// context live, is not a complete listing, so nothing it read is reclaimed.
+	// A listing that ends before its end marker, with the context live, is not
+	// a complete listing, so nothing it read is reclaimed.
 	t.Run("the key listing closes before its end", func(t *testing.T) {
 		store := newFakeReportStore(10)
 		publisher := newTestPublisher(t, store, defaultSource())

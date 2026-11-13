@@ -59,7 +59,7 @@ func NewGauges(subsystem string) *Gauges {
 			Namespace: metricNamespace,
 			Subsystem: subsystem,
 			Name:      "bootstrap_complete",
-			Help:      "1 when the producer has finished its INITIAL build in this process lifetime, else 0. Distinguishes an index mid-format-cutover from one merely behind (gh#474, ADR-084)",
+			Help:      "1 when the producer has finished its INITIAL build in this process lifetime, else 0. Distinguishes an index mid-format-cutover from one merely behind (ADR-084)",
 		}),
 		state: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: metricNamespace,

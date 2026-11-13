@@ -9,8 +9,9 @@ import (
 
 // socketDialer is the dialer nats.go uses for the connection of one Connect
 // (nats.SetCustomDialer). It keeps the socket it dialled last, so cut can close
-// it: that ends nats.go's wait for the server's answer at once, where nats.go
-// would otherwise wait for its connect timeout (T4; P18, P25).
+// it: that ends nats.go's wait for the server's answer at once
+// (TestConnectEndsWithItsContext), where nats.go would otherwise wait for its
+// connect timeout (measured at nats.go v1.54.0, ADR-112).
 type socketDialer struct {
 	timeout time.Duration
 	dial    func(*net.Dialer, string, string) (net.Conn, error)
@@ -26,8 +27,11 @@ func newSocketDialer(timeout time.Duration, dial func(*net.Dialer, string, strin
 
 // Dial implements nats.CustomDialer. That interface carries no context, and a
 // callback may not invent one, so cut ends a dial in progress by closing the
-// net.Dialer's Cancel channel (T4, T8). The net package still honours that
-// deprecated field (P23, P25; design D1).
+// net.Dialer's Cancel channel (TestConnectEndsWithItsContext,
+// TestCloseEndsAReconnectDial). The net package still honours that deprecated
+// field (measured at go1.26.9 on darwin, ADR-112; Go's own TestDialCancel):
+// those tests' dial cases use a stand-in for the network dial, so no test here
+// would catch a change.
 func (d *socketDialer) Dial(network, address string) (net.Conn, error) {
 	if d.isCut() {
 		return nil, net.ErrClosed
@@ -48,7 +52,7 @@ func (d *socketDialer) Dial(network, address string) (net.Conn, error) {
 
 // cutWhenDone arms a cut for when ctx ends. The stop it returns, called once,
 // disarms it, or waits for a cut that has begun, so ctx touches nothing once
-// stop has returned (T5).
+// stop has returned (TestReconnectAfterConnectContextEnded).
 func (d *socketDialer) cutWhenDone(ctx context.Context) (stop func()) {
 	cut := make(chan struct{})
 	stopCut := context.AfterFunc(ctx, func() { d.cut(); close(cut) })

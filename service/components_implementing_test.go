@@ -13,10 +13,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The composition root's walk over the admitted components (pin components_implementing_test.go).
-// The pin built a struct-literal manager and called its exported Initialize; here
-// NewComponentManager composes the components from the configuration (design D7), and the test
-// reads what ComponentsImplementing returns through the service manager (design D6).
+// The composition root's walk over the admitted components. NewComponentManager composes the
+// components from the configuration, and the test reads what ComponentsImplementing returns
+// through the service manager.
 
 type seamProbe interface{ seamName() string }
 

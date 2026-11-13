@@ -50,7 +50,7 @@ func (c *Component) registerBoundConsumer(stream, name string, closed <-chan str
 }
 
 // observeLostBinding reports whether bc's binding is lost, recording it the first time a
-// tick sees its consume loop ended while the shell is running (#216, design D1).
+// tick sees its consume loop ended while the shell is running.
 //
 // The loop's end is read first and the shell's running state second. The shell stops
 // running before release issues any Drain (component.Lifecycle.Start), so a tick that sees
@@ -144,8 +144,8 @@ func (c *Component) clearBoundConsumers() {
 }
 
 // statusMetricsLoop republishes the readiness envelope on the shared heartbeat.
-// Mirrors SemStreams graph-index's loop (not ported yet): the write doubles as a
-// liveness heartbeat, so it is unconditional rather than on-change.
+// The write doubles as a liveness heartbeat, so it is unconditional rather than
+// on-change.
 func (c *Component) statusMetricsLoop(ctx context.Context) {
 	// Publish once up front so the key is populated before the first tick rather
 	// than reading absent (which consumers correctly treat as unknown) for a whole
@@ -336,8 +336,7 @@ func (c *Component) bootstrapScope(outstanding uint64, observationFailed bool) u
 // exactly means per-message bookkeeping over up to 2048 in-flight messages on the
 // ingest hot path, with insertion and removal on every submit and ack. This reports the AGE OF THE VIEW
 // instead — now minus the JetStream timestamp of the most recently APPLIED message —
-// which is SemStreams graph-index's semantic for the same field (its IndexedAt) and
-// costs one atomic store on the applied path.
+// which costs one atomic store on the applied path.
 //
 // The two coincide closely because delivery is approximately stream-ordered: the
 // oldest outstanding message is the one just after the newest applied one. It is a

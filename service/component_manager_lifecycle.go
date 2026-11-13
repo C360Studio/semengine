@@ -12,7 +12,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Start starts the boot component set once (design D2; ADR-113). It refuses a
+// Start starts the boot component set once (ADR-113). It refuses a
 // nil or ended ctx, a second Start and a Start after any Stop
 // (errs.ErrAlreadyStarted); a refused Start starts nothing.
 //
@@ -129,7 +129,7 @@ func (cm *ComponentManager) runComponentStart(
 	return nil
 }
 
-// Stop is the only stop (design D2; ADR-113). It refuses a nil ctx, and given
+// Stop is the only stop (ADR-113). It refuses a nil ctx, and given
 // an ended ctx it returns that context's error and stops nothing. Before any
 // Start it returns nil and a later Start is refused. A Stop during Start waits
 // for every component's Start to return (or returns ctx's error first); if

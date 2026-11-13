@@ -145,7 +145,7 @@ func validateTriplePredicates(triples []message.Triple) error {
 // Refusal derives only from the stored bytes; the poison inventory is never
 // consulted. A value decodeStoredEntity refuses is recorded in the inventory at
 // that revision and returned as its graph-state error; a valid value clears any
-// stale record at or below it (D3c), so an out-of-band repair recovers Health
+// stale record at or below it, so an out-of-band repair recovers Health
 // on its next read.
 func (c *Component) readEntity(ctx context.Context, entityID string) (graph.EntityState, uint64, error) {
 	entry, err := c.entityBucket.Get(ctx, entityID)

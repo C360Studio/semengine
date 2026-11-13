@@ -14,9 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The status route under hostile input, from the pin's attack_test.go. The pin built struct-literal
-// managers holding a hand-filled component map; here every manager is built through
-// NewComponentManager (design D7).
+// The status route under hostile input. Every manager is built through NewComponentManager.
 
 // TestAttack_HandleComponentStatus_MaliciousQueryParams: hostile debug values do not panic.
 func TestAttack_HandleComponentStatus_MaliciousQueryParams(t *testing.T) {
@@ -91,8 +89,7 @@ func TestAttack_HandleComponentStatus_ConcurrentRequests(t *testing.T) {
 }
 
 // TestAttack_HandleComponentStatus_NoGoroutineLeak: status requests leave no goroutine running.
-// The pin slept 100ms and compared runtime.NumGoroutine with a tolerance of five; here the
-// requests run inside a synctest bubble, which returns only once every goroutine started in it
+// The requests run inside a synctest bubble, which returns only once every goroutine started in it
 // has exited, so a goroutine a request leaves behind fails the test (docs/testing.md, "Services
 // and the lifecycle suite"). The manager is built outside the bubble; nothing in it reaches the
 // NATS client.
@@ -110,7 +107,7 @@ func TestAttack_HandleComponentStatus_NoGoroutineLeak(t *testing.T) {
 }
 
 // TestAttack_HandleComponentStatus_MaliciousComponentName: a name that is "." or "..", or that
-// decodes once to one holding a path separator, is a 400 (design D5); a double-encoded or very long
+// decodes once to one holding a path separator, is a 400; a double-encoded or very long
 // name decodes to a valid name no component has, so it is a 404. None panics.
 func TestAttack_HandleComponentStatus_MaliciousComponentName(t *testing.T) {
 	cm := newAttackComponentManager(t)

@@ -358,9 +358,8 @@ func TestServeGraphTriples_ContentTypeJSON(t *testing.T) {
 
 // ---- message.Triple wire-shape round-trip ----
 
-// TestServeGraphTriples_ContextAndDatatypeRoundTrip verifies that Context and
-// Datatype — fields that TripleResponse formerly dropped — now survive the full
-// HTTP encode/decode cycle.
+// TestServeGraphTriples_ContextAndDatatypeRoundTrip verifies that a triple's
+// Context and Datatype survive the full HTTP encode/decode cycle.
 func TestServeGraphTriples_ContextAndDatatypeRoundTrip(t *testing.T) {
 	ts := fixedTime
 	triple := message.Triple{
@@ -418,11 +417,11 @@ func TestServeGraphTriples_SourcePreservedWhenEmpty(t *testing.T) {
 	assert.Equal(t, "", val, "source value must be empty string, not omitted")
 }
 
-// ---- D6 (Q-A): validated filters, a sorted scan, and read errors ----
+// ---- Validated filters, a sorted scan, and read errors ----
 
 // TestGraphTriplesRefusesMalformedSubjectAndPredicate: a subject that is not a literal entity ID
 // and a predicate that is not three parts are refused with 400 naming the parameter, before any
-// read (design D6, Q-A).
+// read.
 //
 // spec: operator-surface / /graph/triples answers a sorted, validated read of ENTITY_STATES
 func TestGraphTriplesRefusesMalformedSubjectAndPredicate(t *testing.T) {
@@ -521,7 +520,7 @@ func tripleJSON(t testing.TB, triples []message.Triple) string {
 // TestGraphTriplesSkipsOnlyADeletedKey: a key whose read reports not found (deleted between the
 // listing and the read) is skipped; a read that fails any other way, here a timeout, and an entity
 // the decoder refuses fail the whole read, which the endpoint answers with 500, never with the
-// triples read so far (design D6, Q-A).
+// triples read so far.
 //
 // spec: operator-surface / /graph/triples answers a sorted, validated read of ENTITY_STATES
 func TestGraphTriplesSkipsOnlyADeletedKey(t *testing.T) {
@@ -587,7 +586,7 @@ func TestGraphTriplesSkipsOnlyADeletedKey(t *testing.T) {
 
 // TestScanGraphTriplesMatchesSortedOracle: the answer is the first limit triples, in key and then
 // position order, of every triple matching the filters across all entities, however the reader
-// lists its keys (design D6 and § Generated checks: a stated law). The oracle sorts the entity IDs
+// lists its keys (a stated law, checked by generated runs). The oracle sorts the entity IDs
 // itself and matches each filter on its own: subject and predicate by equality, object by its %v
 // text.
 //
@@ -755,7 +754,7 @@ func (w *scriptedEntityWatcher) Stop() error {
 
 // TestGraphTriplesListingCutShortFails: a listing of ENTITY_STATES cut short after its first key,
 // by the watch closing before its end-of-snapshot marker or by the request being cancelled, fails
-// the query with a 500 and no triples, never a 200 over the entities listed so far (#533). The
+// the query with a 500 and no triples, never a 200 over the entities listed so far. The
 // oracle is the literal answer: the one listed entity has a matching triple, so a partial listing
 // would return it.
 //

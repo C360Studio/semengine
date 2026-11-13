@@ -36,7 +36,7 @@ func (c *Component) queryHandlers() map[string]func(context.Context, []byte) ([]
 }
 
 // setupQueryHandlers subscribes to the subject of every verb the table in graph declares
-// for graph-ingest, and to nothing else (design D20). A declared verb with no handler
+// for graph-ingest, and to nothing else. A declared verb with no handler
 // here fails Start: serving fewer verbs than the table declares would leave callers
 // with no responder for a subject they were told is served.
 func (c *Component) setupQueryHandlers(ctx context.Context) error {
@@ -122,14 +122,10 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 
 	// Fetch entities with bounded concurrency and cache.
 	//
-	// Timed because this handler's budget and its CALLER's budget are set
-	// independently and were inverted: graph-query's loadEntities abandons the
-	// request at its QueryTimeout (default 5s) while this handler is allowed
-	// 10s, so a batch taking 5–10s is charged to the caller as an opaque
-	// "context deadline exceeded" that no server-side log records at all. That
-	// is how SemStreams gh#830 presented — an intermittent e2e failure with nothing on the
-	// responder side to look at. Same reasoning as reportBatchMissing below:
-	// the symptom reaches the user several hops from the fact.
+	// Timed because this handler's 10 s budget and its caller's deadline are set
+	// independently: a caller that gives up first sees an opaque "context deadline
+	// exceeded" that no server-side log records. Same reasoning as reportBatchMissing
+	// below: the symptom reaches the user several hops from the fact.
 	fetchStart := time.Now()
 	entities, missing, err := c.fetchEntitiesConcurrent(ctx, req.IDs, defaultMaxConcurrent)
 	fetchElapsed := time.Since(fetchStart)
@@ -166,11 +162,10 @@ func batchMissingReason(id string) graph.MissingReason {
 	return graph.MissingNotFound
 }
 
-// reportBatchMissing makes partial hydration observable. It is the SemStreams gh#597 soak
-// instrumentation: the open question there is whether a dropped ID's KV read was
-// genuinely not-found at the moment of failure, and until now nothing recorded that a
-// batch came back short at all — the symptom reached the user as a missing search
-// result several hops away.
+// reportBatchMissing makes partial hydration observable: it records whether a dropped
+// ID's KV read was genuinely not-found at the moment of failure, and that a batch came
+// back short at all, which otherwise reaches the user as a missing search result
+// several hops away.
 //
 // The log carries the IDs (bounded) because "which one" is the whole question; the
 // counter carries only counts, since entity IDs are an unbounded label space.
@@ -179,7 +174,7 @@ func (c *Component) reportBatchMissing(requested, missing []string) {
 		return
 	}
 	// Counted by the SAME reason the wire reports, not a blanket not_found: the
-	// empty-ID case added alongside this counter is reported as `error`, and a
+	// empty-ID case is reported as `error`, and a
 	// metric that disagrees with the response is worse than no metric.
 	byReason := make(map[graph.MissingReason]int, 2)
 	for _, id := range missing {
@@ -192,11 +187,11 @@ func (c *Component) reportBatchMissing(requested, missing []string) {
 	if len(logged) > maxLoggedMissingIDs {
 		logged = logged[:maxLoggedMissingIDs]
 	}
-	// Debug, not Warn: with reads now serving under lag (ADR-084), a semantic index
+	// Debug, not Warn: with reads serving under lag (ADR-084), a semantic index
 	// ranking an entity whose ENTITY_STATES write has not landed yet is ordinary
 	// operation, and warning on it would train operators to ignore the line. The
 	// COUNTER above is the alertable signal — it has a rate, which is what
-	// distinguishes normal churn from the SemStreams gh#597 pathology.
+	// distinguishes normal churn from IDs dropped in bulk.
 	c.logger.Debug("batch entity query did not hydrate every requested ID",
 		"requested", len(requested),
 		"missing", len(missing),
@@ -297,8 +292,8 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	}
 
 	// MANDATORY: sort before cursor application — cursor is meaningless
-	// without a deterministic key order. Compact then drops repeated keys (a nats.go
-	// listing can repeat one under concurrent overwrites, #512), so an entity is served
+	// without a deterministic key order. Compact then drops repeated keys (nats.go does
+	// not promise a listing names each key once under concurrent overwrites), so an entity is served
 	// at most once and total counts distinct keys.
 	sort.Strings(keys)
 	keys = slices.Compact(keys)
@@ -390,7 +385,7 @@ func marshalFittingPrefixPage(
 	encodedSize := func(count int, cursor string) (int64, error) {
 		size := int64(len(`{"entities":[`) + len(`],"total":`) + len(strconv.Itoa(total)) + len(`}`))
 		if entities == nil {
-			// A group with no keys encodes its page as null, not [] (#521).
+			// A group with no keys encodes its page as null, not [].
 			size += int64(len(`null`) - len(`[]`))
 		}
 		for i := 0; i < count; i++ {
@@ -475,7 +470,7 @@ func classifyEntityQueryError(err error) error {
 // caller cannot recover the second set from the first: the entity slice is ordered
 // cache-hits-then-misses, so it carries no correspondence to the requested order, and a
 // caller diffing the sets would have to re-derive what this function already knew. That
-// gap is the SemStreams gh#597 drop path — a requested ID silently absent from a shorter list.
+// gap is the drop path — a requested ID silently absent from a shorter list.
 //
 // Order remains non-deterministic by contract; callers that need request order restore
 // it themselves (fusionnats.Entities does, because fusion ranks by position).
@@ -556,14 +551,14 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 			gen0 := c.loadEntityCacheGen(entityID)
 
 			// readEntity records poison at the failing revision, so a single
-			// batch attempt inventories EVERY poisoned entity it touched (D5),
-			// and clears a stale record on a valid read (D3c).
+			// batch attempt inventories EVERY poisoned entity it touched,
+			// and clears a stale record on a valid read (clear path (c)).
 			entity, _, err := c.readEntity(ctx, entityID)
 			if err != nil {
 				if natsclient.IsKVNotFoundError(err) {
 					// Not an error — this ID simply is not in the bucket. It is
 					// REPORTED rather than dropped so the caller can tell a short
-					// list from a partial one (SemStreams gh#597).
+					// list from a partial one.
 					results[idx].notFound = true
 				} else {
 					results[idx].err = err
@@ -587,11 +582,11 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 	}
 
 	// Phase 3: Merge cached + fetched results. Poison fails the WHOLE read with one
-	// typed error naming every poisoned entity encountered in this attempt (design D5),
+	// typed error naming every poisoned entity encountered in this attempt,
 	// and never a B-only response that hides A's poison.
 	//
 	// A not-found ID is different in kind: it does not fail the call, it is collected
-	// and REPORTED. Partiality was never the bug — invisibility was.
+	// and REPORTED. Partiality is acceptable; invisibility is not.
 	var poisoned []*graph.StateContractError
 	var firstOtherErr error
 	missing := invalid
@@ -630,7 +625,7 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 // graph_state_reset_required naming every poisoned entity (bounded list),
 // wrapping one typed cause so errors.As(*graph.StateContractError) is
 // preserved across the seam. Kills the one-repair-per-round-trip discovery
-// loop (design D5).
+// loop.
 func aggregateEntityPoisonError(poisoned []*graph.StateContractError) error {
 	ids := make([]string, 0, len(poisoned))
 	for _, p := range poisoned {
@@ -709,7 +704,7 @@ func (c *Component) invalidateEntityCacheEntry(id string) {
 // entityCacheHandle reads the entity cache handle once, under mu. A caller uses the copy
 // it got: release may close and clear the handle meanwhile, and a closed cache still
 // serves Get, Set and Delete (cache.Cache's Close), so a use during or after Stop is
-// safe (#306). Nil when the cache is disabled or released.
+// safe. Nil when the cache is disabled or released.
 func (c *Component) entityCacheHandle() cache.Cache[graph.EntityState] {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

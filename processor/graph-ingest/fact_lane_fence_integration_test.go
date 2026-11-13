@@ -20,8 +20,7 @@ import (
 // not an ack-drop.
 
 // TestIntegration_FactLane_InvalidPayloadIsTerminated publishes a payload its own
-// Validate refuses (at the PR, a LoopExecutionEntity whose loop_id cannot form an
-// entity ID): the lane refuses it before any identity method runs.
+// Validate refuses: the lane refuses it before any identity method runs.
 func TestIntegration_FactLane_InvalidPayloadIsTerminated(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

@@ -19,8 +19,8 @@ import (
 // meteredCanonicalMutation wraps every graph-mutation request handler and meters rejections
 // by subject + reason. Under ADR-060, a hard rejection surfaces as (nil body,
 // *errs.ClassifiedError) on the error channel — there is no in-body Success/ErrorCode path
-// for single-entity mutations. Partial-batch success is still a (body, nil) reply with
-// FailedSubjects populated. Each case uses a UNIQUE subject, so its label series is its own.
+// for single-entity mutations. Partial-batch success is still a (body, nil) reply whose
+// Results carry each failed subject's outcome and error. Each case uses a UNIQUE subject, so its label series is its own.
 
 func TestMeteredCanonicalMutation_MetersRejectionByErrorCode(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)

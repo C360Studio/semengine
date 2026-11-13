@@ -112,8 +112,7 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 	})
 
 	t.Run("invalid_request_path", func(t *testing.T) {
-		// ADR-060: malformed JSON → invalid class, JSON body. Note: uses
-		// errs.Classified (no Code), so X-Error-Code is absent.
+		// ADR-060: malformed JSON → invalid class, Code invalid_request, JSON body.
 		req := []byte("this is not valid JSON {{{")
 
 		msg, err := natsClient.RequestWithHeaders(ctx, "graph.ingest.query.entity", req, nil, wireRequestTimeout)
@@ -134,8 +133,8 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 	})
 
 	t.Run("empty_id_path", func(t *testing.T) {
-		// Validation error before KV lookup: empty id → invalid class, JSON body.
-		// Note: uses errs.Classified (no Code), so X-Error-Code is absent.
+		// Validation error before KV lookup: empty id → invalid class, Code
+		// invalid_request, JSON body.
 		req, _ := json.Marshal(map[string]string{"id": ""})
 
 		msg, err := natsClient.RequestWithHeaders(ctx, "graph.ingest.query.entity", req, nil, wireRequestTimeout)

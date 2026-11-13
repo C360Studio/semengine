@@ -93,4 +93,4 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   `processor/graph-embedding/README.md` says its text comes from `graph/entitytext`; `docs/repository-map.md` and
   `scripts/cover-check.sh` gain the two packages; `docs/setup-plan.md:429-430` says SemSource's mainline builds on
   SemEngine (owner ruling on PR #629). The adoption list (design D3) is filed as one issue.
-- [ ] 3.2 PR C. Archive and spec sync.
+- [x] 3.2 PR C. Archive and spec sync.

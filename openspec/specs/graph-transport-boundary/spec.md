@@ -13,10 +13,10 @@ carries no legacy fields.
 ### Requirement: Reserved request subjects have one declaration
 
 Each reserved request subject SHALL be declared once: graph-ingest's (`graph.ingest.query.*`), graph-index's
-(`graph.index.query.*`), graph-query's (`graph.query.*`, only the verbs it serves) and the derived-index verbs
-graph-query forwards to in the `graph` verb table, and the mutation family (`graph.mutation.>`) in
-`internal/graphmutation`. A verb a consumer serves under `graph.query.*` that the table does not declare SHALL not be
-reserved.
+(`graph.index.query.*`), graph-query's (`graph.query.*`, only the verbs it serves), the derived-index verbs
+graph-query forwards to and graph-lexical's (`graph.lexical.query.*`) in the `graph` verb table, and the mutation
+family (`graph.mutation.>`) in `internal/graphmutation`. A verb a consumer serves under `graph.query.*` that the table
+does not declare SHALL not be reserved.
 
 #### Scenario: graph-index's verbs are in the table
 
@@ -39,6 +39,12 @@ reserved.
 - **THEN** it holds `search` and `similar` on `graph.embedding.query.*` with responder `graph-embedding`, `bounds` on
   `graph.spatial.query.*` with responder `graph-index-spatial`, and `range` on `graph.temporal.query.*` with responder
   `graph-index-temporal` (`TestQueryVerbsDeclareEachRespondersVerbs`)
+
+#### Scenario: graph-lexical's verb is in the table
+
+- **WHEN** `graph.QueryVerbs()` is read
+- **THEN** it holds `search` on `graph.lexical.query.*` with responder `graph-lexical`, enveloped with a
+  `graph.LexicalSearchData` (`TestQueryVerbsDeclareEachRespondersVerbs`)
 
 ### Requirement: The verb table declares each reply
 

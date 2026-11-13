@@ -519,7 +519,7 @@ func putConfigValue(t *testing.T, ctx context.Context, manager *Manager, key str
 }
 
 // TestBucketIsNamedByTheDeclaredPair: two sem* apps on one NATS server sharing
-// one fixed-name configuration bucket would have the second to boot adopt the
+// one fixed-name configuration bucket: the second app to boot would adopt the
 // first's components. Each declared pair names its own bucket instead: both
 // apps start, neither sees the other's configuration, and nothing is refused
 // because there is nothing to catch. A clone declaring the same pair shares its

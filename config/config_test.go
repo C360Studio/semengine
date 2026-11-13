@@ -224,8 +224,7 @@ func TestLoader_Validation(t *testing.T) {
 }
 
 // Test components configuration
-// TODO: Update this test for new ComponentConfigs structure
-// The old structure with Components.Enabled is obsolete
+// TODO: test Components, the map of ComponentConfig keyed by instance name.
 /*
 func TestConfig_Components(t *testing.T) {
 	// OLD FORMAT - NO LONGER SUPPORTED

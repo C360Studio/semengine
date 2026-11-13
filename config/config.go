@@ -100,10 +100,9 @@ func (sc *SafeConfig) Update(cfg *Config) error {
 
 // Mutate atomically applies a read-modify-write to the configuration. It holds
 // the write lock across the WHOLE clone → mutate → validate → swap sequence, so
-// two concurrent mutations cannot lose one another's change. Without
-// this, a caller doing Get() (a clone) → mutate → Update() races another doing
-// the same: each starts from the same base and the second swap clobbers the
-// first. -race does not flag it — each Get/Update is individually locked; the
+// two concurrent mutations cannot lose one another's change. Without this, a
+// caller doing Get() (a clone) → mutate → Update() races another doing the
+// same: each starts from the same base and the second swap clobbers the first. -race does not flag it — each Get/Update is individually locked; the
 // atomicity violation is at the compound level.
 //
 // fn receives a private deep copy it may mutate freely; returning a non-nil error
@@ -250,10 +249,10 @@ func (c *Config) ValidateDocument() error {
 
 	// Validate stream declarations: the backing-stream prohibition, and the
 	// bounds contract every ordinary stream owes. This runs here, and not only
-	// in the provisioner, because `semstreams --validate` prints
-	// "✓ Configuration is valid" and exits BEFORE streams are ensured
-	// (internal/boot/run.go) — so without it a config that hard-fails boot
-	// would be greenlit by the very tool an operator uses to avoid that.
+	// in the provisioner, because an operator's validation run reports a
+	// configuration valid before any stream is ensured — so without it a
+	// config that hard-fails boot would be greenlit by the very check an
+	// operator uses to avoid that.
 	// Resolution is pure and I/O-free precisely so it can run here, which is
 	// also what lets the port-derived lane be checked at validation rather than
 	// only at boot.
@@ -654,11 +653,11 @@ func validateDeclaredAuthorityPair(org, id string) error {
 
 // validateAuthorityPair bounds an EFFECTIVE platform.org + platform.id so every
 // framework identity family fits under the canonical 256-byte entity-ID bound
-// (ADR-102, amending ADR-076). The budget is derived from the
-// framework's own family table, never configured by the operator, and the
-// second check is by observation rather than arithmetic: the binding family's
-// identity is composed under the pair and must validate, which also refuses an
-// org or id that is not one canonical entity-ID segment.
+// (ADR-102, amending ADR-076). The budget is derived from the framework's own
+// family table, never configured by the operator, and the second check is by
+// observation rather than arithmetic: the binding family's identity is composed
+// under the pair and must validate, which also refuses an org or id that is not
+// one canonical entity-ID segment.
 //
 // Effective means "the pair this deployment actually mints under": the minted
 // identifier, an adopted platform_identity record's, or the running

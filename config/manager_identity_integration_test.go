@@ -97,8 +97,8 @@ func directKVStore(t *testing.T, ctx context.Context, manager *Manager) *natscli
 
 // directBucket is directKVStore's raw handle. A test that inspects the bucket
 // after a REFUSED Start must use this: the manager publishes its own handles
-// only on success, so reading through the manager would (rightly)
-// report errBucketNotAcquired.
+// only on success, so reading through the manager would (rightly) report
+// errBucketNotAcquired.
 func directBucket(t *testing.T, ctx context.Context, manager *Manager) jetstream.KeyValue {
 	t.Helper()
 	kv, err := manager.natsClient.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
@@ -296,9 +296,9 @@ func TestFirstBootMintsDistinctSuffixesPerDeployment(t *testing.T) {
 }
 
 // TestPreCreatedIdentityRecordIsAdoptedUnsuffixed pins the knobless opt-out: an
-// operator who owns global uniqueness
-// pre-creates the record with id == stem. It is per-deployment by construction,
-// so cloning the configuration template cannot clone it.
+// operator who owns global uniqueness pre-creates the record with id == stem.
+// It is per-deployment by construction, so cloning the configuration template
+// cannot clone it.
 func TestPreCreatedIdentityRecordIsAdoptedUnsuffixed(t *testing.T) {
 	tc := fixtureClient(t)
 	ctx, cancel := context.WithCancel(context.Background())

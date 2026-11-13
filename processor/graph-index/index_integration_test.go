@@ -434,11 +434,12 @@ func TestFailedWriteWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 	}
 }
 
-// TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt is the failed-write test above
-// run after the bootstrap latch has set. Before the latch, QueryReady refuses an unresolved write
-// through compute as well; once latched, the failed-writes check in QueryReady is the only refusal.
-// The latch is awaited as a remote reader sees it: the published envelope
-// reading BootstrapComplete, which is written after the follower set the latch.
+// TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt is the failed-write test
+// above run after the bootstrap latch has set. Before the latch, QueryReady refuses an
+// unresolved write through compute as well; once latched, the failed-writes check in
+// QueryReady is the only refusal. The latch is awaited as a remote reader sees it: the
+// published envelope reading BootstrapComplete, which is written after the follower set the
+// latch.
 func TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	await(t, "an envelope reporting bootstrap complete",

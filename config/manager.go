@@ -1433,9 +1433,10 @@ func (cm *Manager) adoptPlatformIdentity(ctx context.Context, kvStore *natsclien
 //
 // Mutate re-validates the WHOLE configuration, which is how the effective pair
 // gets bounded — and also means an unrelated defect anywhere in the document
-// surfaces at Start, inside this step. That defect leads the error: reading "apply effective platform identity: … streams: ordinary stream
-// bounds are not declared" as an identity failure costs a reader the real
-// cause, so the identity step names itself last.
+// surfaces at Start, inside this step. That defect leads the error: reading
+// "apply effective platform identity: … streams: ordinary stream bounds are not
+// declared" as an identity failure costs a reader the real cause, so the
+// identity step names itself last.
 func (cm *Manager) applyEffectivePlatformID(id string) error {
 	if err := cm.config.Mutate(func(current *Config) error {
 		current.Platform.ID = id

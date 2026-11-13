@@ -361,11 +361,11 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 			// The lens produced a REAL storage handle but no BodyResolver is wired to
 			// dereference it. That is a configuration gap, NOT a body-less tier: the
 			// node has a body it simply cannot load, so report it rather than ship an
-			// unexplained empty body. TODO(when lens Engine is wired): distinct
-			// not_configured reason to separate "no resolver wired" from "read
-			// faulted" (deferred — the Engine has no production caller yet, so
-			// expanding the closed BodyReason vocabulary for an unwired path is
-			// premature).
+			// unexplained empty body.
+			// TODO(when lens Engine is wired): a distinct not_configured reason to
+			// separate "no resolver wired" from "read faulted" (deferred — the
+			// Engine has no production caller yet, so expanding the closed
+			// BodyReason vocabulary for an unwired path is premature).
 			e.reportBodyFailure(&node, BodyError, errors.New("fusion: no body resolver configured"))
 		default:
 			body, derr := e.body.ResolveBody(ctx, ref)
@@ -585,7 +585,7 @@ func (e *Engine) rankEntities(entities []*Entity, names []string, query string) 
 // salient (max positive) weight PLUS its single strongest demotion (min
 // negative) weight over its predicates — one presence-based boost and one
 // presence-based penalty, summed. Extremes, not a sum over all predicates, so a
-// densely-annotated entity does not outrank a sharply- identified one purely on
+// densely-annotated entity does not outrank a sharply-identified one purely on
 // fact count; and the two extremes come from different predicates (a
 // predicate's weight is one sign), so a boost and a demotion compose without
 // either masking the other.

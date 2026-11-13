@@ -827,8 +827,9 @@ func TestQueriesAreRefusedWhileTheFeedIsLost(t *testing.T) {
 	if err := js.DeleteKeyValue(t.Context(), graph.BucketEntityStates); err != nil {
 		t.Fatalf("delete %s: %v", graph.BucketEntityStates, err)
 	}
-	// A deleted bucket closes the watch within two of nats.go's activity checks, measured at
-	// 18 s; this wait proves it again at the go.mod version on every run, within waitBound.
+	// A deleted bucket closes the watch within two of nats.go's activity checks (measured 18 s at
+	// nats.go v1.54.0). This wait sees the close again at the go.mod version, bounded only by
+	// waitBound.
 	await(t, "Health naming the lost feed",
 		func(context.Context) (component.HealthStatus, error) { return h.c.Health(), nil },
 		func(s component.HealthStatus) bool { return strings.Contains(s.LastError, "ENTITY_STATES feed lost") })

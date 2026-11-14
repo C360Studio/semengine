@@ -123,7 +123,9 @@ and any limit, on every path; it is true as listed, not a snapshot.
 `graph.ingest.query.prefixIDs` takes the same `graph.PrefixQueryRequest` and answers `graph.PrefixIDsResponse`: `ids`
 (the page's keys in order), `total` (counted as above) and `next_cursor`. It reads no stored value, so an entity whose
 stored value cannot be read is listed like any other, where `prefix` refuses the whole page. A caller that must
-find such an entity lists its IDs here and reads them through `batch`.
+find such an entity lists its IDs here and reads them one at a time with `entity`: `batch` still refuses the whole
+call when one of its entities is damaged, while a one-ID read that is refused with `graph_state_reset_required`
+points at the one ID it was asked for.
 
 ## Hierarchy inference
 

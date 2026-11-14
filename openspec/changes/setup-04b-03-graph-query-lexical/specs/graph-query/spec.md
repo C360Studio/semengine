@@ -22,13 +22,21 @@ query it cannot parse among them, SHALL reach the caller with its class, code an
 
 ### Requirement: Search requests decode strictly
 
-Both verbs' requests SHALL decode strictly, refusing an unknown key with `invalid_request` naming it. `limit` 0 SHALL
-mean 10, 1 to 100 SHALL be used as given, and any other value SHALL be refused `invalid_request` before any read.
+Both verbs' requests SHALL decode strictly, refusing an unknown key with `invalid_request` naming it, and SHALL refuse
+`invalid_request`, before any request, a blank `query`, a `level` outside 0 to 2, and a `limit` other than 0 (meaning
+10) or 1 to 100. `localSearch` SHALL also refuse an `entity_id` that is not a literal entity ID.
 
-#### Scenario: SemSource's old key and an out-of-range limit
+#### Scenario: A bad local request
 
-- **WHEN** a request carries `summarize_threshold`, or `limit` 101
-- **THEN** it is refused `invalid_request` naming the key or the limit, and no request is sent
+- **WHEN** a `localSearch` request holds an unknown key, a five-part `entity_id`, `level` 3, a blank query or
+  `limit` 101
+- **THEN** it is refused `invalid_request` and no request is sent (`TestSearchRequestsDecodeStrictly`)
+
+#### Scenario: A bad global request
+
+- **WHEN** a `globalSearch` request carries `summarize_threshold`, `max_communities` or an `include_*` key, a blank
+  query, or `level` 3
+- **THEN** it is refused `invalid_request` naming the key or field, and no request is sent
   (`TestSearchRequestsDecodeStrictly`)
 
 ### Requirement: Local search is scoped to the group
@@ -72,14 +80,26 @@ could not be read.
 ### Requirement: Matches are the hits read back as stored
 
 Both verbs SHALL read their hits with one `graph.ingest.query.batch` request and answer `matches` in the word index's
-order, each `id`, `label`, `score` (the word index's) and `entity` (the stored bytes unchanged). A hit the batch names
-missing SHALL be left out and counted in `missing`. A batch refusal SHALL reach the caller as it arrived.
+order, each `id`, `label`, `score` (the word index's) and `entity`, the bytes the batch sent for it, which graph-query
+does not re-encode. A hit the batch names missing SHALL be left out and counted in `missing`. When the reply would
+exceed `max_payload`, the lowest-ranked matches SHALL be left out until it fits. A batch refusal SHALL reach the
+caller as it arrived.
 
 #### Scenario: Order and missing hits
 
 - **WHEN** the batch returns the entities in another order and names one hit missing
 - **THEN** the matches follow the hits' order without it, `missing` is 1 and `truncated` is true
   (`TestSearchMatchesKeepHitOrder`, `TestSearchDropsMissingHits`)
+
+#### Scenario: Entities pass unchanged
+
+- **WHEN** the batch sends a matching entity holding a value graph-query does not read, such as an integer above 2^53
+- **THEN** that entity reaches the caller as the batch sent it (`TestLocalSearchEntitiesPassUnchanged`)
+
+#### Scenario: A reply over the payload limit
+
+- **WHEN** so many matches that the reply would exceed `max_payload`
+- **THEN** the lowest-ranked are left out until it fits, and `truncated` is true (`TestLocalSearchFitsMaxPayload`)
 
 ### Requirement: A search reply declares what it left out
 
@@ -94,10 +114,10 @@ returned, a hit is missing, or matches were left out to fit `max_payload`.
 
 ### Requirement: Every question gets a word search
 
-`globalSearch` SHALL answer every question that decodes with a word search, refusing none for its words. It SHALL
-classify a question of more than one token once with the keyword classifier and list each hint in `hints` with
-`hint`, `detail`, `honoured`, and, when not honoured, `reason` and the refusal's `code` when one caused it. A
-classifier refusal of class invalid SHALL be a not-honoured `classification` hint carrying its text.
+`globalSearch` SHALL answer every question that decodes with a word search, and no hint's trigger word SHALL refuse
+it. It SHALL classify a question of more than one token once with the keyword classifier and list each hint in
+`hints` with `hint`, `detail`, `honoured`, and, when not honoured, `reason` and the refusal's `code` when one caused
+it. A classifier refusal of class invalid SHALL be a not-honoured `classification` hint carrying its text.
 
 #### Scenario: Plain questions
 
@@ -106,6 +126,18 @@ classifier refusal of class invalid SHALL be a not-honoured `classification` hin
 - **THEN** none is refused, each reply holds `text`, and each hint the classifier reported is listed with
   `honoured` false and a reason, `hint` being one of `entity`, `path`, `time_range`, `area`, `aggregation`,
   `similarity`, `ranking` and `classification` (`TestEveryQuestionIsSearched`)
+
+### Requirement: The word search comes before any hint
+
+Global search SHALL send its word search before reading any hint. A refusal of the word search, a query the word
+index's rules refuse among them, SHALL be the reply, and no hint SHALL be read: a one-token question the word index
+refuses is not looked up as an entity.
+
+#### Scenario: A question the word index refuses
+
+- **WHEN** the question is `the of and`, or the one token `pump*`
+- **THEN** the reply is the word index's `invalid_request`, and no alias, entity or path request is made
+  (`TestWordIndexRefusalComesFirst`)
 
 ### Requirement: A hint applies only when it is verified
 
@@ -331,7 +363,8 @@ in `Health` and log one Warn naming the verb, the level, the count and why answe
 ### Requirement: Local search answers from one group's record and one page
 
 **Reason**: Local search is a word search scoped to the group (design D2); the record decorates and no prefix page is
-read. Replaced by "Local search is scoped to the group".
+read. The reply's fields move to "Local search is scoped to the group"; "Entities pass unchanged" and the payload fit
+move to "Matches are the hits read back as stored"; the one-page scenarios are gone with the page.
 
 ### Requirement: Local search ranks by the pin's text score
 
@@ -344,8 +377,9 @@ are word searches" and "Search quality holds against a plain reference".
 
 ### Requirement: Local search refuses what it cannot answer
 
-**Reason**: A missing or unreadable record no longer refuses (design D2); request checks and the word index's
-refusals are in "Local and global search are word searches".
+**Reason**: A missing or unreadable record no longer refuses (design D2); it is a `record_state`. The bad-request
+refusals (unknown key, invalid `entity_id`, `level` 3, empty query) move to "Search requests decode strictly"; the
+word index's refusals are in "Local and global search are word searches".
 
 ### Requirement: Global search answers by its hints
 
@@ -363,8 +397,9 @@ search".
 
 ### Requirement: Global search refuses what no strategy can honour
 
-**Reason**: Strict decoding moves to "Local and global search are word searches"; the routing refusals are removed
-(design D5).
+**Reason**: A blank query, a `level` outside 0 to 2 and the pin's keys move to "Search requests decode strictly". Two
+filters, an impossible number and an entity beside a place no longer refuse: they are not-honoured hints under "Every
+question gets a word search" (design D5).
 
 ### Requirement: A strategy answers with its own result
 

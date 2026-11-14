@@ -19,18 +19,18 @@ distinct words, counting plain, phrase and excluded words after tokenizing, with
 ### Requirement: Syntax kept for later query forms is refused
 
 `ParseQuery` SHALL refuse, with an error matching `ErrReservedSyntax`, a term outside quotes that starts with `name:`
-or `body:` followed by more text, or that ends in a letter or digit followed by `*` or `~`, unless the term also
-starts with `*`, which marks emphasis. The refusal's message SHALL name the term and say that quoting it searches it as
-text. Every other character outside letters and digits, a lone `*` or `~` among them, SHALL separate words, as in
+or `body:` followed by more text, or that ends in a letter or digit followed by `*`, unless the term also starts with
+`*`, which marks emphasis. The refusal's message SHALL name the term and say that quoting it searches it as text.
+Every other character outside letters and digits, `~` and a lone `*` among them, SHALL separate words, as in
 documents.
 
 #### Scenario: Reserved and ordinary punctuation
 
-- **WHEN** the queries are `name:retry`, `retr*`, `retry~`, `void*`, `HEAD~`, `pkg.Func() name: retry`,
-  `SELECT * FROM users`, `java.util.*`, `**bold**`, `*bold* text`, `cd ~` and `"name:retry void*"`
-- **THEN** the first five are refused with `ErrReservedSyntax`, each message naming its term and saying to quote it;
-  the next six parse to the words `pkg func name retry`, `select user`, `java util`, `bold`, `bold text` and `cd`; and
-  the last parses to the phrase `name retry void`
+- **WHEN** the queries are `name:retry`, `retr*`, `void*`, `pkg.Func() name: retry`, `SELECT * FROM users`,
+  `java.util.*`, `**bold**`, `*bold* text`, `git reset HEAD~`, `retry~`, `cd ~` and `"name:retry void*"`
+- **THEN** the first three are refused with `ErrReservedSyntax`, each message naming its term and saying to quote it;
+  the next eight parse to the words `pkg func name retry`, `select user`, `java util`, `bold`, `bold text`,
+  `git reset head`, `retry` and `cd`; and the last parses to the phrase `name retry void`
 - **AND** the test that verifies this is `TestParseQueryReservesForms`
 
 ## ADDED Requirements

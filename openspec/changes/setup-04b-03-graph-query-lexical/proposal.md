@@ -7,12 +7,10 @@ Track: `design`. Modified capabilities: `graph-query`, `lexical-search`, `graph-
 
 ## Why
 
-The word index is on `main` (changes 1 and 2), but graph-query's local and global search do not use it (inventory §4).
-On the frozen scorecard corpus they find the answer in the first ten for 32.6% (local) and 7.0% (global) of questions,
-where the word index finds it for 59.8% and 56.0% and a plain BM25 reference for 60.0% and 56.0%
-(`notes/probes/search-quality-probe.log`). Community keywords decide which groups global search reads, and the router
-refuses or misroutes plain questions on trigger words (#616). This is change 3 of the plan on epic #10 (comment
-6833147079).
+graph-query's local and global search do not use the word index (inventory §4). On the frozen scorecard corpus they
+find the answer in the first ten for 32.6% (local) and 7.0% (global) of questions; the word index, 59.8% and 56.0%; a
+plain BM25, 60.0% and 56.0% (`notes/probes/search-quality-probe.log`). Community keywords gate global search, and the
+router refuses or misroutes plain questions (#616). This is change 3 of the plan on epic #10 (comment 6833147079).
 
 ## What Changes
 
@@ -21,11 +19,11 @@ refuses or misroutes plain questions on trigger words (#616). This is change 3 o
 - Matches are the hits read back as stored entities, in the word index's order, with score and label; both verbs take
   `limit` (default 10, at most 100) and declare a cut answer, missing entities and excluded words.
 - Every question gets a word search. The classifier's hints are reported, each honoured or not with a reason; a path
-  start or entity reference that resolves adds its walk or entity. No question is refused for its words.
-- What search accepts (#624): up to 32 distinct words; `*bold*` is text; `~` after a word stays refused, with advice
-  to quote it; excluded words are listed in the reply.
-- searchGraph answers as globalSearch and asks no embedding verb at tier 0. The tier 1 fallback's shape is written
-  as an extension point (owner question 1).
+  start or entity reference that resolves adds its walk or entity. No hint's trigger word refuses; the word index's
+  query rules still do (`pump*`, a question of stopwords only).
+- What search accepts (#624): up to 32 distinct words; `*bold*` is text; excluded words are listed in the reply;
+  `HEAD~` is owner question 2 (recommended: a final `~` separates words).
+- searchGraph answers as globalSearch, with no embedding request at tier 0; the tier 1 fallback is owner question 1.
 - A required known-answer test runs the 500 questions through both verbs against a plain BM25 computed in the test.
 - Smoke checks local and global search on the word index (#628, second item). README, MIGRATION, the query-pattern
   skill and the ledger row say what the verbs do now.
@@ -47,10 +45,15 @@ transient `internal` naming the verb. graph-query stops reading prefix pages for
 PR A, the query rules: `Closes #624`. PR B, graph-query on the index, with the archive: `Closes #616`, `Closes #506`;
 `Addresses #650` (graph-query's half; graph-clustering's stays for change 4), `Addresses #628` (second item; change 4
 has the rest), and narrows #535 to "from A to B" by comment. #563 stays open unless the owner picks building the tier 1
-fallback now. New defect to file: the batch read refuses every entity when one is damaged (beside #578).
+fallback now. #656 (a batch read refuses every entity when one is damaged) stays open: PR B neither fixes nor works
+around it, so one damaged hit refuses a search until it is fixed in graph-ingest.
 
 ## Rulings
 
 Covered: plan item 3 (#10 comment 6833147079); #563 at tier 0 (6876750057); #624 settled here (6876750265);
-consumers migrate (owner, 2026-11-02). Open: design questions 1 (when to build the tier 1 fallback) and 2 (the
-ADR-087 port note).
+consumers migrate (owner, 2026-11-02). Open: design questions 1 (when to build the tier 1 fallback) and 2 (`HEAD~`).
+
+Changed ADR decision, for approval with this proposal: ADR-087 Decision 5 ("Readiness is gated on `COMMUNITY_INDEX`
+only", `docs/adr/087-community-summary-store-ownership.md:96`) stops applying to search, which is ready when
+graph-lexical answers; the community view only describes groups. Its purpose, never gating on summaries, still holds,
+and ADR-088 already makes readiness per producer. PR B updates the ADR's port note.

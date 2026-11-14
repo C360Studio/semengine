@@ -1,4 +1,4 @@
-go test ./graph/lexical -run 'TestGQParseProbe|TestGQCostProbe' -v -count=1   (tree copy of the change's base; probe files copied into graph/lexical)
+go test ./graph/lexical -run 'TestGQParseProbe|TestGQCostProbe|TestGQScaleProbe' -v -count=1   (tree copy of the change's base; probe files copied into graph/lexical; each section below names the bound set in the copy)
 
 ## graph.MaxSearchTerms = 16 in the copy
 === RUN   TestGQParseProbe

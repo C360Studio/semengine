@@ -1,0 +1,45 @@
+go test ./graph/clustering -run TestGQProbe -v -count=1   (copy of the tree at ef4313c3, probe file copied into graph/clustering)
+
+=== RUN   TestGQProbe
+corpus 2000 sections, 500 questions, 21 level-0 groups
+  group c360.semengine.agents.markdown             30 members; keywords [its not that only each owner before every agent contract]
+  group c360.semengine.claude.markdown              2 members; keywords [adapter agents authority follow fully read semengine this action actual]
+  group c360.semengine.component.markdown           2 members; keywords [component its process registry that admission admit after again boot]
+  group c360.semengine.config.markdown              6 members; keywords [config bucket configuration key that also document jetstream platform 800dff]
+  group c360.semengine.docs.markdown              123 members; keywords [adr not that graph its contract one entity every only]
+  group c360.semengine.gateway.markdown             2 members; keywords [any graph one query refused value 500 answers ask checks]
+  group c360.semengine.graph.markdown               9 members; keywords [graph its not caller entity one that back changes entities]
+  group c360.semengine.health.markdown              1 members; keywords [8080 acme addresses any becomes bind credential device digits failed]
+  group c360.semengine.internal.markdown            7 members; keywords [cache hybrid lru time ttl 1000 component enabled err package]
+  group c360.semengine.message.markdown             9 members; keywords [message payload basemessage error json package return type func registry]
+  group c360.semengine.metric.markdown              3 members; keywords [metric always config metrics newserver registerorget security server service address]
+  group c360.semengine.natsclient.markdown          3 members; keywords [client nats 4222 connection create ctx err jetstream natsclient nil]
+  group c360.semengine.openspec.markdown         1758 members; keywords [test not graph its that one check after task only]
+  group c360.semengine.output.markdown              3 members; keywords [entity every frame key message applied bucket bytes configuration default]
+  group c360.semengine.pkg.markdown                10 members; keywords [error attempts ctx func package retry return all always cfg]
+  group c360.semengine.processor.markdown          19 members; keywords [graph entity index not entities one that its every ingest]
+  group c360.semengine.root.markdown                3 members; keywords [dev its never only rev review spec verify boundaries check]
+  group c360.semengine.service.markdown             3 members; keywords [service any builds component composition configuration enabled every manager names]
+  group c360.semengine.storage.markdown             1 members; keywords [about acknowledged after again body can component consumer content contentstorable]
+  group c360.semengine.types.markdown               1 members; keywords [business communicate configuration contracts dependencies dependency domain enums errs flat]
+  group c360.semengine.vocabulary.markdown          5 members; keywords [battery level robotics dotted package 001 code documentation drone export]
+global, plain BM25 reference (keyword)                     n 500  R@1  25.4%  R@10  56.0%  MRR 0.364  not found   4.8%
+global, word index over everything (keyword)               n 500  R@1  24.6%  R@10  56.0%  MRR 0.358  not found   5.0%
+global, substring rule over the whole corpus (keyword)     n 500  R@1  10.0%  R@10  28.0%  MRR 0.155  not found  54.8%
+global, today's text tier: 5 groups x 1 page (keyword)     n 500  R@1   3.4%  R@10   7.0%  MRR 0.047  not found  88.8%
+local, plain BM25 reference within the group (keyword)     n 500  R@1  29.0%  R@10  60.0%  MRR 0.400  not found   4.8%
+local, word index scoped to the group (keyword)            n 500  R@1  28.2%  R@10  59.8%  MRR 0.395  not found   5.0%
+local, today: substring rule over one page (keyword)       n 500  R@1  14.0%  R@10  32.6%  MRR 0.200  not found  54.8%
+  keyword: word index refused 0 of 500; matched above 100 for 99.4%; answer within the first 100 hits 78.8%; answer's group among the groups of the first 10 hits 98.0%
+global, plain BM25 reference (question)                    n 500  R@1  24.8%  R@10  54.0%  MRR 0.349  not found   4.2%
+global, word index over everything (question)              n 500  R@1  24.6%  R@10  53.6%  MRR 0.344  not found   4.4%
+global, substring rule over the whole corpus (question)    n 500  R@1   5.2%  R@10  14.2%  MRR 0.082  not found  70.8%
+global, today's text tier: 5 groups x 1 page (question)    n 500  R@1   2.2%  R@10   3.6%  MRR 0.026  not found  93.8%
+local, plain BM25 reference within the group (question)    n 500  R@1  27.6%  R@10  58.0%  MRR 0.383  not found   4.2%
+local, word index scoped to the group (question)           n 500  R@1  27.4%  R@10  57.4%  MRR 0.377  not found   4.4%
+local, today: substring rule over one page (question)      n 500  R@1   7.8%  R@10  18.0%  MRR 0.113  not found  70.8%
+  question: word index refused 0 of 500; matched above 100 for 99.6%; answer within the first 100 hits 77.4%; answer's group among the groups of the first 10 hits 97.8%
+hydrated entity bytes per reply: first 10 hits median 20614 max 34871; first 100 hits median 213747 max 266860 (1 MiB = 1048576)
+--- PASS: TestGQProbe (11.46s)
+PASS
+ok  	github.com/c360studio/semengine/graph/clustering	11.747s

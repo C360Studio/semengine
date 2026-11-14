@@ -29,10 +29,9 @@ const defaultMaxConcurrent = 10
 // its handler.
 func (c *Component) queryHandlers() map[string]func(context.Context, []byte) ([]byte, error) {
 	return map[string]func(context.Context, []byte) ([]byte, error){
-		"entity": c.handleQueryEntityNATS,
-		"batch":  c.handleQueryBatchNATS,
-		"prefix": c.handleQueryPrefixNATS,
-		// Served once the table declares its row; setupQueryHandlers subscribes by row.
+		"entity":    c.handleQueryEntityNATS,
+		"batch":     c.handleQueryBatchNATS,
+		"prefix":    c.handleQueryPrefixNATS,
 		"prefixIDs": c.handleQueryPrefixIDsNATS,
 	}
 }

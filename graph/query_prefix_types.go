@@ -6,18 +6,21 @@ package graph
 // response, including continuation, against the observed connection limit.
 const MaxPrefixQueryLimit = 1000
 
-// PrefixQueryRequest is the typed request envelope for graph.query.prefix.
+// PrefixQueryRequest is the typed request envelope for graph.query.prefix and
+// graph.query.prefixIDs, and for the graph.ingest.query verbs of the same names.
 //
 // Cursor contract (OPAQUE):
 //   - First page: leave Cursor empty.
 //   - Subsequent pages: pass back the NextCursor value VERBATIM from the
-//     previous PrefixQueryResponse. Consumers MUST NOT parse, construct, or
-//     modify cursor values — the encoding may change between server versions.
+//     previous reply of the same verb (a PrefixQueryResponse for prefix, a
+//     PrefixIDsResponse for prefixIDs); a cursor is promised only on the verb
+//     that gave it. Consumers MUST NOT parse, construct, or modify cursor
+//     values — the encoding may change between server versions.
 //   - Empty NextCursor in the response means the result set is exhausted.
 //
 // Limit semantics:
 //   - <=0, or above MaxPrefixQueryLimit, means MaxPrefixQueryLimit.
-//   - Even within the limit, the server may return fewer entities when the
+//   - Even within the limit, the server may return fewer entities (or IDs) when the
 //     complete encoded response reaches the active NATS max_payload ceiling.
 //     In that case NextCursor is set so the caller can fetch the remainder.
 //

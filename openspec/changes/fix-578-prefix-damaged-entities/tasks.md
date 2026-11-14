@@ -16,7 +16,7 @@ which closes #578. #656, #657 and #658 stay open.
   recorded. Then `graph.PrefixIDsResponse`, the shared listing function, and the `prefixIDs` handler in
   `queryHandlers` (design D1). The prefix verb's tests pass untouched, including `poison_scoping_test.go:296-302`
   and `:432-434`. `notes/2.1.md` shows each new test failing on today's code.
-- [ ] 2.2 Table and forward. Add the two rows (design D2) and graph-query's forward entry. Update the tests that
+- [x] 2.2 Table and forward. Add the two rows (design D2) and graph-query's forward entry. Update the tests that
   list rows (inventory § 3) and `composition/reserved_test.go:134-135`'s comment. Update the doc comments of
   `QueryVerbs` and `PrefixQueryRequest`.
 - [ ] 2.3 fusionnats, tests then code (design D3). Write the unit tests, then

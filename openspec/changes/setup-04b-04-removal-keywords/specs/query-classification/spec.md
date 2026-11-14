@@ -113,12 +113,12 @@ tier".
 
 ### Requirement: The chain answers from the first tier that produces a hint
 
-**Reason**: The example classifier (tier 1) is deleted (design D1), and a scenario of this requirement names it; a
-MODIFIED block must keep every current scenario, so the requirement is replaced under a new name. Replaced by "The
+**Reason**: The example classifier (tier 1) is deleted (design D1), and a scenario of this requirement names it, so
+the requirement is replaced under a new name that no longer promises it. Replaced by "The
 chain answers from the keyword tier, then the LLM tier".
 
 ### Requirement: An ended context yields no classification
 
 **Reason**: `FindBestMatch` is deleted with the example classifier (design D1), and a scenario of this requirement
-names it; a MODIFIED block must keep every current scenario, so the requirement is replaced under a new name. Replaced
+names it, so the requirement is replaced under a new name that no longer promises it. Replaced
 by "An ended context gives no classification".

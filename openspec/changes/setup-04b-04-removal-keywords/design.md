@@ -42,8 +42,9 @@ returns it as its error (fusion "Fusion reads readiness from the reply": any oth
 Measured at the 32-word bound: SemSource's 46 scorecard questions hold at most 10 words, none reserved or excluding;
 of ten hand-written pasted lines none is too long, one excludes a word, and one holds `HEAD~`, which the word index
 now reads as `head` (change 3, owner question 2;
-`notes/probes/query-length-probe.log:28-30`). Rejected: stripping the syntax before sending (a second query grammar in
-fusion, and it hides what the word index refused). Without graph-lexical composed, each `nl` resolve is refused
+`setup-04b-03-graph-query-lexical/notes/probes/query-length-probe.log:28-30`). Rejected: stripping the syntax before
+sending (a second query grammar in fusion, and it hides what the word index refused). Without graph-lexical composed,
+each `nl` resolve is refused
 transient `internal` naming `graph.lexical.query.search`; `index_not_ready` from it defers the answer, as for every
 other read. Rejected: a graph-query forward (a new verb beside a row the table already has); `globalSearch` (it
 hydrates and groups; fusion hydrates again). ADR-071 holds: scope filters where seeds are found, now the word index
@@ -61,9 +62,10 @@ entity holding `race` with nothing in the answer saying so. Proof: `TestNLAnswer
 `TestProvenanceForMode` (`nl` is `lexical`, an unknown mode stays `embedding`, the conservative default).
 
 **D5. graph-embedding runs only with a product's embedder (PR C;** owner question 3, deltas for option a). The hashed
-embedder is deleted. `graphembedding.RegisterWithEmbedder(registry, name, newEmbedder func() (embedding.Embedder,
-error))` registers the factory with the product's embedder; an empty `name` is refused. `name` fills the type part of
-the dedup identity, which `DedupKey` folds with the embedder's `Model()`, `Dimensions()` and the text cap
+embedder is deleted. `graphembedding.RegisterWithEmbedder(registry, embedderType, newEmbedder func()
+(embedding.Embedder, error))` registers the factory with the product's embedder; an empty `embedderType` is refused.
+`embedderType` fills the type part of the dedup identity, which `DedupKey` folds with the embedder's `Model()`,
+`Dimensions()` and the text cap
 (`graph/embedding/worker.go:214-219,459`; embedding-index `:196-199`), and is `search`'s `embedder_type`: so two
 embedders never share dedup records. `newEmbedder` is called in `Start`, where the embedder is built today
 (`component.go:325`), so a component built and never started holds none. `Stop` closes the embedder `Start` built,

@@ -1,0 +1,94 @@
+go test ./graph/clustering -run TestKeywordProbe -v -count=1   (copy of the tree at b6d97ad0, probe file copied into graph/clustering; go1.26.11 darwin/arm64)
+
+=== RUN   TestKeywordProbe
+    zz_keywords_probe_test.go:253: ==== corpus level-0 groups (top directory): 2000 sections, 21 groups, largest c360.semengine.openspec.markdown with 1758; 500 questions
+    zz_keywords_probe_test.go:260:   -- today: most frequent (extractWords, top 32 per entity)
+    zz_keywords_probe_test.go:262:      c360.semengine.openspec.markdown         1758  [test not graph its that one check after task only]
+    zz_keywords_probe_test.go:262:      c360.semengine.docs.markdown              123  [adr not that graph its contract one entity every only]
+    zz_keywords_probe_test.go:262:      c360.semengine.agents.markdown             30  [its not that only each owner before every agent contract]
+    zz_keywords_probe_test.go:262:      c360.semengine.processor.markdown          19  [graph entity index not entities one that its every ingest]
+    zz_keywords_probe_test.go:262:      c360.semengine.pkg.markdown                10  [error attempts ctx func package retry return all always cfg]
+    zz_keywords_probe_test.go:262:      c360.semengine.graph.markdown               9  [graph its not caller entity one that back changes entities]
+    zz_keywords_probe_test.go:260:   -- tfidf over extractWords
+    zz_keywords_probe_test.go:262:      c360.semengine.openspec.markdown         1758  [task design check test after run inventory notes each then]
+    zz_keywords_probe_test.go:262:      c360.semengine.docs.markdown              123  [adr contract decision readiness entity framework per consumer reference this]
+    zz_keywords_probe_test.go:262:      c360.semengine.agents.markdown             30  [agent reviewer work semengine decision developer architect state review handoff]
+    zz_keywords_probe_test.go:262:      c360.semengine.processor.markdown          19  [entities relationships index total verb reply prefix truncated community entity]
+    zz_keywords_probe_test.go:262:      c360.semengine.pkg.markdown                10  [attempts 100ms cfg retry you func handle backoff refs err]
+    zz_keywords_probe_test.go:262:      c360.semengine.graph.markdown               9  [watch timerange spatialbounds entities hints back hint caller groups ranking]
+    zz_keywords_probe_test.go:260:   -- g2 over extractWords
+    zz_keywords_probe_test.go:262:      c360.semengine.openspec.markdown         1758  [notes task test shall inventory design simplify 04a specification mutant]
+    zz_keywords_probe_test.go:262:      c360.semengine.docs.markdown              123  [adr decision contract scoped framework honest readiness semantics reference remain]
+    zz_keywords_probe_test.go:262:      c360.semengine.agents.markdown             30  [agent reviewer work handoff architect semengine awaits developer approval decision]
+    zz_keywords_probe_test.go:262:      c360.semengine.processor.markdown          19  [entities relationships index graph total entity verb truncated cursor entitybyalias]
+    zz_keywords_probe_test.go:262:      c360.semengine.pkg.markdown                10  [attempts 100ms cfg you retry backoff refs func ontology handle]
+    zz_keywords_probe_test.go:262:      c360.semengine.graph.markdown               9  [timerange spatialbounds watch graph entities hints hint groups ranking pair]
+    zz_keywords_probe_test.go:260:   -- tfidf over lexical.Tokens (entitytext)
+    zz_keywords_probe_test.go:262:      c360.semengine.openspec.markdown         1758  [task design 3 2 check note run 1 after inventory]
+    zz_keywords_probe_test.go:262:      c360.semengine.docs.markdown              123  [adr decision engine contract sem readiness entity id consumer live]
+    zz_keywords_probe_test.go:262:      c360.semengine.agents.markdown             30  [agent reviewer engine sem work decision architect developer contract review]
+    zz_keywords_probe_test.go:262:      c360.semengine.processor.markdown          19  [relationship index total verb entity global truncated prefix reply community]
+    zz_keywords_probe_test.go:262:      c360.semengine.pkg.markdown                10  [attempt 100m cfg you cap func retry weight max alway]
+    zz_keywords_probe_test.go:262:      c360.semengine.graph.markdown               9  [watch range time find back ranking spatial them hint tier]
+    zz_keywords_probe_test.go:260:   -- g2 over lexical.Tokens (entitytext)
+    zz_keywords_probe_test.go:262:      c360.semengine.openspec.markdown         1758  [task test note shall inventory design 2 simplify 04a mutant]
+    zz_keywords_probe_test.go:262:      c360.semengine.docs.markdown              123  [adr decision engine contract remain scoped honest framework semantic sister]
+    zz_keywords_probe_test.go:262:      c360.semengine.agents.markdown             30  [agent reviewer engine handoff sem work architect decision your developer]
+    zz_keywords_probe_test.go:262:      c360.semengine.processor.markdown          19  [entity relationship graph index total verb truncated global query cursor]
+    zz_keywords_probe_test.go:262:      c360.semengine.pkg.markdown                10  [100m attempt cfg you weight cap func backoff ontology retry]
+    zz_keywords_probe_test.go:262:      c360.semengine.graph.markdown               9  [graph watch range ranking time spatial hint find back pair]
+    zz_keywords_probe_test.go:369:   today: most frequent (extractWords, top 32 per entity)   generic  27.1%  mean lift  59.81  route first  55.8%  top3  88.2%  answer group keyword hit  30.2%  kw-query P@10  58.0% (5 groups >=10)
+    zz_keywords_probe_test.go:369:   tfidf over extractWords                                  generic   8.7%  mean lift 178.20  route first  57.0%  top3  93.4%  answer group keyword hit  16.4%  kw-query P@10  70.0% (5 groups >=10)
+    zz_keywords_probe_test.go:369:   g2 over extractWords                                     generic   7.7%  mean lift 178.19  route first  56.4%  top3  93.8%  answer group keyword hit   9.6%  kw-query P@10  74.0% (5 groups >=10)
+    zz_keywords_probe_test.go:369:   tfidf over lexical.Tokens (entitytext)                   generic  11.0%  mean lift 109.95  route first  58.0%  top3  93.6%  answer group keyword hit  27.0%  kw-query P@10  62.0% (5 groups >=10)
+    zz_keywords_probe_test.go:369:   g2 over lexical.Tokens (entitytext)                      generic  10.5%  mean lift 110.22  route first  57.6%  top3  90.2%  answer group keyword hit  19.6%  kw-query P@10  76.0% (5 groups >=10)
+    zz_keywords_probe_test.go:373:   baseline: always the largest group:  88.8% of questions
+    zz_keywords_probe_test.go:421:   drift (tfidf over lexical.Tokens): 5% of sections removed from 5 groups; of 16 untouched groups, 7 change keywords (today's rule: 0 by construction)
+    zz_keywords_probe_test.go:421:   drift (g2 over lexical.Tokens): 5% of sections removed from 5 groups; of 16 untouched groups, 8 change keywords (today's rule: 0 by construction)
+    zz_keywords_probe_test.go:253: ==== finer groups (parent directory): 2000 sections, 263 groups, largest notes with 417; 500 questions
+    zz_keywords_probe_test.go:260:   -- today: most frequent (extractWords, top 32 per entity)
+    zz_keywords_probe_test.go:262:      notes                                     417  [test not task after its graph run each check before]
+    zz_keywords_probe_test.go:262:      docsadr                                    87  [adr not graph its that contract one only this change]
+    zz_keywords_probe_test.go:262:      servicelifecycle                           30  [service that lifecycle this then when test verifies start not]
+    zz_keywords_probe_test.go:262:      transportclient                            29  [client transport shall when its error that context not call]
+    zz_keywords_probe_test.go:262:      20261001setup03bcontractboundary           27  [graph 03b not tier component only agentic its processor rule]
+    zz_keywords_probe_test.go:262:      harnessboundaries                          23  [boundaries harness file check ateam shall when contract its then]
+    zz_keywords_probe_test.go:260:   -- tfidf over extractWords
+    zz_keywords_probe_test.go:262:      notes                                     417  [notes task run mutant count failed text after runs before]
+    zz_keywords_probe_test.go:262:      docsadr                                    87  [adr decision readiness framework per contract index fusion over live]
+    zz_keywords_probe_test.go:262:      servicelifecycle                           30  [service verifies lifecycle then when forwarder this ending start interval]
+    zz_keywords_probe_test.go:262:      transportclient                            29  [transport client subscription subscribeforrequests returned shall close subscribe handler begun]
+    zz_keywords_probe_test.go:262:      20261001setup03bcontractboundary           27  [03b boundary agentic setup tier action core contract bm25 q18]
+    zz_keywords_probe_test.go:262:      harnessboundaries                          23  [boundaries harness ateam doctor shall directory file testateamtemplatesunchanged adopter semengineowned]
+    zz_keywords_probe_test.go:260:   -- g2 over extractWords
+    zz_keywords_probe_test.go:262:      notes                                     417  [notes task test mutant detection expected run want failed count]
+    zz_keywords_probe_test.go:262:      docsadr                                    87  [adr decision honest readiness framework fusion semantics scoped substrate lag]
+    zz_keywords_probe_test.go:262:      servicelifecycle                           30  [service lifecycle verifies when then forwarder that this interval ending]
+    zz_keywords_probe_test.go:262:      transportclient                            29  [transport client subscription subscribeforrequests shall returned close subscribe invocation unsub]
+    zz_keywords_probe_test.go:262:      20261001setup03bcontractboundary           27  [03b boundary setup agentic contract action parked q18 tier core]
+    zz_keywords_probe_test.go:262:      harnessboundaries                          23  [boundaries harness ateam doctor semengineowned testateamtemplatesunchanged directory shall file adopter]
+    zz_keywords_probe_test.go:260:   -- tfidf over lexical.Tokens (entitytext)
+    zz_keywords_probe_test.go:262:      notes                                     417  [note task mutant 3 2 count failed text run after]
+    zz_keywords_probe_test.go:262:      docsadr                                    87  [adr decision readiness semantic live framework per fusion contract over]
+    zz_keywords_probe_test.go:262:      servicelifecycle                           30  [service lifecycle verify then forwarder when ending start thi logger]
+    zz_keywords_probe_test.go:262:      transportclient                            29  [transport client subscribe subscription shall returned invocation handler connection close]
+    zz_keywords_probe_test.go:262:      20261001setup03bcontractboundary           27  [03b boundary agentic action setup re tier core bm25 q18]
+    zz_keywords_probe_test.go:262:      harnessboundaries                          23  [boundary harness ateam doctor shall directory file adopter identical template]
+    zz_keywords_probe_test.go:260:   -- g2 over lexical.Tokens (entitytext)
+    zz_keywords_probe_test.go:262:      notes                                     417  [note task 2 test mutant 3 go detection expected run]
+    zz_keywords_probe_test.go:262:      docsadr                                    87  [adr decision semantic honest readiness framework live fusion sister remain]
+    zz_keywords_probe_test.go:262:      servicelifecycle                           30  [service lifecycle verify when then forwarder that ending thi start]
+    zz_keywords_probe_test.go:262:      transportclient                            29  [transport client subscribe subscription invocation shall returned unsub handler having]
+    zz_keywords_probe_test.go:262:      20261001setup03bcontractboundary           27  [03b setup boundary agentic action contract re parked q18 tier]
+    zz_keywords_probe_test.go:262:      harnessboundaries                          23  [boundary harness ateam doctor file directory shall identical adopter template]
+    zz_keywords_probe_test.go:369:   today: most frequent (extractWords, top 32 per entity)   generic  27.9%  mean lift  54.42  route first  12.2%  top3  22.0%  answer group keyword hit  40.6%  kw-query P@10  66.7% (46 groups >=10)
+    zz_keywords_probe_test.go:369:   tfidf over extractWords                                  generic   2.9%  mean lift 165.82  route first  16.0%  top3  30.2%  answer group keyword hit  32.4%  kw-query P@10  77.8% (46 groups >=10)
+    zz_keywords_probe_test.go:369:   g2 over extractWords                                     generic   5.2%  mean lift 166.83  route first  14.0%  top3  26.0%  answer group keyword hit  29.4%  kw-query P@10  79.6% (46 groups >=10)
+    zz_keywords_probe_test.go:369:   tfidf over lexical.Tokens (entitytext)                   generic   4.5%  mean lift 107.83  route first  13.4%  top3  31.0%  answer group keyword hit  38.0%  kw-query P@10  81.1% (46 groups >=10)
+    zz_keywords_probe_test.go:369:   g2 over lexical.Tokens (entitytext)                      generic   7.2%  mean lift 108.40  route first  13.2%  top3  30.0%  answer group keyword hit  36.6%  kw-query P@10  82.4% (46 groups >=10)
+    zz_keywords_probe_test.go:373:   baseline: always the largest group:  11.6% of questions
+    zz_keywords_probe_test.go:421:   drift (tfidf over lexical.Tokens): 5% of sections removed from 62 groups; of 201 untouched groups, 103 change keywords (today's rule: 0 by construction)
+    zz_keywords_probe_test.go:421:   drift (g2 over lexical.Tokens): 5% of sections removed from 62 groups; of 201 untouched groups, 97 change keywords (today's rule: 0 by construction)
+--- PASS: TestKeywordProbe (1.10s)
+PASS
+ok  	github.com/c360studio/semengine/graph/clustering	1.385s

@@ -6,9 +6,10 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/keywords-probe.*`). Pre-owner
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/keywords-probe.*`). Pre-owner
   design review passes; the owner fills `Approved-by:`, rules on design questions 1 to 3, and approves the changed
-  ADR decisions named in the proposal. Hold: OPEN-Q proposal awaits owner approval.
+  ADR decisions named in the proposal. Approved 2026-11-14 (#10 comment 6880665588); question 1 ruled (a),
+  question 2 ruled (b), question 3 ruled (a).
 
 ## 2. Code
 

@@ -2,9 +2,11 @@ package graph
 
 import "encoding/json"
 
-// MaxSearchTerms is the most distinct terms a localSearch query may hold. Each term is matched against
-// every read entity's text, so a longer query is refused rather than scanned.
-const MaxSearchTerms = 16
+// MaxSearchTerms is the most distinct words a search query may hold, counted by the word index
+// (graph/lexical's ParseQuery) after tokenizing, plain, phrase and excluded words together. A longer
+// query is refused, never cut. 32 takes a pasted error line, which runs to about 20 words, while
+// bounding the work one search does.
+const MaxSearchTerms = 32
 
 // LocalSearchRequest is the localSearch verb's request, decoded strictly: an unknown key is refused.
 //

@@ -46,6 +46,9 @@ An unknown request key is refused, naming it. The reply is a `graph.QueryRespons
   fixed scale and is comparable only within one reply.
 - `matched`: how many entities matched within the scope, before the limit. `matched` above the number of results
   means the limit cut the answer.
+- `excluded`: the query's excluded terms, each term's words joined by a space (`go test -race` gives `["race"]`),
+  omitted when there are none. Every entity holding one was left out, so a caller can say why an expected entity is
+  absent.
 - `bodies_not_indexed`: how many entities in the whole index, not only the hits, have an offloaded body the index
   does not hold (next section). Such an entity is found only by its inline text.
 

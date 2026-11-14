@@ -60,7 +60,7 @@ transport"; `TestGraphImportsNoTransport`).
   `globalSearch` time-range and area strategies are refused transient `internal`. A verb a consumer serves under
   `graph.query.*` is not in the table. `QueryVerbs`' doc comment names each verb's request and reply types.
 - **Local search.** `LocalSearchRequest` names an entity (`entity_id`), a `level` from 0 to 2 and a `query` of 1 to
-  `MaxSearchTerms` (16) distinct words, and the search runs in that entity's community: the group of entities that share
+  `MaxSearchTerms` (32) distinct words, and the search runs in that entity's community: the group of entities that share
   the first 4, 3 or 2 parts of its ID. `LocalSearchData` is the reply: the community's record (`community_id`,
   `level`, `member_count`, `community_summary`, `keywords`), the matching `entities` best first, `entities_scanned`,
   `entities_truncated` and an `answer` sentence. The matches come from one page of at most 1,000 entities in ID order,

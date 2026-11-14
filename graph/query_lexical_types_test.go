@@ -7,7 +7,8 @@ import (
 
 // TestLexicalSearchTypesWire holds the keys of the word search verb's request and reply: query,
 // limit, scope and min_revision, the last two only when set, and results of entity_id and score,
-// matched and bodies_not_indexed, with an empty result set as [] and both counts always sent. A
+// matched, excluded only when the query excludes a word, and bodies_not_indexed, with an empty
+// result set as [] and both counts always sent. A
 // strict decoder reads each request literal back into the same value.
 func TestLexicalSearchTypesWire(t *testing.T) {
 	requests := []struct {
@@ -42,6 +43,8 @@ func TestLexicalSearchTypesWire(t *testing.T) {
 		{"hits", LexicalSearchData{Results: []LexicalHit{{EntityID: "acme.ops.site.a.pump.001", Score: 1.5}},
 			Matched: 3, BodiesNotIndexed: 2},
 			`{"results":[{"entity_id":"acme.ops.site.a.pump.001","score":1.5}],"matched":3,"bodies_not_indexed":2}`},
+		{"excluded", LexicalSearchData{Results: []LexicalHit{}, Excluded: []string{"race", "docker compose"}},
+			`{"results":[],"matched":0,"excluded":["race","docker compose"],"bodies_not_indexed":0}`},
 		{"none", LexicalSearchData{Results: []LexicalHit{}}, `{"results":[],"matched":0,"bodies_not_indexed":0}`},
 	}
 	for _, tc := range replies {

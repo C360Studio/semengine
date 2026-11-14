@@ -14,7 +14,7 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
 
 ## 2. Code
 
-- [ ] 2.1 PR A. What search accepts (design D6, owner question 2). Premise: `ParseQuery` counts distinct tokens against
+- [x] 2.1 PR A. What search accepts (design D6, owner question 2). Premise: `ParseQuery` counts distinct tokens against
   `graph.MaxSearchTerms` (`graph/lexical/query.go:96-97`; 16 at `graph/query_local_search_types.go:7`) and reserves a
   final `*` or `~` after a word rune (`:125-138`); graph-lexical refuses a parse error `invalid_request`
   (`processor/graph-lexical/query.go:75-78`); pasted lines hold up to 21 words and SemSource's questions up to 10;

@@ -312,7 +312,7 @@ pump-99", and "the area of the plant", whose start is `area-of`) is `entity_not_
 
 Until graph-clustering's first tick has written `COMMUNITY_INDEX` the text search refuses transient `index_not_ready`,
 which counts no error in `Health`.
-A text question with more than 16 distinct terms (lowercased, repeats removed) is
+A text question with more than 32 distinct terms (lowercased, repeats removed) is
 `invalid_request`, before any read.
 
 The text search reads the community records at `level` once, and before any page read refuses: transient

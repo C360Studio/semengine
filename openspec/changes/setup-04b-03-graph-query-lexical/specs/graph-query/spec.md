@@ -62,8 +62,8 @@ the group's `COMMUNITY_INDEX` record (`member_count`, `community_summary`, `keyw
 
 `globalSearch` SHALL search every entity, unscoped, and answer enveloped `graph.GlobalSearchData` whose `text` is a
 `graph.TextSearchData`: `level`; `matches`; and `groups`, one for each level-`level` group holding a match, in the
-order of its best match, each with `community_id`, `matches` (its match count), `record_state` and, when read, its
-record's `member_count`, `community_summary` and `keywords`. `unreadable_groups` SHALL count the groups whose record
+order of its best match, each with `community_id`, `matches` (its match count), `record_state` and `record`, its
+record as local search names it, present exactly when read. `unreadable_groups` SHALL count the groups whose record
 could not be read.
 
 #### Scenario: Grouped hits

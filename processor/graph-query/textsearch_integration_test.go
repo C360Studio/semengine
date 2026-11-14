@@ -65,10 +65,11 @@ func groupOfID(id string, level int) string {
 }
 
 // TestGlobalSearchGroupsHits: over real graph-ingest, graph-lexical and community records, the
-// matches are the word index's unscoped hits in its order, read back as the batch verb sends them,
-// and the groups are listed by their best match, not by key or by count, each with its match count
-// and its record; the counts sum to the matches (spec, "Grouped hits"). At level 1 the four share one
-// group. The groups are worked out here from the word index's own reply, by each ID's parts.
+// groups are listed by their best match, each with its match count: on `pump`, where that order is
+// neither key order nor count order. On `pump station` the matches are the word index's unscoped
+// hits in its order, read back as the batch verb sends them, and each group also carries its record;
+// the counts sum to the matches (spec, "Grouped hits"). At level 1 the four share one group. The
+// groups are worked out here from the word index's own reply, by each ID's parts.
 func TestGlobalSearchGroupsHits(t *testing.T) {
 	stack := startCommunityStack(t)
 	stack.write(t, drone1, [2]string{vocabulary.DCTermsTitle, "pump station assembly line"})
@@ -104,9 +105,22 @@ func TestGlobalSearchGroupsHits(t *testing.T) {
 	if len(hits) != 4 || len(order) != 3 || order[0] != "c360.test.query.third" || counts["c360.test.query.system"] != 2 {
 		t.Fatalf("word search = %+v, want four hits in three groups, the third group's first", hits)
 	}
+	// Here the third group, with one match, comes before the system group, with two.
+	answer, err := askText(t, stack.client, `{"query":"pump"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(answer.data.Groups) != len(order) {
+		t.Errorf("pump: groups %+v, want %v", answer.data.Groups, order)
+	}
+	for i, group := range answer.data.Groups {
+		if i < len(order) && (group.CommunityID != order[i] || group.Matches != counts[order[i]]) {
+			t.Errorf("pump: groups[%d] = %+v, want %q with %d matches", i, group, order[i], counts[order[i]])
+		}
+	}
 	rows := batchRows(t, stack.client, drone1, drone2, otherDrone, thirdDrone)
 
-	answer, err := askText(t, stack.client, `{"query":"pump station"}`)
+	answer, err = askText(t, stack.client, `{"query":"pump station"}`)
 	if err != nil {
 		t.Fatal(err)
 	}

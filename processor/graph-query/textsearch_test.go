@@ -127,15 +127,16 @@ func TestTextSearchGroups(t *testing.T) {
 	groupOf := map[string]graph.TextSearchGroup{"b1": read, "a1": poisoned, "b2": read, "c1": absent, "a2": poisoned, "b3": read}
 	match := func(id string) graph.TextSearchMatch { return graph.TextSearchMatch{ID: id} }
 
-	// b's best match is first, then a's, then c's, though a sorts first by ID.
-	groups, unreadable := textGroups([]graph.TextSearchMatch{match("b1"), match("a1"), match("b2"), match("c1"), match("a2"), match("b3")}, groupOf)
+	// c's best match is first, then b's, then a's: by ID the order would be a, b, c, and by count
+	// b(3), a(2), c(1).
+	groups, unreadable := textGroups([]graph.TextSearchMatch{match("c1"), match("b1"), match("a1"), match("b2"), match("a2"), match("b3")}, groupOf)
 	got, err := json.Marshal(groups)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `[{"community_id":"acme.ops.src.b","matches":3,"record_state":"read","record":{"member_count":4}},` +
-		`{"community_id":"acme.ops.src.a","matches":2,"record_state":"unreadable"},` +
-		`{"community_id":"acme.ops.src.c","matches":1,"record_state":"none"}]`
+	want := `[{"community_id":"acme.ops.src.c","matches":1,"record_state":"none"},` +
+		`{"community_id":"acme.ops.src.b","matches":3,"record_state":"read","record":{"member_count":4}},` +
+		`{"community_id":"acme.ops.src.a","matches":2,"record_state":"unreadable"}]`
 	if string(got) != want || unreadable != 1 {
 		t.Errorf("groups = %s, %d unreadable\nwant %s, 1", got, unreadable, want)
 	}

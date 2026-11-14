@@ -166,8 +166,9 @@ func (c *Component) Initialize() error {
 // errors and a later Stop tries again. A component with no NATS client is refused first.
 //
 // Start neither waits for nor fails on a missing COMMUNITY_INDEX: until a view of it has caught up,
-// local and global search answer with record_state not_ready, and the other verbs answer. ctx bounds the subscribing only and is not kept; the supervisor runs under the one run
-// context, which Stop ends (ADR-113).
+// local and global search answer with record_state not_ready, and the other verbs answer. ctx
+// bounds the subscribing only and is not kept; the supervisor runs under the one run context, which
+// Stop ends (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, "Component", "Start", "NATS client is required")

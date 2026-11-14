@@ -8,11 +8,14 @@ import (
 	"testing"
 )
 
-// seventeen distinct words that tokenizing leaves as they are.
-var seventeen = strings.Fields("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec")
+// thirtyThree distinct words that tokenizing leaves as they are, one more
+// than a query may hold.
+var thirtyThree = strings.Fields("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike " +
+	"november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu " +
+	"amber basil cedar dune ember fjord glade")
 
 func TestParseQuery(t *testing.T) {
-	sixteen := strings.Join(seventeen[:16], " ")
+	thirtyTwo := strings.Join(thirtyThree[:32], " ")
 	for _, tc := range []struct {
 		text string
 		want Query
@@ -34,8 +37,8 @@ func TestParseQuery(t *testing.T) {
 		{`retry - x -*y`, Query{words: []string{"retry", "x", "y"}}},
 		{`retry"docker compose"up`, Query{words: []string{"retry", "up"}, phrases: [][]string{{"docker", "compose"}}}},
 		{`-état x`, Query{words: []string{"x"}, excluded: [][]string{{"état"}}}},
-		{sixteen, Query{words: seventeen[:16]}},
-		{sixteen + " Alpha alphas", Query{words: seventeen[:16]}},
+		{thirtyTwo, Query{words: thirtyThree[:32]}},
+		{thirtyTwo + " Alpha alphas", Query{words: thirtyThree[:32]}},
 	} {
 		got, err := ParseQuery(tc.text)
 		if err != nil {
@@ -58,9 +61,9 @@ func TestParseQuery(t *testing.T) {
 		{``, ErrEmptyQuery},
 		{" \t ", ErrEmptyQuery},
 		{`-test -"docker compose" "the"`, ErrEmptyQuery},
-		{strings.Join(seventeen, " "), ErrQueryTooLong},
-		{sixteen + " -quebec", ErrQueryTooLong},
-		{strings.Join(seventeen[:15], " ") + ` "papa quebec"`, ErrQueryTooLong},
+		{strings.Join(thirtyThree, " "), ErrQueryTooLong},
+		{thirtyTwo + " -glade", ErrQueryTooLong},
+		{strings.Join(thirtyThree[:31], " ") + ` "fjord glade"`, ErrQueryTooLong},
 	} {
 		if q, err := ParseQuery(tc.text); !errors.Is(err, tc.want) {
 			t.Errorf("ParseQuery(%q) = %+v, %v; want %v", tc.text, q, err, tc.want)
@@ -69,12 +72,20 @@ func TestParseQuery(t *testing.T) {
 }
 
 func TestParseQueryReservesForms(t *testing.T) {
-	for _, text := range []string{
-		`name:retry`, `retr*`, `retry~`, `void*`,
-		`body:retry`, `-name:retry`, `name:"retry"`, `retry -retr*`, `x*`, `7~`, `é*`, `retr*"docker compose"`,
+	for _, tc := range []struct{ text, term string }{
+		{`name:retry`, `name:retry`}, {`retr*`, `retr*`}, {`void*`, `void*`}, {`pump*`, `pump*`},
+		{`body:retry`, `body:retry`}, {`-name:retry`, `name:retry`}, {`name:"retry"`, `name:`},
+		{`retry -retr*`, `retr*`}, {`x*`, `x*`}, {`é*`, `é*`}, {`retr*"docker compose"`, `retr*`},
+		{`retr*x*`, `retr*x*`},
 	} {
-		if q, err := ParseQuery(text); !errors.Is(err, ErrReservedSyntax) {
-			t.Errorf("ParseQuery(%q) = %+v, %v; want ErrReservedSyntax", text, q, err)
+		q, err := ParseQuery(tc.text)
+		if !errors.Is(err, ErrReservedSyntax) {
+			t.Errorf("ParseQuery(%q) = %+v, %v; want ErrReservedSyntax", tc.text, q, err)
+			continue
+		}
+		// The refusal names the term and tells the caller how to search it as text.
+		if msg := err.Error(); !strings.Contains(msg, `"`+tc.term+`"`) || !strings.Contains(msg, "quote") {
+			t.Errorf("ParseQuery(%q) refusal %q does not name %q and say to quote it", tc.text, msg, tc.term)
 		}
 	}
 
@@ -86,6 +97,11 @@ func TestParseQueryReservesForms(t *testing.T) {
 		{`SELECT * FROM users`, Query{words: []string{"select", "user"}}},
 		{`java.util.*`, Query{words: []string{"java", "util"}}},
 		{`**bold**`, Query{words: []string{"bold"}}},
+		{`*bold* text`, Query{words: []string{"bold", "text"}}},
+		{`*retr*`, Query{words: []string{"retr"}}},
+		{`git reset HEAD~`, Query{words: []string{"git", "reset", "head"}}},
+		{`retry~`, Query{words: []string{"retry"}}},
+		{`7~ HEAD~2`, Query{words: []string{"7", "head", "2"}}},
 		{`cd ~`, Query{words: []string{"cd"}}},
 		{`"name:retry void*"`, Query{phrases: [][]string{{"name", "retry", "void"}}}},
 		{`body: -* ~retry`, Query{words: []string{"body", "retry"}}},
@@ -98,6 +114,33 @@ func TestParseQueryReservesForms(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("ParseQuery(%q) = %+v, want %+v", tc.text, got, tc.want)
 		}
+	}
+}
+
+func TestParseQueryExcluded(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want [][]string
+	}{
+		{`go test -race ./pkg -run TestX`, [][]string{{"race"}, {"run"}}},
+		{`up -"docker compose" -test -the`, [][]string{{"docker", "compose"}, {"test"}}},
+		{`go test "-race"`, nil},
+	} {
+		q, err := ParseQuery(tc.text)
+		if err != nil {
+			t.Errorf("ParseQuery(%q): %v", tc.text, err)
+			continue
+		}
+		if got := q.Excluded(); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("ParseQuery(%q).Excluded() = %q, want %q", tc.text, got, tc.want)
+		}
+	}
+
+	// The caller gets its own copy: changing it changes nothing the query searches.
+	q := mustParse(t, `retry -test`)
+	q.Excluded()[0][0] = "changed"
+	if got := q.Excluded(); !reflect.DeepEqual(got, [][]string{{"test"}}) {
+		t.Errorf("after the caller changed its copy, Excluded() = %q, want [[test]]", got)
 	}
 }
 
@@ -120,7 +163,8 @@ func FuzzParseQuery(f *testing.F) {
 		`retry "to be" -the`, `the of and`, `"to be"`, `-test`, `""`, ``, `"unclosed`, `-"unclosed`,
 		`name:retry`, `retr*`, `retry~`, `void*`, `name:"retry"`, `-name:retry`,
 		`pkg.Func() name: retry`, `SELECT * FROM users`, `java.util.*`, `**bold**`, `cd ~`, `"name:retry void*"`,
-		strings.Join(seventeen, " "), `-`, `"`, `-"`, `--`, `withRetry HTTPServer`, "\xff-\xfe\"", "-\xff",
+		`*bold* text`, `git reset HEAD~`, `*retr*`, `retr*x*`,
+		strings.Join(thirtyThree, " "), `-`, `"`, `-"`, `--`, `withRetry HTTPServer`, "\xff-\xfe\"", "-\xff",
 	} {
 		f.Add(s)
 	}
@@ -144,7 +188,7 @@ func FuzzParseQuery(f *testing.F) {
 			if !errors.Is(err, ErrEmptyQuery) {
 				t.Fatalf("quoted %q: %+v, %v; want ErrEmptyQuery", literal, q, err)
 			}
-		case len(distinct(words)) > 16:
+		case len(distinct(words)) > 32:
 			if !errors.Is(err, ErrQueryTooLong) {
 				t.Fatalf("quoted %q: %+v, %v; want ErrQueryTooLong", literal, q, err)
 			}
@@ -171,7 +215,7 @@ func checkParsed(t *testing.T, s string, q Query) {
 		}
 		all = append(all, run...)
 	}
-	if n := len(distinct(all)); n > 16 {
+	if n := len(distinct(all)); n > 32 {
 		t.Fatalf("ParseQuery(%q) = %+v: %d distinct words", s, q, n)
 	}
 	for _, w := range all {

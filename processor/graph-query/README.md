@@ -134,7 +134,7 @@ record per group in `COMMUNITY_INDEX`: its member count, keywords, a summary and
 
 The request is `{"entity_id": "...", "query": "...", "level": 0, "min_revision": ...}`. `entity_id` is a full six-part
 ID, and the group searched is the one it belongs to at `level` (0 to 2, absent means 0). `query` is lowercased and
-split on white space with repeats removed, and must leave 1 to 16 terms. A bad field is `invalid_request`, naming it,
+split on white space with repeats removed, and must leave 1 to 32 terms. A bad field is `invalid_request`, naming it,
 before anything is read. An unknown key is refused.
 
 It reads the group's record from the view, then one page of at most 1,000 entity IDs under the group's prefix from
@@ -205,7 +205,7 @@ result; `text` carries the entities of its matches, as the pages gave them.
 #### The text search
 
 It reads every group record at `level` from the `COMMUNITY_INDEX` view once, and scores each against the question's
-terms (lowercased, repeats removed, at most 16). A record gains 2.0 for each term its summary contains, and 1.5 for
+terms (lowercased, repeats removed, at most 32). A record gains 2.0 for each term its summary contains, and 1.5 for
 each keyword and term where one contains the other. Up to five records scoring above 0 are read, best first, ties by
 group prefix. From each it reads one page of at most 1,000 entity IDs, and ranks the entities as `localSearch` does
 (score of 0.3 or more matches). Matches from all groups are merged, best first, ties by entity ID.
@@ -242,7 +242,7 @@ What it refuses:
 | A count or other aggregation ("how many", "total memory usage", "max retries"), with or without other hints | class invalid, code `invalid_request`, naming the operation. A list over sampled pages would invite counting a sample. The classifier reads "max", "min", "total", "sum" and "count" anywhere, so answerable free text is refused too |
 | Path words with no start, a similarity or a ranking, beside a start, a time range or an area ("top 5 sensors connected to pump-42", "what is related to it in the last 2 hours") | class invalid, code `invalid_request`, naming both: a filter is never dropped for a text answer |
 | A named path start that names no entity ("what is connected to pump-99"; "the area of the plant", whose start is `area-of`) | class invalid, code `entity_not_found`, as `entityByAlias` answers it. A start whose entity is gone passes the entity verb's refusal as it came |
-| More than 16 distinct terms in a text question | class invalid, code `invalid_request`, before any read |
+| More than 32 distinct terms in a text question | class invalid, code `invalid_request`, before any read |
 | A refusal from the alias or entity verb behind a lookup (`alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`, and the entity verb's others) | the same refusal, as it arrived. For a one-word question `entity_not_found` from the entity verb is the exception: the word is searched as text |
 | A text question while `COMMUNITY_INDEX` is missing, catching up, lost or stopped, or when `level` holds no record | transient `index_not_ready`, counting no error. `processor/graph-clustering` writes `COMMUNITY_INDEX`, and its first tick after the replay decides when this refusal ends, so until then every text question is refused this way, `searchGraph` included |
 | A text question with `min_revision` above the mark | transient `revision_not_reached`, `indexed_revision` in detail |

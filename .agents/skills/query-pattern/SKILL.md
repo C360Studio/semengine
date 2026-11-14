@@ -77,7 +77,7 @@ serves now), so a verb not in the table has no responder yet.
   bare. `summary` refuses when the predicate index cannot answer; `exclude_predicates` asks without it, and `prefix`
   needs it.
 - **`localSearch`** searches one community: the group of entities that share the first 4, 3 or 2 parts of an ID
-  (`level` 0, 1 or 2, default 0). It takes `entity_id` (a full ID in the group), `query` (1 to 16 distinct words) and
+  (`level` 0, 1 or 2, default 0). It takes `entity_id` (a full ID in the group), `query` (1 to 32 distinct words) and
   optionally `level`. It reads the group's record from `COMMUNITY_INDEX`, then one page of the group's entities, and
   ranks that page by how well the words match. The page is at most 1,000 entities in ID order, so on a larger group the
   sample is the lexically smallest IDs, `entities_truncated` is true, and a match later in the order is missed. Until

@@ -219,7 +219,7 @@ request when `embedding_enabled` is false. Fusion reads this.
 
 Request keys: `entity_id`, `query`, `level`, `min_revision`; any unknown key is refused. `entity_id` must be a full
 six-part ID; `level` is 0 (the default), 1 or 2; `query` is lowercased and split on white space, repeats removed, and
-must leave 1 to 16 terms. Each failure is `invalid_request`, before any read. Reply enveloped, was bare: `data` holds
+must leave 1 to 32 terms. Each failure is `invalid_request`, before any read. Reply enveloped, was bare: `data` holds
 `community_id` (was `communityId`), `level`, `member_count`, `community_summary`, `keywords`, `entities`,
 `entities_scanned`, `entities_truncated` and `answer`; `count`, `durationMs`, `entity_digests`, `answer_model`,
 `degraded` and `degraded_reason` are gone.
@@ -312,7 +312,7 @@ pump-99", and "the area of the plant", whose start is `area-of`) is `entity_not_
 
 Until graph-clustering's first tick has written `COMMUNITY_INDEX` the text search refuses transient `index_not_ready`,
 which counts no error in `Health`.
-A text question with more than 16 distinct terms (lowercased, repeats removed) is
+A text question with more than 32 distinct terms (lowercased, repeats removed) is
 `invalid_request`, before any read.
 
 The text search reads the community records at `level` once, and before any page read refuses: transient

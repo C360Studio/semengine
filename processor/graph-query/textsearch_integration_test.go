@@ -293,7 +293,7 @@ func TestTextTierMatchesEqualAFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The filter: the type zeta scores 1.0, a title holding zeta 0.5 (TestLocalSearchScoresAsThePin);
+	// The filter: the type zeta scores 1.0, a title holding zeta 0.5 (TestTextTierScoresFixedCases);
 	// drone3's beta and the third group, whose record holds no zeta, are not read for it.
 	want := []string{
 		fmt.Sprintf("%s 1 %s", zeta, rows[zeta]),

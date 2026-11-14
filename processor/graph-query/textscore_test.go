@@ -37,10 +37,10 @@ func searchTermsOf(t *testing.T, query string) []string {
 	return terms
 }
 
-// TestTextTierScoresAsThePin checks the text score on fixed entities and queries against literal
+// TestTextTierScoresFixedCases checks the text score on fixed entities and queries against literal
 // scores, and each against the 0.3 threshold. A case that holds a deliberate choice of this verb's
 // rule says so.
-func TestTextTierScoresAsThePin(t *testing.T) {
+func TestTextTierScoresFixedCases(t *testing.T) {
 	const (
 		drone          = `{"id":"a.b.c.d.drone.001","triples":[]}`
 		sensorLocation = `{"id":"a.b.c.d.sensor.001","triples":[{"predicate":"sensor.identity.location","object":"warehouse"}]}`

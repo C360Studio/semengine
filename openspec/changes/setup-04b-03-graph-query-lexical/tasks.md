@@ -25,7 +25,7 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   `go test -race`; `TestSearchDeclaresExcluded` (graph-lexical integration) sees `excluded` in the reply;
   `FuzzParseQuery`, `TestScorecardHoldsItsFloor` and `TestScorecardBehaviour` pass unchanged; a mutant that drops
   the leading-star check is shown to fail. `MaxSearchTerms`'s comment names the word index. PR body: `Closes #624`.
-- [ ] 2.2 PR B. Local search on the index (design D2, D4). Premise: today's local search reads one prefix page and
+- [x] 2.2 PR B. Local search on the index (design D2, D4). Premise: today's local search reads one prefix page and
   ranks it by substring (`processor/graph-query/localsearch.go:252-317`, `:96`); a group ID is a valid scope
   (`graph/clustering/storage.go:101-111`, `pkg/types/entity_id.go:190`, `graph/id_prefix.go:45`); the batch reply
   names missing IDs, comes in no set order and re-encodes each entity (`graph/query_batch_types.go:51-56`,
@@ -34,15 +34,16 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   `TestLocalSearchIsScopedToTheGroup`; `TestLocalSearchRecordStates` (`read`, `none`, `not_ready`, `unreadable`, none
   refusing); `TestLocalSearchPassesWordIndexRefusals`; `TestSearchMatchesKeepHitOrder`; `TestSearchDropsMissingHits`;
   `TestLocalSearchEntitiesPassUnchanged` (an integer above 2^53 in the batch reply reaches the caller as sent);
-  `TestLocalSearchFitsMaxPayload` (lowest-ranked left out until it fits). The substring scorer and
-  `checkedSearchTerms` are deleted.
+  `TestLocalSearchFitsMaxPayload` (lowest-ranked left out until it fits). Local search no longer
+  reaches the substring scorer; global search's text tier still does, so its deletion is task 2.3's.
 - [ ] 2.3 PR B. Global search and its groups (design D3, D4). Premise: today's text tier lets records gate the read
   (`processor/graph-query/textsearch.go:50-92`, `:111-153`); the answer's group is among the first ten hits' groups
   for 98.0% of questions against about 88% by chance (`notes/probes/search-quality-probe.log`). Accept: new
   `TestGlobalSearchGroupsHits` (groups in order of their best match, counts summing to the matches, records
   attached), `TestGlobalSearchWithoutCommunityIndex` (answers with records `not_ready`) and
   `TestGlobalSearchMatchesKeepWordIndexOrder`; `TestTruncatedSearchIsCounted` and `TestGlobalSearchTypesWire`
-  updated to the new fields; today's text tier and its group score are deleted.
+  updated to the new fields; today's text tier and its group score are deleted, with the substring scorer
+  (`checkedSearchTerms`, `searchTerms`, `score`, `rankEntities`, `minTextScore`), `communityNotReady` and their tests.
 - [ ] 2.4 PR B. The router (design D5). Premise: `chooseRoute` refuses on aggregation, two filters and a hint beside a
   filter (`processor/graph-query/globalsearch.go:399-449`); 27 plain questions route or refuse as
   `openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/notes/probes/router-probe.log` shows. Accept:

@@ -4,12 +4,11 @@
 
 ### Requirement: The tokenizer splits text into words
 
-`lexical.Tokens` SHALL split text into runs of Unicode letters and digits. A run that ends in a lower-case `s`
-right after two or more capitals SHALL drop that `s`: it is the acronym's plural. Each run SHALL then split at
-every step from a lower-case letter to a capital and before the last capital of a capital run followed by lower
-case (a capital is a letter that lower-casing changes). It SHALL lower-case each part, split it again at any
-non-letter, non-digit, and keep one-letter words, but not the joined form of a split identifier. Index and query
-SHALL use it alone.
+`lexical.Tokens` SHALL split text into runs of Unicode letters and digits, drop a run's final lower-case `s` after
+two or more capitals, then split each run from a lower-case letter to a capital and before the last capital of a
+capital run followed by lower case (a capital is a letter lower-casing changes). It SHALL lower-case each part,
+split it again at any non-letter, non-digit, and keep one-letter words, not a split identifier's joined form.
+Index and query SHALL use it alone.
 
 #### Scenario: Words from code and prose
 

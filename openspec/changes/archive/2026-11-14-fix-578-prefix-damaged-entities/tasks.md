@@ -32,5 +32,5 @@ which closes #578. #656, #657 and #658 stay open.
 
 ## 3. Close
 
-- [ ] 3.1 Codex review of record at the head; `reviewed-by:` in the PR body.
-- [ ] 3.2 Archive the change and sync the specs as the last content commit.
+- [x] 3.1 Codex review of record at the head; `reviewed-by:` in the PR body.
+- [x] 3.2 Archive the change and sync the specs as the last content commit.

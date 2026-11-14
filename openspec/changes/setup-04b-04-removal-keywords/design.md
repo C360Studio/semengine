@@ -22,8 +22,10 @@ graph-clustering's half of #650; #628's last item. Non-goals: as the proposal li
 ## Decisions
 
 **D1. The example classifier goes (PR A).** `EmbeddingClassifier`, `NewEmbeddingClassifier`, `FindBestMatch`,
-`Threshold` and `Example.Vector` are deleted, and `NewClassifierChain(keyword, llm...)` loses its middle parameter.
-Tier numbers stay 0 and 3 (`ClassificationResult.Tier` is read by callers; renumbering changes values for no
+`Threshold` and `Example.Vector` are deleted, and the chain is built by `NewClassifierChain(keyword, llm)`: the
+middle parameter goes and `llm` is one `*LLMClassifier` or nil, not a variadic list, so an unchanged three-argument
+call fails to compile rather than silently dropping its LLM (`TestChainSignatureHasNoListOfTiers`). Tier numbers
+stay 0 and 3 (`ClassificationResult.Tier` is read by callers; renumbering changes values for no
 behaviour). `Example`, `DomainExamples` and `LoadDomainExamples` stay: the LLM tier reads them
 (`classifier_llm.go:56,65`). The `use_embeddings` hint stays: it names similarity intent, which graph-query reports
 unhonoured at tier 0 and the tier 1 fallback (#563) will honour; renaming it changes the JSON the LLM prompt asks for

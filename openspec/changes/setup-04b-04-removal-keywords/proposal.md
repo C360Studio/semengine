@@ -1,6 +1,6 @@
 # Proposal: setup-04b-04-removal-keywords
 
-Approved-by: cglusky (2026-11-14) <https://github.com/C360Studio/semengine/issues/10#issuecomment-6880665588> sha256:c2580c493bb4
+Approved-by: cglusky (2026-11-14) <https://github.com/C360Studio/semengine/issues/10#issuecomment-6881770203> sha256:d62885491137
 
 Track: `design`. Modified capabilities: `query-classification`, `fusion`, `graph-embedding`, `graph-query`,
 `composed-stack`, `community-grouping`, `graph-clustering`, `entity-text`.

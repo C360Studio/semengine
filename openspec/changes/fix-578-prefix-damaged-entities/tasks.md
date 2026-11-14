@@ -11,7 +11,7 @@ which closes #578. #656, #657 and #658 stay open.
 
 ## 2. Code
 
-- [ ] 2.1 graph-ingest, tests first. Write the design's graph-ingest tests: damaged entity listed, exact prefix,
+- [x] 2.1 graph-ingest, tests first. Write the design's graph-ingest tests: damaged entity listed, exact prefix,
   first key too large, the refusal-code cases, and the generated cursor walk with its seed and completed runs
   recorded. Then `graph.PrefixIDsResponse`, the shared listing function, and the `prefixIDs` handler in
   `queryHandlers` (design D1). The prefix verb's tests pass untouched, including `poison_scoping_test.go:296-302`

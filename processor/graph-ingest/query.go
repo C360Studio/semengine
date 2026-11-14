@@ -32,6 +32,8 @@ func (c *Component) queryHandlers() map[string]func(context.Context, []byte) ([]
 		"entity": c.handleQueryEntityNATS,
 		"batch":  c.handleQueryBatchNATS,
 		"prefix": c.handleQueryPrefixNATS,
+		// Served once the table declares its row; setupQueryHandlers subscribes by row.
+		"prefixIDs": c.handleQueryPrefixIDsNATS,
 	}
 }
 
@@ -232,94 +234,16 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Parse the typed request. An omitted cursor denotes the first page.
-	var req graph.PrefixQueryRequest
-	if err := json.Unmarshal(data, &req); err != nil {
-		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid request: %w", err))
+	listing, err := c.listPrefixKeys(ctx, data)
+	if err != nil {
+		return nil, err
 	}
-	if req.Prefix != "" && req.Pattern != "" {
-		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest,
-			errors.New("invalid request: prefix and pattern are mutually exclusive"))
-	}
-	if req.Prefix != "" {
-		if err := semtypes.ValidateEntityIDPrefix(req.Prefix); err != nil {
-			return nil, err
-		}
-	}
-	if req.Pattern != "" {
-		if err := semtypes.ValidateEntityIDPattern(req.Pattern); err != nil {
-			return nil, err
-		}
-	}
-
-	// A limit of zero or less, or over the maximum, means the maximum.
-	limit := req.Limit
-	if limit <= 0 || limit > graph.MaxPrefixQueryLimit {
-		limit = graph.MaxPrefixQueryLimit
-	}
-
-	var (
-		keys []string
-		err  error
-	)
-	if req.Pattern != "" {
-		keys, err = c.entityBucket.KeysByFilter(ctx, req.Pattern)
-		if err != nil {
-			return nil, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
-		}
-	} else {
-		// Build prefix for server-side filtering.
-		prefixDot := req.Prefix
-		if req.Prefix != "" {
-			prefixDot = req.Prefix + "."
-		}
-
-		// Use server-side prefix filtering instead of loading all keys.
-		keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)
-		if err != nil {
-			return nil, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
-		}
-
-		// Also check exact match for full entity ID queries (6-part IDs
-		// where KeysByPrefix("org.plat.dom.sys.type.inst.") finds nothing).
-		if req.Prefix != "" && len(keys) == 0 {
-			if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
-				keys = []string{req.Prefix}
-			} else if !natsclient.IsKVNotFoundError(getErr) {
-				return nil, rejectInternal(fmt.Errorf("failed to check exact entity key: %w", getErr))
-			}
-		}
-	}
-
-	// MANDATORY: sort before cursor application — cursor is meaningless
-	// without a deterministic key order. Compact then drops repeated keys (nats.go does
-	// not promise a listing names each key once under concurrent overwrites), so an entity is served
-	// at most once and total counts distinct keys.
-	sort.Strings(keys)
-	keys = slices.Compact(keys)
-
-	// The reply's total is the listing as listed, whichever page this request reads.
-	total := len(keys)
-
-	// Apply cursor: advance past keys up to and including lastKey.
-	if req.Cursor != "" {
-		lastKey, decodeErr := decodeCursor(req.Cursor)
-		if decodeErr != nil {
-			return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid cursor: %w", decodeErr))
-		}
-		// SearchStrings finds first index where keys[i] >= lastKey.
-		idx := sort.SearchStrings(keys, lastKey)
-		// Advance past any key equal to lastKey (inclusive skip).
-		for idx < len(keys) && keys[idx] == lastKey {
-			idx++
-		}
-		keys = keys[idx:]
-	}
+	keys := listing.keys
 
 	// Slice the page — we'll potentially trim further by byte budget below.
 	pageKeys := keys
-	if len(pageKeys) > limit {
-		pageKeys = pageKeys[:limit]
+	if len(pageKeys) > listing.limit {
+		pageKeys = pageKeys[:listing.limit]
 	}
 
 	// Fetch full entities with bounded concurrency and cache. Missing IDs are
@@ -347,7 +271,208 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 		followingBoundary = pageKeys[len(pageKeys)-1]
 	}
 
-	return marshalFittingPrefixPage(entities, total, followingBoundary, maxPayload)
+	return marshalFittingPrefixPage(entities, listing.total, followingBoundary, maxPayload)
+}
+
+// prefixListing is what the prefix and prefixIDs verbs share before any stored value is read:
+// the keys the request selects, sorted, each once, and past its cursor; the number of distinct
+// keys listed; and the request's limit with the maximum applied.
+type prefixListing struct {
+	keys  []string
+	total int
+	limit int
+}
+
+// listPrefixKeys decodes and checks a PrefixQueryRequest and lists the keys it selects. It reads
+// no stored value: an exact six-part prefix with nothing under it is only checked for existence.
+func (c *Component) listPrefixKeys(ctx context.Context, data []byte) (prefixListing, error) {
+	// Parse the typed request. An omitted cursor denotes the first page.
+	var req graph.PrefixQueryRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return prefixListing{}, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid request: %w", err))
+	}
+	if req.Prefix != "" && req.Pattern != "" {
+		return prefixListing{}, rejectInvalid(graph.ErrorCodeInvalidRequest,
+			errors.New("invalid request: prefix and pattern are mutually exclusive"))
+	}
+	if req.Prefix != "" {
+		if err := semtypes.ValidateEntityIDPrefix(req.Prefix); err != nil {
+			return prefixListing{}, err
+		}
+	}
+	if req.Pattern != "" {
+		if err := semtypes.ValidateEntityIDPattern(req.Pattern); err != nil {
+			return prefixListing{}, err
+		}
+	}
+
+	// A limit of zero or less, or over the maximum, means the maximum.
+	limit := req.Limit
+	if limit <= 0 || limit > graph.MaxPrefixQueryLimit {
+		limit = graph.MaxPrefixQueryLimit
+	}
+
+	var (
+		keys []string
+		err  error
+	)
+	if req.Pattern != "" {
+		keys, err = c.entityBucket.KeysByFilter(ctx, req.Pattern)
+		if err != nil {
+			return prefixListing{}, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
+		}
+	} else {
+		// Build prefix for server-side filtering.
+		prefixDot := req.Prefix
+		if req.Prefix != "" {
+			prefixDot = req.Prefix + "."
+		}
+
+		// Use server-side prefix filtering instead of loading all keys.
+		keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)
+		if err != nil {
+			return prefixListing{}, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
+		}
+
+		// Also check exact match for full entity ID queries (6-part IDs
+		// where KeysByPrefix("org.plat.dom.sys.type.inst.") finds nothing).
+		if req.Prefix != "" && len(keys) == 0 {
+			if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
+				keys = []string{req.Prefix}
+			} else if !natsclient.IsKVNotFoundError(getErr) {
+				return prefixListing{}, rejectInternal(fmt.Errorf("failed to check exact entity key: %w", getErr))
+			}
+		}
+	}
+
+	// MANDATORY: sort before cursor application — cursor is meaningless
+	// without a deterministic key order. Compact then drops repeated keys (nats.go does
+	// not promise a listing names each key once under concurrent overwrites), so an entity is served
+	// at most once and total counts distinct keys.
+	sort.Strings(keys)
+	keys = slices.Compact(keys)
+
+	// The reply's total is the listing as listed, whichever page this request reads.
+	total := len(keys)
+
+	// Apply cursor: advance past keys up to and including lastKey.
+	if req.Cursor != "" {
+		lastKey, decodeErr := decodeCursor(req.Cursor)
+		if decodeErr != nil {
+			return prefixListing{}, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid cursor: %w", decodeErr))
+		}
+		// SearchStrings finds first index where keys[i] >= lastKey.
+		idx := sort.SearchStrings(keys, lastKey)
+		// Advance past any key equal to lastKey (inclusive skip).
+		for idx < len(keys) && keys[idx] == lastKey {
+			idx++
+		}
+		keys = keys[idx:]
+	}
+	return prefixListing{keys: keys, total: total, limit: limit}, nil
+}
+
+// handleQueryPrefixIDsNATS lists the IDs a PrefixQueryRequest selects, paged as the prefix
+// verb pages, and answers a graph.PrefixIDsResponse. It reads no entity, so a damaged stored
+// value is listed like any other key and is not recorded: a caller can find it and read the
+// rest around it, while the prefix verb keeps refusing the whole page.
+func (c *Component) handleQueryPrefixIDsNATS(ctx context.Context, data []byte) ([]byte, error) {
+	maxPayload, err := c.natsClient.MaxPayload()
+	if err != nil {
+		return nil, rejectInternal(fmt.Errorf("observe NATS max payload: %w", err))
+	}
+	return c.handleQueryPrefixIDsWithMaxPayload(ctx, data, maxPayload)
+}
+
+func (c *Component) handleQueryPrefixIDsWithMaxPayload(
+	ctx context.Context,
+	data []byte,
+	maxPayload int64,
+) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	listing, err := c.listPrefixKeys(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+	page := listing.keys[:min(len(listing.keys), listing.limit)]
+	return marshalFittingPrefixIDsPage(page, len(page) < len(listing.keys), listing.total, maxPayload)
+}
+
+// marshalFittingPrefixIDsPage encodes the longest leading run of ids whose whole reply fits
+// maxPayload. A page ending before the last of ids, or followed by keys past the limit (more),
+// carries its last ID as the cursor. A longer run can fit where a shorter one does not, because
+// only a page with keys after it carries a cursor, so every length is measured.
+func marshalFittingPrefixIDsPage(ids []string, more bool, total int, maxPayload int64) ([]byte, error) {
+	cursorAt := func(count int) string {
+		if count > 0 && (count < len(ids) || more) {
+			return encodeCursor(ids[count-1])
+		}
+		return ""
+	}
+	// sizeWith is the length json.Marshal gives a graph.PrefixIDsResponse whose ids encode to
+	// idsBytes (brackets and commas included) and whose cursor is cursor: the fields in
+	// declaration order, next_cursor left out when empty. A cursor is base64url, which JSON
+	// quotes without escaping.
+	sizeWith := func(idsBytes int64, cursor string) int64 {
+		size := int64(len(`{"ids":`)) + idsBytes + int64(len(`,"total":`)+len(strconv.Itoa(total))+len(`}`))
+		if cursor != "" {
+			size += int64(len(`,"next_cursor":""`) + len(cursor))
+		}
+		return size
+	}
+
+	idsBytes := int64(len(`[]`))
+	best, bestCursor := -1, ""
+	firstReply := sizeWith(idsBytes, "")
+	if len(ids) == 0 && firstReply <= maxPayload {
+		best = 0
+	}
+	for count := 1; count <= len(ids); count++ {
+		encoded, err := json.Marshal(ids[count-1])
+		if err != nil {
+			return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+				fmt.Errorf("marshal prefix ID %q: %w", ids[count-1], err))
+		}
+		idsBytes += int64(len(encoded))
+		if count > 1 {
+			idsBytes++ // comma between IDs
+		}
+		cursor := cursorAt(count)
+		size := sizeWith(idsBytes, cursor)
+		if count == 1 {
+			firstReply = size
+		}
+		if size <= maxPayload {
+			best, bestCursor = count, cursor
+		}
+	}
+	if best < 0 {
+		return nil, rejectInvalidDetail(
+			natsclient.ErrorCodeResponseTooLarge,
+			map[string]any{
+				"response_bytes": firstReply,
+				"max_payload":    maxPayload,
+			},
+			errors.New("prefix ID listing: the first ID exceeds active NATS maximum payload"),
+		)
+	}
+
+	pageIDs := ids[:best]
+	if pageIDs == nil {
+		pageIDs = []string{} // an empty page encodes as [], never null
+	}
+	encoded, err := json.Marshal(graph.PrefixIDsResponse{IDs: pageIDs, Total: total, NextCursor: bestCursor})
+	if err != nil {
+		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+			fmt.Errorf("marshal prefix ID response: %w", err))
+	}
+	if int64(len(encoded)) > maxPayload {
+		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+			fmt.Errorf("prefix ID response fitting invariant: encoded %d bytes exceeds max payload %d", len(encoded), maxPayload))
+	}
+	return encoded, nil
 }
 
 // marshalFittingPrefixPage returns the largest sorted entity prefix whose

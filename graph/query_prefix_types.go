@@ -78,3 +78,17 @@ type PrefixQueryResponse struct {
 	// NextCursor is the opaque continuation token; empty = exhausted.
 	NextCursor string `json:"next_cursor,omitempty"`
 }
+
+// PrefixIDsResponse is the reply of the prefixIDs verb: the IDs a PrefixQueryRequest selects,
+// paged as the prefix verb pages, with no stored value read. A damaged entity is listed like
+// any other, so a caller can find it and read the rest around it.
+//
+// IDs is the page's keys in lexicographic order, never null: an empty page is []. Total is
+// counted as PrefixQueryResponse.Total is. NextCursor continues the listing on the next
+// prefixIDs request and is omitted when no key follows the page; a cursor is promised only
+// on the verb that gave it.
+type PrefixIDsResponse struct {
+	IDs        []string `json:"ids"`
+	Total      int      `json:"total"`
+	NextCursor string   `json:"next_cursor,omitempty"`
+}

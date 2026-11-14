@@ -134,7 +134,7 @@ record per group in `COMMUNITY_INDEX`: its member count, keywords, a summary and
 
 The request is `{"entity_id": "...", "query": "...", "level": 0, "min_revision": ...}`. `entity_id` is a full six-part
 ID, and the group searched is the one it belongs to at `level` (0 to 2, absent means 0). `query` is lowercased and
-split on white space with repeats removed, and must leave 1 to 16 terms. A bad field is `invalid_request`, naming it,
+split on white space with repeats removed, and must leave 1 to 32 terms. A bad field is `invalid_request`, naming it,
 before anything is read. An unknown key is refused.
 
 It reads the group's record from the view, then one page of at most 1,000 entity IDs under the group's prefix from
@@ -205,7 +205,7 @@ result; `text` carries the entities of its matches, as the pages gave them.
 #### The text search
 
 It reads every group record at `level` from the `COMMUNITY_INDEX` view once, and scores each against the question's
-terms (lowercased, repeats removed, at most 16). A record gains 2.0 for each term its summary contains, and 1.5 for
+terms (lowercased, repeats removed, at most 32). A record gains 2.0 for each term its summary contains, and 1.5 for
 each keyword and term where one contains the other. Up to five records scoring above 0 are read, best first, ties by
 group prefix. From each it reads one page of at most 1,000 entity IDs, and ranks the entities as `localSearch` does
 (score of 0.3 or more matches). Matches from all groups are merged, best first, ties by entity ID.

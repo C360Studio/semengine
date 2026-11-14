@@ -219,7 +219,7 @@ request when `embedding_enabled` is false. Fusion reads this.
 
 Request keys: `entity_id`, `query`, `level`, `min_revision`; any unknown key is refused. `entity_id` must be a full
 six-part ID; `level` is 0 (the default), 1 or 2; `query` is lowercased and split on white space, repeats removed, and
-must leave 1 to 16 terms. Each failure is `invalid_request`, before any read. Reply enveloped, was bare: `data` holds
+must leave 1 to 32 terms. Each failure is `invalid_request`, before any read. Reply enveloped, was bare: `data` holds
 `community_id` (was `communityId`), `level`, `member_count`, `community_summary`, `keywords`, `entities`,
 `entities_scanned`, `entities_truncated` and `answer`; `count`, `durationMs`, `entity_digests`, `answer_model`,
 `degraded` and `degraded_reason` are gone.

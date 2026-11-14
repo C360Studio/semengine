@@ -77,7 +77,7 @@ func TestKeywordExclusions(t *testing.T) {
 // TestKeywordExclusionKeepsOtherHints: an excluded operation beside a
 // temporal hint leaves the temporal hint at tier 0.
 func TestKeywordExclusionKeepsOtherHints(t *testing.T) {
-	got, err := NewClassifierChain(NewKeywordClassifier()).ClassifyQuery(t.Context(),
+	got, err := NewClassifierChain(NewKeywordClassifier(), nil).ClassifyQuery(t.Context(),
 		"Do not count sensors from yesterday")
 	require.NoError(t, err)
 	require.NotNil(t, got)

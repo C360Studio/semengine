@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,9 +17,22 @@ func TestNewClassifierChain_Constructor(t *testing.T) {
 		"nil keyword":        nil,
 	} {
 		t.Run(name, func(t *testing.T) {
-			assert.NotNil(t, NewClassifierChain(keyword))
+			assert.NotNil(t, NewClassifierChain(keyword, nil))
 		})
 	}
+}
+
+// TestChainSignatureHasNoListOfTiers: the constructor takes one keyword tier and one LLM tier, never a list.
+// With a list, a call written for the old three-tier chain, (keyword, nil, llm), still compiles, and the chain reads
+// the nil as its LLM tier and silently drops the real one. With two fixed parameters that call fails to compile.
+func TestChainSignatureHasNoListOfTiers(t *testing.T) {
+	sig := reflect.TypeOf(NewClassifierChain)
+	assert.False(t, sig.IsVariadic(), "NewClassifierChain must not take a list of tiers")
+	require.Equal(t, 2, sig.NumIn(), "NewClassifierChain takes exactly a keyword tier and an LLM tier")
+	assert.Truef(t, sig.In(0) == reflect.TypeOf((*KeywordClassifier)(nil)), "first parameter is %v", sig.In(0))
+	assert.Truef(t, sig.In(1) == reflect.TypeOf((*LLMClassifier)(nil)), "second parameter is %v", sig.In(1))
+	require.Equal(t, 1, sig.NumOut())
+	assert.Truef(t, sig.Out(0) == reflect.TypeOf((*ClassifierChain)(nil)), "result is %v", sig.Out(0))
 }
 
 // TestClassifierChain_T0_KeywordMatch tests that keyword patterns answer at tier 0
@@ -131,7 +145,7 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			keyword := NewKeywordClassifier()
-			chain := NewClassifierChain(keyword)
+			chain := NewClassifierChain(keyword, nil)
 
 			ctx := t.Context()
 			before := time.Now()
@@ -147,7 +161,7 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 // TestClassifierChain_KeywordOnly tests T0-only chain
 func TestClassifierChain_KeywordOnly(t *testing.T) {
 	keyword := NewKeywordClassifier()
-	chain := NewClassifierChain(keyword)
+	chain := NewClassifierChain(keyword, nil)
 
 	tests := []struct {
 		name           string
@@ -228,7 +242,7 @@ func TestClassifierChain_DefaultResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			keyword := NewKeywordClassifier()
-			chain := NewClassifierChain(keyword)
+			chain := NewClassifierChain(keyword, nil)
 
 			ctx := t.Context()
 			result, err := chain.ClassifyQuery(ctx, tt.query)
@@ -244,7 +258,7 @@ func TestClassifierChain_DefaultResult(t *testing.T) {
 // below is already in the past, so no wait is needed.
 func TestClassifierChain_ContextCancellation(t *testing.T) {
 	keyword := NewKeywordClassifier()
-	chain := NewClassifierChain(keyword)
+	chain := NewClassifierChain(keyword, nil)
 
 	t.Run("cancelled context before call", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
@@ -281,7 +295,7 @@ func TestClassifierChain_NilChain(t *testing.T) {
 // TestClassifierChain_TierPriority tests that a keyword hint answers at tier 0
 func TestClassifierChain_TierPriority(t *testing.T) {
 	keyword := NewKeywordClassifier()
-	chain := NewClassifierChain(keyword)
+	chain := NewClassifierChain(keyword, nil)
 
 	ctx := t.Context()
 
@@ -301,7 +315,7 @@ func TestClassifierChain_TierPriority(t *testing.T) {
 // TestClassifierChain_ResultStructure tests ClassificationResult structure
 func TestClassifierChain_ResultStructure(t *testing.T) {
 	keyword := NewKeywordClassifier()
-	chain := NewClassifierChain(keyword)
+	chain := NewClassifierChain(keyword, nil)
 
 	tests := []struct {
 		name           string
@@ -334,7 +348,7 @@ func TestClassifierChain_ResultStructure(t *testing.T) {
 // TestClassifierChain_OptionsPopulation tests that Options are populated correctly
 func TestClassifierChain_OptionsPopulation(t *testing.T) {
 	keyword := NewKeywordClassifier()
-	chain := NewClassifierChain(keyword)
+	chain := NewClassifierChain(keyword, nil)
 
 	ctx := t.Context()
 
@@ -354,7 +368,7 @@ func TestClassifierChain_OptionsPopulation(t *testing.T) {
 // TestClassifierChain_ConcurrentAccess tests thread safety
 func TestClassifierChain_ConcurrentAccess(t *testing.T) {
 	keyword := NewKeywordClassifier()
-	chain := NewClassifierChain(keyword)
+	chain := NewClassifierChain(keyword, nil)
 
 	ctx := t.Context()
 
@@ -395,7 +409,7 @@ func TestClassifierChain_ConcurrentAccess(t *testing.T) {
 // TestClassifierChain_UnicodeQueries tests handling of non-ASCII characters
 func TestClassifierChain_UnicodeQueries(t *testing.T) {
 	keyword := NewKeywordClassifier()
-	chain := NewClassifierChain(keyword)
+	chain := NewClassifierChain(keyword, nil)
 
 	ctx := t.Context()
 

@@ -29,15 +29,13 @@ type ClassifierChain struct {
 	llm     *LLMClassifier     // T3 - LLM-based classification (optional)
 }
 
-// NewClassifierChain creates a classifier chain with a keyword classifier and an optional LLM
-// classifier. Tier numbers stay 0 and 3, the values callers read from ClassificationResult.Tier.
+// NewClassifierChain creates a classifier chain with a keyword classifier and an LLM classifier.
+// Tier numbers stay 0 and 3, the values callers read from ClassificationResult.Tier.
 //
-// All parameters may be nil. Chain will route queries through available tiers.
-func NewClassifierChain(keyword *KeywordClassifier, llmClassifiers ...*LLMClassifier) *ClassifierChain {
-	var llm *LLMClassifier
-	if len(llmClassifiers) > 0 {
-		llm = llmClassifiers[0]
-	}
+// Either may be nil: a nil llm means no LLM tier, and the chain routes queries through the tiers
+// it has. The LLM tier is one fixed parameter rather than a list, so a call written for a chain
+// with a third tier, (keyword, nil, llm), fails to compile instead of dropping its LLM tier.
+func NewClassifierChain(keyword *KeywordClassifier, llm *LLMClassifier) *ClassifierChain {
 	return &ClassifierChain{
 		keyword: keyword,
 		llm:     llm,

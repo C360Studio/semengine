@@ -3938,7 +3938,7 @@
     Surface as at the pin, less the dead surface below, with these adaptations (spec query-classification; design
     D2-D5 of the port, D1-D6 of query-classifier-fixes, D1 of setup-04b-04-removal-keywords): (1) the example
     classifier (tier 1: EmbeddingClassifier, NewEmbeddingClassifier, FindBestMatch, Threshold) and Example.Vector are
-    removed, and NewClassifierChain(keyword, llm...) has no middle parameter; tier numbers stay 0 and 3, the values
+    removed, and NewClassifierChain(keyword, llm) has no middle parameter; tier numbers stay 0 and 3, the values
     callers read from ClassificationResult.Tier (setup-04b-04 D1: it had no production caller and built the hashed
     BM25 embedder); (2) removed with (1); (3) ClassifierChain.ClassifyQuery
     returns nil for a nil chain, a nil context, a context already ended, and a context that ends during the LLM tier

@@ -168,7 +168,7 @@ func TestChainAnswersFromFirstTier(t *testing.T) {
 	})
 
 	t.Run("default without an LLM tier", func(t *testing.T) {
-		got, err := NewClassifierChain(NewKeywordClassifier()).ClassifyQuery(t.Context(), noHintQuery)
+		got, err := NewClassifierChain(NewKeywordClassifier(), nil).ClassifyQuery(t.Context(), noHintQuery)
 		require.NoError(t, err)
 		assert.Equal(t, defaultResult(), got)
 	})
@@ -182,7 +182,7 @@ func TestChainOptionsAreCopies(t *testing.T) {
 		return `{"types":["pump"]}`, nil
 	}}
 	withLLM := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, nil))
-	keywordOnly := NewClassifierChain(NewKeywordClassifier())
+	keywordOnly := NewClassifierChain(NewKeywordClassifier(), nil)
 	for _, tt := range []struct {
 		name, query string
 		chain       *ClassifierChain
@@ -224,7 +224,7 @@ func TestZoneQueryAddsNoPredicate(t *testing.T) {
 		{"pumps near area north", "area-north"},
 	}
 	k := NewKeywordClassifier()
-	chain := NewClassifierChain(k)
+	chain := NewClassifierChain(k, nil)
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
 			opts := k.ClassifyQuery(t.Context(), tt.query)
@@ -247,7 +247,7 @@ func TestZoneQueryAddsNoPredicate(t *testing.T) {
 // alone classify as before, and a reference that holds a zone word ("sensor-zone-1", "zone-b"
 // itself) is one place.
 func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
-	chain := NewClassifierChain(NewKeywordClassifier())
+	chain := NewClassifierChain(NewKeywordClassifier(), nil)
 	for _, tt := range []struct{ query, start, zone string }{
 		{"what is connected to sensor-001 in zone-b", "sensor-001", "zone-b"},
 		{"what is connected to sensor-001 near zone-b", "sensor-001", "zone-b"},

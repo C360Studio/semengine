@@ -43,7 +43,7 @@ if result == nil {
 }
 ```
 
-`client` is your `LLMClient`. Without one, `query.NewClassifierChain(query.NewKeywordClassifier())`
+`client` is your `LLMClient`. Without one, `query.NewClassifierChain(query.NewKeywordClassifier(), nil)`
 is the keyword tier alone. `NewLLMClassifier` keeps the domains' examples and their `Options` maps;
 do not edit them after the call.
 

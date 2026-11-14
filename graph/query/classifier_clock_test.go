@@ -150,7 +150,7 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 		{"sensors within 1" + zeros(400) + "km of 0,0", "within 1" + zeros(400) + "km of 0,0", "radius"},
 	}
 
-	chain := NewClassifierChain(NewKeywordClassifier())
+	chain := NewClassifierChain(NewKeywordClassifier(), nil)
 	k := NewKeywordClassifier()
 	for _, tt := range refused {
 		t.Run("refused/"+short(tt.phrase), func(t *testing.T) {
@@ -271,7 +271,7 @@ func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
 	}
 
 	t.Run("no tier composed", func(t *testing.T) {
-		chain := NewClassifierChain(nil)
+		chain := NewClassifierChain(nil, nil)
 		for _, q := range questions {
 			assertRefused(t, chain, q)
 		}

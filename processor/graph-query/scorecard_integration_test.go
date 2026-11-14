@@ -27,9 +27,14 @@ import (
 // the plain reference does, and never less often than its floor. The floors sit just under the
 // reference's R@10 on this corpus, 56% unscoped and 60% within the group, so a change that lowered
 // the reference too could not carry the verbs down with it.
+//
+// R@10 alone cannot see an answer slipping from first place to fifth, so a verb's MRR may also be at
+// most mrrMargin below the reference's on the same questions. The verbs sit about 0.005 below it
+// today; a name weighted five times its body loses about 0.02 globally.
 const (
 	globalScorecardFloor = 0.55
 	localScorecardFloor  = 0.58
+	mrrMargin            = 0.01
 	// scorecardLimit is the most matches either verb returns; a rank past it counts as not found.
 	// The full hundred, not ten: matches put in a wrong order inside the first hundred then move the
 	// answer out of the first ten, which R@10 sees.
@@ -196,16 +201,22 @@ func (s *tally) add(rank int) {
 	}
 }
 
+func (s *tally) mrr() float64 { return s.reciprocal / float64(s.questions) }
+
 func (s *tally) String() string {
 	share := func(n int) float64 { return 100 * float64(n) / float64(s.questions) }
 	return fmt.Sprintf("%-28s R@1 %5.1f%%  R@10 %5.1f%%  MRR %.3f  over %d questions",
-		s.name, share(s.top1), share(s.top10), s.reciprocal/float64(s.questions), s.questions)
+		s.name, share(s.top1), share(s.top10), s.mrr(), s.questions)
 }
 
 // requireBar fails unless got has the answer in its first ten at most one point less often than ref,
-// and at least floor of the time. Counts, not shares: one point of 500 questions is 5 answers.
+// and at least floor of the time, and its MRR is at most mrrMargin below ref's. Counts, not shares,
+// for R@10: one point of 500 questions is 5 answers.
 func requireBar(t *testing.T, got, ref *tally, floor float64) {
 	t.Helper()
+	if got.mrr() < ref.mrr()-mrrMargin {
+		t.Errorf("%s: MRR %.4f, more than %.2f below the reference's %.4f", got.name, got.mrr(), mrrMargin, ref.mrr())
+	}
 	if slack := got.questions / 100; got.top10 < ref.top10-slack {
 		t.Errorf("%s: R@10 %d of %d, more than one point below the reference's %d", got.name, got.top10, got.questions, ref.top10)
 	}
@@ -223,7 +234,7 @@ func matchRank(matches []graph.TextSearchMatch, id string) int {
 // graph-lexical, and each of its 500 known-item questions is asked through globalSearch and through
 // localSearch scoped to the answer's level-0 group. Each verb's R@10 must be at most one point below
 // a plain BM25 computed here over the same text, unscoped for global and within the group for local,
-// and at or above its floor (spec, "Search quality holds against a plain reference").
+// its MRR at most 0.01 below that reference's, and its R@10 at or above its floor (spec, "Search quality holds against a plain reference").
 func TestSearchScorecard(t *testing.T) {
 	corpus, questions := loadScorecard(t)
 	stack := startIngestAndIndexAs(t, types.PlatformMeta{Org: "c360", Platform: "semengine"})

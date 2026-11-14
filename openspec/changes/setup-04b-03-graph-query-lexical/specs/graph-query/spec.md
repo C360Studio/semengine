@@ -187,12 +187,13 @@ matching entities in {community_id}.` for local search, followed by a space and 
 
 On the word index's frozen scorecard corpus and its 500 questions, `globalSearch` and `localSearch` (each question's
 answer's level-0 group) SHALL each have the answer in the first ten at most one point below a plain BM25 computed in
-the test, and at or above 55% and 58% respectively.
+the test, and at or above 55% and 58% respectively, and an MRR at most 0.01 below that reference's on the same
+questions.
 
 #### Scenario: The scorecard
 
 - **WHEN** the corpus is ingested and the questions asked through both verbs
-- **THEN** both bars hold, and the test logs R@1, R@10 and MRR for both verbs and the reference
+- **THEN** the R@10 and MRR bars hold, and the test logs R@1, R@10 and MRR for both verbs and the reference
   (`TestSearchScorecard`)
 
 ## MODIFIED Requirements

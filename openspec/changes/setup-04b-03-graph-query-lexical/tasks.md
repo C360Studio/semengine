@@ -6,11 +6,11 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/`): where words are searched,
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/`): where words are searched,
   local and global search, hydration, the router, what search accepts, the tier 1 fallback's shape, the quality bar.
   Pre-owner design review passes; the owner fills `Approved-by:`, rules on design questions 1 and 2, and approves the
-  changed ADR-087 decision named in the proposal.
-  Hold: OPEN-Q proposal awaits owner approval
+  changed ADR-087 decision named in the proposal. Approved 2026-11-14 (#10 comment 6877374827); question 1 ruled
+  (a), question 2 ruled (b).
 
 ## 2. Code
 

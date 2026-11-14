@@ -1,6 +1,6 @@
 # Proposal: setup-04b-03-graph-query-lexical
 
-Approved-by:
+Approved-by: cglusky (2026-11-14) <https://github.com/C360Studio/semengine/issues/10#issuecomment-6877374827> sha256:c08b5aee704d
 
 Track: `design`. Modified capabilities: `graph-query`, `lexical-search`, `graph-lexical`, `composed-stack`.
 `query-classification` is unchanged: the classifier keeps its rules, and only how graph-query uses its answer changes.

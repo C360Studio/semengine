@@ -11,7 +11,7 @@ Terms. *Word index*: `graph/lexical`, served by component `graph-lexical` on `gr
 ## 1. Open issues naming the territory
 
 Queries (2026-11-14, `gh issue list --state open --search <q>`): graph-query, graph/query, classifier, lexical,
-searchGraph, "global search", "local search", community. I read each hit's body and comments.
+searchGraph, "global search", "local search", community, fallback, "tier 1". I read each hit's body and comments.
 
 | Issue | What it asks | Candidate disposition (the design decides) |
 | --- | --- | --- |
@@ -24,12 +24,14 @@ searchGraph, "global search", "local search", community. I read each hit's body 
 | #628 | Smoke search checks still read the old path | change 3 owes "move localSearch and global search checks"; stays open for change 4 (bm25 assertions) |
 | #486 | Tier 2 LLM classifier; comment says its strategies join global search's routing table | stays (tier 2); the router shape it joins changes here |
 | #487 | Tier 2 answer synthesis over graph-query results | stays (tier 2) |
+| #489 | Tier-1 HTTP embedder; owes the test that losing it degrades to tier 0 | stays (04C); meets #563's tier-1 half |
+| #11 | Epic 04C: fallback or `Deferred` outcomes that weaken neither tier 0 nor tier 1 | stays (epic); bounds #563 |
 | #111 | Silent degrades; item 3 (text-tier half) landed in #544; item 4 is spatial | stays; no graph-query item left except the pin's semantic fallback, which #563 now covers |
 | #602 | Replies carry no `ENTITY_STATES` generation beside `indexed_revision` | stays; any new reply field this change adds inherits it |
 | #578 | graph-ingest prefix read refuses a whole page for one damaged entity | stays (draft PR #655); affects local and text search while they read prefix pages |
 | #651, #620 | Tokenizer digit-capital split; NameWeight re-measure on SemSource data | stay (lexical package); bear on the known-answer measurement |
 | #477, #68, #195, #196, #155, #536 | Name graph-query files; its sites are already retired (#477 by #524; no `sync.Once` in graph-query production; `component.Lifecycle` at `processor/graph-query/component.go:34`) or are test or flake watch | stay, untouched |
-| #9, #10, #24, #109, #300, #350, #484, #108, #621, #630, #641, #625, #619 | Mention the word, not this territory | n/a |
+| #9, #10, #24, #84, #108, #109, #141, #300, #350, #484, #485, #502, #554, #619, #621, #625, #630, #641 | Mention the word, not this territory | n/a |
 
 ## 2. Overlapping open PRs
 
@@ -95,13 +97,25 @@ read: returns undamaged entities plus a `Missing` list), #597 and #598 (Dependab
 - Scope: `processor/graph-lexical/query.go:67-74` checks each prefix with `ValidateEntityIDPrefix`; matching is on
   segment boundaries (`graph/id_prefix.go:45` `id == p || strings.HasPrefix(id, p+".")`), applied before the limit
   (graph-lexical spec `:94-96`). A group ID (`graph/clustering/maintainer.go:419-420`: taxonomy, source or
-  deployment prefix) is such a prefix.
+  deployment prefix) is such a prefix: `ValidateEntityIDPrefix` takes 1 to 6 parts (`pkg/types/entity_id.go:190`),
+  so a 2-position group ID is a valid scope.
 - Order (`processor/graph-lexical/query.go:57-89`, spec graph-lexical `:55-60`): validate (`invalid_request`), then
   `QueryReady`: transient `index_not_ready` (`graph/follower/follower.go:452`), fatal
   `graph_state_reset_required` (`:414`, `:461`), then `revision_not_reached` with detail.
 - `ParseQuery` (`graph/lexical/query.go:57`): `ErrQueryTooLong` past 16 distinct tokens after identifier split
   (`:96-97`); `ErrReservedSyntax` for `name:`/`body:` with more text or a final `*`/`~` after a word rune
   (`:125-138`); `ErrEmptyQuery`; `-word` excludes (`:69-73`). All are refused `invalid_request` by the verb (`:75-78`).
+  An exclusion is never refused: `go test -race` searches `go` and `test` and drops every entity holding `race`,
+  with nothing in the reply that says so. Today only a caller of `graph.lexical.query.search` meets this; no
+  graph-query verb sends to `ParseQuery`.
+
+### Docs that state today's search behaviour
+
+- `processor/graph-query/README.md:31-33` (verb table rows for `localSearch`, `globalSearch`, `searchGraph`) and
+  `:129-230` (the local search, global search and searchGraph sections).
+- `.agents/skills/query-pattern/SKILL.md:79-134` (how code reads the graph, the search verbs among them).
+- `docs/admission-ledger.yaml:4346-4396` (the `processor/graph-query` row's contract text for both searches).
+- `processor/graph-query/MIGRATION.md:14-30,64-86` (the consumer notes for searchGraph and localSearch).
 
 ### Specs this change would change (quoted)
 
@@ -122,6 +136,10 @@ read: returns undamaged entities plus a `Missing` list), #597 and #598 (Dependab
   (count/extremum phrases) and `:181` (negated/quoted) bound what the keyword tier reports.
 - lexical-search `:155`, `:170`, `:183` (query forms and refusals: #624 territory); `:276-286` scorecard floor
   (`graph/lexical/scorecard_test.go:20` `scorecardFloor = 0.55`).
+- composed-stack `:32-33`: "once the lead's level-0 record's `entity_revision` reaches that revision, `localSearch`
+  on the lead answers from that group, and a text question on a word of the fixed names answers that group";
+  `:98`: the restart check lists "`localSearch` and graph-lexical's `search`" among the answers that include the
+  writes. These are the smoke behaviours #628 moves.
 
 ## 4. Callers
 
@@ -143,6 +161,11 @@ read: returns undamaged entities plus a `Missing` list), #597 and #598 (Dependab
     `global_search_empty_semantic_fallback` reason.
   - `cmd/semsource/run.go` registers graph-query and graph-clustering and sets `embedding_enabled` false on one path
     (`:790`). It does not register graph-lexical.
+- Other consumers. I ran `git grep` over non-test Go for `searchGraph`, `globalSearch`, `localSearch`,
+  `graph.lexical.query` and `graph.query.semantic` at each local main. semconnect (dff1265) and semboids (37dbdb0)
+  have no hits. semteams (c8571b34) names `globalSearch` only in
+  `scripts/generate-semengine-port-manifest.go:280,323` and `scripts/measure-semengine-port-ledger.go:254`, as a
+  verb its trimmed gateway drops. None of the three calls a search verb.
 
 ## 5. Every current spelling of "which entities match these words"
 
@@ -181,15 +204,29 @@ This change carries no package from the pin; it edits already-ported surface.
 Who: (a) a SemSource developer calling `graph_search`; (b) a deployment author composing graph-query; (c) a person or
 agent typing a question.
 
-1. What they must know today. For (a): the strict request keys, the reply nesting (`data.text.matches`), and which
-   rung answered. For (b): graph-query sends to graph-lexical only if this change wires it; graph-lexical's absence
-   would surface per request as no-responders transient `internal` (the pattern in spec `:875`). Whether tier 1 is on
-   is read from `embedding_enabled`. For (c): the 16-token limit, the reserved syntax, and that `-x` excludes
-   (`go test -race`).
-2. If they do nothing. (a) Fails loudly today (key refused), then gets no matches silently if it only drops the key
-   (`MIGRATION.md:16-22`). (c) Is refused `invalid_request` with a lexical error text.
-3. Where they find out: (a) a typed runtime error, then a doc; (b) a typed runtime error per request, not at boot
-   (no compose-time check found: `git grep graph-lexical processor/graph-query` returns nothing); (c) a typed error.
+1. What they must know today.
+   - (a): the strict request keys, the reply nesting (`data.text.matches`), and which source answered. SemSource
+     calls that source a "rung" (`disclosure.go:8-17`: entity hits only, community summaries, or an LLM answer).
+   - (b): whether tier 1 is on, which graph-query reads from `embedding_enabled` (`config.go:33`). If the design
+     makes graph-query send to graph-lexical (not decided), a deployment without graph-lexical would meet a
+     no-responders refusal per request, transient `internal`, the pattern in graph-query spec `:875`
+     (`TestNoRespondersIsTransient`).
+   - (c): local search takes at most 16 distinct white-space terms (`localsearch.go:51-52`); a longer query is
+     refused `invalid_request`. It has no reserved syntax and no exclusion; `*`, `~`, `-` and `name:` are plain
+     characters in a substring. Global search refuses on the same count in the text tier (`textsearch.go:51-53`) and
+     on router hints: an aggregation word, two filters, or a hint beside a filter (`globalsearch.go:399-440`).
+     A one-word question is an entity reference (`:323-324`).
+2. If they do nothing.
+   - (a): fails loudly today (key refused). If it only drops the key, it gets no matches with no error
+     (`MIGRATION.md:16-22`).
+   - (c): an ordinary question with a trigger word is refused, or routed to a walk that answers `entity_not_found`
+     (#616). A query sent straight to `graph.lexical.query.search` with `-word` silently drops entities holding that
+     word (section 3), an undeclared degrade.
+3. Where they find out.
+   - (a): a typed runtime error, then a doc.
+   - (b): a typed runtime error per request, not at boot (`git grep graph-lexical processor/graph-query` returns
+     nothing).
+   - (c): a typed error, except the silent exclusion, which they find out about nowhere.
 4. What they should have to know is the design's question. Recorded gap: the caller predicts tier, limit and
    grammar facts the framework holds.
 
@@ -199,6 +236,10 @@ agent typing a question.
    scorecard processor/graph-query internal/smoke` returns nothing). Settle by running the existing scorecard corpus
    (`graph/lexical/testdata/scorecard/`) through local and global search against a plain BM25 reference. Report R@1,
    R@10 and MRR beside the package's numbers. SemSource's 33 questions, if the runner reaches it (#10 plan).
+   Baselines to beat, from the #10 plan comment (6833147079) and the archived probes: global text search through
+   community records R@1 2.0%, R@10 4.0% (`notes/probes/community-probe.log:10`); the substring rule over the whole
+   corpus R@1 9.4%, R@10 22.4% (`notes/probes/retrieval-probe.log:13`); the plain reference R@1 14.0%, R@10 38.8%
+   (`:4`).
 2. Hydration cost: hits carry only ID and score, but today's replies carry entity bytes and labels. Measure the
    batch read of 10 to 100 hits against `max_payload`, using the existing `fitTextSearch` and `fitLocalSearch`.
 3. Global grouping: are hits grouped by computing `clustering.GroupKey` from the ID, or by reading records? Measure
@@ -211,15 +252,23 @@ agent typing a question.
 6. #624 bound: measure the token counts of SemSource's questions and of a sample of pasted error lines and stack
    frames, to choose the bound. Count how often `*`, `~` and `name:` appear in agent-sent queries, if SemSource logs
    are available.
-7. Tier-1 signal for the #563 fallback: is `embedding_enabled` the switch, or the embedding verb's own refusal?
-   Measure what `embedding_enabled: false` plus a running graph-embedding does today (spec `:880-884`).
+7. Tier-1 signal for the #563 fallback. Already settled: with `embedding_enabled: false`, `semantic` and `similar`
+   refuse invalid `not_enabled` without sending (spec `:880-884`, `TestNotEnabledRefusesBeforeForwarding`). Still
+   open: which signal means "tier 1 is on" for the fallback, `embedding_enabled` or the embedding verb's own answer.
+   Measurement: with `embedding_enabled` true and no graph-embedding, what the embedding verb's refusal is (transient
+   `internal`, `TestNoRespondersIsTransient`, spec `:875`), and whether a fallback reached that way would show the
+   first refusal or the second. Read both from the integration tests named.
 8. Readiness: while graph-lexical is not ready but the community view is (or the other way round), which
    refusal does each verb give? Read it from an integration test, not by reasoning.
-9. Whether the temporal and spatial routes stay while no responder serves them (#616 last row).
+9. Whether the temporal and spatial routes stay while no responder serves them (#616 last row). Today a time range
+   with no responder is refused transient `internal` (`searchgraph_integration_test.go:66`); those responders arrive
+   in change 7 (`docs/admission-ledger.yaml:2165`). Measurement: the count of router-probe questions that route
+   temporal or spatial. I counted the archived `router-probe.log`: 3 of 27 route temporal ("what failed pumps were
+   reported last week", "what happened today", "pump failures today") and none route spatial.
 
 Searches that closed categories empty: no production caller of `NewEmbeddingClassifier`; no graph-query reference to
 `graph-lexical` or `graph.lexical.query`; no consumer in this repo of `localSearch`, `globalSearch` or `searchGraph`
 outside graph-query and smoke.
 
-Skipped: no gopls run under `-tags integration`, so integration-test callers came from string search. Lexical's
-segment-boundary scope against a 2-position group ID was not run. SemSource was read at its local main only.
+Skipped: no gopls run under `-tags integration`, so integration-test callers came from string search. SemSource,
+semconnect, semteams and semboids were read at their local main only.

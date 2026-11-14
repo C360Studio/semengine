@@ -87,7 +87,7 @@ func TestTruncatedSearchIsCounted(t *testing.T) {
 			var more atomic.Bool
 			stubOneHit(t, client, &more)
 			gatherer := registry.PrometheusRegistry()
-			// Two words and no hint: the text strategy.
+			// Two words and no hint: text alone.
 			const text = `{"query":"drone fleet"}`
 
 			for _, tc := range []struct {

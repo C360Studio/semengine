@@ -26,7 +26,7 @@ import (
 // thirdDrone is an entity in a third level-0 group, beside systemGroup and otherDrone's.
 const thirdDrone = "c360.test.query.third.drone.001"
 
-// textAnswer is a text strategy reply as the wire carries it: the envelope's revision and the data.
+// textAnswer is a global search reply's text as the wire carries it: the envelope's revision and the data.
 type textAnswer struct {
 	revision uint64
 	data     graph.TextSearchData
@@ -43,18 +43,12 @@ func askText(t *testing.T, client *natsclient.Client, request string) (textAnswe
 }
 
 // decodeTextAnswer decodes a globalSearch success strictly, the envelope and then its data, and fails
-// unless the strategy is text and text is its one result.
+// unless text is its one result: no entity and no walk beside it.
 func decodeTextAnswer(t *testing.T, raw []byte) textAnswer {
 	t.Helper()
-	envelope := decodeEnvelope(t, raw)
-	var data graph.GlobalSearchData
-	decoder := json.NewDecoder(bytes.NewReader(envelope.Data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&data); err != nil {
-		t.Fatalf("decode data %s: %v", envelope.Data, err)
-	}
-	if data.Strategy != strategyText || data.Text == nil || data.Entity != nil || data.Path != nil || data.Temporal != nil || data.Spatial != nil {
-		t.Fatalf("data = %s, want strategy text and text alone", envelope.Data)
+	envelope, data := decodeGlobal(t, raw)
+	if data.Entity != nil || data.Path != nil {
+		t.Fatalf("data = %s, want text alone", envelope.Data)
 	}
 	return textAnswer{revision: envelope.IndexedRevision, data: *data.Text}
 }
@@ -230,14 +224,14 @@ func TestGlobalSearchMatchesKeepWordIndexOrder(t *testing.T) {
 	if envelope.IndexedRevision != 42 {
 		t.Errorf("indexed_revision = %d, want the word search's 42", envelope.IndexedRevision)
 	}
-	requireSameJSON(t, envelope.Data, `{"strategy":"text","text":{"level":0,"groups":[`+
+	requireSameJSON(t, envelope.Data, `{"text":{"level":0,"groups":[`+
 		`{"community_id":"c360.test.query.system","matches":2,"record_state":"not_ready"},`+
 		`{"community_id":"c360.test.query.other","matches":1,"record_state":"not_ready"}],"matches":[`+
 		`{"id":"`+drone3+`","label":"pump three","score":3.5,"entity":`+titled(drone3, "pump three")+`},`+
 		`{"id":"`+otherDrone+`","label":"pump two","score":2.25,"entity":`+titled(otherDrone, "pump two")+`},`+
 		`{"id":"`+drone1+`","label":"pump one","score":1,"entity":`+titled(drone1, "pump one")+`}],`+
 		`"matched":3,"excluded":["test"],"missing":0,"bodies_not_indexed":2,"truncated":false,"unreadable_groups":0,`+
-		`"unhonoured_hints":[],"answer":"Found 3 matching entities in 2 groups."}}`)
+		`"answer":"Found 3 matching entities in 2 groups."},"hints":[]}`)
 	if got := wordRequests(); len(got) != 1 {
 		t.Errorf("word search requests = %q, want one", got)
 	} else {
@@ -250,9 +244,10 @@ func TestGlobalSearchMatchesKeepWordIndexOrder(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchPassesWordIndexRefusals: each refusal the word index sends a text question reaches
-// the caller with its class, code, detail and message, no batch request is made and no error is
-// counted (spec, "A refusal from the word index").
+// TestGlobalSearchPassesWordIndexRefusals: each refusal the word index sends reaches the caller with
+// its class, code, detail and message, for a longer question and a one-word one alike, and no other
+// request is made: no batch, no alias, no entity read. No error is counted (spec, "A refusal from the
+// word index").
 func TestGlobalSearchPassesWordIndexRefusals(t *testing.T) {
 	client := fixtureClient(t)
 	c := startComponent(t, client, `{}`)
@@ -261,7 +256,13 @@ func TestGlobalSearchPassesWordIndexRefusals(t *testing.T) {
 		return nil, refusal
 	})
 	stubBatch(t, client, `{"entities":[]}`)
-	batchRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject)
+	others := map[string]func() []string{}
+	for _, row := range []graph.QueryVerb{
+		verbRow(t, graph.ResponderGraphIngest, "batch"), verbRow(t, graph.ResponderGraphIndex, "alias"),
+		verbRow(t, graph.ResponderGraphIngest, "entity"),
+	} {
+		others[row.Name] = spyOnDownstream(t, client, row.Subject)
+	}
 
 	for _, want := range []*errs.ClassifiedError{
 		errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady, errors.New("word index replaying")),
@@ -272,45 +273,24 @@ func TestGlobalSearchPassesWordIndexRefusals(t *testing.T) {
 			errors.New(`invalid request: "pump*"; put it in double quotes to search it as text`)),
 	} {
 		refusal = want
-		raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(`{"query":"pump* station"}`), requestTimeout)
-		got := requireRefusal(t, raw, err, want.Class, want.Code)
-		if !strings.Contains(err.Error(), want.Err.Error()) {
-			t.Errorf("%s: refusal %q does not carry the word index's %q", want.Code, err, want.Err)
-		}
-		if fmt.Sprint(got.Detail) != fmt.Sprint(roundTripped(want.Detail)) {
-			t.Errorf("%s: detail = %v, want %v", want.Code, got.Detail, want.Detail)
+		for _, request := range []string{`{"query":"pump* station"}`, `{"query":"pump*"}`} {
+			raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(request), requestTimeout)
+			got := requireRefusal(t, raw, err, want.Class, want.Code)
+			if !strings.Contains(err.Error(), want.Err.Error()) {
+				t.Errorf("%s %s: refusal %q does not carry the word index's %q", request, want.Code, err, want.Err)
+			}
+			if fmt.Sprint(got.Detail) != fmt.Sprint(roundTripped(want.Detail)) {
+				t.Errorf("%s %s: detail = %v, want %v", request, want.Code, got.Detail, want.Detail)
+			}
 		}
 	}
-	if got := batchRequests(); len(got) != 0 {
-		t.Errorf("batch requests = %q, want none", got)
+	for name, spy := range others {
+		if got := spy(); len(got) != 0 {
+			t.Errorf("%s requests = %q, want none", name, got)
+		}
 	}
 	if got := c.Health().ErrorCount; got != 0 {
 		t.Errorf("ErrorCount = %d, want 0: a responder's refusal is an answer", got)
-	}
-}
-
-// TestGlobalSearchTextQuestion: a free-text question is answered by the text strategy naming no
-// hint, and one whose only hints are path words with no start or a ranking names them in
-// unhonoured_hints (spec, "A free-text question", "Trigger words in free text").
-func TestGlobalSearchTextQuestion(t *testing.T) {
-	client := fixtureClient(t)
-	stubWordIndex(t, client, lexicalReply(t, 1, graph.LexicalSearchData{}))
-	startComponent(t, client, `{}`)
-	for _, tc := range []struct {
-		question string
-		hints    []string
-	}{
-		{"forklift hydraulic leak", []string{}},
-		{"http connection pool", []string{"path"}},
-		{"top 5 file path handling", []string{"path", "ranking"}},
-	} {
-		answer, err := askText(t, client, fmt.Sprintf(`{"query":%q}`, tc.question))
-		if err != nil {
-			t.Fatalf("%q: %v", tc.question, err)
-		}
-		if !slices.Equal(answer.data.UnhonouredHints, tc.hints) || answer.data.UnhonouredHints == nil {
-			t.Errorf("%q: unhonoured_hints = %q, want %q", tc.question, answer.data.UnhonouredHints, tc.hints)
-		}
 	}
 }
 
@@ -395,7 +375,9 @@ func TestSearchWithoutWordIndex(t *testing.T) {
 // TestSearchRequestsAreBounded: counting subscribers beside real graph-ingest, graph-index and
 // graph-lexical, a local search is one word search and one batch request; a text question is the
 // same and reads no reference; a one-word question that names no entity adds one alias request and
-// at most one entity request (spec, "Counting the requests").
+// at most one entity request; a path question adds one alias request, one entity request for its
+// start and the walk, at most one outgoing and one incoming request per entity it reaches, here the
+// one entity written (spec, "Counting the requests").
 func TestSearchRequestsAreBounded(t *testing.T) {
 	stack := startCommunityStack(t)
 	last := stack.write(t, drone1, [2]string{vocabulary.DCTermsTitle, "pump station"}, aliased("held-1"))
@@ -405,6 +387,7 @@ func TestSearchRequestsAreBounded(t *testing.T) {
 	for _, row := range []graph.QueryVerb{
 		verbRow(t, graph.ResponderGraphLexical, "search"), verbRow(t, graph.ResponderGraphIngest, "batch"),
 		verbRow(t, graph.ResponderGraphIndex, "alias"), verbRow(t, graph.ResponderGraphIngest, "entity"),
+		verbRow(t, graph.ResponderGraphIndex, "outgoing"), verbRow(t, graph.ResponderGraphIndex, "incoming"),
 	} {
 		spies[row.Name] = spyOnDownstream(t, stack.client, row.Subject)
 	}
@@ -416,6 +399,8 @@ func TestSearchRequestsAreBounded(t *testing.T) {
 		{"local", localSearchSubject, `{"entity_id":"` + drone1 + `","query":"pump"}`, map[string]int{"search": 1, "batch": 1}, false},
 		{"text", globalSearchSubject, `{"query":"pump station"}`, map[string]int{"search": 1, "batch": 1}, false},
 		{"one word naming no entity", globalSearchSubject, `{"query":"pump"}`, map[string]int{"search": 1, "batch": 1, "alias": 1, "entity": 1}, true},
+		{"a path question", globalSearchSubject, `{"query":"what is connected to held-1 pump"}`,
+			map[string]int{"search": 1, "batch": 1, "alias": 1, "entity": 1, "outgoing": 1, "incoming": 1}, false},
 	} {
 		raw, err := stack.client.RequestClassified(t.Context(), tc.verb, []byte(tc.request), requestTimeout)
 		if err != nil || !bytes.Contains(raw, []byte(drone1)) {

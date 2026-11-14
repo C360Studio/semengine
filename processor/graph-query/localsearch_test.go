@@ -102,7 +102,7 @@ func FuzzDecodeLocalSearchRequest(f *testing.F) {
 func TestSearchAnswer(t *testing.T) {
 	ten := make([]graph.TextSearchMatch, 10)
 	groups := []graph.TextSearchGroup{{CommunityID: "a", Matches: 5}, {CommunityID: "b", Matches: 4}, {CommunityID: "c", Matches: 1}}
-	global := graph.TextSearchData{Groups: groups, Matches: ten, Matched: 40, Truncated: true, UnreadableGroups: 1, UnhonouredHints: []string{"path"}}
+	global := graph.TextSearchData{Groups: groups, Matches: ten, Matched: 40, Truncated: true, UnreadableGroups: 1}
 	if got, want := textSearchAnswer(global), "Found 40 matching entities in 3 groups. Showing the first 10."; got != want {
 		t.Errorf("global answer = %q, want %q", got, want)
 	}

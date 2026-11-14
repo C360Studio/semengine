@@ -44,7 +44,7 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   `TestGlobalSearchMatchesKeepWordIndexOrder`; `TestTruncatedSearchIsCounted` and `TestGlobalSearchTypesWire`
   updated to the new fields; today's text tier and its group score are deleted, with the substring scorer
   (`checkedSearchTerms`, `searchTerms`, `score`, `rankEntities`, `minTextScore`), `communityNotReady` and their tests.
-- [ ] 2.4 PR B. The router (design D5). Premise: `chooseRoute` refuses on aggregation, two filters and a hint beside a
+- [x] 2.4 PR B. The router (design D5). Premise: `chooseRoute` refuses on aggregation, two filters and a hint beside a
   filter (`processor/graph-query/globalsearch.go:399-449`); 27 plain questions route or refuse as
   `openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/notes/probes/router-probe.log` shows. Accept:
   `TestEveryQuestionIsSearched` feeds the 27 probe questions and #535's: none is refused, each reply holds `text`, and

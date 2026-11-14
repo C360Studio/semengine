@@ -7,8 +7,8 @@ import "time"
 // QueryResponse, and the verb table (QueryVerbs) names which verb sends which. Their responders arrive
 // with later changes, except the embedding verbs', which processor/graph-embedding answers; these
 // types declare what those responders send. The embedding verbs claim no ENTITY_STATES revision and
-// send IndexedRevision 0. TemporalRangeRequest and SpatialBoundsRequest are what graph-query's
-// global search sends to the range and bounds verbs, so what their responders must decode.
+// send IndexedRevision 0. TemporalRangeRequest and SpatialBoundsRequest are the range and bounds verbs'
+// requests, which graph-query forwards and their responders must decode.
 
 // SimilarityHit is one entity a semantic or similar lookup found.
 type SimilarityHit struct {

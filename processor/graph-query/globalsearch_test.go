@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,13 +14,10 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The refusal texts global search sends, spelled here as the oracle rather than read from the code.
-const (
-	pathAndTime = "invalid request: the question names two filters, a path from pump-42 and a time range; ask with one"
-	// unsentWordSearch begins the refusal of a word search a component that was never started cannot
-	// send: a question that reaches it was routed to text.
-	unsentWordSearch = "request to graph.lexical.query.search: "
-)
+// unsentWordSearch begins the refusal of a word search a component that was never started cannot
+// send: a question that reaches it was searched, not refused by its hints. Spelled here as the
+// oracle rather than read from the code.
+const unsentWordSearch = "request to graph.lexical.query.search: "
 
 // refusalOfRoute returns err as a classified refusal of class and code, failing the test otherwise.
 func refusalOfRoute(t *testing.T, question string, err error, class errs.ErrorClass, code string) *errs.ClassifiedError {
@@ -48,232 +44,181 @@ func askUnstarted(t *testing.T, request string) (*Component, []byte, error) {
 	return c, reply, err
 }
 
-// TestGlobalSearchRoutesByHints proves the route table through the keyword classifier, one row per
-// table line, with ordinary-word questions. Each row names the strategy that answers it.
-func TestGlobalSearchRoutesByHints(t *testing.T) {
-	answered := []struct {
-		question   string
-		strategy   string
-		reference  string
-		unhonoured []string
+// notHonoured is a hint the route lists not honoured, as the test spells it: kind, detail, reason.
+type notHonoured struct{ hint, detail, reason string }
+
+// The reasons a hint global search never honours is not honoured, spelled here as the oracle.
+const (
+	noStart       = "the question names no start to walk from"
+	noTime        = "global search does not filter by time"
+	noPlace       = "global search does not filter by place"
+	noAggregation = "global search computes no aggregation"
+	noSimilarity  = "global search matches words, not meaning"
+	noRanking     = "global search orders matches by how well their words match"
+)
+
+// requireHints holds that got lists exactly want, in order, each not honoured with no code.
+func requireHints(t *testing.T, question string, got []graph.GlobalSearchHint, want []notHonoured) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("route(%q) hints = %+v, want %+v", question, got, want)
+		return
+	}
+	for i, hint := range got {
+		w := want[i]
+		if hint.Hint != w.hint || hint.Honoured || hint.Reason != w.reason || hint.Code != "" || (w.detail != "*" && hint.Detail != w.detail) {
+			t.Errorf("route(%q) hint %d = %+v, want %+v not honoured", question, i, hint, w)
+		}
+	}
+}
+
+// TestGlobalSearchListsHints proves what classifying a question gives, through the keyword
+// classifier: the reference to verify (a one-word question's entity, a path's start) and every other
+// hint listed not honoured with its reason, in a fixed order. No trigger word refuses: two filters,
+// an aggregation or a hint beside a filter are each listed. Detail "*" is a time range or an area,
+// whose text the test reads apart.
+func TestGlobalSearchListsHints(t *testing.T) {
+	cases := []struct {
+		question  string
+		strategy  string
+		reference string
+		hints     []notHonoured
 	}{
 		{"what is connected to sensor-001", "path", "sensor-001", nil},
-		// The keyword tier reads a zone phrase as a path start and no predicate; the start names no
-		// entity here, which the resolver answers entity_not_found.
+		// The keyword classifier reads a zone phrase as a path start; the start is verified, not trusted.
 		{"the area of the plant", "path", "area-of", nil},
-		{"what changed in the last 2 hours", "temporal", "", nil},
-		{"what is within 5km of 40.7,-74.0", "spatial", "", nil},
 		{"sensor-001", "entity", "sensor-001", nil},
 		{"  acme.ops.robotics.gcs.drone.001\t", "entity", "acme.ops.robotics.gcs.drone.001", nil},
-		// One token is an entity reference, read before any hint; one naming no entity is searched
-		// as text by the resolver's miss. The keyword tier would read these words as a time range,
-		// a path, a count or a ranking.
+		// One token is an entity reference and is not classified, so words the keyword classifier
+		// would read as a time range, a path, a count or a ranking are no hint.
 		{"forklift", "entity", "forklift", nil},
 		{"acme.plant.today.sensor.temp.001", "entity", "acme.plant.today.sensor.temp.001", nil},
 		{"acme.plant.zone-a.sensor.temp.001", "entity", "acme.plant.zone-a.sensor.temp.001", nil},
-		{"acme.plant.link.sensor.temp.001", "entity", "acme.plant.link.sensor.temp.001", nil},
-		{"acme.plant.most.sensor.temp.001", "entity", "acme.plant.most.sensor.temp.001", nil},
-		{"connector-7", "entity", "connector-7", nil},
 		{"max-pump", "entity", "max-pump", nil},
 		{"total-flow", "entity", "total-flow", nil},
-		// No hint and several tokens.
-		{"forklift hydraulic leak", "text", "", nil},
-		{"show me sensor-001", "text", "", nil},
-		// Path words with no start, a similarity or a ranking alone: text, each hint named.
-		{"show the path", "text", "", []string{"path"}},
-		{"http connection pool", "text", "", []string{"path"}},
-		{"file path handling", "text", "", []string{"path"}},
-		{"top 5 sensors", "text", "", []string{"ranking"}},
-		{"find sensors similar to pump-42", "text", "", []string{"similarity"}},
-		{"most similar pumps", "text", "", []string{"similarity", "ranking"}},
-		{"top 5 sensors related to things", "text", "", []string{"path", "ranking"}},
+		{"forklift hydraulic leak", "", "", nil},
+		{"show me sensor-001", "", "", nil},
+		{"http connection pool", "", "", []notHonoured{{"path", "", noStart}}},
+		{"top 5 sensors", "", "", []notHonoured{{"ranking", "", noRanking}}},
+		{"find sensors similar to pump-42", "", "", []notHonoured{{"similarity", "", noSimilarity}}},
+		{"most similar pumps", "", "", []notHonoured{{"similarity", "", noSimilarity}, {"ranking", "", noRanking}}},
+		{"what changed in the last 2 hours", "", "", []notHonoured{{"time_range", "*", noTime}}},
+		{"what is within 5km of 40.7,-74.0", "", "", []notHonoured{{"area", "*", noPlace}}},
+		{"max retries", "", "", []notHonoured{{"aggregation", "max of retries", noAggregation}}},
+		{"how many pumps are there", "", "", []notHonoured{{"aggregation", "count", noAggregation}}},
+		// A count of a path: the start is verified and the count is listed.
+		{"how many sensors are connected to pump-42", "path", "pump-42", []notHonoured{{"aggregation", "count", noAggregation}}},
+		// What the old router refused as two filters, or a hint beside a filter.
+		{"what is connected to pump-42 in the last 2 hours", "path", "pump-42", []notHonoured{{"time_range", "*", noTime}}},
+		{"top 5 sensors connected to pump-42", "path", "pump-42", []notHonoured{{"ranking", "", noRanking}}},
+		{"what changed in the last 2 hours within 5km of 40.7,-74.0", "", "", []notHonoured{{"time_range", "*", noTime}, {"area", "*", noPlace}}},
+		{"what is related to it in the last 2 hours", "", "", []notHonoured{{"path", "", noStart}, {"time_range", "*", noTime}}},
 	}
-	for _, tc := range answered {
+	for _, tc := range cases {
 		route, err := routeGlobalSearch(t.Context(), tc.question)
 		if err != nil {
-			t.Errorf("route(%q) error = %v, want strategy %s", tc.question, err, tc.strategy)
+			t.Errorf("route(%q) error = %v, want hints", tc.question, err)
 			continue
 		}
 		if route.strategy != tc.strategy || route.reference != tc.reference {
-			t.Errorf("route(%q) = %s %q, want %s %q", tc.question, route.strategy, route.reference, tc.strategy, tc.reference)
+			t.Errorf("route(%q) = %q %q, want %q %q", tc.question, route.strategy, route.reference, tc.strategy, tc.reference)
 		}
-		if !slices.Equal(route.unhonoured, tc.unhonoured) {
-			t.Errorf("route(%q) unhonoured = %q, want %q", tc.question, route.unhonoured, tc.unhonoured)
-		}
-		switch tc.strategy {
-		case "temporal":
-			if route.timeRange == nil || route.timeRange.End.Sub(route.timeRange.Start) != 2*time.Hour {
-				t.Errorf("route(%q) time range = %+v, want two hours", tc.question, route.timeRange)
-			}
-		case "spatial":
-			// The box is the classifier's; the route must carry it around the question's point.
-			if a := route.area; a == nil || a.South >= 40.7 || a.North <= 40.7 || a.West >= -74.0 || a.East <= -74.0 {
-				t.Errorf("route(%q) area = %+v, want a box around 40.7,-74.0", tc.question, route.area)
-			}
-		default:
-			if route.timeRange != nil || route.area != nil {
-				t.Errorf("route(%q) carries a time range %+v or area %+v", tc.question, route.timeRange, route.area)
+		requireHints(t, tc.question, route.hints, tc.hints)
+		for _, hint := range route.hints {
+			switch hint.Hint {
+			case "time_range":
+				// The classifier reads the clock; the range is the last two hours, written as two times.
+				start, end, ok := strings.Cut(hint.Detail, " to ")
+				from, errStart := time.Parse(time.RFC3339, start)
+				to, errEnd := time.Parse(time.RFC3339, end)
+				if !ok || errStart != nil || errEnd != nil || to.Sub(from) != 2*time.Hour {
+					t.Errorf("route(%q) time range detail = %q, want two hours", tc.question, hint.Detail)
+				}
+			case "area":
+				// The box is the classifier's; the detail must carry it around the question's point.
+				var north, south, east, west float64
+				if _, err := fmt.Sscanf(hint.Detail, "north %g, south %g, east %g, west %g", &north, &south, &east, &west); err != nil ||
+					south >= 40.7 || north <= 40.7 || west >= -74.0 || east <= -74.0 {
+					t.Errorf("route(%q) area detail = %q, want a box around 40.7,-74.0", tc.question, hint.Detail)
+				}
 			}
 		}
 	}
 
-	// A count or other aggregation is refused, with or without other hints: a list of matches over
-	// sampled pages would invite the reader to count a sample.
-	refused := []struct {
-		question string
-		want     string
-	}{
-		{"max retries", "invalid request: the question asks for an aggregation (max of retries), which global search does not compute; ask without it"},
-		{"total memory usage", "invalid request: the question asks for an aggregation (sum of memory), which global search does not compute; ask without it"},
-		{"how many pumps are there", "invalid request: the question asks for an aggregation (count), which global search does not compute; ask without it"},
-		{"how many sensors are connected to pump-42", "invalid request: the question asks for an aggregation (count), which global search does not compute; ask without it"},
-		{"how many pumps changed in the last 2 hours", "invalid request: the question asks for an aggregation (count), which global search does not compute; ask without it"},
-		// Two filters: the table's row checked first.
-		{"how many pumps connected to pump-42 in the last 2 hours", pathAndTime},
-		{"what is connected to pump-42 in the last 2 hours", pathAndTime},
-	}
-	for _, tc := range refused {
-		route, err := routeGlobalSearch(t.Context(), tc.question)
-		if err == nil {
-			t.Errorf("route(%q) = %s %q, want refused %q", tc.question, route.strategy, route.reference, tc.want)
-			continue
-		}
-		refusal := refusalOfRoute(t, tc.question, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-		if err.Error() != tc.want {
-			t.Errorf("route(%q) refusal = %q, want %q", tc.question, err.Error(), tc.want)
-		}
-		if refusal.Detail != nil {
-			t.Errorf("route(%q) refusal detail = %v, want none", tc.question, refusal.Detail)
-		}
-	}
-
-	// Through the handler (spec, "A question this build cannot answer"): a count is one input and no
-	// error, and asks nothing downstream. A text question reaches the word search, which a component
-	// that holds no connection cannot send: its own refusal, one error.
+	// Another tier's options can name path predicates, which the walk would drop: the start is then
+	// not verified, and the path is listed not honoured. With no start they are path words.
 	for _, tc := range []struct {
-		question, code, want string
-		errors               int
+		hints questionHints
+		want  notHonoured
 	}{
-		{"max retries", graph.ErrorCodeInvalidRequest, refused[0].want, 0},
-		{"http connection pool", graph.ErrorCodeInternal, unsentWordSearch, 1},
-		{"forklift hydraulic leak", graph.ErrorCodeInternal, unsentWordSearch, 1},
+		{questionHints{path: true, pathStart: "pump-42", pathPredicates: true}, notHonoured{"path", "pump-42", "a walk follows every predicate, not only the question's"}},
+		{questionHints{pathPredicates: true}, notHonoured{"path", "", noStart}},
 	} {
-		request := fmt.Sprintf(`{"query":%q}`, tc.question)
+		route := listHints(tc.hints)
+		if route.strategy != "" || route.reference != "" {
+			t.Errorf("listHints(%+v) verifies %q %q, want nothing", tc.hints, route.strategy, route.reference)
+		}
+		requireHints(t, fmt.Sprintf("%+v", tc.hints), route.hints, []notHonoured{tc.want})
+	}
+
+	// Through the handler: every question reaches the word search, which a component holding no
+	// connection cannot send, its own refusal and one error; a count is no longer refused before it.
+	for _, question := range []string{"max retries", "http connection pool", "what is connected to pump-42 in the last 2 hours"} {
+		request := fmt.Sprintf(`{"query":%q}`, question)
 		c, reply, err := askUnstarted(t, request)
 		if err == nil {
-			t.Errorf("globalSearch(%q) = %q, want refused %s", tc.question, reply, tc.code)
+			t.Errorf("globalSearch(%q) = %q, want the unsent word search's refusal", question, reply)
 			continue
 		}
 		var refusal *errs.ClassifiedError
-		if !errors.As(err, &refusal) || refusal.Code != tc.code || !strings.HasPrefix(err.Error(), tc.want) {
-			t.Errorf("globalSearch(%q) refused %v, want %s %q", tc.question, err, tc.code, tc.want)
+		if !errors.As(err, &refusal) || refusal.Code != graph.ErrorCodeInternal || !strings.HasPrefix(err.Error(), unsentWordSearch) {
+			t.Errorf("globalSearch(%q) refused %v, want internal %q", question, err, unsentWordSearch)
 		}
 		// The handler counts before it returns.
 		if flow := c.DataFlow(); flow.Messages != 1 || flow.Bytes != int64(len(request)) {
-			t.Errorf("globalSearch(%q) DataFlow = %+v, want one message of %d bytes", tc.question, flow, len(request))
+			t.Errorf("globalSearch(%q) DataFlow = %+v, want one message of %d bytes", question, flow, len(request))
 		}
-		if got := c.Health().ErrorCount; got != tc.errors {
-			t.Errorf("globalSearch(%q) ErrorCount = %d, want %d", tc.question, got, tc.errors)
-		}
-	}
-}
-
-// TestGlobalSearchHintBesideAFilter proves that a text-routed hint (path words with no start, a
-// similarity or a ranking) beside a filter, or a start carrying path predicates, is refused
-// invalid_request naming both, never answered by the text tier with the filter dropped nor by the
-// filter's strategy with the hint dropped. The handler asks nothing downstream: the component holds
-// no connection, and the refusal is not the text tier's index_not_ready.
-func TestGlobalSearchHintBesideAFilter(t *testing.T) {
-	cases := []struct {
-		question string
-		want     string
-	}{
-		{"top 5 sensors connected to pump-42", "a ranking beside a path from pump-42"},
-		{"find sensors similar to pump-42 in the last 2 hours", "a similarity beside a time range"},
-		{"what is related to it in the last 2 hours", "path words with no start beside a time range"},
-		{"top 5 sensors in the last 2 hours", "a ranking beside a time range"},
-		{"sensors similar to pump-42 within 5km of 40.7,-74.0", "a similarity beside an area"},
-	}
-	for _, tc := range cases {
-		want := "invalid request: the question names " + tc.want + ", which no strategy answers together; ask with one"
-		_, err := routeGlobalSearch(t.Context(), tc.question)
-		refusalOfRoute(t, tc.question, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-		if err.Error() != want {
-			t.Errorf("route(%q) refusal = %q, want %q", tc.question, err.Error(), want)
-		}
-		c, _, err := askUnstarted(t, fmt.Sprintf(`{"query":%q}`, tc.question))
-		refusalOfRoute(t, tc.question, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-		if got := c.Health().ErrorCount; got != 0 {
-			t.Errorf("globalSearch(%q) ErrorCount = %d, want 0", tc.question, got)
-		}
-	}
-
-	// The keyword tier sends no path predicates; another tier's options would. A start carrying them
-	// would walk every predicate, dropping theirs; with no start they are path words.
-	start := questionHints{path: true, pathStart: "pump-42", pathPredicates: true}
-	_, err := chooseRoute(start)
-	refusalOfRoute(t, "path predicates", err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-	const want = "invalid request: the question names path predicates beside a path from pump-42, which no strategy answers together; ask with one"
-	if err.Error() != want {
-		t.Errorf("chooseRoute(%+v) refusal = %q, want %q", start, err.Error(), want)
-	}
-	for _, hints := range []questionHints{{path: true, pathPredicates: true}, {pathPredicates: true}} {
-		route, err := chooseRoute(hints)
-		if err != nil || route.strategy != "text" || !slices.Equal(route.unhonoured, []string{"path"}) {
-			t.Errorf("chooseRoute(%+v) = %+v, %v, want text naming path", hints, route, err)
+		if got := c.Health().ErrorCount; got != 1 {
+			t.Errorf("globalSearch(%q) ErrorCount = %d, want 1", question, got)
 		}
 	}
 }
 
-// TestGlobalSearchRefusesTwoFilters proves that two or three of path, time range and area are
-// refused invalid_request naming each, whatever other hints the question holds (spec "Two
-// filters").
-func TestGlobalSearchRefusesTwoFilters(t *testing.T) {
-	cases := []struct {
-		question string
-		want     string
-	}{
-		{"what is connected to pump-42 in the last 2 hours", pathAndTime},
-		{"how many pumps connected to pump-42 in the last 2 hours", pathAndTime},
-		{
-			"what changed in the last 2 hours within 5km of 40.7,-74.0",
-			"invalid request: the question names two filters, a time range and an area; ask with one",
-		},
-		{
-			"what is connected to pump-42 within 5km of 40.7,-74.0",
-			"invalid request: the question names two filters, a path from pump-42 and an area; ask with one",
-		},
-		{
-			"what is connected to pump-42 in the last 2 hours within 5km of 40.7,-74.0",
-			"invalid request: the question names three filters, a path from pump-42, a time range and an area; ask with one",
-		},
-	}
-	for _, tc := range cases {
-		_, err := routeGlobalSearch(t.Context(), tc.question)
-		refusalOfRoute(t, tc.question, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-		if err.Error() != tc.want {
-			t.Errorf("route(%q) refusal = %q, want %q", tc.question, err.Error(), tc.want)
-		}
-	}
-}
-
-// TestGlobalSearchRefusesImpossibleNumbers proves the classifier's refusal of an out-of-range
-// number reaches the caller as invalid_request naming the phrase.
-func TestGlobalSearchRefusesImpossibleNumbers(t *testing.T) {
-	cases := []struct {
-		question string
-		phrase   string
-	}{
+// TestClassifierRefusalIsAHint proves that the classifier's refusal of a question (an impossible
+// number, two places) is a not-honoured classification hint carrying the refusal's text, never a
+// refusal of the question and never a walk from one of the places: the question is still searched.
+func TestClassifierRefusalIsAHint(t *testing.T) {
+	for _, tc := range []struct{ question, says string }{
 		{"what changed in the last 0 hours", `"last 0 hours": the number must be at least 1`},
 		{"what is within 5km of 200,-74.0", `"within 5km of 200,-74.0": the latitude must be in [-90, 90]`},
-		// An impossible number wins over two filters: the caller fixes the number first.
 		{"what is connected to pump-42 in the last 0 days", `"last 0 days": the number must be at least 1`},
-	}
-	for _, tc := range cases {
-		_, err := routeGlobalSearch(t.Context(), tc.question)
-		refusalOfRoute(t, tc.question, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-		if !strings.HasPrefix(err.Error(), "invalid request: ") || !strings.HasSuffix(err.Error(), tc.phrase) {
-			t.Errorf("route(%q) refusal = %q, want invalid request ending %q", tc.question, err.Error(), tc.phrase)
+		{"what is connected to sensor-001 near zone-b", "the question names two places, sensor-001 and zone-b; ask about one"},
+		{"what is connected to acme.ops.robotics.gcs.drone.001 in zone b", "the question names two places, acme.ops.robotics.gcs.drone.001 and zone-b; ask about one"},
+	} {
+		route, err := routeGlobalSearch(t.Context(), tc.question)
+		if err != nil {
+			t.Errorf("route(%q) error = %v, want a classification hint", tc.question, err)
+			continue
+		}
+		if route.strategy != "" || route.reference != "" {
+			t.Errorf("route(%q) verifies %q %q, want nothing", tc.question, route.strategy, route.reference)
+		}
+		if len(route.hints) != 1 {
+			t.Errorf("route(%q) hints = %+v, want one classification hint", tc.question, route.hints)
+			continue
+		}
+		hint := route.hints[0]
+		const reason = "the question classifier refused the question; it is searched for its words"
+		if hint.Hint != "classification" || hint.Honoured || hint.Reason != reason || hint.Code != graph.ErrorCodeInvalidRequest ||
+			!strings.HasSuffix(hint.Detail, tc.says) {
+			t.Errorf("route(%q) hint = %+v, want classification not honoured, invalid_request, detail ending %q", tc.question, hint, tc.says)
+		}
+		c, _, err := askUnstarted(t, fmt.Sprintf(`{"query":%q}`, tc.question))
+		if err == nil || !strings.HasPrefix(err.Error(), unsentWordSearch) {
+			t.Errorf("globalSearch(%q) error = %v, want the unsent word search's refusal", tc.question, err)
+		}
+		if got := c.Health().ErrorCount; got != 1 {
+			t.Errorf("globalSearch(%q) ErrorCount = %d, want the word search's 1", tc.question, got)
 		}
 	}
 }
@@ -397,8 +342,10 @@ func TestGlobalSearchRequestKeys(t *testing.T) {
 	}
 }
 
-// FuzzDecodeGlobalSearchRequest checks that an accepted request holds a query that is not blank, and
-// that routing any accepted query never panics and answers a strategy or one classified refusal.
+// FuzzDecodeGlobalSearchRequest checks that an accepted request holds a query that is not blank and
+// a limit of 0 to 100, and that routing any accepted query never panics and, under a live context,
+// never refuses: it names a reference only beside its kind, and lists only known hints, each not
+// honoured with a reason.
 func FuzzDecodeGlobalSearchRequest(f *testing.F) {
 	for _, seed := range []string{
 		`{"query":"what is connected to sensor-001","min_revision":7}`,
@@ -406,6 +353,7 @@ func FuzzDecodeGlobalSearchRequest(f *testing.F) {
 		`{"query":"what changed in the last 2 hours within 5km of 40.7,-74.0"}`,
 		`{"query":"what changed in the last 0 hours"}`,
 		`{"query":"how many pumps connected to pump-42 in the last 2 hours"}`,
+		`{"query":"what is connected to sensor-001 near zone-b"}`,
 		`{"query":" "}`,
 		`{"query":"a","level":1}`,
 		`{"query":"a","level":3}`,
@@ -416,50 +364,42 @@ func FuzzDecodeGlobalSearchRequest(f *testing.F) {
 	} {
 		f.Add([]byte(seed))
 	}
+	known := map[string]bool{"path": true, "time_range": true, "area": true, "aggregation": true, "similarity": true, "ranking": true, "classification": true}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		request, err := decodeGlobalSearchRequest(data)
-		if err == nil && (request.Limit < 0 || request.Limit > 100) {
-			t.Fatalf("accepted limit %d", request.Limit)
-		}
 		if err != nil {
 			return
+		}
+		if request.Limit < 0 || request.Limit > 100 {
+			t.Fatalf("accepted limit %d", request.Limit)
 		}
 		if strings.TrimSpace(request.Query) == "" {
 			t.Fatalf("accepted blank query %q", request.Query)
 		}
 		route, err := routeGlobalSearch(t.Context(), request.Query)
 		if err != nil {
-			var refusal *errs.ClassifiedError
-			if !errors.As(err, &refusal) || refusal.Code == "" {
-				t.Fatalf("route(%q) error %v is not a coded refusal", request.Query, err)
-			}
-			return
+			t.Fatalf("route(%q) refused %v under a live context", request.Query, err)
 		}
 		switch route.strategy {
 		case "entity":
-			if route.reference == "" || strings.ContainsFunc(route.reference, unicode.IsSpace) {
-				t.Errorf("route(%q) entity reference %q", request.Query, route.reference)
+			if route.reference == "" || strings.ContainsFunc(route.reference, unicode.IsSpace) || len(route.hints) != 0 {
+				t.Errorf("route(%q) entity %q beside %+v", request.Query, route.reference, route.hints)
 			}
 		case "path":
 			if route.reference == "" {
 				t.Errorf("route(%q) path with no start", request.Query)
 			}
-		case "temporal":
-			if route.timeRange == nil {
-				t.Errorf("route(%q) temporal with no range", request.Query)
-			}
-		case "spatial":
-			if route.area == nil {
-				t.Errorf("route(%q) spatial with no area", request.Query)
-			}
-		case "text":
-			for _, hint := range route.unhonoured {
-				if hint != "path" && hint != "similarity" && hint != "ranking" {
-					t.Errorf("route(%q) unhonoured hint %q", request.Query, hint)
-				}
+		case "":
+			if route.reference != "" {
+				t.Errorf("route(%q) reference %q with no kind", request.Query, route.reference)
 			}
 		default:
-			t.Errorf("route(%q) strategy %q", request.Query, route.strategy)
+			t.Errorf("route(%q) kind %q", request.Query, route.strategy)
+		}
+		for _, hint := range route.hints {
+			if !known[hint.Hint] || hint.Honoured || hint.Reason == "" {
+				t.Errorf("route(%q) hint %+v", request.Query, hint)
+			}
 		}
 	})
 }

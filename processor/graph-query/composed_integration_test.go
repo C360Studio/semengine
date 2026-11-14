@@ -829,54 +829,56 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	// The word index's one hit is now in the group whose record is unreadable, at level 0.
 	const poisonHit = "c360.test.query.poison.drone.001"
 	hitReply := `{"data":{"results":[{"entity_id":"` + poisonHit + `","score":1}],"matched":1},"producer":"graph-lexical"}`
-	word.Store(replying(hitReply))
-	batch.Store(replying(`{"entities":[{"id":"` + poisonHit + `","triples":[]}]}`))
 
-	// globalSearch: the alias stub still refuses and the entity stub too; the edge stubs answer empty.
+	// globalSearch: the word index's one hit is drone1, whose group record reads, so only a hint's own
+	// read can count an error. The alias and entity stubs still refuse; the edge stubs answer empty.
+	// A hint's refusal or failure never refuses the reply; graph-query's own failure still counts.
 	const globalSearch = "graph.query.globalSearch"
 	const entityQuestion, pathQuestion = `{"query":"held-1"}`, `{"query":"what is connected to held-1"}`
+	word.Store(replying(`{"data":{"results":[{"entity_id":"` + drone1 + `","score":1}],"matched":1},"producer":"graph-lexical"}`))
+	batch.Store(replying(`{"entities":[{"id":"` + drone1 + `","triples":[]}]}`))
 	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":3}`, 29)
-	step("globalSearch: a count", globalSearch, `{"query":"how many pumps are there"}`, 29)
+	step("globalSearch: a count, searched with its hint not honoured", globalSearch, `{"query":"how many pumps are there"}`, 29)
 	step("globalSearch: the alias refused by the responder", globalSearch, entityQuestion, 29)
 	alias.Store(replying(`not json`))
 	step("globalSearch: an alias reply that does not decode", globalSearch, entityQuestion, 30)
 	alias.Store(ptr(aliasReply("")))
-	// A reference naming no entity is searched as text, whose one match is in the group whose record
-	// localSearch read above as unreadable: an answer past it counts one error.
-	step("globalSearch: a reference naming no entity, searched as text", globalSearch, entityQuestion, 31)
+	step("globalSearch: a reference naming no entity", globalSearch, entityQuestion, 30)
 	alias.Store(ptr(aliasReply(drone1)))
-	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 31)
+	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 30)
 	entity.Store(&stubAnswer{refusal: errs.ClassifiedCode(errs.ErrorInvalid, "entity_not_found", errors.New("gone"))})
-	step("globalSearch: the holder's entity gone, searched as text", globalSearch, entityQuestion, 32)
-	step("globalSearch: the path start gone", globalSearch, pathQuestion, 32)
+	step("globalSearch: the holder's entity gone", globalSearch, entityQuestion, 30)
+	step("globalSearch: the path start gone", globalSearch, pathQuestion, 30)
 	entity.Store(replying(`not json`))
-	step("globalSearch: an entity reply that is not JSON", globalSearch, entityQuestion, 33)
+	step("globalSearch: an entity reply that is not JSON", globalSearch, entityQuestion, 31)
 	entity.Store(replying(``))
-	step("globalSearch: an empty entity reply", globalSearch, entityQuestion, 34)
+	step("globalSearch: an empty entity reply", globalSearch, entityQuestion, 32)
 	entity.Store(replying(`{"entity":{"id":"` + drone1 + `"},"kv_revision":5}`))
-	step("globalSearch: entity answered, two requests, one input", globalSearch, entityQuestion, 34)
-	step("globalSearch: path answered", globalSearch, pathQuestion, 34)
+	step("globalSearch: entity answered, four requests, one input", globalSearch, entityQuestion, 32)
+	step("globalSearch: path answered", globalSearch, pathQuestion, 32)
 	outgoing.Store(replying(`not json`))
-	step("globalSearch: a path hop reply that does not decode", globalSearch, pathQuestion, 35)
+	step("globalSearch: a path hop reply that does not decode", globalSearch, pathQuestion, 33)
 	outgoing.Store(refusing)
-	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 35)
+	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 33)
 
-	// The text strategy: the hit's level-0 group record is unreadable; its level-1 group, shared with
-	// drone1, has a readable record.
+	// The word search's own steps: the hit's level-0 group record is unreadable; its level-1 group,
+	// shared with drone1, has a readable record.
+	word.Store(replying(hitReply))
+	batch.Store(replying(`{"entities":[{"id":"` + poisonHit + `","triples":[]}]}`))
 	const textQuestion = `{"query":"drone fleet"}`
-	step("globalSearch: a text answer past an unreadable record", globalSearch, textQuestion, 36)
-	step("globalSearch: a text answer", globalSearch, `{"query":"drone fleet","level":1}`, 36)
+	step("globalSearch: a text answer past an unreadable record", globalSearch, textQuestion, 34)
+	step("globalSearch: a text answer", globalSearch, `{"query":"drone fleet","level":1}`, 34)
 	word.Store(refusing)
-	step("globalSearch: the word search refused by the responder", globalSearch, textQuestion, 36)
+	step("globalSearch: the word search refused by the responder", globalSearch, textQuestion, 34)
 	word.Store(replying(`not json`))
-	step("globalSearch: a word reply that does not decode", globalSearch, textQuestion, 37)
+	step("globalSearch: a word reply that does not decode", globalSearch, textQuestion, 35)
 	// The batch would return it, so only the group check refuses.
 	word.Store(replying(`{"data":{"results":[{"entity_id":"c360.test","score":1}],"matched":1},"producer":"graph-lexical"}`))
 	batch.Store(replying(`{"entities":[{"id":"c360.test","triples":[]}]}`))
-	step("globalSearch: a hit that names no group", globalSearch, textQuestion, 38)
+	step("globalSearch: a hit that names no group", globalSearch, textQuestion, 36)
 	word.Store(replying(hitReply))
 	batch.Store(refusing)
-	step("globalSearch: the batch refused by the responder", globalSearch, textQuestion, 38)
+	step("globalSearch: the batch refused by the responder", globalSearch, textQuestion, 36)
 	batch.Store(replying(`{"entities":[]}`))
-	step("globalSearch: a batch reply that leaves a hit out unnamed", globalSearch, textQuestion, 39)
+	step("globalSearch: a batch reply that leaves a hit out unnamed", globalSearch, textQuestion, 37)
 }

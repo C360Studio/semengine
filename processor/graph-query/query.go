@@ -60,11 +60,9 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	lexical, batch := subjectOf(graph.ResponderGraphLexical, "search"), subjectOf(graph.ResponderGraphIngest, "batch")
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
-		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
-		if alias != "" && temporal != "" && spatial != "" && lexical != "" && batch != "" {
+		if alias != "" && lexical != "" && batch != "" {
 			subjects := globalSearchSubjects{
-				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
-				lexical: lexical, batch: batch,
+				lexical: lexical, batch: batch, alias: alias, entity: entity, outgoing: outgoing, incoming: incoming,
 			}
 			// searchGraph answers as globalSearch, counted and logged under its own name, with no
 			// semantic fallback.

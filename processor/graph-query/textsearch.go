@@ -18,18 +18,19 @@ const (
 	textPastUnreadableReason = "a record only describes its group; the matches come from the word index"
 )
 
-// globalText is the text strategy: one unscoped word search, passing query, limit and min_revision
-// unchanged, then one batch read of its hits, grouped by their community at the request's level. A
-// refusal from either verb reaches the caller as it arrived; a hit whose ID names no group is the
-// word index's broken reply. The reply, fit to max_payload, is under the word search's revision.
-// unhonoured is the route's hints the text strategy does not honour, and verb the verb asked, which
-// the truncation counter and the Warn name.
+// globalText is global search's answer: one unscoped word search, passing query, limit and
+// min_revision unchanged, then one batch read of its hits, grouped by their community at the
+// request's level, then the route's reference verified, with the hints listed beside the matches. A
+// refusal from either search verb reaches the caller as it arrived, before any hint is read; a hit
+// whose ID names no group is the word index's broken reply. The reply, fit to max_payload, is under
+// the word search's revision. verb is the verb asked, which the truncation counter and the Warn
+// name.
 //
 // A group's record is attached when the community view holds one, and never decides the answer:
 // record_state says when it is missing. An answer past unreadable records is a declared degrade: it
 // sets unreadable_groups, counts one error and logs one Warn, both only once the reply is encoded,
 // so a request that fails to fit counts the fit's one error alone.
-func (c *Component) globalText(ctx context.Context, verb string, subjects globalSearchSubjects, request graph.GlobalSearchRequest, unhonoured []string) ([]byte, error) {
+func (c *Component) globalText(ctx context.Context, verb string, subjects globalSearchSubjects, request graph.GlobalSearchRequest, route globalRoute) ([]byte, error) {
 	search, err := c.wordSearch(ctx, subjects.lexical, graph.LexicalSearchRequest{
 		Query: request.Query, Limit: request.Limit, MinRevisionField: request.MinRevisionField,
 	})
@@ -57,15 +58,21 @@ func (c *Component) globalText(ctx context.Context, verb string, subjects global
 		Missing:          missing,
 		BodiesNotIndexed: search.Data.BodiesNotIndexed,
 		Truncated:        search.Data.Matched > len(hits) || missing > 0,
-		UnhonouredHints:  append([]string{}, unhonoured...),
 	}
+	answer := graph.GlobalSearchData{Hints: []graph.GlobalSearchHint{}}
+	if verified, ok := c.verify(ctx, subjects, route, request.MinRevision); ok {
+		answer.Hints = append(answer.Hints, verified.hint)
+		answer.Entity, answer.Path = verified.entity, verified.path
+	}
+	answer.Hints = append(answer.Hints, route.hints...)
 	limit, err := c.natsClient.MaxPayload()
 	if err != nil {
 		return nil, c.unanswered(err)
 	}
 	groupOf := matchGroups(c.communities.Load(), matches, hitGroups)
 	encoded, sent, err := fitTextSearch(data, groupOf, int(limit), func(data graph.TextSearchData) ([]byte, error) {
-		response, err := graph.NewQueryResponse(graph.ResponderGraphQuery, search.IndexedRevision, graph.GlobalSearchData{Strategy: strategyText, Text: &data})
+		answer.Text = &data
+		response, err := graph.NewQueryResponse(graph.ResponderGraphQuery, search.IndexedRevision, answer)
 		if err != nil {
 			return nil, err
 		}

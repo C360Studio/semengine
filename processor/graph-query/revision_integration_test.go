@@ -99,7 +99,7 @@ func TestReadYourWrites(t *testing.T) {
 
 // TestMinRevisionRefusalThroughGraphQuery: each enveloped verb asked for a revision far above the
 // index's passes on the index's refusal with class, code and detail, localSearch passes on the word
-// index's, as does the text strategy of globalSearch and searchGraph, while the same request without
+// index's, as do globalSearch and searchGraph whatever the question's hints, while the same request without
 // the field, or at the revision reached, succeeds, so it is the field that was refused. The indexes
 // and the record have reached the only write and nothing else writes, so the detail is that write's
 // revision.
@@ -125,10 +125,9 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"summary", "summary", `"examples_per_type":1`},
 		// The word index has applied the one write.
 		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"alpha"`, drone1)},
-		// The alias verb refuses for both strategies, before the entity read or the walk.
+		// The word search comes first, so its refusal is the reply whatever the hints.
 		{"globalSearch entity", "globalSearch", `"query":"held-1"`},
 		{"globalSearch path", "globalSearch", `"query":"what is connected to held-1"`},
-		// The text strategy passes the word index's refusal.
 		{"globalSearch text", "globalSearch", `"query":"alpha drone"`},
 		{"searchGraph entity", "searchGraph", `"query":"held-1"`},
 		{"searchGraph path", "searchGraph", `"query":"what is connected to held-1"`},

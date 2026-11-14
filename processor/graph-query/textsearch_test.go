@@ -154,9 +154,8 @@ func TestTextSearchFitKeepsTheBestThatFit(t *testing.T) {
 	pad := strings.Repeat("x", 100)
 	entity := func(id string) json.RawMessage { return json.RawMessage(`{"id":"` + id + `","text":"` + pad + `"}`) }
 	data := graph.TextSearchData{
-		Matches:         []graph.TextSearchMatch{{ID: "a", Score: 3, Entity: entity("a")}, {ID: "b", Score: 2, Entity: entity("b")}, {ID: "c", Score: 1, Entity: entity("c")}},
-		Matched:         3,
-		UnhonouredHints: []string{},
+		Matches: []graph.TextSearchMatch{{ID: "a", Score: 3, Entity: entity("a")}, {ID: "b", Score: 2, Entity: entity("b")}, {ID: "c", Score: 1, Entity: entity("c")}},
+		Matched: 3,
 	}
 	groupOf := map[string]graph.TextSearchGroup{
 		"a": {CommunityID: "acme.ops.src.one", RecordState: graph.RecordNone},
@@ -170,11 +169,11 @@ func TestTextSearchFitKeepsTheBestThatFit(t *testing.T) {
 	all := `{"level":0,"groups":[{"community_id":"acme.ops.src.one","matches":2,"record_state":"none"},` +
 		`{"community_id":"acme.ops.src.two","matches":1,"record_state":"unreadable"}],` +
 		`"matches":[` + match("a", 3) + `,` + match("b", 2) + `,` + match("c", 1) + `],` +
-		`"matched":3,"missing":0,"bodies_not_indexed":0,"truncated":false,"unreadable_groups":1,"unhonoured_hints":[],` +
+		`"matched":3,"missing":0,"bodies_not_indexed":0,"truncated":false,"unreadable_groups":1,` +
 		`"answer":"Found 3 matching entities in 2 groups."}`
 	two := `{"level":0,"groups":[{"community_id":"acme.ops.src.one","matches":2,"record_state":"none"}],` +
 		`"matches":[` + match("a", 3) + `,` + match("b", 2) + `],` +
-		`"matched":3,"missing":0,"bodies_not_indexed":0,"truncated":true,"unreadable_groups":0,"unhonoured_hints":[],` +
+		`"matched":3,"missing":0,"bodies_not_indexed":0,"truncated":true,"unreadable_groups":0,` +
 		`"answer":"Found 3 matching entities in 1 groups. Showing the first 2."}`
 	for limit, want := range map[int]string{len(all): all, len(all) - 1: two} {
 		got, sent, err := fitTextSearch(data, groupOf, limit, encode)

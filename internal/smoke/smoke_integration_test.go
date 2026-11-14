@@ -828,8 +828,8 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 		t.Fatalf("globalSearch %q: decode %s: %v", fieldWord, raw, err)
 	}
 	text := global.Data.Text
-	if global.Data.Strategy != "text" || text == nil {
-		t.Fatalf("globalSearch %q answered %s, want the text strategy", fieldWord, raw)
+	if text == nil {
+		t.Fatalf("globalSearch %q answered %s, want text", fieldWord, raw)
 	}
 	var groups []string
 	for _, g := range text.Groups {

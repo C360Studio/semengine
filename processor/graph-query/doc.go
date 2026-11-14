@@ -43,27 +43,26 @@
 // answers that were cut short.
 //
 // globalSearch, and searchGraph, which is the same handler under a second name with the same data,
-// choose one strategy from the question and answer with it. A question of one word is an entity
-// reference, resolved as entityByAlias resolves it (the alias verb, else a valid entity ID) and
-// answered with the entity verb's reply. Any longer question is classified once by the keyword tier
-// of graph/query, and a strategy answers only when its hint is the question's only hint: a path
-// from a start (the pathSearch walk, both directions, depth 3, 100 entities), a time range (the
-// time-range verb) or an area (the bounds verb). Two of those, an entity beside a zone or area, an
-// impossible number, a count or other aggregation, and path words, a similarity or a ranking beside
-// a start, a time range or an area are refused invalid_request, and a named path start that names
-// no entity is entity_not_found. Every other question is the text strategy: no hint, path words
-// with no start, a similarity or a ranking alone, and a one-word name that names no entity. It asks
-// graph-lexical's word search over every entity, passing the query, the limit and min_revision
-// unchanged, reads the hits back with one graph-ingest batch request, and replies with the matches
-// in the word index's order (id, label, score, the entity as graph-ingest sent it), the groups at
-// the request's level that hold them, in the order of each group's best match, with their match
-// counts and records, the hints it could not apply (unhonoured_hints) and a plain answer. Its
-// indexed_revision is the word search's. A group record that cannot be read is an answer that says
-// so, one Health error and one Warn. A refusal from the alias, entity, word search or batch verb
-// reaches the caller as it arrived. Until their responders are in the tree, the time-range and
-// bounds strategies are refused transient internal, naming the subject. The keyword classifier's
-// limits stay its own: "from A to B" walks from A, and the refusal of a second place can be wrong
-// for a hyphenated word such as "real-time".
+// answer every question with a word search: graph-lexical's search over every entity, passing the
+// query, the limit and min_revision unchanged, the hits read back with one graph-ingest batch
+// request. The reply's text holds the matches in the word index's order (id, label, score, the
+// entity as graph-ingest sent it), the groups at the request's level that hold them, in the order of
+// each group's best match, with their match counts and records, and a plain answer. Its
+// indexed_revision is the word search's, and a refusal from the word search or the batch verb
+// reaches the caller as it arrived, before any hint is read. A group record that cannot be read is
+// an answer that says so, one Health error and one Warn.
+//
+// What the question asks beyond its words is listed in hints, honoured or not, and no hint refuses
+// the question. A one-word question is an entity reference, and is not classified; any longer
+// question is classified once by the keyword classifier of graph/query, whose refusal (two places,
+// an impossible number) is itself a hint not honoured. A reference, or a path's start, is verified
+// through the resolver entityByAlias uses (the alias verb, else a valid entity ID): when it names an
+// entity, the entity verb's reply or the walk from it (both directions, depth 3, 100 entities) is
+// added beside the text. A reference that names nothing, and any refusal of those reads, leaves the
+// hint not honoured with the refusal's code. A time range, an area, an aggregation, a similarity or
+// a ranking is never honoured here; each is listed with its reason. The keyword classifier's limits
+// stay its own: "from A to B" reads a start at A, and the refusal of a second place can be wrong for
+// a hyphenated word such as "real-time".
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

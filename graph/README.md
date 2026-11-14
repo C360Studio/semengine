@@ -36,7 +36,7 @@ transport"; `TestGraphImportsNoTransport`).
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
   and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. On `graph.query.*` the shape
-  depends on the verb: `entity`, `batch`, `prefix` and `hierarchyStats` are bare, and `byName`, `predicate`,
+  depends on the verb: `entity`, `batch`, `prefix`, `prefixIDs` and `hierarchyStats` are bare, and `byName`, `predicate`,
   `entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`,
   `similar`, `spatial` and `temporal` are enveloped. A caller
   decodes by the verb's table row (`QueryVerb.Enveloped`, and `QueryVerb.Reply` for the type of the body or of `data`),
@@ -46,12 +46,12 @@ transport"; `TestGraphImportsNoTransport`).
   `revision_not_reached` (`ErrorCodeRevisionNotReached`), the revision it reached in the detail, and does not wait. The
   bare verbs ignore the field.
 - **The verb table.** `QueryVerbs` declares the request/reply verbs, each with its subject and responder:
-  graph-ingest's `entity`, `batch` and `prefix` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
+  graph-ingest's `entity`, `batch`, `prefix` and `prefixIDs` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
   `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`, `byName`) on
   `graph.index.query.*`, the four verbs of the embedding, spatial and temporal responders (`search` and `similar` on
   `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), graph-lexical's
   word `search` on `graph.lexical.query.*` (`processor/graph-lexical`), and graph-query's
-  `entity`, `batch`, `prefix`, `byName`, `predicate`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`,
+  `entity`, `batch`, `prefix`, `prefixIDs`, `byName`, `predicate`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`,
   `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and `temporal` on
   `graph.query.*`. A name is unique only within its responder: `entity` is declared for graph-ingest and for
   graph-query. Each row also marks `Enveloped` and gives the `Reply` type.

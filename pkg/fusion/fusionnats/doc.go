@@ -11,7 +11,7 @@
 // graph.QueryVerbs() when the client is built:
 //
 //	Resolve (symbol)  byName
-//	Resolve (prefix)  prefix
+//	Resolve (prefix)  prefixIDs (the IDs only, read afterwards through batch)
 //	Resolve (nl)      semantic
 //	Entity            entity
 //	Entities          batch

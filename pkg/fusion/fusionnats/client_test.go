@@ -22,7 +22,7 @@ import (
 const (
 	subjectEntity        = "graph.query.entity"
 	subjectBatch         = "graph.query.batch"
-	subjectPrefix        = "graph.query.prefix"
+	subjectPrefixIDs     = "graph.query.prefixIDs"
 	subjectByName        = "graph.query.byName"
 	subjectRelationships = "graph.query.relationships"
 	subjectSemantic      = "graph.query.semantic"
@@ -99,7 +99,7 @@ func TestNewRefusesNegativeTimeout(t *testing.T) {
 // as zero, which natsclient replaces with its DefaultRequestTimeout, rather than
 // a default of the client's own.
 func TestNewZeroTimeoutUsesDefault(t *testing.T) {
-	fake := &fakeRequester{resp: mustJSON(t, graph.PrefixQueryResponse{})}
+	fake := &fakeRequester{resp: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{}})}
 	c, err := New(fake, 0)
 	require.NoError(t, err)
 	_, err = c.Resolve(t.Context(), fusion.ResolveQuery{Mode: fusion.ResolveModePrefix, Limit: 1})
@@ -107,7 +107,7 @@ func TestNewZeroTimeoutUsesDefault(t *testing.T) {
 	assert.Equal(t, 1, fake.calls)
 	assert.Equal(t, time.Duration(0), fake.lastTimeout)
 
-	fake = &fakeRequester{resp: mustJSON(t, graph.PrefixQueryResponse{})}
+	fake = &fakeRequester{resp: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{}})}
 	c, err = New(fake, 3*time.Second)
 	require.NoError(t, err)
 	_, err = c.Resolve(t.Context(), fusion.ResolveQuery{Mode: fusion.ResolveModePrefix, Limit: 1})
@@ -122,7 +122,7 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 	replies := map[string][]byte{
 		subjectEntity:        mustJSON(t, graph.ExactEntity{Entity: &graph.EntityState{ID: id}, KVRevision: 1}),
 		subjectBatch:         mustJSON(t, graph.EntityBatchResponse{}),
-		subjectPrefix:        mustJSON(t, graph.PrefixQueryResponse{}),
+		subjectPrefixIDs:     mustJSON(t, graph.PrefixIDsResponse{IDs: []string{}}),
 		subjectByName:        enveloped(t, graph.NameData{}),
 		subjectRelationships: enveloped(t, []graph.RelationshipEdge{}),
 		subjectSemantic:      enveloped(t, graph.SemanticData{}),
@@ -145,7 +145,7 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 			_, err := c.Resolve(ctx, fusion.ResolveQuery{Query: "Scout", Mode: fusion.ResolveModeSymbol})
 			return err
 		}},
-		{"Resolve prefix", subjectPrefix, func() error {
+		{"Resolve prefix", subjectPrefixIDs, func() error {
 			_, err := c.Resolve(ctx, fusion.ResolveQuery{Query: "acme.ops", Mode: fusion.ResolveModePrefix})
 			return err
 		}},
@@ -238,16 +238,22 @@ func TestResolve_Symbol(t *testing.T) {
 	assert.Equal(t, []string{"a.b.c.d.e.1", "a.b.c.d.e.2"}, fusion.SeedIDs(res.Seeds))
 }
 
+// TestResolve_Prefix holds that a prefix resolve sends one listing request, the query as prefix
+// with the resolve limit, to graph-query's prefixIDs row, and returns one seed per listed ID in
+// the order listed, with no score. The fake lists out of key order so an order of the client's
+// own would show.
 func TestResolve_Prefix(t *testing.T) {
-	fake := &fakeRequester{resp: mustJSON(t, graph.PrefixQueryResponse{Entities: []graph.EntityState{
-		{ID: "a.b.c.d.e.1"}, {ID: "a.b.c.d.e.2"},
-	}})}
+	fake := &fakeRequester{resp: mustJSON(t, graph.PrefixIDsResponse{
+		IDs: []string{"a.b.c.d.e.2", "a.b.c.d.e.1"}, Total: 2,
+	})}
 	c := newClient(t, fake)
 
 	res, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "a.b.c", Mode: fusion.ResolveModePrefix, Limit: 10})
 	require.NoError(t, err)
-	assert.Equal(t, subjectPrefix, fake.lastSubject)
-	assert.Equal(t, []string{"a.b.c.d.e.1", "a.b.c.d.e.2"}, fusion.SeedIDs(res.Seeds))
+	assert.Equal(t, 1, fake.calls)
+	assert.Equal(t, subjectPrefixIDs, fake.lastSubject)
+	assert.JSONEq(t, `{"prefix":"a.b.c","limit":10}`, string(fake.lastData))
+	assert.Equal(t, fusion.Resolution{Seeds: []fusion.Seed{{ID: "a.b.c.d.e.2"}, {ID: "a.b.c.d.e.1"}}}, res)
 }
 
 func TestResolve_InvalidPrefixFailsBeforeNATS(t *testing.T) {
@@ -262,11 +268,11 @@ func TestResolve_InvalidPrefixFailsBeforeNATS(t *testing.T) {
 }
 
 func TestResolve_EmptyPrefixRemainsMatchAll(t *testing.T) {
-	fake := &fakeRequester{resp: mustJSON(t, graph.PrefixQueryResponse{})}
+	fake := &fakeRequester{resp: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{}})}
 	c := newClient(t, fake)
 	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{Mode: fusion.ResolveModePrefix, Limit: 10})
 	require.NoError(t, err)
-	assert.Equal(t, subjectPrefix, fake.lastSubject)
+	assert.Equal(t, subjectPrefixIDs, fake.lastSubject)
 }
 
 func TestResolve_Semantic(t *testing.T) {
@@ -364,7 +370,7 @@ func TestSemanticCountsReachResolution(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, fusion.Resolution{Seeds: []fusion.Seed{{ID: "a.b.c.d.e.1"}}}, res)
 
-	prefix := &fakeRequester{resp: mustJSON(t, graph.PrefixQueryResponse{Entities: []graph.EntityState{{ID: "a.b.c.d.e.1"}}})}
+	prefix := &fakeRequester{resp: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{"a.b.c.d.e.1"}, Total: 1})}
 	res, err = newClient(t, prefix).Resolve(t.Context(), fusion.ResolveQuery{Query: "a.b", Mode: fusion.ResolveModePrefix})
 	require.NoError(t, err)
 	assert.Equal(t, fusion.Resolution{Seeds: []fusion.Seed{{ID: "a.b.c.d.e.1"}}}, res)
@@ -440,8 +446,8 @@ func TestAuthoritativeRepliesRejectPoisonBeforeProjection(t *testing.T) {
 		call func(*Client) (any, error)
 	}{
 		{
-			name: "prefix malformed root",
-			resp: mustJSON(t, graph.PrefixQueryResponse{Entities: []graph.EntityState{{ID: validID}, {ID: invalidEntityID}}}),
+			name: "prefix malformed listed id",
+			resp: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{validID, invalidEntityID}, Total: 2}),
 			call: func(c *Client) (any, error) {
 				return c.Resolve(t.Context(), fusion.ResolveQuery{Query: "acme.ops", Mode: fusion.ResolveModePrefix, Limit: 10})
 			},

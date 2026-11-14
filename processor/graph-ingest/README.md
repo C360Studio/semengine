@@ -16,7 +16,7 @@ entity.>  (JetStream) ──┐
                         │  ┌──────────────┐
 graph.mutation.> ───────┼─►│ graph-ingest ├──► ENTITY_STATES (KV)
   (request/reply)       │  └──────┬───────┘
-                        │         └── answers graph.ingest.query.{entity,batch,prefix}
+                        │         └── answers graph.ingest.query.{entity,batch,prefix,prefixIDs}
 ```
 
 ## Features
@@ -112,12 +112,20 @@ other query subject. Replies are bare JSON, not wrapped in an envelope.
 | entity | `graph.ingest.query.entity` | `graph.ExactEntity` |
 | batch | `graph.ingest.query.batch` | `graph.EntityBatchResponse` |
 | prefix | `graph.ingest.query.prefix` | `graph.PrefixQueryResponse` |
+| prefixIDs | `graph.ingest.query.prefixIDs` | `graph.PrefixIDsResponse` |
 
 `graph.ingest.query.prefix` accepts `graph.PrefixQueryRequest`, which filters keys either by a 1–6 part literal
 `prefix` (`Prefix`) or by an exact 6-position `*` wildcard `pattern` (`Pattern`, validated by
 `pkg/types.ValidateEntityIDPattern` and evaluated via `KVStore.KeysByFilter`). `prefix` and `pattern` are mutually
 exclusive; omitting both matches all entities. Its reply's `total` is the length of the key listing, before the cursor
 and any limit, on every path; it is true as listed, not a snapshot.
+
+`graph.ingest.query.prefixIDs` takes the same `graph.PrefixQueryRequest` and answers `graph.PrefixIDsResponse`: `ids`
+(the page's keys in order), `total` (counted as above) and `next_cursor`. It reads no stored value, so an entity whose
+stored value cannot be read is listed like any other, where `prefix` refuses the whole page. A caller that must
+find such an entity lists its IDs here and reads them one at a time with `entity`: `batch` still refuses the whole
+call when one of its entities is damaged, while a one-ID read that is refused with `graph_state_reset_required`
+points at the one ID it was asked for.
 
 ## Hierarchy inference
 

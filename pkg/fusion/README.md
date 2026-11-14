@@ -101,7 +101,7 @@ with code `index_not_ready`, and the engine reads that reply. Each method sends 
 | Method | Verb |
 | --- | --- |
 | `Resolve`, `symbol` | `byName` |
-| `Resolve`, `prefix` | `prefix` |
+| `Resolve`, `prefix` | `prefixIDs` (lists IDs only), then `batch` |
 | `Resolve`, `nl` | `semantic` (with the request's `scope` when it is not empty) |
 | `Entity` | `entity` |
 | `Entities` | `batch` |
@@ -117,8 +117,12 @@ when read alone is listed with reason `not_found`. Any other error from those re
 (checked before each read and after each refused one), fails the call.
 `Entities` refuses a nil context.
 
-One gap remains, a filed issue: a `prefix` resolve whose page holds a poisoned entity is refused whole by
-graph-ingest, so that `Fuse` call fails.
+A `prefix` resolve first lists the IDs under the prefix with `prefixIDs`, which reads no stored value, then reads
+those IDs through `Entities`. A poisoned entity under the prefix is therefore listed in `unhydrated` with reason
+`error`, like any other poisoned seed, and the call does not fail. graph-ingest's full `prefix` page still refuses
+when it holds a poisoned entity; only the listing is safe. One limit remains: a prefix resolve sends up to 40 seeds
+to one `batch` read with no check that the reply fits the message size limit, so a prefix over very large entities
+can be refused with `response_too_large`.
 
 A stack with no graph-embedding must say so: set graph-query's `embedding_enabled` to `false` there. An `nl`
   question is then refused invalid with code `not_enabled`, naming `semantic`, before anything is sent. Left at its

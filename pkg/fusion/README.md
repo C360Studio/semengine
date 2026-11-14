@@ -117,6 +117,12 @@ when read alone is listed with reason `not_found`. Any other error from those re
 (checked before each read and after each refused one), fails the call.
 `Entities` refuses a nil context.
 
+A `prefix` query is an entity-ID prefix: whole dot-separated segments of an ID, such as `acme.ops.robotics`, or
+empty for every entity. The client refuses any other query, class invalid with code `entity_id_prefix_invalid`,
+before it sends a request. A file path is not an entity-ID prefix, because a path is a triple on an entity and no
+part of its ID. A lens must not return `prefix` for one: a path with a slash is refused, and a bare file name such
+as `comp.go` is read as an ID prefix and finds nothing.
+
 A `prefix` resolve first lists the IDs under the prefix with `prefixIDs`, which reads no stored value, then reads
 those IDs through `Entities`. A poisoned entity under the prefix is therefore listed in `unhydrated` with reason
 `error`, like any other poisoned seed, and the call does not fail. graph-ingest's full `prefix` page still refuses

@@ -3,7 +3,8 @@
 base: b6d97ad04f6fa583df6bdab3ba643a8605849d2d (main a8dd7912 + empty claim commit; worktree
 .worktrees/claude-lexical-removal-keywords). Track: design (touches graph-embedding, embedding-index,
 query-classification, fusion, community-grouping, composed-stack, entity-text and graph-query specs). SemSource read
-at its local checkout, commit 4ca2072c5d9d6bf4ec5ad76dc33b92d61c1614c1 (from `.git/HEAD`, read as a file).
+at its local checkout, commit 4ca2072c5d9d6bf4ec5ad76dc33b92d61c1614c1 (read from the branch ref
+`.git/refs/heads/main`, which `.git/HEAD` names).
 
 Terms. *Word index*: `graph/lexical`, served by graph-lexical on `graph.lexical.query.search`. *Hashed embedder*:
 `graph/embedding.BM25Embedder`, words hashed into 384 slots and ranked by cosine. *Example classifier*:

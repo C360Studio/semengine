@@ -429,11 +429,7 @@ func marshalFittingPrefixIDsPage(ids []string, more bool, total int, maxPayload 
 		best = 0
 	}
 	for count := 1; count <= len(ids); count++ {
-		encoded, err := json.Marshal(ids[count-1])
-		if err != nil {
-			return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
-				fmt.Errorf("marshal prefix ID %q: %w", ids[count-1], err))
-		}
+		encoded, _ := json.Marshal(ids[count-1]) // a string always encodes
 		idsBytes += int64(len(encoded))
 		if count > 1 {
 			idsBytes++ // comma between IDs

@@ -141,11 +141,15 @@ func TestLocalSearchTermsAreDistinctAndBounded(t *testing.T) {
 		t.Errorf("terms = %q, want %q", got, want)
 	}
 
-	sixteen := "t01 t02 t03 t04 t05 t06 t07 t08 t09 t10 t11 t12 t13 t14 t15 t16"
-	if got := searchTermsOf(t, sixteen+" T16 t01"); len(got) != 16 {
-		t.Errorf("16 distinct terms with repeats gave %d terms, want 16", len(got))
+	var atLimit []string
+	for i := 1; i <= 32; i++ {
+		atLimit = append(atLimit, fmt.Sprintf("t%02d", i))
 	}
-	for _, query := range []string{sixteen + " t17", "", " \t\n"} {
+	thirtyTwo := strings.Join(atLimit, " ")
+	if got := searchTermsOf(t, thirtyTwo+" T32 t01"); len(got) != 32 {
+		t.Errorf("32 distinct terms with repeats gave %d terms, want 32", len(got))
+	}
+	for _, query := range []string{thirtyTwo + " t33", "", " \t\n"} {
 		request := `{"entity_id":"acme.ops.src.docs.note.n00","query":"` + strings.ReplaceAll(strings.ReplaceAll(query, "\t", `\t`), "\n", `\n`) + `"}`
 		if _, terms, err := decodeLocalSearchRequest([]byte(request)); err == nil || !strings.Contains(err.Error(), "query") {
 			t.Errorf("decodeLocalSearchRequest(%s) = %q, %v; want an error naming query", request, terms, err)
@@ -164,8 +168,8 @@ func TestLocalSearchTermsAreDistinctAndBounded(t *testing.T) {
 	if _, _, err := decodeLocalSearchRequest(request); err == nil || !strings.Contains(err.Error(), "query") {
 		t.Errorf("a 1 MB query: %v, want an error naming query", err)
 	}
-	if got := len(searchTerms(long.String())); got != 17 {
-		t.Errorf("searchTerms of a 1 MB query returned %d terms, want 17", got)
+	if got := len(searchTerms(long.String())); got != 33 {
+		t.Errorf("searchTerms of a 1 MB query returned %d terms, want 33", got)
 	}
 }
 

@@ -118,13 +118,16 @@ func TestTextTierScore(t *testing.T) {
 // the limit the question reaches the view, which this component, never started, does not have
 // (spec, "The text tier refuses an index it cannot read").
 func TestTextTierTermLimit(t *testing.T) {
-	words := strings.Fields("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec")
+	words := make([]string, graph.MaxSearchTerms+1)
+	for i := range words {
+		words[i] = fmt.Sprintf("w%02d", i)
+	}
 	atLimit := strings.Join(words[:graph.MaxSearchTerms], " ")
 	over := strings.Join(words[:graph.MaxSearchTerms+1], " ")
 
 	c, raw, err := askUnstarted(t, fmt.Sprintf(`{"query":%q}`, over))
 	refusal := refusalOfRoute(t, over, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-	if want := "invalid request: query holds 17 distinct terms, more than 16"; refusal.Error() != want {
+	if want := "invalid request: query holds 33 distinct terms, more than 32"; refusal.Error() != want {
 		t.Errorf("message = %q, want %q", refusal.Error(), want)
 	}
 	if raw != nil || c.Health().ErrorCount != 0 {

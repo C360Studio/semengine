@@ -281,9 +281,10 @@ func TestSearchRefusesParseErrors(t *testing.T) {
 	ensureEntityStates(t, client)
 	startLexical(t, client, metric.NewMetricsRegistry(), nil)
 
+	// Two letters each, so the words stay distinct past 26.
 	words := make([]string, graph.MaxSearchTerms+1)
 	for i := range words {
-		words[i] = fmt.Sprintf("word%c", 'a'+i)
+		words[i] = fmt.Sprintf("word%c%c", 'a'+i/26, 'a'+i%26)
 	}
 	for _, tc := range []struct{ query, rule string }{
 		{"pump*", "reserved"},
@@ -301,6 +302,48 @@ func TestSearchRefusesParseErrors(t *testing.T) {
 		if !strings.Contains(refused.Error(), tc.rule) {
 			t.Errorf("query %q: refusal %q does not name %q", tc.query, refused, tc.rule)
 		}
+	}
+}
+
+// TestSearchDeclaresExcluded: a query's excluded words are in the reply, each term's words joined
+// by a space, so a caller can say why an entity holding one is absent; a query excluding nothing
+// sends no excluded key.
+func TestSearchDeclaresExcluded(t *testing.T) {
+	client := fixtureClient(t)
+	states := ensureEntityStates(t, client)
+	const (
+		plain = "c360.lex.test.doc.run.plain"
+		raced = "c360.lex.test.doc.run.raced"
+	)
+	c := startLexical(t, client, metric.NewMetricsRegistry(), nil)
+	put(t, states, plain, text{name: "go test", inline: "runs the unit tests"})
+	last := put(t, states, raced, text{name: "go test", inline: "with the race detector"})
+	awaitApplied(t, c, last)
+
+	for _, tc := range []struct {
+		query    string
+		excluded []string
+		ids      []string
+	}{
+		{"go test -race", []string{"race"}, []string{plain}},
+		{`go test -race -"unit tests"`, []string{"race", "unit test"}, []string{}},
+	} {
+		body, err := json.Marshal(graph.LexicalSearchRequest{Query: tc.query})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		data := answer(t, client, string(body)).Data
+		if !slices.Equal(data.Excluded, tc.excluded) || !slices.Equal(resultIDs(data), tc.ids) {
+			t.Errorf("%s: excluded %q, results %v; want %q, %v", tc.query, data.Excluded, resultIDs(data), tc.excluded, tc.ids)
+		}
+	}
+
+	raw, err := ask(t, client, `{"query":"go test"}`)
+	if err != nil {
+		t.Fatalf("go test: %v", err)
+	}
+	if strings.Contains(string(raw), `"excluded"`) {
+		t.Errorf("go test excludes nothing, yet the reply %s holds an excluded key", raw)
 	}
 }
 

@@ -74,6 +74,7 @@ pump*: reserved syntax
 | `Index.Put` | Replaces everything an entity held with the words of a document; a document with no words removes the entity. Refuses an ID that is not a canonical six-part entity ID (`ErrInvalidEntityID`) |
 | `Index.Delete`, `Index.Len` | Removes an entity; the number of entities held |
 | `ParseQuery`, `Query` | Reads a query (rules below); the zero `Query` matches nothing |
+| `Query.Excluded` | The excluded terms, each as its words, so a caller can say which words removed entities |
 | `Index.Search`, `Options` | The best `Limit` hits (at least 1, else `ErrInvalidLimit`) among entities under one of the `Scope` ID prefixes (all entities when `Scope` is empty; a malformed prefix is `ErrInvalidScope`) |
 | `Result`, `Hit` | Hits ordered by score, then by entity ID; `Matched` counts every match in scope before the limit |
 | `Tokens` | The one tokenizer, used for documents and queries alike |
@@ -118,9 +119,11 @@ after folding, which in practice is hex such as a commit hash.
   `--force` is the plain word `force`. To search for a flag such as `-race`, quote it.
 - **Reserved syntax** is refused with `ErrReservedSyntax`, so a later query form can give it a meaning without
   changing an answer given today: a term outside quotes that starts with `name:` or `body:` followed by more text,
-  or that ends in a letter or digit followed by `*` or `~` (`pump*`, `pump~`).
+  or that ends in a letter or digit followed by `*` (`pump*`). The error names the term and says to quote it, which
+  searches it as text. A term that also starts with `*` is emphasis, so `*bold*` is the word `bold`. Every other mark
+  separates words: `HEAD~` is the word `head`.
 - A query with no plain word and no phrase left after tokenizing (only stop words, punctuation or exclusions) is
-  refused with `ErrEmptyQuery`. A query with more than `graph.MaxSearchTerms` (16) distinct words, plain, phrase and
+  refused with `ErrEmptyQuery`. A query with more than `graph.MaxSearchTerms` (32) distinct words, plain, phrase and
   excluded counted together, is refused with `ErrQueryTooLong`.
 
 ## How good the ranking is

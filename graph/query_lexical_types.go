@@ -23,11 +23,15 @@ type LexicalHit struct {
 
 // LexicalSearchData is the reply to a word search. Results holds the best hits, ordered by score
 // and then by entity ID. Matched is the number of entities that matched within the scope, before
-// the limit, so Matched above len(Results) says the limit cut the answer. BodiesNotIndexed is the
-// number of entities in the whole index, not the scope or the hits, whose offloaded body the
-// index did not hold when the reply was built: such an entity is found only by its inline text.
+// the limit, so Matched above len(Results) says the limit cut the answer. Excluded is the query's
+// excluded terms, each term's words joined by a space, omitted when there are none: every entity
+// holding one was removed, so a caller can say why an entity it expected is absent.
+// BodiesNotIndexed is the number of entities in the whole index, not the scope or the hits, whose
+// offloaded body the index did not hold when the reply was built: such an entity is found only by
+// its inline text.
 type LexicalSearchData struct {
 	Results          []LexicalHit `json:"results"`
 	Matched          int          `json:"matched"`
+	Excluded         []string     `json:"excluded,omitempty"`
 	BodiesNotIndexed int          `json:"bodies_not_indexed"`
 }

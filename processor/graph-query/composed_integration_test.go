@@ -67,6 +67,13 @@ func startStack(t *testing.T) graphStack {
 // startIngestAndIndex starts graph-ingest and graph-index on a fresh client, without graph-query.
 func startIngestAndIndex(t *testing.T) graphStack {
 	t.Helper()
+	return startIngestAndIndexAs(t, types.PlatformMeta{Org: "c360", Platform: "test"})
+}
+
+// startIngestAndIndexAs is startIngestAndIndex with graph-ingest running under platform, which
+// decides the entity IDs it accepts.
+func startIngestAndIndexAs(t *testing.T, platform types.PlatformMeta) graphStack {
+	t.Helper()
 	client := fixtureClient(t)
 	js, err := client.JetStream()
 	if err != nil {
@@ -84,7 +91,7 @@ func startIngestAndIndex(t *testing.T) graphStack {
 	}
 	ingest, err := graphingest.CreateGraphIngest(ingestConfig, component.Dependencies{
 		NATSClient: client, PayloadRegistry: registry, MetricsRegistry: metric.NewMetricsRegistry(),
-		Platform: types.PlatformMeta{Org: "c360", Platform: "test"},
+		Platform: platform,
 	})
 	if err != nil {
 		t.Fatalf("CreateGraphIngest: %v", err)

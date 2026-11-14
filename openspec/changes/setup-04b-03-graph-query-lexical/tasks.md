@@ -51,7 +51,7 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   each hint is listed honoured or not with a reason; `TestWordIndexRefusalComesFirst` (`pump*` and `the of and` get
   the word index's `invalid_request`, and no alias, entity or path request is made); `TestVerifiedStartAddsAWalk`;
   `TestUnverifiedStartIsReported`; `TestClassifierRefusalIsAHint`; `TestGlobalSearchEndedClassification` unchanged.
-- [ ] 2.5 PR B. The quality bar (design D8). Premise: the word index is within one point of a plain BM25 globally
+- [x] 2.5 PR B. The quality bar (design D8). Premise: the word index is within one point of a plain BM25 globally
   and locally, today's paths far below (`notes/probes/search-quality-probe.log`). Accept: `TestSearchScorecard`
   passes, logging R@1, R@10 and MRR for both verbs and the reference; a mutant that drops the local scope, and one that
   re-sorts matches by ID, are each shown to fail it.

@@ -1,6 +1,6 @@
 # Proposal: fix-578-prefix-damaged-entities
 
-Approved-by:
+Approved-by: cglusky (2026-11-14) sha256:93fe60c877d4
 
 Track: `design`. Capabilities modified: `graph-transport-boundary`, `graph-query`, `fusion`.
 

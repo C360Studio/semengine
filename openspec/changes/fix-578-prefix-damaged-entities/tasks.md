@@ -6,9 +6,8 @@ which closes #578. #656, #657 and #658 stay open.
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas). Needs INVENTORY PASS, a
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas). Needs INVENTORY PASS, a
   passing pre-owner design review, and the owner filling `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Code
 

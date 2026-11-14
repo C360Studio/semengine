@@ -57,9 +57,10 @@ or false:
   The seeds that were read still answer.
 - `misses`: the graph answered and found nothing, with near-matches in `did_you_mean`. A miss does not prove the
   entity is absent.
-- `unreadable_records` and `failed_records`: a word search (`nl` resolve) counts the records it could not read and the
-  records whose embedding failed. They ride on every response built after that search answered, including a miss.
-  Symbol and prefix resolves never set them.
+- `bodies_not_indexed` and `excluded`: what the word index left out of a word search (`nl` resolve).
+  `bodies_not_indexed` counts the entities whose offloaded body the index did not hold, found only by their inline
+  text; `excluded` lists the question's excluded terms (`-word`), every entity holding one removed. They ride on every
+  response built after that search answered, including a miss. Symbol and prefix resolves never set them.
 - `relations_truncated` (on a node): a role had more than 12 relations, a relations read failed, or a target could not
   be read.
 - `paths_truncated`, and `truncated` on a path: more than 10 paths existed, or a path stopped at a node that could not
@@ -96,13 +97,14 @@ if err != nil {
 `New` refuses a nil requester and a negative timeout. It starts nothing: the client holds no goroutine, no watch and
 no lock, so it has no `Close`, and it reads no readiness status. A read whose index is still catching up is refused
 with code `index_not_ready`, and the engine reads that reply. Each method sends one request to one of graph-query's
-`graph.query.*` verbs, with the subject read from `graph.QueryVerbs()`:
+`graph.query.*` verbs, or for an `nl` resolve to graph-lexical's word search, with the subject read from
+`graph.QueryVerbs()`:
 
 | Method | Verb |
 | --- | --- |
 | `Resolve`, `symbol` | `byName` |
 | `Resolve`, `prefix` | `prefixIDs` (lists IDs only), then `batch` |
-| `Resolve`, `nl` | `semantic` (with the request's `scope` when it is not empty) |
+| `Resolve`, `nl` | graph-lexical's `search` (with the request's `scope` when it is not empty) |
 | `Entity` | `entity` |
 | `Entities` | `batch` |
 | `Neighbors` | `relationships` |
@@ -124,13 +126,14 @@ when it holds a poisoned entity; only the listing is safe. One limit remains: a 
 to one `batch` read with no check that the reply fits the message size limit, so a prefix over very large entities
 can be refused with `response_too_large`.
 
-A stack with no graph-embedding must say so: set graph-query's `embedding_enabled` to `false` there. An `nl`
-  question is then refused invalid with code `not_enabled`, naming `semantic`, before anything is sent. Left at its
-  default (true), such a stack still fails the question with a transient `internal` refusal naming
-  `graph.embedding.query.search`, which a caller may retry without success.
+An `nl` question goes to the word index unchanged, so its query rules apply: a question it refuses, such as one
+holding `name:`, comes back as graph-lexical sent it, class invalid, code `invalid_request`. A stack with no
+graph-lexical fails every `nl` question with a transient `internal` error naming `graph.lexical.query.search`.
 
-`symbol` and `prefix` questions need no graph-embedding: `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers them
-over a stack of graph-ingest, graph-index and graph-query alone.
+An `nl` answer's `provenance` is `lexical`: its seeds are ranked word matches, neither an exact lookup nor an
+embedding search. `symbol` and `prefix` answers are `deterministic`. `symbol` and `prefix` questions need no
+graph-lexical; `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers all three over a stack of graph-ingest,
+graph-index, graph-lexical and graph-query, with no graph-embedding.
 
 ## Packages
 

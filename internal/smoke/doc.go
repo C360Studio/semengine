@@ -13,9 +13,9 @@
 // answer waits on its record's entity_revision, a word search on its reply's indexed_revision.
 //
 // A second composition has no graph-embedding, neither configured nor registered:
-// TestSmoke_NoEmbedderAnswers boots it and asks pkg/fusion, over pkg/fusion/fusionnats, the
-// questions a stack without an embedder answers, and the word question it refuses: graph-query is
-// configured with embedding_enabled false, so the refusal is invalid not_enabled naming semantic.
+// TestSmoke_NoEmbedderAnswers boots it with graph-lexical and asks pkg/fusion, over
+// pkg/fusion/fusionnats, the symbol, prefix and word questions a stack without an embedder
+// answers; the word question answers from graph-lexical's word index with provenance lexical.
 //
 // The package holds no production code; everything else is in integration-tagged test files.
 package smoke

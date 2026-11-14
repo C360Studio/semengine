@@ -122,10 +122,10 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 		return Response{}, err
 	}
 	// Every response built after a natural-language search answered carries what
-	// the search could not read; symbol and prefix resolves count nothing, so
-	// their responses carry neither count.
+	// the word index left out; symbol and prefix resolves leave nothing out, so
+	// their responses carry neither.
 	if mode == ResolveModeNL {
-		resp.UnreadableRecords, resp.FailedRecords = resolution.UnreadableRecords, resolution.FailedRecords
+		resp.BodiesNotIndexed, resp.Excluded = resolution.BodiesNotIndexed, resolution.Excluded
 	}
 	return resp, nil
 }

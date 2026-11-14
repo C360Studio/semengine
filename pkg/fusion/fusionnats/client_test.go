@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -17,15 +18,16 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-// The subjects of the graph-query rows the client uses, spelled here as an
-// oracle independent of the verb table the client reads them from.
+// The subjects of the rows the client uses, graph-query's and graph-lexical's
+// search, spelled here as an oracle independent of the verb table the client
+// reads them from.
 const (
 	subjectEntity        = "graph.query.entity"
 	subjectBatch         = "graph.query.batch"
 	subjectPrefixIDs     = "graph.query.prefixIDs"
 	subjectByName        = "graph.query.byName"
 	subjectRelationships = "graph.query.relationships"
-	subjectSemantic      = "graph.query.semantic"
+	subjectWordSearch    = "graph.lexical.query.search"
 )
 
 // fakeRequester records the last request and returns a canned reply, or routes
@@ -116,7 +118,8 @@ func TestNewZeroTimeoutUsesDefault(t *testing.T) {
 }
 
 // TestSubjectsComeFromVerbTable drives every RetrievalClient method and checks
-// each request went to its graph-query row's subject.
+// each request went to its row's subject: graph-lexical's search for an NL
+// resolve, graph-query's rows for the rest.
 func TestSubjectsComeFromVerbTable(t *testing.T) {
 	id := "acme.ops.robotics.gcs.drone.001"
 	replies := map[string][]byte{
@@ -125,7 +128,7 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 		subjectPrefixIDs:     mustJSON(t, graph.PrefixIDsResponse{IDs: []string{}}),
 		subjectByName:        enveloped(t, graph.NameData{}),
 		subjectRelationships: enveloped(t, []graph.RelationshipEdge{}),
-		subjectSemantic:      enveloped(t, graph.SemanticData{}),
+		subjectWordSearch:    enveloped(t, graph.LexicalSearchData{}),
 	}
 	fake := &fakeRequester{responder: func(subject string, _ []byte) ([]byte, error) {
 		reply, ok := replies[subject]
@@ -149,7 +152,7 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 			_, err := c.Resolve(ctx, fusion.ResolveQuery{Query: "acme.ops", Mode: fusion.ResolveModePrefix})
 			return err
 		}},
-		{"Resolve nl", subjectSemantic, func() error {
+		{"Resolve nl", subjectWordSearch, func() error {
 			_, err := c.Resolve(ctx, fusion.ResolveQuery{Query: "scout", Mode: fusion.ResolveModeNL})
 			return err
 		}},
@@ -169,19 +172,31 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 	}
 }
 
+// TestVerbLookupNamesMissingRow holds that a table without a row the client
+// uses is refused, naming the verb. graph-embedding also has a search row, so
+// the lexical case shows the row is matched by its responder too.
 func TestVerbLookupNamesMissingRow(t *testing.T) {
-	var table []graph.QueryVerb
-	for _, verb := range graph.QueryVerbs() {
-		if verb.Responder == graph.ResponderGraphQuery && verb.Name == "batch" {
-			continue
+	without := func(responder, name string) []graph.QueryVerb {
+		var table []graph.QueryVerb
+		for _, verb := range graph.QueryVerbs() {
+			if verb.Responder == responder && verb.Name == name {
+				continue
+			}
+			table = append(table, verb)
 		}
-		table = append(table, verb)
+		return table
 	}
-	_, err := lookupVerbs(table)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `"batch"`)
+	for _, missing := range []struct{ responder, name string }{
+		{graph.ResponderGraphQuery, "batch"},
+		{graph.ResponderGraphLexical, "search"},
+	} {
+		_, err := lookupVerbs(without(missing.responder, missing.name))
+		require.Error(t, err, "a table without %s's %s", missing.responder, missing.name)
+		assert.Contains(t, err.Error(), missing.responder)
+		assert.Contains(t, err.Error(), `"`+missing.name+`"`)
+	}
 
-	_, err = lookupVerbs(graph.QueryVerbs())
+	_, err := lookupVerbs(graph.QueryVerbs())
 	require.NoError(t, err, "the full table holds every row the client uses")
 }
 
@@ -200,7 +215,7 @@ func TestEnvelopedRowNeedsProducer(t *testing.T) {
 			func(c *Client) error { _, err := c.Names(t.Context(), "Sco", 5); return err }},
 		{"relationships", mustJSON(t, []graph.RelationshipEdge{{FromEntityID: id, ToEntityID: neighbor, Predicate: "robotics.sensor.reads"}}),
 			func(c *Client) error { _, err := c.Neighbors(t.Context(), id, nil, fusion.Outgoing); return err }},
-		{"semantic", mustJSON(t, graph.SemanticData{Results: []graph.SimilarityHit{{EntityID: id, Similarity: 0.9}}}),
+		{"search", mustJSON(t, graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: id, Score: 0.9}}}),
 			func(c *Client) error {
 				_, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "scout", Mode: fusion.ResolveModeNL})
 				return err
@@ -275,42 +290,43 @@ func TestResolve_EmptyPrefixRemainsMatchAll(t *testing.T) {
 	assert.Equal(t, subjectPrefixIDs, fake.lastSubject)
 }
 
-func TestResolve_Semantic(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.SemanticData{Results: []graph.SimilarityHit{
-		{EntityID: "a.b.c.d.e.1", Similarity: 0.9},
-		{EntityID: "a.b.c.d.e.2", Similarity: 0.8},
-	}})}
+// TestNLResolveAsksTheWordIndex holds that an NL resolve sends one word search
+// request holding the query, limit and scope to graph-lexical's search row, and
+// returns the hits as seeds in the reply's order, each with its score. The hits
+// are in neither ID nor score order, so a resolve that sorted them would fail.
+func TestNLResolveAsksTheWordIndex(t *testing.T) {
+	fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{Results: []graph.LexicalHit{
+		{EntityID: "a.b.c.d.e.2", Score: 1.5},
+		{EntityID: "a.b.c.d.e.3", Score: 4.25},
+		{EntityID: "a.b.c.d.e.1", Score: 0.75},
+	}, Matched: 3})}
 	c := newClient(t, fake)
 
-	res, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "find me a widget", Mode: fusion.ResolveModeNL, Limit: 10})
+	res, err := c.Resolve(t.Context(), fusion.ResolveQuery{
+		Query: "retry -race", Mode: fusion.ResolveModeNL, Scope: []string{"a.b.c"}, Limit: 10,
+	})
 	require.NoError(t, err)
-	assert.Equal(t, subjectSemantic, fake.lastSubject)
+	assert.Equal(t, 1, fake.calls)
+	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	assert.JSONEq(t, `{"query":"retry -race","limit":10,"scope":["a.b.c"]}`, string(fake.lastData))
 	assert.Equal(t, []fusion.Seed{
-		{ID: "a.b.c.d.e.1", Similarity: 0.9, HasSimilarity: true},
-		{ID: "a.b.c.d.e.2", Similarity: 0.8, HasSimilarity: true},
+		{ID: "a.b.c.d.e.2", Similarity: 1.5, HasSimilarity: true},
+		{ID: "a.b.c.d.e.3", Similarity: 4.25, HasSimilarity: true},
+		{ID: "a.b.c.d.e.1", Similarity: 0.75, HasSimilarity: true},
 	}, res.Seeds)
 }
 
-// TestResolve_Semantic_UnscopedByteParity holds ADR-071's rule that an unscoped
+// TestResolve_NL_UnscopedByteParity holds ADR-071's rule that an unscoped
 // request carries no scope key.
-func TestResolve_Semantic_UnscopedByteParity(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.SemanticData{})}
+func TestResolve_NL_UnscopedByteParity(t *testing.T) {
+	fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{})}
 	c := newClient(t, fake)
 	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "find a widget", Mode: fusion.ResolveModeNL, Limit: 10})
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"query":"find a widget","limit":10}`, string(fake.lastData))
 }
 
-func TestResolve_Semantic_ScopeInBody(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.SemanticData{})}
-	c := newClient(t, fake)
-	scope := []string{"c360.semspec.source.doc"}
-	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "find a widget", Mode: fusion.ResolveModeNL, Scope: scope, Limit: 10})
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"query":"find a widget","limit":10,"scope":["c360.semspec.source.doc"]}`, string(fake.lastData))
-}
-
-func TestResolve_SemanticInvalidScopeFailsBeforeNATS(t *testing.T) {
+func TestResolve_NLInvalidScopeFailsBeforeNATS(t *testing.T) {
 	fake := &fakeRequester{}
 	c := newClient(t, fake)
 	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{
@@ -323,14 +339,113 @@ func TestResolve_SemanticInvalidScopeFailsBeforeNATS(t *testing.T) {
 	assert.Zero(t, fake.calls, "an invalid scope fails before a NATS request")
 }
 
-func TestResolve_SemanticEmptyScopeEntryRemainsMatchAll(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.SemanticData{})}
+func TestResolve_NLEmptyScopeEntryRemainsMatchAll(t *testing.T) {
+	fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{})}
 	c := newClient(t, fake)
 	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{
 		Query: "find a widget", Mode: fusion.ResolveModeNL, Scope: []string{""}, Limit: 10,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, subjectSemantic, fake.lastSubject)
+	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	assert.JSONEq(t, `{"query":"find a widget","limit":10,"scope":[""]}`, string(fake.lastData))
+}
+
+// TestWordIndexCountsReachResolution holds that an NL resolve copies the word
+// index reply's bodies_not_indexed and excluded into the Resolution, and that a
+// symbol or prefix resolve leaves both empty even when its reply carries keys of
+// those names.
+func TestWordIndexCountsReachResolution(t *testing.T) {
+	t.Run("nl", func(t *testing.T) {
+		fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{
+			Results:  []graph.LexicalHit{{EntityID: "a.b.c.d.e.1", Score: 1}},
+			Matched:  1,
+			Excluded: []string{"race"}, BodiesNotIndexed: 2,
+		})}
+		res, err := newClient(t, fake).Resolve(t.Context(), fusion.ResolveQuery{Query: "retry -race", Mode: fusion.ResolveModeNL, Limit: 10})
+		require.NoError(t, err)
+		assert.Equal(t, 2, res.BodiesNotIndexed)
+		assert.Equal(t, []string{"race"}, res.Excluded)
+	})
+
+	for name, tc := range map[string]struct {
+		mode  fusion.ResolveMode
+		query string
+		reply string
+	}{
+		"symbol": {fusion.ResolveModeSymbol, "Widget",
+			`{"producer":"graph-index","data":{"matches":[{"entity_id":"a.b.c.d.e.1","matched_name":"Widget"}],` +
+				`"bodies_not_indexed":2,"excluded":["race"]}}`},
+		"prefix": {fusion.ResolveModePrefix, "a.b.c",
+			`{"ids":["a.b.c.d.e.1"],"total":1,"bodies_not_indexed":2,"excluded":["race"]}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeRequester{resp: []byte(tc.reply)}
+			res, err := newClient(t, fake).Resolve(t.Context(), fusion.ResolveQuery{Query: tc.query, Mode: tc.mode, Limit: 10})
+			require.NoError(t, err)
+			require.Equal(t, []string{"a.b.c.d.e.1"}, fusion.SeedIDs(res.Seeds), "the reply decoded")
+			assert.Zero(t, res.BodiesNotIndexed)
+			assert.Nil(t, res.Excluded)
+		})
+	}
+}
+
+// nlLens resolves every query as natural language and walks no edges, so a
+// Fuse call reads only the word search and the seeds.
+type nlLens struct{}
+
+func (nlLens) Name() string                          { return "nl" }
+func (nlLens) ResolveMode(string) fusion.ResolveMode { return fusion.ResolveModeNL }
+func (nlLens) Edges() []fusion.EdgeSpec              { return nil }
+func (nlLens) Label(e *fusion.Entity) string         { return e.ID }
+func (nlLens) Kind(*fusion.Entity) string            { return "entity" }
+func (nlLens) Location(*fusion.Entity) fusion.Locator {
+	return fusion.Locator{}
+}
+func (nlLens) Hydrate(context.Context, *fusion.Entity) (*message.StorageReference, error) {
+	return nil, nil
+}
+
+func newNLEngine(t *testing.T, fake *fakeRequester) *fusion.Engine {
+	t.Helper()
+	eng, err := fusion.NewEngine(newClient(t, fake), fusion.NewBodyResolver(fusion.MapStoreResolver{}), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	return eng
+}
+
+// TestNLWordIndexRefusalReturned holds that the word index's refusal of a
+// question reaches the Fuse caller as it was sent: class, code, detail and
+// message, with no answer beside it.
+func TestNLWordIndexRefusalReturned(t *testing.T) {
+	detail := map[string]any{"term": "name:retry"}
+	sent := errs.ClassifiedCodeDetail(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, detail,
+		errors.New(`invalid request: "name:" is reserved; quote the term to search for it`))
+	fake := &fakeRequester{err: sent}
+
+	resp, err := newNLEngine(t, fake).Fuse(t.Context(), fusion.Request{Query: "name:retry"}, nlLens{})
+	require.Error(t, err)
+	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	var refusal *errs.ClassifiedError
+	require.ErrorAs(t, err, &refusal)
+	assert.Equal(t, errs.ErrorInvalid, refusal.Class)
+	assert.Equal(t, graph.ErrorCodeInvalidRequest, refusal.Code)
+	assert.Equal(t, detail, refusal.Detail)
+	assert.Contains(t, err.Error(), "quote the term")
+	assert.Equal(t, fusion.Response{}, resp, "a refused question has no answer")
+}
+
+// TestNLIndexNotReadyDefers holds that a word index not yet ready defers the
+// answer, as for every other read, rather than failing it or answering a miss.
+func TestNLIndexNotReadyDefers(t *testing.T) {
+	fake := &fakeRequester{err: errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
+		errors.New("index not ready"))}
+
+	resp, err := newNLEngine(t, fake).Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})
+	require.NoError(t, err)
+	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	assert.True(t, resp.Deferred)
+	assert.Equal(t, graph.ErrorCodeIndexNotReady, resp.DeferReason)
+	assert.Empty(t, resp.Nodes)
+	assert.Empty(t, resp.Misses)
 }
 
 func TestResolve_Symbol_CarriesNoScope(t *testing.T) {
@@ -349,31 +464,6 @@ func TestResolve_UnknownMode(t *testing.T) {
 	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "x", Mode: fusion.ResolveMode("bogus"), Limit: 10})
 	require.Error(t, err)
 	assert.Zero(t, fake.calls)
-}
-
-// TestSemanticCountsReachResolution holds that an NL resolve passes on the
-// search reply's counts of records it could not read, and that symbol and
-// prefix resolves, whose replies carry no such counts, report 0.
-func TestSemanticCountsReachResolution(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.SemanticData{
-		Results:           []graph.SimilarityHit{{EntityID: "a.b.c.d.e.1", Similarity: 0.5}},
-		UnreadableRecords: 2,
-		FailedRecords:     1,
-	})}
-	res, err := newClient(t, fake).Resolve(t.Context(), fusion.ResolveQuery{Query: "widget", Mode: fusion.ResolveModeNL})
-	require.NoError(t, err)
-	assert.Equal(t, 2, res.UnreadableRecords)
-	assert.Equal(t, 1, res.FailedRecords)
-
-	symbol := &fakeRequester{resp: enveloped(t, graph.NameData{Matches: []graph.NameMatch{{EntityID: "a.b.c.d.e.1"}}})}
-	res, err = newClient(t, symbol).Resolve(t.Context(), fusion.ResolveQuery{Query: "Widget", Mode: fusion.ResolveModeSymbol})
-	require.NoError(t, err)
-	assert.Equal(t, fusion.Resolution{Seeds: []fusion.Seed{{ID: "a.b.c.d.e.1"}}}, res)
-
-	prefix := &fakeRequester{resp: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{"a.b.c.d.e.1"}, Total: 1})}
-	res, err = newClient(t, prefix).Resolve(t.Context(), fusion.ResolveQuery{Query: "a.b", Mode: fusion.ResolveModePrefix})
-	require.NoError(t, err)
-	assert.Equal(t, fusion.Resolution{Seeds: []fusion.Seed{{ID: "a.b.c.d.e.1"}}}, res)
 }
 
 func TestEntity_Found(t *testing.T) {
@@ -472,8 +562,8 @@ func TestAuthoritativeRepliesRejectPoisonBeforeProjection(t *testing.T) {
 			call: func(c *Client) (any, error) { return c.Entities(t.Context(), []string{validID}) },
 		},
 		{
-			name: "semantic malformed entity id",
-			resp: enveloped(t, graph.SemanticData{Results: []graph.SimilarityHit{{EntityID: validID}, {EntityID: invalidEntityID}}}),
+			name: "word search malformed entity id",
+			resp: enveloped(t, graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: validID}, {EntityID: invalidEntityID}}}),
 			call: func(c *Client) (any, error) {
 				return c.Resolve(t.Context(), fusion.ResolveQuery{Query: "widget", Mode: fusion.ResolveModeNL, Limit: 10})
 			},

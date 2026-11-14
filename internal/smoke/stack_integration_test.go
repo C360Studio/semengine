@@ -101,10 +101,10 @@ const stackConfig = `{
   }
 }`
 
-// graphOnlyConfig is stackConfig with no graph-embedding: the configuration of a product that
-// answers by name, prefix and structure and runs no embedder (composed-stack, "The graph stack
-// answers fusion without an embedder"). graph-query says so with embedding_enabled false, so it
-// refuses semantic and similar as not enabled rather than asking a verb nothing serves.
+// graphOnlyConfig is the configuration of a product that runs no embedder: it answers by name,
+// prefix and structure, and by word through graph-lexical (composed-stack, "The graph stack answers
+// fusion without an embedder"). graph-query says so with embedding_enabled false, so it refuses
+// semantic and similar as not enabled rather than asking a verb nothing serves.
 const graphOnlyConfig = `{
   "version": "1.0.0",
   "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
@@ -120,6 +120,7 @@ const graphOnlyConfig = `{
   "components": {
     "graph-ingest": {"type": "processor", "name": "graph-ingest", "enabled": true, "config": {{ingest_config}}},
     "graph-index": {"type": "processor", "name": "graph-index", "enabled": true, "config": {}},
+    "graph-lexical": {"type": "processor", "name": "graph-lexical", "enabled": true, "config": {}},
     "graph-query": {"type": "processor", "name": "graph-query", "enabled": true,
       "config": {"embedding_enabled": false}}
   }
@@ -160,8 +161,8 @@ var fullStack = composition{
 var graphOnlyStack = composition{
 	name:       "graph-only",
 	config:     graphOnlyConfig,
-	components: []string{"graph-index", "graph-ingest", "graph-query"},
-	indexKeys:  []string{readiness.KeyGraphIndex},
+	components: []string{"graph-index", "graph-ingest", "graph-lexical", "graph-query"},
+	indexKeys:  []string{readiness.KeyGraphIndex, readiness.KeyGraphLexical},
 	labels:     []string{namePredicate},
 }
 

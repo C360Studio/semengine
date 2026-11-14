@@ -2,13 +2,14 @@ package fusion_test
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/c360studio/semengine/pkg/fusion"
 )
 
-// Tests that a natural-language answer carries the search reply's
-// unreadable_records and failed_records; a symbol or prefix answer carries neither.
+// Tests that a natural-language answer carries the word index reply's
+// bodies_not_indexed and excluded; a symbol or prefix answer carries neither.
 // refLens reads a query with a space as natural language and a bare token as a
 // symbol.
 
@@ -34,65 +35,78 @@ func searchCountKeys(t *testing.T, g *fakeGraph, query string) (fusion.Response,
 	return resp, keys
 }
 
-// TestNLAnswerCarriesSearchCounts: an NL resolve with failed_records 1 gives an
-// answer carrying failed_records 1 beside its nodes and no unreadable_records key;
-// the same counts ride an all-seeds-unhydrated deferral and an index_not_ready
+// TestNLAnswerCarriesWordIndexCounts: an NL resolve reporting 2 bodies not
+// indexed and the excluded word race gives an answer carrying both beside its
+// nodes, and a miss carrying both; with neither reported, neither key appears.
+// The same counts ride an all-seeds-unhydrated deferral and an index_not_ready
 // deferral from the batch read that followed the search.
-func TestNLAnswerCarriesSearchCounts(t *testing.T) {
+func TestNLAnswerCarriesWordIndexCounts(t *testing.T) {
 	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
+	excluded := []string{"race"}
 
 	t.Run("nodes", func(t *testing.T) {
 		g := &fakeGraph{
-			seeds:    map[string][]string{nlQuery: {seed.ID}},
-			entities: map[string]*fusion.Entity{seed.ID: seed},
-			failed:   1,
+			seeds:            map[string][]string{nlQuery: {seed.ID}},
+			entities:         map[string]*fusion.Entity{seed.ID: seed},
+			bodiesNotIndexed: 2,
+			excluded:         excluded,
 		}
 		resp, keys := searchCountKeys(t, g, nlQuery)
-		if len(resp.Nodes) != 1 || string(keys["failed_records"]) != "1" {
-			t.Errorf("nodes=%d failed_records=%s, want 1 and 1", len(resp.Nodes), keys["failed_records"])
+		if len(resp.Nodes) != 1 || string(keys["bodies_not_indexed"]) != "2" || string(keys["excluded"]) != `["race"]` {
+			t.Errorf("nodes=%d bodies_not_indexed=%s excluded=%s, want 1, 2 and [\"race\"]",
+				len(resp.Nodes), keys["bodies_not_indexed"], keys["excluded"])
 		}
-		if _, ok := keys["unreadable_records"]; ok {
-			t.Errorf("unreadable_records present at 0: %s", keys["unreadable_records"])
+	})
+
+	t.Run("miss", func(t *testing.T) {
+		g := &fakeGraph{names: []string{"OnEvent"}, excluded: excluded}
+		resp, keys := searchCountKeys(t, g, nlQuery)
+		if len(resp.Misses) != 1 || string(keys["excluded"]) != `["race"]` {
+			t.Errorf("misses=%d excluded=%s, want 1 and [\"race\"]", len(resp.Misses), keys["excluded"])
+		}
+		if v, ok := keys["bodies_not_indexed"]; ok {
+			t.Errorf("bodies_not_indexed = %s at 0, want no key", v)
+		}
+	})
+
+	t.Run("nothing left out", func(t *testing.T) {
+		g := &fakeGraph{seeds: map[string][]string{nlQuery: {seed.ID}}, entities: map[string]*fusion.Entity{seed.ID: seed}}
+		_, keys := searchCountKeys(t, g, nlQuery)
+		for _, k := range []string{"bodies_not_indexed", "excluded"} {
+			if v, ok := keys[k]; ok {
+				t.Errorf("%s = %s when the reply reported none, want no key", k, v)
+			}
 		}
 	})
 
 	t.Run("deferrals after the search answered", func(t *testing.T) {
 		for name, g := range map[string]*fakeGraph{
-			"all seeds unhydrated": {seeds: map[string][]string{nlQuery: {seed.ID}}, unreadable: 2, failed: 1},
-			"batch not ready":      {seeds: map[string][]string{nlQuery: {seed.ID}}, entErr: indexNotReady(), unreadable: 2, failed: 1},
+			"all seeds unhydrated": {seeds: map[string][]string{nlQuery: {seed.ID}}, bodiesNotIndexed: 2, excluded: excluded},
+			"batch not ready":      {seeds: map[string][]string{nlQuery: {seed.ID}}, entErr: indexNotReady(), bodiesNotIndexed: 2, excluded: excluded},
 		} {
 			t.Run(name, func(t *testing.T) {
 				resp, _ := searchCountKeys(t, g, nlQuery)
-				if !resp.Deferred || resp.UnreadableRecords != 2 || resp.FailedRecords != 1 {
-					t.Errorf("Deferred=%v unreadable=%d failed=%d, want true, 2, 1",
-						resp.Deferred, resp.UnreadableRecords, resp.FailedRecords)
+				if !resp.Deferred || resp.BodiesNotIndexed != 2 || !slices.Equal(resp.Excluded, excluded) {
+					t.Errorf("Deferred=%v bodies_not_indexed=%d excluded=%v, want true, 2, [race]",
+						resp.Deferred, resp.BodiesNotIndexed, resp.Excluded)
 				}
 			})
 		}
 	})
 }
 
-// TestNLMissCarriesSearchCounts: an NL resolve that found no seeds while 3 records
-// were unreadable gives a miss carrying unreadable_records 3.
-func TestNLMissCarriesSearchCounts(t *testing.T) {
-	g := &fakeGraph{names: []string{"OnEvent"}, unreadable: 3}
-	resp, keys := searchCountKeys(t, g, nlQuery)
-	if len(resp.Misses) != 1 || string(keys["unreadable_records"]) != "3" {
-		t.Errorf("misses=%d unreadable_records=%s, want 1 and 3", len(resp.Misses), keys["unreadable_records"])
-	}
-}
-
 // TestSymbolAnswerOmitsCounts: after a symbol resolve the response has neither
 // key, even when the client reports counts.
 func TestSymbolAnswerOmitsCounts(t *testing.T) {
 	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
+	excluded := []string{"race"}
 	for name, g := range map[string]*fakeGraph{
-		"answer": {seeds: map[string][]string{"OnEvent": {seed.ID}}, entities: map[string]*fusion.Entity{seed.ID: seed}, unreadable: 3, failed: 1},
-		"miss":   {names: []string{"OnEvents"}, unreadable: 3, failed: 1},
+		"answer": {seeds: map[string][]string{"OnEvent": {seed.ID}}, entities: map[string]*fusion.Entity{seed.ID: seed}, bodiesNotIndexed: 2, excluded: excluded},
+		"miss":   {names: []string{"OnEvents"}, bodiesNotIndexed: 2, excluded: excluded},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, keys := searchCountKeys(t, g, "OnEvent")
-			for _, k := range []string{"unreadable_records", "failed_records"} {
+			for _, k := range []string{"bodies_not_indexed", "excluded"} {
 				if v, ok := keys[k]; ok {
 					t.Errorf("%s = %s after a symbol resolve, want no key", k, v)
 				}

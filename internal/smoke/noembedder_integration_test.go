@@ -5,9 +5,7 @@ package smoke
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -15,7 +13,6 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/message"
-	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/fusion"
 	"github.com/c360studio/semengine/pkg/fusion/fusionnats"
 )
@@ -90,16 +87,16 @@ func (o observer) graphStatusKeys(t *testing.T) []string {
 }
 
 // TestSmoke_NoEmbedderAnswers holds composed-stack, "The graph stack answers fusion without an
-// embedder": graph-ingest, graph-index and graph-query boot from one configuration with no
-// graph-embedding, and fusion over fusionnats answers symbol and prefix questions from them, misses
-// an unknown name, and refuses a word question as not enabled, naming the semantic verb, never
-// answering it empty.
+// embedder": graph-ingest, graph-index, graph-lexical and graph-query boot from one configuration
+// with no graph-embedding, and fusion over fusionnats answers symbol and prefix questions from
+// them, misses an unknown name, and answers a word question from graph-lexical's word index with
+// provenance lexical.
 func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
 	s := startComposition(t, o, url, graphOnlyStack)
 	f := fixture{platform: s.platform}
-	// StartAll has returned, so the composition is fixed: the three components are listed.
+	// StartAll has returned, so the composition is fixed: the four components are listed.
 	requireComponentsListed(t, s)
 
 	var last uint64
@@ -107,11 +104,13 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 		last = o.publish(t, e)
 	}
 	o.awaitAcknowledged(t, s, last)
-	o.awaitIndexed(t, s)
+	revision := o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
-	// awaitIndexed read graph-ingest's and graph-index's entries, written by this child on a
-	// server the reset emptied, so the listing is complete for both; nothing runs to write a third.
-	if keys, want := o.graphStatusKeys(t), []string{readiness.KeyGraphIndex, readiness.KeyGraphIngest}; !slices.Equal(keys, want) {
+	// awaitIndexed read graph-ingest's, graph-index's and graph-lexical's entries, written by this
+	// child on a server the reset emptied, so the listing is complete for the three; nothing runs to
+	// write a fourth.
+	if keys, want := o.graphStatusKeys(t), []string{readiness.KeyGraphIndex, readiness.KeyGraphIngest,
+		readiness.KeyGraphLexical}; !slices.Equal(keys, want) {
 		t.Fatalf("%s holds keys %v, want %v (no %s)", graph.BucketGraphStatus, keys, want, readiness.KeyGraphEmbedding)
 	}
 
@@ -178,24 +177,17 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 		ContractVersion: fusion.ContractVersion,
 	})
 
-	// A word question goes to graph.query.semantic. graph-query is configured with embedding_enabled
-	// false, so it refuses at once, invalid not_enabled naming the verb, and the refusal reaches the
-	// caller intact (graph-query, "Embedding verbs can be turned off"). Never an empty answer.
+	// A word question goes to graph-lexical's word search. fusion's request names no revision, so
+	// the word index is first asked directly until its reply reflects the batch; nothing is written
+	// after, so fusion's request reads the same index. Only drone1's name holds the word.
+	o.lexicalSearch(t, s, "falcon", revision)
 	resp, err = engine.Fuse(t.Context(), fusion.Request{Query: "falcon", Want: wants}, fleetLens{fusion.ResolveModeNL})
-	var refusal *errs.ClassifiedError
-	if !errors.As(err, &refusal) {
-		t.Fatalf("NL falcon answered %+v (error %v), want a classified refusal", resp, err)
-	}
-	if refusal.Class != errs.ErrorInvalid || refusal.Code != graph.ErrorCodeNotEnabled ||
-		!strings.Contains(refusal.Error(), "semantic is not enabled") {
-		t.Fatalf("NL falcon refused %v (class %v, code %q), want invalid %q naming semantic",
-			refusal, refusal.Class, refusal.Code, graph.ErrorCodeNotEnabled)
-	}
-	if !reflect.DeepEqual(resp, fusion.Response{}) {
-		t.Fatalf("NL falcon returned %+v beside its refusal, want no response", resp)
-	}
-	// not_enabled is a refusal, not an error of graph-query's, so a word question leaves the stack
-	// healthy.
+	requireFused(t, "NL falcon", resp, err, fusion.Response{
+		Provenance:      fusion.ProvenanceLexical,
+		Nodes:           []fusion.Node{node(drone1, "Falcon", "drone", map[string][]fusion.Ref{"next": ref("Kestrel")})},
+		Paths:           []fusion.Path{path(true, "Falcon", "Kestrel", "Osprey", "Harrier", "North Field")},
+		ContractVersion: fusion.ContractVersion,
+	})
 	requireComponentsHealthy(t, s)
 
 	stopStack(t, s)

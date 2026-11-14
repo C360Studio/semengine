@@ -28,6 +28,7 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		"entity":    {graph.ResponderGraphIngest, "entity"},
 		"batch":     {graph.ResponderGraphIngest, "batch"},
 		"prefix":    {graph.ResponderGraphIngest, "prefix"},
+		"prefixIDs": {graph.ResponderGraphIngest, "prefixIDs"},
 		"byName":    {graph.ResponderGraphIndex, "byName"},
 		"predicate": {graph.ResponderGraphIndex, "predicate"},
 		"semantic":  {graph.ResponderGraphEmbedding, "search"},

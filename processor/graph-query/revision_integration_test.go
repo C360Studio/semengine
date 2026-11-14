@@ -230,6 +230,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"entity":        {fmt.Sprintf(`{"id":%q}`, drone1)},
 		"batch":         {fmt.Sprintf(`{"ids":[%q,%q]}`, drone1, absentDrone)},
 		"prefix":        {`{"prefix":"c360","limit":1}`},
+		"prefixIDs":     {`{"prefix":"c360","limit":1}`},
 		"byName":        {`{"name":"Alpha"}`},
 		"predicate":     {fmt.Sprintf(`{"predicate":%q}`, vocabulary.DCTermsTitle), fmt.Sprintf(`{"predicate":%q,"value":"Alpha"}`, vocabulary.DCTermsTitle)},
 		"entityByAlias": {`{"alias":"held-1"}`},

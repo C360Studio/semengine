@@ -54,8 +54,10 @@ var entityVerb = QueryVerb{
 
 // QueryVerbs returns the declared request/reply verbs. Each call returns a new
 // slice, so a caller cannot change the declaration. The entity verb takes an
-// EntityRequest, batch an EntityBatchRequest, prefix a PrefixQueryRequest and
-// predicate a PredicateRequest.
+// EntityRequest, batch an EntityBatchRequest, prefix and prefixIDs a PrefixQueryRequest,
+// and predicate a PredicateRequest. prefix answers the full entities of a page; prefixIDs
+// answers only their IDs and reads no stored value, so a damaged entity is listed where
+// prefix refuses the page.
 // Each entry declares its reply: graph-ingest's are bare, and graph-index's are a
 // QueryResponse whose Data is the entry's Reply, as are the derived-index verbs'
 // (search, similar, bounds, range), of which only search and similar have a responder in
@@ -74,6 +76,8 @@ func QueryVerbs() []QueryVerb {
 			Reply: reflect.TypeFor[EntityBatchResponse]()},
 		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: ResponderGraphIngest,
 			Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "prefixIDs", Subject: "graph.ingest.query.prefixIDs", Responder: ResponderGraphIngest,
+			Reply: reflect.TypeFor[PrefixIDsResponse]()},
 		{Name: "outgoing", Subject: "graph.index.query.outgoing", Responder: ResponderGraphIndex,
 			Enveloped: true, Reply: reflect.TypeFor[OutgoingRelationshipsData]()},
 		{Name: "incoming", Subject: "graph.index.query.incoming", Responder: ResponderGraphIndex,
@@ -106,6 +110,8 @@ func QueryVerbs() []QueryVerb {
 			Reply: reflect.TypeFor[EntityBatchResponse]()},
 		{Name: "prefix", Subject: "graph.query.prefix", Responder: ResponderGraphQuery,
 			Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "prefixIDs", Subject: "graph.query.prefixIDs", Responder: ResponderGraphQuery,
+			Reply: reflect.TypeFor[PrefixIDsResponse]()},
 		{Name: "byName", Subject: "graph.query.byName", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
 		{Name: "predicate", Subject: "graph.query.predicate", Responder: ResponderGraphQuery,

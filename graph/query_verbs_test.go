@@ -8,7 +8,7 @@ import (
 )
 
 // TestQueryVerbsDeclareEachRespondersVerbs: graph-ingest answers exactly
-// entity, batch and prefix on graph.ingest.query.*, and each entry names its
+// entity, batch, prefix and prefixIDs on graph.ingest.query.*, and each entry names its
 // subject and responder. There is no suffix verb. graph-index's eight verbs
 // follow on graph.index.query.*. graph-query's forwards follow on
 // graph.query.*, with the derived-index verbs four of them forward to, and
@@ -27,6 +27,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: false, Reply: reflect.TypeFor[EntityBatchResponse]()},
 		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: "graph-ingest",
 			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "prefixIDs", Subject: "graph.ingest.query.prefixIDs", Responder: "graph-ingest",
+			Enveloped: false, Reply: reflect.TypeFor[PrefixIDsResponse]()},
 		{Name: "outgoing", Subject: "graph.index.query.outgoing", Responder: "graph-index",
 			Enveloped: true, Reply: reflect.TypeFor[OutgoingRelationshipsData]()},
 		{Name: "incoming", Subject: "graph.index.query.incoming", Responder: "graph-index",
@@ -59,6 +61,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: false, Reply: reflect.TypeFor[EntityBatchResponse]()},
 		{Name: "prefix", Subject: "graph.query.prefix", Responder: "graph-query",
 			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "prefixIDs", Subject: "graph.query.prefixIDs", Responder: "graph-query",
+			Enveloped: false, Reply: reflect.TypeFor[PrefixIDsResponse]()},
 		{Name: "byName", Subject: "graph.query.byName", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
 		{Name: "predicate", Subject: "graph.query.predicate", Responder: "graph-query",

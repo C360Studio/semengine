@@ -6,7 +6,7 @@
 // The table in graph decides what it serves. Start subscribes a handler to each verb the table
 // declares for graph-query and fails if one has no handler.
 //
-// entity, batch and prefix forward to graph-ingest's verbs of the same name, byName to graph-index's.
+// entity, batch, prefix and prefixIDs forward to graph-ingest's verbs of the same name, byName to graph-index's.
 // A forward passes the request and reply bytes unchanged, and returns a refusal with its class, code
 // and detail. A request that gets no answer is refused transient with code internal, naming the
 // subject: nothing responding, query_timeout_ms passing, the handler's context ending (natsclient's

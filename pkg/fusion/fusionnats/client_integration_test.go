@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -409,4 +411,76 @@ func TestPoisonedSeedOverRealResponders(t *testing.T) {
 	if !reflect.DeepEqual(hydration.Unhydrated, want) {
 		t.Errorf("Unhydrated = %+v, want %+v", hydration.Unhydrated, want)
 	}
+}
+
+// TestDamagedEntityUnderPrefixOverRealResponders: a damaged value under a prefix, Put after
+// graph-ingest's Start returned, makes graph-query's full-entity prefix page refuse, yet Fuse with a
+// prefix lens answers the two good entities and lists the damaged one unhydrated error (fusion spec,
+// "A prefix resolve lists IDs, then reads them").
+func TestDamagedEntityUnderPrefixOverRealResponders(t *testing.T) {
+	const prefix = "c360.test.fusion.alpha"
+	s := startStack(t)
+	s.create(t, alpha, [2]string{titlePredicate, "Widget Alpha"})
+	s.create(t, beta, [2]string{titlePredicate, "Gadget Beta"})
+
+	js, err := s.client.JetStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv, err := js.KeyValue(t.Context(), graph.BucketEntityStates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A two-part predicate fails the stored-value decode. Put returns once the value is stored, so
+	// every read after it sees the damage.
+	if _, err := kv.Put(t.Context(), poison,
+		[]byte(`{"id":"`+poison+`","triples":[{"subject":"`+poison+`","predicate":"legacy.predicate","object":1}]}`)); err != nil { // predicate-audit:invalid {"kind":"stored-predicate","value":"legacy.predicate","reason":"arity"}
+		t.Fatalf("put poison: %v", err)
+	}
+
+	// The precondition: graph-query's full-entity prefix page, as graph-ingest answers it, is
+	// refused whole.
+	prefixSubject := verbRow(t, graph.ResponderGraphQuery, "prefix").Subject
+	raw, err := s.client.RequestClassified(t.Context(), prefixSubject, []byte(`{"prefix":"`+prefix+`"}`), requestTimeout)
+	var refusal *errs.ClassifiedError
+	if !errors.As(err, &refusal) || refusal.Code != "graph_state_reset_required" {
+		t.Fatalf("prefix with a damaged entity = %s, %v; want a graph_state_reset_required refusal", raw, err)
+	}
+
+	eng, err := fusion.NewEngine(newClient(t, s), fusion.NewBodyResolver(fusion.MapStoreResolver{}), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	resp, err := eng.Fuse(t.Context(), fusion.Request{Query: prefix}, idPrefixLens{})
+	if err != nil {
+		t.Fatalf("Fuse: %v", err)
+	}
+	var names []string
+	for _, node := range resp.Nodes {
+		names = append(names, node.Name)
+	}
+	slices.Sort(names)
+	if want := []string{alpha, beta}; !reflect.DeepEqual(names, want) {
+		t.Errorf("nodes = %v, want %v", names, want)
+	}
+	want := []fusion.Unhydrated{{Handle: poison, Reason: fusion.UnhydratedError}}
+	if !reflect.DeepEqual(resp.Unhydrated, want) {
+		t.Errorf("Unhydrated = %+v, want %+v", resp.Unhydrated, want)
+	}
+}
+
+// idPrefixLens resolves every query as an ID prefix, walks no edges and names each node by its
+// entity ID, so a Fuse call reads only the prefix listing and the seeds.
+type idPrefixLens struct{}
+
+func (idPrefixLens) Name() string                          { return "id-prefix" }
+func (idPrefixLens) ResolveMode(string) fusion.ResolveMode { return fusion.ResolveModePrefix }
+func (idPrefixLens) Edges() []fusion.EdgeSpec              { return nil }
+func (idPrefixLens) Label(e *fusion.Entity) string         { return e.ID }
+func (idPrefixLens) Kind(*fusion.Entity) string            { return "entity" }
+func (idPrefixLens) Location(*fusion.Entity) fusion.Locator {
+	return fusion.Locator{}
+}
+func (idPrefixLens) Hydrate(context.Context, *fusion.Entity) (*message.StorageReference, error) {
+	return nil, nil
 }

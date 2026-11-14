@@ -86,9 +86,10 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   it is poisoned. `fusionnats.Client.Entities` then reads each requested ID alone: the poisoned seed is listed in
   `unhydrated` with reason `error`, the other seeds answer, and if every seed is poisoned the response is `deferred`
   with `all_seeds_unhydrated`. A seed not found when read alone is listed `not_found`; any other error from those
-  reads, including an ended context, still fails the call. A `prefix`
-  resolve whose page holds a poisoned entity still fails the call. *Do:* read `unhydrated` on an
-  answered response, not only on a deferred one.
+  reads, including an ended context, still fails the call. A `prefix` resolve lists IDs with `prefixIDs` and then
+  reads them, so a poisoned entity under the prefix is listed `error` too. Prefix mode sends up to 40 seeds to one
+  `batch` read with no size fit, so very large entities can be refused `response_too_large`. *Do:* read
+  `unhydrated` on an answered response, not only on a deferred one.
 - **A relations read that replies `index_not_ready` still defers the whole response**, nodes already built included, as
   in SemStreams. Relation targets, paths, impact and graph reads do not: they are skipped and labelled.
 - **A node's refs are listed by predicate, then target.** Every edge list is sorted and de-duplicated before the cap
@@ -130,4 +131,5 @@ prefix lenses answer either way.
 
 ## Still open
 
-- A `prefix` resolve whose page holds a poisoned entity fails the call.
+- A `prefix` resolve sends up to 40 seeds to one `batch` read with no size fit, so a prefix over very large entities
+  can be refused `response_too_large`.

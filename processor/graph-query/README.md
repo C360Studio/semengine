@@ -21,7 +21,7 @@ responders, which are not in the tree. `MIGRATION.md` lists what a consumer chan
 
 | Verb on `graph.query.` | Answers from | Reply |
 | --- | --- | --- |
-| `entity`, `batch`, `prefix` | `graph.ingest.query.` same name | bare, as graph-ingest sends it |
+| `entity`, `batch`, `prefix`, `prefixIDs` | `graph.ingest.query.` same name | bare, as graph-ingest sends it |
 | `byName`, `predicate` | `graph.index.query.` same name | enveloped, as graph-index sends it |
 | `entityByAlias` | `graph.index.query.alias`, then `graph.ingest.query.entity` | enveloped by `graph-query`, `data` a `graph.ExactEntity` |
 | `relationships` | `graph.index.query.outgoing` or `incoming` | enveloped by `graph-query`, `data` a list of `graph.RelationshipEdge` |

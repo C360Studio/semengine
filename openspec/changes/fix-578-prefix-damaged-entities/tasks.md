@@ -21,7 +21,7 @@ which closes #578. #656, #657 and #658 stay open.
   `QueryVerbs` and `PrefixQueryRequest`.
 - [x] 2.3 fusionnats, tests then code (design D3). Write the unit tests, then
   `TestDamagedEntityUnderPrefixOverRealResponders`, shown failing on `main`.
-- [ ] 2.4 Docs:
+- [x] 2.4 Docs:
   - Gap statements: `pkg/fusion/README.md:120-121`, `pkg/fusion/MIGRATION.md:89-90` and `:133`.
   - Verb lists: `pkg/fusion/README.md:101-109`, `pkg/fusion/fusionnats/doc.go:11-19`, `graph/README.md:48-55`,
     `processor/graph-ingest/README.md:108-114`, `processor/graph-query/README.md:26`, `processor/graph-query/doc.go:9`,

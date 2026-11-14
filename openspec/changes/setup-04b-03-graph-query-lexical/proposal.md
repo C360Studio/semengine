@@ -51,7 +51,8 @@ around it, so one damaged hit refuses a search until it is fixed in graph-ingest
 ## Rulings
 
 Covered: plan item 3 (#10 comment 6833147079); #563 at tier 0 (6876750057); #624 settled here (6876750265);
-consumers migrate (owner, 2026-11-02). Open: design questions 1 (when to build the tier 1 fallback) and 2 (`HEAD~`).
+consumers migrate (owner, 2026-11-02). Ruled 2026-11-14: design question 1 (tier 1 fallback built with #489)
+and 2 (`HEAD~` searches `head`).
 
 Changed ADR decision, for approval with this proposal: ADR-087 Decision 5 ("Readiness is gated on `COMMUNITY_INDEX`
 only", `docs/adr/087-community-summary-store-ownership.md:96`) stops applying to search, which is ready when

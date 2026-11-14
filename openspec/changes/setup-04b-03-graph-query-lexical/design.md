@@ -110,11 +110,8 @@ and `data.hints`, and composes graph-lexical; `localSearch` callers read `matche
 
 ## Open Questions
 
-1. **Owner question:** build D7's tier 1 fallback (a) with #489's provider and degrade test in 04C, this design being
-   the extension point (recommended); (b) now, on `embedding_enabled`, which until change 4 is also true on tier 0
-   stacks running `BM25Embedder`, so replies with `embedder_type` `bm25` must be discarded, a guard that is debt from
-   the start; or (c) now, on a new `search_fallback` key, one more fact for adopters? With (a), #563 stays open.
-2. **Owner question:** your example `HEAD~` (#624). (a) It stays refused, with advice to quote it: a person pasting
-   `git reset HEAD~` must retype, and `word~` stays free for a fuzzy form. (b) A final `~` separates words, so `HEAD~`
-   searches `head`: a later fuzzy form would change answers given today, and the plan lists typo tolerance as not
-   planned. Recommended: (b). The deltas are written for (b); with (a), the reserved-syntax delta keeps `~`.
+Both ruled by the owner on 2026-11-14 (#563 comment 6877352156, #624 comment 6877352345):
+
+1. **Ruled (a):** the tier 1 fallback is built with #489's provider and degrade test in 04C; D7 is the extension
+   point, and #563 stays open until then.
+2. **Ruled (b):** a final `~` separates words, so `HEAD~` searches `head`; the deltas are written for it.

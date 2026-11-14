@@ -688,3 +688,30 @@ func TestTextTierPoisonIsDeclared(t *testing.T) {
 		t.Errorf("after a valid write: %d warnings, want the first alone", len(got))
 	}
 }
+
+// pageRows is each entity of prefix's first page, by ID, as graph-ingest sends it.
+func pageRows(t *testing.T, client *natsclient.Client, prefix string) map[string]string {
+	t.Helper()
+	raw, err := client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphIngest, "prefix").Subject,
+		fmt.Appendf(nil, `{"prefix":%q,"limit":%d}`, prefix, graph.MaxPrefixQueryLimit), requestTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Entities []json.RawMessage `json:"entities"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatal(err)
+	}
+	rows := map[string]string{}
+	for _, row := range page.Entities {
+		var id struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(row, &id); err != nil {
+			t.Fatal(err)
+		}
+		rows[id.ID] = string(row)
+	}
+	return rows
+}

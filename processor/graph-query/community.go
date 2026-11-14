@@ -21,7 +21,7 @@ const communityRecheck = 5 * time.Second
 type communityView = graphview.View[clustering.Community]
 
 // communityUnavailable is the supervisor's log message for a failed open or an ended view.
-const communityUnavailable = "community view unavailable; localSearch and the text search refuse index_not_ready until it opens again"
+const communityUnavailable = "community view unavailable; localSearch answers without group records and the text search refuses index_not_ready until it opens again"
 
 // superviseCommunities runs views of COMMUNITY_INDEX until ctx, the run context, ends: it opens the
 // bucket through the catalog's reader, which never creates it, runs one view until it returns,

@@ -25,6 +25,8 @@ import (
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	graphlexical "github.com/c360studio/semengine/processor/graph-lexical"
+	"github.com/c360studio/semengine/vocabulary"
 )
 
 const (
@@ -32,6 +34,8 @@ const (
 	// systemGroup is drone1's level-0 group, and its record's key.
 	systemGroup    = "c360.test.query.system"
 	systemGroupKey = "0." + systemGroup
+	// otherDrone is an entity outside systemGroup, in the same level-1 group.
+	otherDrone = "c360.test.query.other.drone.001"
 	// farAhead is a revision no test writes.
 	farAhead = uint64(1) << 40
 )
@@ -96,42 +100,46 @@ func search(t *testing.T, client *natsclient.Client, request string) ([]byte, er
 	return client.RequestClassified(t.Context(), localSearchSubject, []byte(request), requestTimeout)
 }
 
-// awaitSearch sends request until localSearch stops refusing index_not_ready, each refusal being the
-// event, and returns the first other outcome. The view opens and catches up on its own goroutine;
-// go test -timeout ends a view that never does.
-func awaitSearch(t *testing.T, client *natsclient.Client, request string) ([]byte, error) {
+// awaitAnswer sends request until localSearch answers with data done accepts, or refuses, and returns
+// that outcome decoded. Each answer done does not accept is the event that the view, which opens and
+// catches up on its own goroutine, has not applied what the test wrote yet; go test -timeout ends a
+// view that never does.
+func awaitAnswer(t *testing.T, client *natsclient.Client, request string, done func(graph.LocalSearchData) bool) (wireEnvelope, graph.LocalSearchData) {
 	t.Helper()
-	got, err := probe.Await(t.Context(), func(ctx context.Context) (searchOutcome, error) {
-		raw, err := client.RequestClassified(ctx, localSearchSubject, []byte(request), requestTimeout)
-		return searchOutcome{raw, err}, nil
-	}, func(o searchOutcome) bool { return codeOf(o.err) != graph.ErrorCodeIndexNotReady })
-	if err != nil {
-		t.Fatalf("await localSearch %s: %v", request, err)
-	}
-	return got.raw, got.err
-}
-
-// awaitCommunityView waits until the view holds id's group record at entity_revision revision: a
-// request far ahead of it is refused revision_not_reached naming that revision. That refusal comes
-// before any downstream request, and counts no error.
-func awaitCommunityView(t *testing.T, client *natsclient.Client, id string, revision uint64) {
-	t.Helper()
-	request := fmt.Sprintf(`{"entity_id":%q,"query":"drone","min_revision":%d}`, id, farAhead)
 	got, err := probe.Await(t.Context(), func(ctx context.Context) (searchOutcome, error) {
 		raw, err := client.RequestClassified(ctx, localSearchSubject, []byte(request), requestTimeout)
 		return searchOutcome{raw, err}, nil
 	}, func(o searchOutcome) bool {
-		var refusal *errs.ClassifiedError
-		return errors.As(o.err, &refusal) && refusal.Code == graph.ErrorCodeRevisionNotReached &&
-			refusal.Detail["indexed_revision"] == float64(revision)
+		var reply graph.QueryResponse[graph.LocalSearchData]
+		return o.err != nil || json.Unmarshal(o.raw, &reply) != nil || done(reply.Data)
 	})
 	if err != nil {
-		t.Fatalf("await the community view at %d: %v (last %v)", revision, err, got.err)
+		t.Fatalf("await localSearch %s: %v", request, err)
+	}
+	return searchSuccess(t, got.raw, got.err)
+}
+
+// awaitCommunityView waits until c's view of COMMUNITY_INDEX holds key's record at entity_revision
+// revision: the view's own Get, which every search reads it through.
+func awaitCommunityView(t *testing.T, c *Component, key string, revision uint64) {
+	t.Helper()
+	got, err := probe.Await(t.Context(), func(context.Context) (uint64, error) {
+		view := c.communities.Load()
+		if view == nil {
+			return 0, nil
+		}
+		record, _, err := view.Get(key)
+		if err != nil {
+			return 0, nil
+		}
+		return record.EntityRevision, nil
+	}, func(reached uint64) bool { return reached == revision })
+	if err != nil {
+		t.Fatalf("await the community view's %s at %d: %v (last %d)", key, revision, err, got)
 	}
 }
 
-// withCommunityRecord publishes drone1's group record at revision 1 before graph-query starts, then
-// waits for the view, so localSearch's first downstream request is its page read.
+// withCommunityRecord publishes drone1's group record at revision 1 before graph-query starts.
 func withCommunityRecord(t *testing.T, client *natsclient.Client) {
 	t.Helper()
 	_, m := communityRecords(t, client)
@@ -152,23 +160,59 @@ func storedRecord(t *testing.T, kv jetstream.KeyValue, key string) clustering.Co
 	return record
 }
 
-// recordJSON is the reply's record fields for record, from the bucket's own bytes.
+// recordJSON is the reply's record for record, from the bucket's own bytes.
 func recordJSON(t *testing.T, record clustering.Community) string {
 	t.Helper()
-	keywords, err := json.Marshal(record.Keywords)
+	encoded, err := json.Marshal(map[string]any{
+		"member_count": record.MemberCount, "community_summary": record.StatisticalSummary, "keywords": record.Keywords,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	summary, err := json.Marshal(record.StatisticalSummary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fmt.Sprintf(`"community_id":%q,"level":%d,"member_count":%d,"community_summary":%s,"keywords":%s`,
-		record.ID, record.Level, record.MemberCount, summary, keywords)
+	return string(encoded)
 }
 
-// communityStack is real graph-ingest and graph-index behind graph-query, with COMMUNITY_INDEX
-// created before graph-query starts and a real maintainer the test feeds.
+// startWordIndex starts a real graph-lexical on client, following graph-ingest's ENTITY_STATES.
+func startWordIndex(t *testing.T, client *natsclient.Client) {
+	t.Helper()
+	lexical, err := graphlexical.CreateGraphLexical(json.RawMessage(`{}`), component.Dependencies{
+		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
+	})
+	if err != nil {
+		t.Fatalf("CreateGraphLexical: %v", err)
+	}
+	startLifecycle(t, "graph-lexical", lexical)
+}
+
+// wordSearchDirect asks graph-lexical's word search itself, apart from graph-query.
+func wordSearchDirect(t *testing.T, client *natsclient.Client, request graph.LexicalSearchRequest) ([]byte, error) {
+	t.Helper()
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphLexical, "search").Subject, data, requestTimeout)
+}
+
+// awaitWordIndexed waits until the word index has applied revision: until then it refuses
+// index_not_ready or revision_not_reached, each refusal being the event.
+func awaitWordIndexed(t *testing.T, client *natsclient.Client, revision uint64) {
+	t.Helper()
+	request := graph.LexicalSearchRequest{Query: "nothing", MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
+	got, err := probe.Await(t.Context(), func(context.Context) (searchOutcome, error) {
+		raw, err := wordSearchDirect(t, client, request)
+		return searchOutcome{raw, err}, nil
+	}, func(o searchOutcome) bool {
+		code := codeOf(o.err)
+		return code != graph.ErrorCodeIndexNotReady && code != graph.ErrorCodeRevisionNotReached
+	})
+	if err != nil || got.err != nil {
+		t.Fatalf("await the word index at %d: %v, %v", revision, err, got.err)
+	}
+}
+
+// communityStack is real graph-ingest, graph-index and graph-lexical behind graph-query, with
+// COMMUNITY_INDEX created before graph-query starts and a real maintainer the test feeds.
 type communityStack struct {
 	graphStack
 	component  *Component
@@ -179,6 +223,7 @@ type communityStack struct {
 func startCommunityStack(t *testing.T) communityStack {
 	t.Helper()
 	stack := startIngestAndIndex(t)
+	startWordIndex(t, stack.client)
 	kv, m := communityRecords(t, stack.client)
 	c := startComponent(t, stack.client, `{}`)
 	return communityStack{graphStack: stack, component: c, records: kv, maintainer: m}
@@ -204,22 +249,23 @@ func (s communityStack) write(t *testing.T, id string, statements ...[2]string) 
 	return revision
 }
 
-// pageRows is each entity of prefix's first page, by ID, as graph-ingest sends it.
-func pageRows(t *testing.T, client *natsclient.Client, prefix string) map[string]string {
+// batchRows is each entity of a batch read of ids, by ID, as graph-ingest sends it.
+func batchRows(t *testing.T, client *natsclient.Client, ids ...string) map[string]string {
 	t.Helper()
-	raw, err := client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphIngest, "prefix").Subject,
-		fmt.Appendf(nil, `{"prefix":%q,"limit":%d}`, prefix, graph.MaxPrefixQueryLimit), requestTimeout)
+	request, err := json.Marshal(graph.EntityBatchRequest{IDs: ids})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var page struct {
-		Entities []json.RawMessage `json:"entities"`
+	raw, err := client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphIngest, "batch").Subject, request, requestTimeout)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal(raw, &page); err != nil {
+	var reply batchReply
+	if err := json.Unmarshal(raw, &reply); err != nil {
 		t.Fatal(err)
 	}
 	rows := map[string]string{}
-	for _, row := range page.Entities {
+	for _, row := range reply.Entities {
 		var id struct {
 			ID string `json:"id"`
 		}
@@ -245,257 +291,83 @@ func searchSuccess(t *testing.T, raw []byte, err error) (wireEnvelope, graph.Loc
 	return envelope, data
 }
 
-// TestLocalSearchReadsOnePage: beside real graph-ingest, a request with a record is one prefix
-// request for the record's group at the maximum limit, and no entity read (spec, "A group larger
-// than a page", "A group that fits a page", "The reply's fields").
-func TestLocalSearchReadsOnePage(t *testing.T) {
-	stack := startCommunityStack(t)
-	title := func(text string) [2]string { return [2]string{"dc.terms.title", text} }
-	// Every write comes before the spies: write reads each entity back, which a spy would hold.
-	stack.write(t, drone1, title("alpha survey"))
-	stack.write(t, drone2, title("beta survey"))
-	small := stack.write(t, drone3, title("alpha"))
-	const bulk = "c360.test.query.bulk"
-	for i := range graph.MaxPrefixQueryLimit {
-		stack.write(t, fmt.Sprintf("%s.drone.%04d", bulk, i))
+// lexicalReply is a word search success as graph-lexical sends it, at revision.
+func lexicalReply(t *testing.T, revision uint64, data graph.LexicalSearchData) []byte {
+	t.Helper()
+	if data.Results == nil {
+		data.Results = []graph.LexicalHit{}
 	}
-	// The bulk group's only match sorts after every other ID, so past the first page.
-	last := fmt.Sprintf("%s.drone.%04d", bulk, graph.MaxPrefixQueryLimit)
-	stack.write(t, last, title("zebra"))
-	tick(t, stack.maintainer)
-	rows := pageRows(t, stack.client, systemGroup)
-	prefixRequests := spyOnPrefixVerb(t, stack.client)
-	entityRequests := spyOnDownstream(t, stack.client, verbRow(t, graph.ResponderGraphIngest, "entity").Subject)
-
-	t.Run("a group that fits a page", func(t *testing.T) {
-		record := storedRecord(t, stack.records, systemGroupKey)
-		raw, err := awaitSearch(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"Alpha"}`, drone2))
-		envelope, _ := searchSuccess(t, raw, err)
-		if envelope.IndexedRevision != small {
-			t.Errorf("indexed_revision = %d, want the record's %d", envelope.IndexedRevision, small)
-		}
-		// The independent filter: the titles holding "alpha", by ID.
-		requireSameJSON(t, envelope.Data, fmt.Sprintf(`{%s,"entities":[%s,%s],"entities_scanned":3,"entities_truncated":false,"answer":%q}`,
-			recordJSON(t, record), rows[drone1], rows[drone3],
-			"Found 2 matching entities among 3 read from c360.test.query.system. "+record.StatisticalSummary))
-		// awaitSearch may have been refused before the view caught up, which reads nothing.
-		if got := prefixRequests(); len(got) != 1 {
-			t.Fatalf("prefix requests = %q, want one", got)
-		} else {
-			requireSameJSON(t, []byte(got[0]), `{"prefix":"c360.test.query.system","limit":1000}`)
-		}
-		if got := entityRequests(); len(got) != 0 {
-			t.Errorf("entity requests = %q, want none: the record was there", got)
-		}
-	})
-
-	t.Run("a group larger than a page", func(t *testing.T) {
-		record := storedRecord(t, stack.records, "0."+bulk)
-		raw, err := search(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"zebra"}`, last))
-		envelope, _ := searchSuccess(t, raw, err)
-		requireSameJSON(t, envelope.Data, fmt.Sprintf(`{%s,"entities":[],"entities_scanned":1000,"entities_truncated":true,"answer":%q}`,
-			recordJSON(t, record), "Found 0 matching entities among 1000 read from c360.test.query.bulk. "+record.StatisticalSummary))
-		if got := prefixRequests(); len(got) != 1 {
-			t.Fatalf("prefix requests = %d, want one", len(got))
-		}
-		if got := entityRequests(); len(got) != 0 {
-			t.Errorf("entity requests = %q, want none", got)
-		}
-	})
-}
-
-// TestLocalSearchReadsTheAskedLevel: an entity's groups at levels 0 and 1 both have records, and each
-// request answers from the level it asked (spec, "The asked level"; ADR-085).
-func TestLocalSearchReadsTheAskedLevel(t *testing.T) {
-	stack := startCommunityStack(t)
-	const elsewhere = "c360.test.query.other.drone.001"
-	stack.write(t, drone1)
-	stack.write(t, elsewhere)
-	tick(t, stack.maintainer)
-
-	for _, tc := range []struct {
-		request, community string
-		level, members     int
-		entities           []string
-	}{
-		{fmt.Sprintf(`{"entity_id":%q,"query":"drone"}`, drone1), systemGroup, 0, 1, []string{drone1}},
-		{fmt.Sprintf(`{"entity_id":%q,"query":"drone","level":1}`, drone1), "c360.test.query", 1, 2, []string{elsewhere, drone1}},
-		{fmt.Sprintf(`{"entity_id":%q,"query":"drone","level":2}`, drone1), "c360.test", 2, 2, []string{elsewhere, drone1}},
-	} {
-		raw, err := awaitSearch(t, stack.client, tc.request)
-		_, data := searchSuccess(t, raw, err)
-		var ids []string
-		for _, entity := range data.Entities {
-			var row struct {
-				ID string `json:"id"`
-			}
-			if err := json.Unmarshal(entity, &row); err != nil {
-				t.Fatal(err)
-			}
-			ids = append(ids, row.ID)
-		}
-		if data.CommunityID != tc.community || data.Level != tc.level || data.MemberCount != tc.members ||
-			strings.Join(ids, " ") != strings.Join(tc.entities, " ") {
-			t.Errorf("%s: community %q level %d members %d entities %v, want %q %d %d %v",
-				tc.request, data.CommunityID, data.Level, data.MemberCount, ids, tc.community, tc.level, tc.members, tc.entities)
-		}
-	}
-}
-
-// TestLocalSearchReadsItsWriteBack: a write W to an entity of the group is refused
-// revision_not_reached with the record's revision until the group's next tick, then answers at or
-// above W (spec, "Reading a write back through a group").
-func TestLocalSearchReadsItsWriteBack(t *testing.T) {
-	stack := startCommunityStack(t)
-	before := stack.write(t, drone1)
-	tick(t, stack.maintainer)
-	if _, err := awaitSearch(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"drone","min_revision":%d}`, drone1, before)); err != nil {
-		t.Fatalf("the record's own revision: %v", err)
-	}
-
-	written := stack.write(t, drone2)
-	request := fmt.Sprintf(`{"entity_id":%q,"query":"drone","min_revision":%d}`, drone2, written)
-	// The maintainer has drone2, but no tick has published it: the record is still at before.
-	raw, err := search(t, stack.client, request)
-	if reached := indexedRevisionOf(t, raw, err); reached != before {
-		t.Errorf("refusal before the tick names indexed_revision %d, want the record's %d", reached, before)
-	}
-
-	tick(t, stack.maintainer)
-	// The view applies the tick's write on its own goroutine: each refusal until then is the event.
-	got, err := probe.Await(t.Context(), func(ctx context.Context) (searchOutcome, error) {
-		raw, err := stack.client.RequestClassified(ctx, localSearchSubject, []byte(request), requestTimeout)
-		return searchOutcome{raw, err}, nil
-	}, func(o searchOutcome) bool { return codeOf(o.err) != graph.ErrorCodeRevisionNotReached })
+	response, err := graph.NewQueryResponse(graph.ResponderGraphLexical, revision, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, data := searchSuccess(t, got.raw, got.err)
-	if envelope.IndexedRevision < written {
-		t.Errorf("indexed_revision = %d, below the write's %d", envelope.IndexedRevision, written)
-	}
-	if !strings.Contains(string(envelope.Data), drone2) || data.MemberCount != 2 {
-		t.Errorf("data = %s, want drone2 among two members", envelope.Data)
-	}
-}
-
-// TestLocalSearchRefusals: with no record an existing entity is index_not_ready after one entity
-// read, an absent one gets the entity verb's refusal as it arrived; an unreadable record is refused
-// internal naming its key, counted in Health, until a valid write heals it (spec, "No record", "An
-// unreadable record").
-func TestLocalSearchRefusals(t *testing.T) {
-	stack := startCommunityStack(t)
-	stack.write(t, drone1)
-	tick(t, stack.maintainer)
-	// The view is caught up from here on: it answered.
-	if _, err := awaitSearch(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"drone"}`, drone1)); err != nil {
+	encoded, err := json.Marshal(response)
+	if err != nil {
 		t.Fatal(err)
 	}
-	entityRequests := spyOnDownstream(t, stack.client, verbRow(t, graph.ResponderGraphIngest, "entity").Subject)
+	return encoded
+}
 
-	t.Run("no record, the entity exists", func(t *testing.T) {
-		const unpublished = "c360.test.query.unpublished.drone.001"
-		stack.create(t, unpublished)
-		errorsBefore := stack.component.Health().ErrorCount
-		raw, err := search(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"drone"}`, unpublished))
-		requireRefusal(t, raw, err, errs.ErrorTransient, "index_not_ready")
-		if got := entityRequests(); len(got) != 1 {
-			t.Errorf("entity requests = %q, want one", got)
-		} else {
-			requireSameJSON(t, []byte(got[0]), `{"id":"`+unpublished+`"}`)
-		}
-		if got := stack.component.Health().ErrorCount; got != errorsBefore {
-			t.Errorf("ErrorCount = %d, want %d: a group with no record is not an error", got, errorsBefore)
-		}
-	})
-
-	t.Run("no record, the entity absent", func(t *testing.T) {
-		const absent = "c360.test.query.absent.drone.001"
-		_, direct := stack.client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphIngest, "entity").Subject,
-			[]byte(`{"id":"`+absent+`"}`), requestTimeout)
-		want := refusalOf(t, direct)
-		raw, err := search(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"drone"}`, absent))
-		got := refusalOf(t, err)
-		if got.Class != want.Class || got.Code != want.Code || err.Error() != direct.Error() {
-			t.Errorf("refusal = %v %q %q (%s), want the entity verb's %v %q %q", got.Class, got.Code, err, raw, want.Class, want.Code, direct)
-		}
-		entityRequests()
-	})
-
-	t.Run("an unreadable record", func(t *testing.T) {
-		const poisoned, key = "c360.test.query.poison.drone.001", "0.c360.test.query.poison"
-		if _, err := stack.records.Put(t.Context(), key, []byte(`{"id":"c360.test.query.poison","level":0,"member_count":1}`)); err != nil {
-			t.Fatal(err)
-		}
-		request := fmt.Sprintf(`{"entity_id":%q,"query":"drone"}`, poisoned)
-		// Until the view applies the put, the key is absent and the entity too: each entity_not_found
-		// is the event.
-		got, err := probe.Await(t.Context(), func(ctx context.Context) (searchOutcome, error) {
-			raw, err := stack.client.RequestClassified(ctx, localSearchSubject, []byte(request), requestTimeout)
-			return searchOutcome{raw, err}, nil
-		}, func(o searchOutcome) bool { return codeOf(o.err) != graph.ErrorCodeEntityNotFound })
-		if err != nil {
-			t.Fatal(err)
-		}
-		requireRefusal(t, got.raw, got.err, errs.ErrorTransient, "internal")
-		if !strings.Contains(got.err.Error(), key) {
-			t.Errorf("refusal %q does not name %s", got.err, key)
-		}
-		errorsBefore := stack.component.Health().ErrorCount
-		raw, err := search(t, stack.client, request)
-		requireRefusal(t, raw, err, errs.ErrorTransient, "internal")
-		if got := stack.component.Health().ErrorCount; got != errorsBefore+1 {
-			t.Errorf("ErrorCount = %d after one unreadable record, want %d", got, errorsBefore+1)
-		}
-		entityRequests()
-
-		// The group's maintainer writes its record over the poison.
-		stack.write(t, poisoned)
-		tick(t, stack.maintainer)
-		healed, err := probe.Await(t.Context(), func(ctx context.Context) (searchOutcome, error) {
-			raw, err := stack.client.RequestClassified(ctx, localSearchSubject, []byte(request), requestTimeout)
-			return searchOutcome{raw, err}, nil
-		}, func(o searchOutcome) bool { return codeOf(o.err) != graph.ErrorCodeInternal })
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, data := searchSuccess(t, healed.raw, healed.err); data.CommunityID != "c360.test.query.poison" {
-			t.Errorf("healed answer from %q, want c360.test.query.poison", data.CommunityID)
-		}
+// stubWordIndex stands in for graph-lexical's word search, answering every request with reply.
+func stubWordIndex(t *testing.T, client *natsclient.Client, reply []byte) {
+	t.Helper()
+	serve(t, client, verbRow(t, graph.ResponderGraphLexical, "search").Subject, func(context.Context, []byte) ([]byte, error) {
+		return reply, nil
 	})
 }
 
-// overTermLimit is a query of graph.MaxSearchTerms+1 distinct terms.
-func overTermLimit() string {
-	terms := make([]string, graph.MaxSearchTerms+1)
-	for i := range terms {
-		terms[i] = fmt.Sprintf("t%02d", i)
+// stubBatch stands in for graph-ingest's batch verb, answering every request with reply.
+func stubBatch(t *testing.T, client *natsclient.Client, reply string) {
+	t.Helper()
+	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject, func(context.Context, []byte) ([]byte, error) {
+		return []byte(reply), nil
+	})
+}
+
+// titled is an entity row as graph-ingest sends one, holding a title.
+func titled(id, title string) string {
+	return fmt.Sprintf(`{"id":%q,"triples":[{"subject":%q,"predicate":%q,"object":%q}]}`, id, id, vocabulary.DCTermsTitle, title)
+}
+
+// matchIDs is the matches' entity IDs, in order.
+func matchIDs(matches []graph.TextSearchMatch) []string {
+	ids := make([]string, 0, len(matches))
+	for _, match := range matches {
+		ids = append(ids, match.ID)
 	}
-	return strings.Join(terms, " ")
+	return ids
 }
 
-// TestLocalSearchRefusesBadRequests: with the view ready, each bad request is invalid_request
-// naming its field, with no downstream request and no error counted (spec, "A bad request").
-func TestLocalSearchRefusesBadRequests(t *testing.T) {
+// envelopeData is a reply's data as it was sent, for a failure message.
+func envelopeData(raw []byte) string {
+	var reply struct {
+		Data json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(raw, &reply)
+	return string(reply.Data)
+}
+
+// TestSearchRequestsDecodeStrictly: with the word index and the batch verb served, each bad request
+// is invalid_request naming its field, with no request to either and no error counted (spec, "A bad
+// local request").
+func TestSearchRequestsDecodeStrictly(t *testing.T) {
 	client := fixtureClient(t)
-	withCommunityRecord(t, client)
 	c := startComponent(t, client, `{}`)
-	awaitCommunityView(t, client, drone1, 1)
 	// Stubs answer the spies' markers; a bad request reaches neither.
-	for _, name := range []string{"entity", "prefix"} {
-		serve(t, client, verbRow(t, graph.ResponderGraphIngest, name).Subject, func(context.Context, []byte) ([]byte, error) {
+	for _, row := range []graph.QueryVerb{verbRow(t, graph.ResponderGraphLexical, "search"), verbRow(t, graph.ResponderGraphIngest, "batch")} {
+		serve(t, client, row.Subject, func(context.Context, []byte) ([]byte, error) {
 			return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, errors.New("a marker"))
 		})
 	}
-	entityRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphIngest, "entity").Subject)
-	prefixRequests := spyOnPrefixVerb(t, client)
+	wordRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphLexical, "search").Subject)
+	batchRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject)
 
 	for _, tc := range []struct{ name, request, says string }{
-		{"an unknown key", `{"entity_id":"` + drone1 + `","query":"drone","limit":5}`, "limit"},
+		{"an unknown key", `{"entity_id":"` + drone1 + `","query":"drone","scope":["c360"]}`, "scope"},
 		{"a five-part entity_id", `{"entity_id":"c360.test.query.system.drone","query":"drone"}`, "entity_id"},
 		{"level 3", `{"entity_id":"` + drone1 + `","query":"drone","level":3}`, "level"},
-		{"an empty query", `{"entity_id":"` + drone1 + `","query":"  "}`, "query"},
-		{"too many terms", `{"entity_id":"` + drone1 + `","query":"` + overTermLimit() + `"}`, "query"},
+		{"a blank query", `{"entity_id":"` + drone1 + `","query":"  "}`, "query"},
+		{"limit 101", `{"entity_id":"` + drone1 + `","query":"drone","limit":101}`, "limit"},
 		{"not JSON", `not json`, "invalid character"},
 	} {
 		raw, err := search(t, client, tc.request)
@@ -504,40 +376,308 @@ func TestLocalSearchRefusesBadRequests(t *testing.T) {
 			t.Errorf("%s: refusal %q does not name %q", tc.name, err, tc.says)
 		}
 	}
-	if got := entityRequests(); len(got) != 0 {
-		t.Errorf("entity requests = %q, want none", got)
+	if got := wordRequests(); len(got) != 0 {
+		t.Errorf("word search requests = %q, want none", got)
 	}
-	if got := prefixRequests(); len(got) != 0 {
-		t.Errorf("prefix requests = %q, want none", got)
+	if got := batchRequests(); len(got) != 0 {
+		t.Errorf("batch requests = %q, want none", got)
 	}
 	if got := c.Health().ErrorCount; got != 0 {
 		t.Errorf("ErrorCount = %d, want 0", got)
 	}
 }
 
-// TestLocalSearchEntitiesPassUnchanged: a matching entity holding values graph-query does not read, an
-// integer above 2^53 and a key it does not know, reaches the caller as the page sent it (spec,
-// "Entities pass unchanged"). A stub sends the page: real graph-ingest decodes numbers itself.
-func TestLocalSearchEntitiesPassUnchanged(t *testing.T) {
-	client := fixtureClient(t)
-	withCommunityRecord(t, client)
-	startComponent(t, client, `{}`)
-	awaitCommunityView(t, client, drone1, 1)
-	const row = `{"id":"c360.test.query.system.drone.001","triples":[{"subject":"c360.test.query.system.drone.001","predicate":"test.reading.count","object":9007199254740993}],"unknown":{"kept":[1.50,2e3]}}`
-	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, func(context.Context, []byte) ([]byte, error) {
-		return []byte(`{"entities":[` + row + `],"total":1}`), nil
-	})
+// TestLocalSearchIsScopedToTheGroup: over real graph-ingest and graph-lexical, an entity outside the
+// group that the word index ranks first is not a match, and the group's own match is, read back as
+// the batch verb sends it, with the word index's score and revision and the group's record attached
+// (spec, "A better match outside the group"). At level 1 both entities share the group, in the word
+// index's order.
+func TestLocalSearchIsScopedToTheGroup(t *testing.T) {
+	stack := startCommunityStack(t)
+	stack.write(t, drone1, [2]string{vocabulary.DCTermsTitle, "pump station assembly line"})
+	groupLast := stack.write(t, drone2, [2]string{vocabulary.DCTermsTitle, "valve"})
+	last := stack.write(t, otherDrone, [2]string{vocabulary.DCTermsTitle, "pump"})
+	tick(t, stack.maintainer)
+	awaitWordIndexed(t, stack.client, last)
+	awaitCommunityView(t, stack.component, systemGroupKey, groupLast)
+	rows := batchRows(t, stack.client, drone1, otherDrone)
+	record := storedRecord(t, stack.records, systemGroupKey)
 
-	raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"drone"}`)
+	// The premise: unscoped, the entity outside the group is the better match.
+	raw, err := wordSearchDirect(t, stack.client, graph.LexicalSearchRequest{Query: "pump"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unscoped graph.QueryResponse[graph.LexicalSearchData]
+	if err := json.Unmarshal(raw, &unscoped); err != nil {
+		t.Fatal(err)
+	}
+	if hits := unscoped.Data.Results; len(hits) != 2 || hits[0].EntityID != otherDrone || hits[1].EntityID != drone1 {
+		t.Fatalf("unscoped word search = %+v, want %s ranked above %s", hits, otherDrone, drone1)
+	}
+	scores := map[string]float64{}
+	for _, hit := range unscoped.Data.Results {
+		scores[hit.EntityID] = hit.Score
+	}
+
+	wordRequests := spyOnDownstream(t, stack.client, verbRow(t, graph.ResponderGraphLexical, "search").Subject)
+	batchRequests := spyOnDownstream(t, stack.client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject)
+	raw, err = search(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"pump"}`, drone2))
+	envelope, _ := searchSuccess(t, raw, err)
+	if envelope.IndexedRevision != unscoped.IndexedRevision {
+		t.Errorf("indexed_revision = %d, want the word index's %d", envelope.IndexedRevision, unscoped.IndexedRevision)
+	}
+	requireSameJSON(t, envelope.Data, fmt.Sprintf(`{"community_id":%q,"level":0,"record":%s,"record_state":"read",`+
+		`"matches":[{"id":%q,"label":"pump station assembly line","score":%v,"entity":%s}],`+
+		`"matched":1,"missing":0,"bodies_not_indexed":0,"truncated":false,"answer":%q}`,
+		systemGroup, recordJSON(t, record), drone1, scores[drone1], rows[drone1],
+		"Found 1 matching entities in c360.test.query.system. "+record.StatisticalSummary))
+	if got := wordRequests(); len(got) != 1 {
+		t.Errorf("word search requests = %q, want one", got)
+	} else {
+		requireSameJSON(t, []byte(got[0]), `{"query":"pump","limit":0,"scope":["c360.test.query.system"]}`)
+	}
+	if got := batchRequests(); len(got) != 1 {
+		t.Errorf("batch requests = %q, want one", got)
+	} else {
+		requireSameJSON(t, []byte(got[0]), `{"ids":["`+drone1+`"]}`)
+	}
+
+	raw, err = search(t, stack.client, fmt.Sprintf(`{"entity_id":%q,"query":"pump","level":1}`, drone2))
 	_, data := searchSuccess(t, raw, err)
-	if len(data.Entities) != 1 || string(data.Entities[0]) != row {
-		t.Errorf("entities = %s, want exactly [%s]", data.Entities, row)
+	ids := matchIDs(data.Matches)
+	if data.CommunityID != "c360.test.query" || data.Level != 1 || strings.Join(ids, " ") != otherDrone+" "+drone1 {
+		t.Errorf("level 1: community %q level %d matches %v; want c360.test.query, 1, [%s %s]", data.CommunityID, data.Level, ids, otherDrone, drone1)
 	}
 }
 
-// TestLocalSearchFitsMaxPayload: on a broker whose max_payload a page fits but the reply would not,
-// the lowest-ranked matches are left out until the reply fits, entities_truncated is set and the
-// answer counts what was kept (spec, "A reply over the payload limit").
+// TestLocalSearchRecordStates: the same matches are answered whether the community view is missing,
+// holds the group's record, holds none for it or holds an unreadable one; record_state says which,
+// and only the unreadable record counts an error (spec, "No community record").
+func TestLocalSearchRecordStates(t *testing.T) {
+	client := fixtureClient(t)
+	stubWordIndex(t, client, lexicalReply(t, 9, graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: drone1, Score: 1.5}}, Matched: 1}))
+	stubBatch(t, client, `{"entities":[`+titled(drone1, "pump")+`]}`)
+	c := startComponent(t, client, `{}`)
+	const (
+		inGroup     = `{"entity_id":"` + drone1 + `","query":"pump"}`
+		unpublished = `{"entity_id":"c360.test.query.unpublished.drone.001","query":"pump"}`
+		poisoned    = `{"entity_id":"c360.test.query.poison.drone.001","query":"pump"}`
+	)
+	answered := func(t *testing.T, data graph.LocalSearchData, state graph.RecordState) {
+		t.Helper()
+		if data.RecordState != state || (data.Record != nil) != (state == graph.RecordRead) {
+			t.Errorf("record_state %q, record %+v; want %q, a record exactly when read", data.RecordState, data.Record, state)
+		}
+		if len(data.Matches) != 1 || data.Matches[0].ID != drone1 || data.Matched != 1 {
+			t.Errorf("matches %+v, matched %d; want drone1 alone", data.Matches, data.Matched)
+		}
+	}
+
+	t.Run("no view", func(t *testing.T) {
+		raw, err := search(t, client, inGroup)
+		_, data := searchSuccess(t, raw, err)
+		answered(t, data, graph.RecordNotReady)
+	})
+
+	kv, m := communityRecords(t, client)
+	publishDrones(t, m, 1, drone1)
+	awaitCommunityView(t, c, systemGroupKey, 1)
+
+	t.Run("a record", func(t *testing.T) {
+		raw, err := search(t, client, inGroup)
+		_, data := searchSuccess(t, raw, err)
+		answered(t, data, graph.RecordRead)
+		record := storedRecord(t, kv, systemGroupKey)
+		if want := (graph.LocalSearchRecord{MemberCount: record.MemberCount, CommunitySummary: record.StatisticalSummary, Keywords: record.Keywords}); data.Record == nil ||
+			data.Record.MemberCount != want.MemberCount || data.Record.CommunitySummary != want.CommunitySummary ||
+			strings.Join(data.Record.Keywords, " ") != strings.Join(want.Keywords, " ") {
+			t.Errorf("record = %+v, want the bucket's %+v", data.Record, want)
+		}
+	})
+
+	t.Run("no record for the group", func(t *testing.T) {
+		raw, err := search(t, client, unpublished)
+		_, data := searchSuccess(t, raw, err)
+		answered(t, data, graph.RecordNone)
+	})
+	if got := c.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0: a missing record is not an error", got)
+	}
+
+	t.Run("an unreadable record", func(t *testing.T) {
+		if _, err := kv.Put(t.Context(), "0.c360.test.query.poison", []byte(`{"id":"c360.test.query.poison","level":0,"member_count":1}`)); err != nil {
+			t.Fatal(err)
+		}
+		// Until the view applies the put, the group has no record.
+		_, data := awaitAnswer(t, client, poisoned, func(d graph.LocalSearchData) bool { return d.RecordState != graph.RecordNone })
+		answered(t, data, graph.RecordUnreadable)
+		errorsBefore := c.Health().ErrorCount
+		raw, err := search(t, client, poisoned)
+		_, data = searchSuccess(t, raw, err)
+		answered(t, data, graph.RecordUnreadable)
+		if got := c.Health().ErrorCount; got != errorsBefore+1 {
+			t.Errorf("ErrorCount = %d after one answer past an unreadable record, want %d", got, errorsBefore+1)
+		}
+	})
+}
+
+// TestLocalSearchPassesWordIndexRefusals: each refusal the word index sends reaches the caller with
+// its class, code, detail and message, no batch request is made and no error is counted (spec, "A
+// refusal from the word index").
+func TestLocalSearchPassesWordIndexRefusals(t *testing.T) {
+	client := fixtureClient(t)
+	c := startComponent(t, client, `{}`)
+	var refusal error
+	serve(t, client, verbRow(t, graph.ResponderGraphLexical, "search").Subject, func(context.Context, []byte) ([]byte, error) {
+		return nil, refusal
+	})
+	stubBatch(t, client, `{"entities":[]}`)
+	batchRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject)
+
+	for _, want := range []*errs.ClassifiedError{
+		errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady, errors.New("word index replaying")),
+		errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired, errors.New("graph state reset")),
+		errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached, map[string]any{"indexed_revision": 7},
+			errors.New("min_revision 9 is above the indexed revision 7")),
+		errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+			errors.New(`invalid request: "pump*"; put it in double quotes to search it as text`)),
+	} {
+		refusal = want
+		raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"pump*"}`)
+		got := requireRefusal(t, raw, err, want.Class, want.Code)
+		if !strings.Contains(err.Error(), want.Err.Error()) {
+			t.Errorf("%s: refusal %q does not carry the word index's %q", want.Code, err, want.Err)
+		}
+		if fmt.Sprint(got.Detail) != fmt.Sprint(roundTripped(want.Detail)) {
+			t.Errorf("%s: detail = %v, want %v", want.Code, got.Detail, want.Detail)
+		}
+	}
+	if got := batchRequests(); len(got) != 0 {
+		t.Errorf("batch requests = %q, want none", got)
+	}
+	if got := c.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0: a responder's refusal is an answer", got)
+	}
+}
+
+// roundTripped is detail as a JSON round trip gives it back, numbers as float64.
+func roundTripped(detail map[string]any) map[string]any {
+	if detail == nil {
+		return nil
+	}
+	encoded, _ := json.Marshal(detail)
+	var out map[string]any
+	_ = json.Unmarshal(encoded, &out)
+	return out
+}
+
+// TestSearchMatchesKeepHitOrder: the batch sends the hits' entities in another order, and the
+// matches follow the word index's order, each with its score and the batch's bytes; the word search
+// is asked with the request's query, limit and min_revision, scoped to the group, and the batch with
+// the hits in order (spec, "Order and missing hits").
+func TestSearchMatchesKeepHitOrder(t *testing.T) {
+	client := fixtureClient(t)
+	startComponent(t, client, `{}`)
+	hits := []graph.LexicalHit{{EntityID: drone3, Score: 3.5}, {EntityID: drone1, Score: 2.25}, {EntityID: drone2, Score: 1}}
+	stubWordIndex(t, client, lexicalReply(t, 42, graph.LexicalSearchData{Results: hits, Matched: 3, Excluded: []string{"test"}, BodiesNotIndexed: 2}))
+	stubBatch(t, client, `{"entities":[`+titled(drone1, "pump one")+`,`+titled(drone2, "pump two")+`,`+titled(drone3, "pump three")+`]}`)
+	wordRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphLexical, "search").Subject)
+	batchRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject)
+
+	raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"pump -test","limit":3,"min_revision":5}`)
+	envelope, _ := searchSuccess(t, raw, err)
+	if envelope.IndexedRevision != 42 {
+		t.Errorf("indexed_revision = %d, want the word search's 42", envelope.IndexedRevision)
+	}
+	requireSameJSON(t, envelope.Data, `{"community_id":"c360.test.query.system","level":0,"record_state":"not_ready","matches":[`+
+		`{"id":"`+drone3+`","label":"pump three","score":3.5,"entity":`+titled(drone3, "pump three")+`},`+
+		`{"id":"`+drone1+`","label":"pump one","score":2.25,"entity":`+titled(drone1, "pump one")+`},`+
+		`{"id":"`+drone2+`","label":"pump two","score":1,"entity":`+titled(drone2, "pump two")+`}],`+
+		`"matched":3,"excluded":["test"],"missing":0,"bodies_not_indexed":2,"truncated":false,`+
+		`"answer":"Found 3 matching entities in c360.test.query.system."}`)
+	if got := wordRequests(); len(got) != 1 {
+		t.Errorf("word search requests = %q, want one", got)
+	} else {
+		requireSameJSON(t, []byte(got[0]), `{"query":"pump -test","limit":3,"scope":["c360.test.query.system"],"min_revision":5}`)
+	}
+	if got := batchRequests(); len(got) != 1 {
+		t.Errorf("batch requests = %q, want one", got)
+	} else {
+		requireSameJSON(t, []byte(got[0]), `{"ids":["`+drone3+`","`+drone1+`","`+drone2+`"]}`)
+	}
+}
+
+// TestSearchDropsMissingHits: a hit the batch names missing is left out, counted and declared; one
+// it neither sends nor names is graph-query's own refusal, counted, since answering would drop it
+// without saying so; with no hits no batch request is made (spec, "Order and missing hits").
+func TestSearchDropsMissingHits(t *testing.T) {
+	client := fixtureClient(t)
+	c := startComponent(t, client, `{}`)
+	var wordReply, batch []byte
+	serve(t, client, verbRow(t, graph.ResponderGraphLexical, "search").Subject, func(context.Context, []byte) ([]byte, error) {
+		return wordReply, nil
+	})
+	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject, func(context.Context, []byte) ([]byte, error) {
+		return batch, nil
+	})
+	const request = `{"entity_id":"` + drone1 + `","query":"pump"}`
+	hits := []graph.LexicalHit{{EntityID: drone3, Score: 3}, {EntityID: drone2, Score: 2}, {EntityID: drone1, Score: 1}}
+	wordReply = lexicalReply(t, 4, graph.LexicalSearchData{Results: hits, Matched: 3})
+
+	batch = []byte(`{"entities":[` + titled(drone1, "one") + `,` + titled(drone3, "three") + `],"missing":[{"id":"` + drone2 + `","reason":"not_found"}]}`)
+	raw, err := search(t, client, request)
+	_, data := searchSuccess(t, raw, err)
+	if len(data.Matches) != 2 || data.Matches[0].ID != drone3 || data.Matches[1].ID != drone1 || data.Missing != 1 || !data.Truncated ||
+		data.Answer != "Found 3 matching entities in c360.test.query.system. Showing the first 2." {
+		t.Errorf("matches %v, missing %d, truncated %v, answer %q; want drone3 then drone1, one missing, truncated, two shown",
+			matchIDs(data.Matches), data.Missing, data.Truncated, data.Answer)
+	}
+	if got := c.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0: a hit gone since the search is not an error", got)
+	}
+
+	batch = []byte(`{"entities":[` + titled(drone1, "one") + `,` + titled(drone3, "three") + `]}`)
+	raw, err = search(t, client, request)
+	requireRefusal(t, raw, err, errs.ErrorTransient, "internal")
+	if !strings.Contains(err.Error(), drone2) {
+		t.Errorf("refusal %q does not name the unaccounted hit %s", err, drone2)
+	}
+	if got := c.Health().ErrorCount; got != 1 {
+		t.Errorf("ErrorCount = %d, want 1", got)
+	}
+
+	wordReply = lexicalReply(t, 4, graph.LexicalSearchData{Matched: 0})
+	batchRequests := spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject)
+	raw, err = search(t, client, request)
+	if _, data := searchSuccess(t, raw, err); data.Matches == nil || len(data.Matches) != 0 || data.Truncated {
+		t.Errorf("no hits answered %+v, want an empty matches list, not truncated", data)
+	}
+	if got := batchRequests(); len(got) != 0 {
+		t.Errorf("batch requests = %q, want none for no hits", got)
+	}
+}
+
+// TestLocalSearchEntitiesPassUnchanged: a matching entity holding values graph-query does not read, an
+// integer above 2^53 and a key it does not know, reaches the caller as the batch sent it (spec,
+// "Entities pass unchanged"). A stub sends the batch: real graph-ingest decodes numbers itself.
+func TestLocalSearchEntitiesPassUnchanged(t *testing.T) {
+	client := fixtureClient(t)
+	startComponent(t, client, `{}`)
+	const row = `{"id":"c360.test.query.system.drone.001","triples":[{"subject":"c360.test.query.system.drone.001","predicate":"test.reading.count","object":9007199254740993}],"unknown":{"kept":[1.50,2e3]}}`
+	stubWordIndex(t, client, lexicalReply(t, 1, graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: drone1, Score: 1}}, Matched: 1}))
+	stubBatch(t, client, `{"entities":[`+row+`]}`)
+
+	raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"drone"}`)
+	_, data := searchSuccess(t, raw, err)
+	if len(data.Matches) != 1 || string(data.Matches[0].Entity) != row {
+		t.Errorf("matches = %s, want exactly [%s]", envelopeData(raw), row)
+	}
+}
+
+// TestLocalSearchFitsMaxPayload: on a broker whose max_payload the batch reply fits but the search
+// reply would not, the lowest-ranked matches are left out until the reply fits, truncated is set and
+// the answer says how many are shown (spec, "A reply over the payload limit").
 func TestLocalSearchFitsMaxPayload(t *testing.T) {
 	const limit = 8192
 	// Own server: a small max_payload, which the shared server does not have.
@@ -546,64 +686,65 @@ func TestLocalSearchFitsMaxPayload(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	client := natsfixture.Open(t, f.URL(), openClient)
-	_, m := communityRecords(t, client)
-	publishDrones(t, m, 1, drone1)
 	registry := metric.NewMetricsRegistry()
 	startMetered(t, client, registry)
-	awaitCommunityView(t, client, drone1, 1)
 
-	// Rows until the page is just under the limit; every row matches, by its type.
+	// Rows until the batch reply is just under the limit; the hits come in descending ID order, so
+	// the matches' order is the hits' and not the batch's.
 	var rows []string
-	page := func(rows []string) string {
-		return `{"entities":[` + strings.Join(rows, ",") + `],"total":` + fmt.Sprint(len(rows)) + `}`
-	}
+	var hits []graph.LexicalHit
+	batch := func(rows []string) string { return `{"entities":[` + strings.Join(rows, ",") + `]}` }
 	for i := 0; ; i++ {
-		row := fmt.Sprintf(`{"id":"c360.test.query.system.drone.%03d","triples":[{"predicate":"dc.terms.title","object":%q}]}`, i, strings.Repeat("x", 150))
-		if len(page(append(rows, row))) > limit-64 {
+		id := fmt.Sprintf("c360.test.query.system.drone.%03d", i)
+		row := titled(id, strings.Repeat("x", 150))
+		if len(batch(append(rows, row))) > limit-64 {
 			break
 		}
 		rows = append(rows, row)
+		hits = append([]graph.LexicalHit{{EntityID: id, Score: float64(i + 1)}}, hits...)
 	}
-	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, func(context.Context, []byte) ([]byte, error) {
-		return []byte(page(rows)), nil
-	})
+	stubWordIndex(t, client, lexicalReply(t, 1, graph.LexicalSearchData{Results: hits, Matched: len(hits)}))
+	stubBatch(t, client, batch(rows))
 
-	raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"drone"}`)
+	raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"x","limit":100}`)
 	_, data := searchSuccess(t, raw, err)
 	if len(raw) > limit {
 		t.Errorf("reply of %d bytes, over max_payload %d", len(raw), limit)
 	}
-	kept := len(data.Entities)
-	if !data.EntitiesTruncated || kept == 0 || kept >= len(rows) {
-		t.Fatalf("kept %d of %d matches, truncated %v; want some left out and the flag set", kept, len(rows), data.EntitiesTruncated)
+	kept := len(data.Matches)
+	if !data.Truncated || kept == 0 || kept >= len(hits) {
+		t.Fatalf("kept %d of %d matches, truncated %v; want some left out and the flag set", kept, len(hits), data.Truncated)
 	}
-	for i, entity := range data.Entities {
-		if string(entity) != rows[i] { // the rows' IDs ascend, and the scores tie
-			t.Fatalf("entities[%d] = %s, want %s", i, entity, rows[i])
+	for i, match := range data.Matches {
+		if match.ID != hits[i].EntityID || string(match.Entity) != rows[len(rows)-1-i] {
+			t.Fatalf("matches[%d] = %s %s, want the hit %s", i, match.ID, match.Entity, hits[i].EntityID)
 		}
 	}
-	// The page had no continuation, so only the fit cut the answer; the reply returned after the handler counted.
+	// Only the fit cut the answer; the reply returned after the handler counted.
 	if got := truncatedCount(t, registry.PrometheusRegistry(), "localSearch"); got != 1 {
 		t.Errorf("localSearch truncated count = %v, want 1", got)
 	}
-	want := fmt.Sprintf("Found %d matching entities among %d read from c360.test.query.system. Community of 1 entities including 1 drone. Key themes: drone.", kept, len(rows))
+	want := fmt.Sprintf("Found %d matching entities in c360.test.query.system. Showing the first %d.", len(hits), kept)
 	if data.Answer != want {
 		t.Errorf("answer = %q, want %q", data.Answer, want)
 	}
 }
 
-// TestLocalSearchBeforeCommunityIndexExists: with no COMMUNITY_INDEX, Start succeeds, localSearch is
-// refused index_not_ready, transient, the other verbs answer, and Health counts no error (spec,
+// TestLocalSearchBeforeCommunityIndexExists: with no COMMUNITY_INDEX, Start succeeds, localSearch
+// answers with record_state not_ready, the other verbs answer, and Health counts no error (spec,
 // "Before the bucket exists"). Nothing in this test creates the bucket, so no wait can make it ready.
 func TestLocalSearchBeforeCommunityIndexExists(t *testing.T) {
 	client := fixtureClient(t)
 	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "entity").Subject, func(context.Context, []byte) ([]byte, error) {
 		return []byte(`{"entity":{"id":"` + drone1 + `"},"kv_revision":5}`), nil
 	})
+	stubWordIndex(t, client, lexicalReply(t, 5, graph.LexicalSearchData{}))
 	c := startComponent(t, client, `{}`)
 
 	raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"drone"}`)
-	requireRefusal(t, raw, err, errs.ErrorTransient, "index_not_ready")
+	if _, data := searchSuccess(t, raw, err); data.RecordState != graph.RecordNotReady || data.Record != nil {
+		t.Errorf("data = %+v, want record_state not_ready and no record", data)
+	}
 	if _, err := client.RequestClassified(t.Context(), "graph.query.entity", []byte(`{"id":"`+drone1+`"}`), requestTimeout); err != nil {
 		t.Errorf("entity beside a missing COMMUNITY_INDEX: %v", err)
 	}
@@ -613,15 +754,18 @@ func TestLocalSearchBeforeCommunityIndexExists(t *testing.T) {
 }
 
 // TestLocalSearchAfterCommunityIndexAppears: a COMMUNITY_INDEX created and published after Start is
-// answered without a restart, within one reopen interval, with no GRAPH_STATUS key for
+// attached without a restart, within one reopen interval, with no GRAPH_STATUS key for
 // graph-clustering and no COMMUNITY_SUMMARIES (spec, "The bucket appears", "Readiness comes from the
 // view alone"; ADR-087 Decision 5).
 func TestLocalSearchAfterCommunityIndexAppears(t *testing.T) {
 	client := fixtureClient(t)
+	stubWordIndex(t, client, lexicalReply(t, 1, graph.LexicalSearchData{}))
 	startComponent(t, client, `{}`)
 	request := `{"entity_id":"` + drone1 + `","query":"drone"}`
 	raw, err := search(t, client, request)
-	requireRefusal(t, raw, err, errs.ErrorTransient, "index_not_ready")
+	if _, data := searchSuccess(t, raw, err); data.RecordState != graph.RecordNotReady {
+		t.Fatalf("before the bucket: record_state %q, want not_ready", data.RecordState)
+	}
 
 	_, m := communityRecords(t, client)
 	publishDrones(t, m, 1, drone1)
@@ -634,88 +778,83 @@ func TestLocalSearchAfterCommunityIndexAppears(t *testing.T) {
 			t.Fatalf("%s: %v, want no such bucket", bucket, err)
 		}
 	}
-	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, func(context.Context, []byte) ([]byte, error) {
-		return []byte(`{"entities":[{"id":"` + drone1 + `","triples":[]}],"total":1}`), nil
-	})
-	raw, err = awaitSearch(t, client, request)
-	if _, data := searchSuccess(t, raw, err); data.CommunityID != systemGroup || len(data.Entities) != 1 {
-		t.Errorf("data = %+v, want drone1 from %s", data, systemGroup)
+	_, data := awaitAnswer(t, client, request, func(d graph.LocalSearchData) bool { return d.RecordState != graph.RecordNotReady })
+	if data.RecordState != graph.RecordRead || data.CommunityID != systemGroup || data.Record == nil || data.Record.MemberCount != 1 {
+		t.Errorf("data = %+v, want drone1's group record read", data)
 	}
 }
 
-// TestLocalSearchRefusesAfterWatchLoss: COMMUNITY_INDEX deleted under a live view is refused
-// index_not_ready, never answered from the old projection, and answered again from the new bucket's
-// records once it is recreated and published, twice over (spec, "A lost watch"; ADR-081).
-func TestLocalSearchRefusesAfterWatchLoss(t *testing.T) {
+// TestLocalSearchAfterWatchLoss: COMMUNITY_INDEX deleted under a live view answers with record_state
+// not_ready, never with the old projection's record, and attaches the new bucket's record once it is
+// recreated and published, twice over (spec, "A lost watch"; ADR-081). Each new bucket's group holds
+// a different number of members, so a record from an old projection would show.
+func TestLocalSearchAfterWatchLoss(t *testing.T) {
 	client := fixtureClient(t)
+	stubWordIndex(t, client, lexicalReply(t, 1, graph.LexicalSearchData{}))
 	_, m := communityRecords(t, client)
 	publishDrones(t, m, 1, drone1)
-	startComponent(t, client, `{}`)
-	awaitCommunityView(t, client, drone1, 1)
+	c := startComponent(t, client, `{}`)
+	awaitCommunityView(t, c, systemGroupKey, 1)
 	js, err := client.JetStream()
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := fmt.Sprintf(`{"entity_id":%q,"query":"drone","min_revision":%d}`, drone1, farAhead)
+	const request = `{"entity_id":"` + drone1 + `","query":"drone"}`
 
-	for round, revision := range []uint64{10, 20} {
+	for round, members := range [][]string{{drone1, drone2}, {drone1, drone2, drone3}} {
 		if err := js.DeleteKeyValue(t.Context(), graph.BucketCommunityIndex); err != nil {
 			t.Fatalf("round %d: delete: %v", round, err)
 		}
-		// Each revision_not_reached naming the old record is the old view, until its loss is seen.
-		if _, err := probe.Await(t.Context(), func(ctx context.Context) (searchOutcome, error) {
-			raw, err := client.RequestClassified(ctx, localSearchSubject, []byte(request), requestTimeout)
-			return searchOutcome{raw, err}, nil
-		}, func(o searchOutcome) bool { return codeOf(o.err) == graph.ErrorCodeIndexNotReady }); err != nil {
-			t.Fatalf("round %d: %v", round, err)
-		}
+		// Each answer with the old record is the old view, until its loss is seen.
+		awaitAnswer(t, client, request, func(d graph.LocalSearchData) bool { return d.RecordState == graph.RecordNotReady })
 		raw, err := search(t, client, request)
-		requireRefusal(t, raw, err, errs.ErrorTransient, "index_not_ready")
+		if _, data := searchSuccess(t, raw, err); data.RecordState != graph.RecordNotReady {
+			t.Errorf("round %d: after the loss, record_state %q, want not_ready", round, data.RecordState)
+		}
 
 		_, m := communityRecords(t, client)
-		publishDrones(t, m, revision, drone1)
-		awaitCommunityView(t, client, drone1, revision)
+		revision := uint64(10 * (round + 1))
+		publishDrones(t, m, revision, members...)
+		_, data := awaitAnswer(t, client, request, func(d graph.LocalSearchData) bool { return d.RecordState == graph.RecordRead })
+		if data.Record == nil || data.Record.MemberCount != len(members) {
+			t.Errorf("round %d: record %+v, want the new bucket's, %d members", round, data.Record, len(members))
+		}
 	}
 }
 
 // TestLocalSearchDuringBlockedTick: with one group's next record written and another's not, as a
-// tick held between two writes leaves the bucket, each group answers at once from its latest record
+// tick held between two writes leaves the bucket, each group answers at once with its latest record
 // (spec, "During a tick"). Only clustering's fake holds a real tick, so the next record is written
 // straight to the bucket.
 func TestLocalSearchDuringBlockedTick(t *testing.T) {
 	client := fixtureClient(t)
-	const elsewhere = "c360.test.query.other.drone.001"
+	stubWordIndex(t, client, lexicalReply(t, 1, graph.LexicalSearchData{}))
 	kv, m := communityRecords(t, client)
-	publishDrones(t, m, 1, drone1, elsewhere)
-	startComponent(t, client, `{}`)
-	awaitCommunityView(t, client, drone1, 1)
-	awaitCommunityView(t, client, elsewhere, 2)
-	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, func(context.Context, []byte) ([]byte, error) {
-		return []byte(`{"entities":[],"total":0}`), nil
-	})
+	publishDrones(t, m, 1, drone1, otherDrone)
+	c := startComponent(t, client, `{}`)
+	awaitCommunityView(t, c, systemGroupKey, 1)
+	awaitCommunityView(t, c, "0.c360.test.query.other", 2)
 
 	next := `{"id":"c360.test.query.system","level":0,"member_count":7,"entity_revision":30,"type_counts":{"drone":7},"statistical_summary":"the next record."}`
 	if _, err := kv.Put(t.Context(), systemGroupKey, []byte(next)); err != nil {
 		t.Fatal(err)
 	}
-	// Each answer from the old record is the event, until the view has applied the put; none is a refusal.
-	got, err := probe.Await(t.Context(), func(ctx context.Context) (searchOutcome, error) {
-		raw, err := client.RequestClassified(ctx, localSearchSubject, []byte(`{"entity_id":"`+drone1+`","query":"drone"}`), requestTimeout)
-		if err != nil {
-			t.Errorf("drone1 during the tick refused: %v", err)
+	// Each answer with the old record is the event, until the view has applied the put; none may
+	// lack a record.
+	_, data := awaitAnswer(t, client, `{"entity_id":"`+drone1+`","query":"drone"}`, func(d graph.LocalSearchData) bool {
+		if d.RecordState != graph.RecordRead {
+			t.Errorf("drone1 during the tick answered record_state %q", d.RecordState)
+			return true
 		}
-		return searchOutcome{raw, err}, nil
-	}, func(o searchOutcome) bool { return strings.Contains(string(o.raw), `"member_count":7`) })
-	if err != nil {
-		t.Fatal(err)
+		return d.Record.MemberCount == 7
+	})
+	if data.Record == nil || data.Record.CommunitySummary != "the next record." {
+		t.Errorf("drone1's record = %+v, want the next record", data.Record)
 	}
-	if envelope, _ := searchSuccess(t, got.raw, got.err); envelope.IndexedRevision != 30 {
-		t.Errorf("drone1's indexed_revision = %d, want the next record's 30", envelope.IndexedRevision)
-	}
-	raw, err := search(t, client, `{"entity_id":"`+elsewhere+`","query":"drone"}`)
-	envelope, data := searchSuccess(t, raw, err)
-	if envelope.IndexedRevision != 2 || data.MemberCount != 1 || data.CommunityID != "c360.test.query.other" {
-		t.Errorf("the other group answered %s at %d, want its old record at 2", envelope.Data, envelope.IndexedRevision)
+	raw, err := search(t, client, `{"entity_id":"`+otherDrone+`","query":"drone"}`)
+	_, data = searchSuccess(t, raw, err)
+	if data.RecordState != graph.RecordRead || data.Record.MemberCount != 1 || data.CommunityID != "c360.test.query.other" {
+		t.Errorf("the other group answered %+v, want its old record", data)
 	}
 }
 
@@ -730,7 +869,7 @@ func TestStopEndsTheCommunityView(t *testing.T) {
 		if err := c.Start(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		awaitCommunityView(t, client, drone1, 1)
+		awaitCommunityView(t, c, systemGroupKey, 1)
 		if c.communities.Load() == nil {
 			t.Fatal("no view held while it answers")
 		}
@@ -856,7 +995,7 @@ func TestCommunityViewLogsEachNewFailureOnce(t *testing.T) {
 
 	_, m := communityRecords(t, client)
 	publishDrones(t, m, 1, drone1)
-	awaitCommunityView(t, client, drone1, 1)
+	awaitCommunityView(t, c, systemGroupKey, 1)
 	opened := len(logs.await(t, 0))
 	js, err := client.JetStream()
 	if err != nil {

@@ -61,9 +61,10 @@ type TextSearchGroup struct {
 	Keywords         []string `json:"keywords,omitempty"`
 }
 
-// TextSearchMatch is one matching entity: its ID; its label, the first non-empty string value of its
-// most salient label predicate (vocabulary.DiscoverLabelPredicates), omitted when it has none; its
-// score for the question; and the entity as the page sent it, its bytes unchanged.
+// TextSearchMatch is one matching entity, in a text or a local search: its ID; its label, the first
+// non-empty string value of its most salient label predicate (vocabulary.DiscoverLabelPredicates),
+// omitted when it has none; its score for the question (in a local search, the word index's); and
+// the entity as it was read, its bytes unchanged.
 type TextSearchMatch struct {
 	ID     string          `json:"id"`
 	Label  string          `json:"label,omitempty"`

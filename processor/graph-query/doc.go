@@ -1,7 +1,7 @@
 // Package graphquery provides graph-query, the component that answers the graph.query.* verbs
 // declared for it in graph.QueryVerbs. It is a thin layer over graph-ingest and graph-index: they
-// hold the answers. It writes nothing; its one piece of state is a read-only view of the COMMUNITY_INDEX
-// bucket, which localSearch and the text search of globalSearch read.
+// hold the answers, with graph-lexical's word index. It writes nothing; its one piece of state is a
+// read-only view of the COMMUNITY_INDEX bucket, which localSearch and the text search of globalSearch read.
 //
 // The table in graph decides what it serves. Start subscribes a handler to each verb the table
 // declares for graph-query and fails if one has no handler.
@@ -32,16 +32,16 @@
 // error.
 //
 // localSearch searches one group of entities, the entities that share the first 4, 3 or 2 parts of an ID
-// (level 0, 1 or 2). It reads the group's record from the view of COMMUNITY_INDEX, then one page of at most
-// 1,000 entities of the group from graph-ingest's prefix verb, and ranks that page by how well each entity
-// matches the words of the query. The page is in ID order, so on a larger group the matches come from the
-// lexically smallest IDs, and entities_truncated says so. The reply's indexed_revision is the record's
-// entity_revision, and a min_revision above it is refused revision_not_reached before the page is read.
+// (level 0, 1 or 2). It asks graph-lexical's word search, scoped to the group's ID, passing the query, the
+// limit and min_revision unchanged, then reads the hits back with one graph-ingest batch request, so the
+// matches keep the word index's order and each entity comes as graph-ingest sent it. The reply's
+// indexed_revision is the word search's. The group's record from the view of COMMUNITY_INDEX is attached
+// when the view holds one, and record_state says when it does not; a missing record never refuses.
 // Start does not wait for the bucket and does not fail when it is missing: one goroutine opens it, runs
-// the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost, and
-// localSearch and the text search are refused transient index_not_ready until a view has caught up. Stop
-// ends the view. semengine_graph_query_search_truncated_total counts localSearch and text search answers
-// that were cut short.
+// the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost. The text
+// search of globalSearch is refused transient index_not_ready until a view has caught up. Stop ends the
+// view. semengine_graph_query_search_truncated_total counts localSearch and text search answers that were
+// cut short.
 //
 // globalSearch, and searchGraph, which is the same handler under a second name with the same data,
 // choose one strategy from the question and answer with it. A question of one word is an entity

@@ -29,7 +29,8 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 		linked(drone2))
 	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
-	awaitCommunityView(t, stack.client, drone1, written)
+	awaitCommunityView(t, stack.component, systemGroupKey, written)
+	awaitWordIndexed(t, stack.client, written)
 
 	var semantic atomic.Int64
 	for _, name := range []string{"search", "similar"} {

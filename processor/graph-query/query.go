@@ -75,9 +75,10 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		if predicateList := subjectOf(graph.ResponderGraphIndex, "predicateList"); predicateList != "" {
 			handlers["summary"] = c.summary(predicateList, prefix)
 		}
-		if entity != "" {
-			handlers["localSearch"] = c.localSearch(entity, prefix)
-		}
+	}
+	lexical, batch := subjectOf(graph.ResponderGraphLexical, "search"), subjectOf(graph.ResponderGraphIngest, "batch")
+	if lexical != "" && batch != "" {
+		handlers["localSearch"] = c.localSearch(lexical, batch)
 	}
 	return handlers
 }

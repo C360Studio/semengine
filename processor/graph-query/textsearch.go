@@ -3,6 +3,7 @@ package graphquery
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"github.com/c360studio/semengine/graph/clustering"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/graphview"
+	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
 // maxTextGroups is the most groups the text tier reads for one question.
@@ -43,7 +45,7 @@ type textResult struct {
 
 // searchText reads the community records at the request's level once, refuses before any page read
 // what it cannot answer, then reads one prefix page of each group textGroups chooses and ranks its
-// entities as localSearch does. Its refusals, in order: more than graph.MaxSearchTerms terms is
+// entities by the text score. Its refusals, in order: more than graph.MaxSearchTerms terms is
 // invalid_request; a view it cannot read or a level with no record, readable or not, is transient
 // index_not_ready; every record unreadable is transient internal, one error; a min_revision above
 // the mark is transient revision_not_reached naming it.
@@ -238,4 +240,111 @@ func fitTextSearch(data graph.TextSearchData, limit int, encode func(graph.TextS
 		return encode(kept)
 	})
 	return encoded, data.EntitiesTruncated || cut, err
+}
+
+// minTextScore is the score an entity needs to match in the text tier: a constant, since
+// min_text_relevance stays refused.
+const minTextScore = 0.3
+
+// checkedSearchTerms is searchTerms, refusing a query that holds no term or more than
+// graph.MaxSearchTerms.
+func checkedSearchTerms(query string) ([]string, error) {
+	terms := searchTerms(query)
+	if len(terms) == 0 {
+		return nil, errors.New("query holds no terms")
+	}
+	if len(terms) > graph.MaxSearchTerms {
+		return nil, fmt.Errorf("query holds %d distinct terms, more than %d", len(terms), graph.MaxSearchTerms)
+	}
+	return terms, nil
+}
+
+// searchTerms lowercases query and splits it on white space, then removes repeats: a repeated term
+// would weigh twice, so how a query is typed would change who matches. It stops at the first
+// distinct term over graph.MaxSearchTerms, so a long query costs a bounded scan, never a quadratic
+// one.
+func searchTerms(query string) []string {
+	var terms []string
+	for term := range strings.FieldsSeq(strings.ToLower(query)) {
+		if slices.Contains(terms, term) {
+			continue
+		}
+		terms = append(terms, term)
+		if len(terms) > graph.MaxSearchTerms {
+			break
+		}
+	}
+	return terms
+}
+
+// score is the text score: per term, 1.0 when it equals the ID's type position, else 0.5 when it is
+// within a predicate or a string value, all lowercased; the sum over the term count. An ID that
+// does not parse has no type.
+func (e searchEntity) score(terms []string) float64 {
+	if len(terms) == 0 {
+		return 0
+	}
+	var entityType string
+	if eid, err := semtypes.ParseEntityID(e.ID); err == nil {
+		entityType = strings.ToLower(eid.Type)
+	}
+	var text strings.Builder
+	for _, triple := range e.Triples {
+		text.WriteString(strings.ToLower(triple.Predicate))
+		text.WriteString(" ")
+		var value string
+		if json.Unmarshal(triple.Object, &value) == nil {
+			text.WriteString(strings.ToLower(value))
+			text.WriteString(" ")
+		}
+	}
+	searchable := text.String()
+	total := 0.0
+	for _, term := range terms {
+		switch {
+		case term == entityType:
+			total += 1.0
+		case strings.Contains(searchable, term):
+			total += 0.5
+		}
+	}
+	return total / float64(len(terms))
+}
+
+// rankedEntity is a page's entity that matched: its ID, its label, its score and its bytes as the page
+// sent them.
+type rankedEntity struct {
+	id    string
+	label string
+	score float64
+	raw   json.RawMessage
+}
+
+// compareRanked orders matches best first, ties by entity ID.
+func compareRanked(a, b rankedEntity) int {
+	return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.id, b.id))
+}
+
+// rankEntities returns the page's entities scoring at least minTextScore, best first, ties by
+// entity ID, each labelled from labels (nil for no label), and the number of distinct entities
+// read. An ID the page repeats is read once, its first copy. An entity that does not decode is
+// refused, not skipped.
+func rankEntities(page []json.RawMessage, terms, labels []string) ([]rankedEntity, int, error) {
+	seen := make(map[string]bool, len(page))
+	var matches []rankedEntity
+	for _, raw := range page {
+		entity, err := decodeSearchEntity(raw)
+		if err != nil {
+			return nil, 0, err
+		}
+		if seen[entity.ID] {
+			continue
+		}
+		seen[entity.ID] = true
+		if score := entity.score(terms); score >= minTextScore {
+			matches = append(matches, rankedEntity{id: entity.ID, label: entity.label(labels), score: score, raw: raw})
+		}
+	}
+	slices.SortFunc(matches, compareRanked)
+	return matches, len(seen), nil
 }

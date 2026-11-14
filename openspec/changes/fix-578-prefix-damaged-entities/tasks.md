@@ -25,7 +25,11 @@ which closes #578. #656, #657 and #658 stay open.
 - [ ] 2.4 Docs:
   - Gap statements: `pkg/fusion/README.md:120-121`, `pkg/fusion/MIGRATION.md:89-90` and `:133`.
   - Verb lists: `pkg/fusion/README.md:101-109`, `pkg/fusion/fusionnats/doc.go:11-19`, `graph/README.md:48-55`,
-    `processor/graph-ingest/README.md:108-114`, `processor/graph-query/README.md:26`, `processor/graph-query/doc.go:9`.
+    `processor/graph-ingest/README.md:108-114`, `processor/graph-query/README.md:26`, `processor/graph-query/doc.go:9`,
+    `docs/repository-map.md:90`, `processor/graph-ingest/README.md:19`.
+- [ ] 2.5 Before the PR is marked ready: post on #578 what counts as done (the listing lets a caller narrow the read
+  and find the damaged entity; the full prefix page keeps refusing by ruling), and make the PR title and body match
+  the change.
 
 ## 3. Close
 

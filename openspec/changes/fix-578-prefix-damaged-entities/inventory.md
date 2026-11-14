@@ -18,7 +18,7 @@ refusing? Repositories read: this one only. Consumers reach the prefix search th
   `if len(poisoned) > 0 {` (before `:616` — `if firstOtherErr != nil {`); aggregate at `query.go:629` —
   `func aggregateEntityPoisonError(`.
 - Everything a listing needs is done before that decode: request decode `query.go:237` —
-  `if err := json.Unmarshal(data, &req); err != nil {`; key listing `:262-292`; sort and compact `:299-300`;
+  `if err := json.Unmarshal(data, &req); err != nil {`; key listing `:262-292`; sort and compact `:298-299`;
   total `query.go:302` — `total := len(keys)`; cursor `:305-317`; limit `query.go:320` — `pageKeys := keys`.
   One stored value is read before `:330`: `query.go:286` —
   `if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {` (exact six-part prefix; existence only, no

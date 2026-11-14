@@ -77,7 +77,7 @@ of an exact six-part prefix, so a damaged key SHALL be listed, and no damaged en
 `graph.ingest.query.prefixIDs` SHALL check the request, list, sort, drop repeated keys, count, apply the cursor and
 clamp the limit as `graph.ingest.query.prefix` does. Its page SHALL be the longest leading run of the selected keys
 whose whole encoded reply fits the server's maximum payload, with `next_cursor` its last ID when keys follow. A
-cursor SHALL be sent back to the verb that gave it.
+cursor SHALL be promised only on the verb that gave it.
 
 #### Scenario: Walking the cursor
 

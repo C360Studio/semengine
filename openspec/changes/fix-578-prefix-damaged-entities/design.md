@@ -21,9 +21,9 @@ The premises are pinned in `inventory.md` (base `88c7deec`). This design starts 
 - **B. A flag on `PrefixQueryRequest`.** It is smaller: one field and one branch, no rows. But the spec says "A caller
   SHALL decode by verb; nothing SHALL decide a reply's shape from its content" (graph-transport-boundary `:433-437`),
   and a row declares one `Reply`. A flag gives one verb two reply shapes, and the table cannot say which.
-  `TestGraphQueryRepliesDecodeByTheTable` refuses the extra fields. And because graph-ingest decodes without
-  refusing unknown fields (`query.go:237`) and graph-query passes requests through, an older graph-ingest would
-  ignore the flag and answer with full entities. Measured, and rejected.
+  `TestGraphQueryRepliesDecodeByTheTable` refuses the extra fields. Measured, and rejected. (A secondary point:
+  graph-ingest decodes without refusing unknown fields, `query.go:237`, so a responder without the flag would
+  ignore it and answer with full entities.)
 - **C. Do nothing.** Fusion's prefix search keeps failing on one damaged record, and #578 stays open.
 
 ## D1. graph-ingest's `prefixIDs`
@@ -39,7 +39,7 @@ The premises are pinned in `inventory.md` (base `88c7deec`). This design starts 
   the prefix verb.
 - It reads no stored value except the existence check at `:286`. So it makes no damaged-entity record, does not
   change health, and touches no cache.
-- A cursor goes back to the verb that gave it. Using one verb's cursor on the other is not promised.
+- A cursor is promised only on the verb that gave it.
 
 ## D2. Forward and table
 
@@ -61,8 +61,8 @@ The premises are pinned in `inventory.md` (base `88c7deec`). This design starts 
 - Fusion's prefix search answers when an entity under the prefix is damaged, and lists it as unhydrated `error`. A
   key deleted between the listing and the read is listed `not_found` instead of silently dropping out.
 - The prefix mode now sends up to 40 seeds, as `nl` and symbol do. Forty entities that together exceed the server's
-  maximum payload are refused `response_too_large`. Before, the prefix page's byte fit held fewer seeds. File this as
-  an issue on the batch reply. This change does not fix it.
+  maximum payload are refused `response_too_large`. Before, the prefix page's byte fit held fewer seeds. Filed as #659,
+  which stays open; this change does not fix it.
 
 ## Proving tests (failing first)
 
@@ -78,6 +78,10 @@ The premises are pinned in `inventory.md` (base `88c7deec`). This design starts 
     a key twice;
   - a limit from −1 to above 1000;
   - a maximum payload from one-key size upwards.
+
+  The reference model restates the spec's rules itself, never calling the handler's code: the limit clamp (zero or
+  less, or over 1000, means 1000; `query.go:255-259`), the `prefix.` dot rule, and the exact-key fallback that
+  applies only when nothing is listed under the prefix (`:276-291`).
 
   Walk `prefixIDs` from no cursor until `next_cursor` is empty. Against the sorted, distinct reference keys, every
   run must hold:

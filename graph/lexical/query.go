@@ -49,8 +49,11 @@ var reservedFields = []string{"name:", "body:"}
 // ignored.
 //
 // A term outside quotes starting with "name:" or "body:" followed by more
-// text, or ending in a letter or digit followed by "*" or "~", is refused
-// with an error matching ErrReservedSyntax. A query with no plain word and no
+// text, or ending in a letter or digit followed by "*", is refused with an
+// error matching ErrReservedSyntax, whose message names the term and says to
+// quote it. A term that also starts with "*" is emphasis, as in "*bold*", and
+// is read as its words. Every other mark, "~" among them, separates words, so
+// "HEAD~" is the word "head". A query with no plain word and no
 // phrase is refused with ErrEmptyQuery, and one holding more than
 // graph.MaxSearchTerms distinct words, plain, phrase and excluded counted
 // together, with ErrQueryTooLong.
@@ -85,7 +88,7 @@ func ParseQuery(text string) (Query, error) {
 			term := rest[:end]
 			rest = rest[end:]
 			if isReserved(term, strings.HasPrefix(rest, `"`)) {
-				return Query{}, fmt.Errorf("%w: %q", ErrReservedSyntax, term)
+				return Query{}, fmt.Errorf("%w: %q; put it in double quotes to search it as text", ErrReservedSyntax, term)
 			}
 			words = Tokens(term)
 		}
@@ -121,7 +124,8 @@ func ParseQuery(text string) (Query, error) {
 
 // isReserved reports a term, read outside quotes, that a later query form
 // would read differently: a field prefix with something after it (a quote
-// counts), or a letter or digit followed by a final "*" or "~".
+// counts), or a letter or digit followed by a final "*" in a term that does
+// not start with "*".
 func isReserved(term string, quoteFollows bool) bool {
 	for _, field := range reservedFields {
 		if strings.HasPrefix(term, field) && (len(term) > len(field) || quoteFollows) {
@@ -129,7 +133,7 @@ func isReserved(term string, quoteFollows bool) bool {
 		}
 	}
 	last, size := utf8.DecodeLastRuneInString(term)
-	if last != '*' && last != '~' {
+	if last != '*' || strings.HasPrefix(term, "*") {
 		return false
 	}
 	prev, _ := utf8.DecodeLastRuneInString(term[:len(term)-size])
@@ -145,6 +149,20 @@ func (q Query) scored() []string {
 				out = append(out, w)
 			}
 		}
+	}
+	return out
+}
+
+// Excluded returns the query's excluded terms, each as its words in order, in
+// the order the query gave them, so a caller can say which words removed
+// entities. The slices are the caller's own.
+func (q Query) Excluded() [][]string {
+	if len(q.excluded) == 0 {
+		return nil
+	}
+	out := make([][]string, len(q.excluded))
+	for i, x := range q.excluded {
+		out[i] = slices.Clone(x)
 	}
 	return out
 }

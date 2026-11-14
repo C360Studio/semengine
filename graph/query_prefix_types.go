@@ -6,18 +6,21 @@ package graph
 // response, including continuation, against the observed connection limit.
 const MaxPrefixQueryLimit = 1000
 
-// PrefixQueryRequest is the typed request envelope for graph.query.prefix.
+// PrefixQueryRequest is the typed request envelope for graph.query.prefix and
+// graph.query.prefixIDs, and for the graph.ingest.query verbs of the same names.
 //
 // Cursor contract (OPAQUE):
 //   - First page: leave Cursor empty.
 //   - Subsequent pages: pass back the NextCursor value VERBATIM from the
-//     previous PrefixQueryResponse. Consumers MUST NOT parse, construct, or
-//     modify cursor values — the encoding may change between server versions.
+//     previous reply of the same verb (a PrefixQueryResponse for prefix, a
+//     PrefixIDsResponse for prefixIDs); a cursor is promised only on the verb
+//     that gave it. Consumers MUST NOT parse, construct, or modify cursor
+//     values — the encoding may change between server versions.
 //   - Empty NextCursor in the response means the result set is exhausted.
 //
 // Limit semantics:
 //   - <=0, or above MaxPrefixQueryLimit, means MaxPrefixQueryLimit.
-//   - Even within the limit, the server may return fewer entities when the
+//   - Even within the limit, the server may return fewer entities (or IDs) when the
 //     complete encoded response reaches the active NATS max_payload ceiling.
 //     In that case NextCursor is set so the caller can fetch the remainder.
 //
@@ -77,4 +80,18 @@ type PrefixQueryResponse struct {
 
 	// NextCursor is the opaque continuation token; empty = exhausted.
 	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+// PrefixIDsResponse is the reply of the prefixIDs verb: the IDs a PrefixQueryRequest selects,
+// paged as the prefix verb pages, with no stored value read. A damaged entity is listed like
+// any other, so a caller can find it and read the rest around it.
+//
+// IDs is the page's keys in lexicographic order, never null: an empty page is []. Total is
+// counted as PrefixQueryResponse.Total is. NextCursor continues the listing on the next
+// prefixIDs request and is omitted when no key follows the page; a cursor is promised only
+// on the verb that gave it.
+type PrefixIDsResponse struct {
+	IDs        []string `json:"ids"`
+	Total      int      `json:"total"`
+	NextCursor string   `json:"next_cursor,omitempty"`
 }

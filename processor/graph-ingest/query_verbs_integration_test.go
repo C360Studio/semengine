@@ -234,9 +234,10 @@ func TestRepliesMatchTheirTableEntries(t *testing.T) {
 	seedPrefixEntity(t, ctx, c, two)
 
 	requests := map[string]any{
-		"entity": map[string]string{"id": one},
-		"batch":  map[string][]string{"ids": {one, absent}},
-		"prefix": map[string]any{"prefix": "acme", "limit": 1},
+		"entity":    map[string]string{"id": one},
+		"batch":     map[string][]string{"ids": {one, absent}},
+		"prefix":    map[string]any{"prefix": "acme", "limit": 1},
+		"prefixIDs": map[string]any{"prefix": "acme", "limit": 1},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

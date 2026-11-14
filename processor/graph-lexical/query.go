@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/lexical"
@@ -96,9 +97,14 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 	for _, hit := range result.Hits {
 		hits = append(hits, graph.LexicalHit{EntityID: hit.EntityID, Score: hit.Score})
 	}
+	var excluded []string
+	for _, words := range query.Excluded() {
+		excluded = append(excluded, strings.Join(words, " "))
+	}
 	response, err := graph.NewQueryResponse(graph.ResponderGraphLexical, revision, graph.LexicalSearchData{
 		Results:          hits,
 		Matched:          result.Matched,
+		Excluded:         excluded,
 		BodiesNotIndexed: c.apply.notIndexed(),
 	})
 	if err != nil {

@@ -49,7 +49,7 @@ type poisonWire struct {
 
 func (w *poisonWire) RequestClassified(_ context.Context, subject string, data []byte, _ time.Duration) ([]byte, error) {
 	switch subject {
-	case subjectPrefix:
+	case subjectPrefixIDs:
 		return w.prefixReply, nil
 	case subjectBatch:
 		return w.batchReply, w.batchErr
@@ -156,7 +156,7 @@ func (prefixLens) Hydrate(context.Context, *fusion.Entity) (*message.StorageRefe
 // error, rather than failing the call.
 func TestAllSeedsPoisonedDefer(t *testing.T) {
 	w := &poisonWire{
-		prefixReply: mustJSON(t, graph.PrefixQueryResponse{Entities: []graph.EntityState{{ID: seedA}, {ID: seedB}}}),
+		prefixReply: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{seedA, seedB}, Total: 2}),
 		batchErr:    resetRefusal(),
 		entityErr:   map[string]error{seedA: resetRefusal(), seedB: resetRefusal()},
 	}

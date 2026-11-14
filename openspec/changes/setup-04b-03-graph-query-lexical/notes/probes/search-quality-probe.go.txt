@@ -1,0 +1,417 @@
+package clustering
+
+// Throwaway design probe for setup-04b-03. Not for merge. Copy to graph/clustering/ in a copy of the tree.
+
+import (
+	"bufio"
+	"bytes"
+	"cmp"
+	"compress/gzip"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
+	"github.com/c360studio/semengine/graph/lexical"
+	"github.com/c360studio/semengine/message"
+	semtypes "github.com/c360studio/semengine/pkg/types"
+)
+
+type psec struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Body string `json:"body"`
+}
+type pknown struct {
+	Query string `json:"query"`
+	ID    string `json:"id"`
+}
+
+func pload(t *testing.T) ([]psec, []pknown) {
+	dir := filepath.Join("..", "lexical", "testdata", "scorecard")
+	data, err := os.ReadFile(filepath.Join(dir, "corpus.jsonl.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus []psec
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(nil, 1<<20)
+	for sc.Scan() {
+		var s psec
+		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {
+			t.Fatal(err)
+		}
+		corpus = append(corpus, s)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "known.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var items []pknown
+	if err := json.Unmarshal(raw, &items); err != nil {
+		t.Fatal(err)
+	}
+	return corpus, items
+}
+
+// plain BM25 (Lucene idf, k1 1.2, b 0.75), one field, over lexical.Tokens of name and body.
+type pref struct {
+	post map[string][]struct{ d, tf int }
+	dl   []int
+	avg  float64
+}
+
+func newPref(toks [][]string) *pref {
+	r := &pref{post: map[string][]struct{ d, tf int }{}, dl: make([]int, len(toks))}
+	total := 0
+	for d, ts := range toks {
+		r.dl[d] = len(ts)
+		total += len(ts)
+		tf := map[string]int{}
+		for _, w := range ts {
+			tf[w]++
+		}
+		for w, n := range tf {
+			r.post[w] = append(r.post[w], struct{ d, tf int }{d, n})
+		}
+	}
+	r.avg = float64(total) / float64(len(toks))
+	return r
+}
+
+func (r *pref) scores(q []string) []float64 {
+	s := make([]float64, len(r.dl))
+	n := float64(len(r.dl))
+	seen := map[string]bool{}
+	for _, w := range q {
+		if seen[w] {
+			continue
+		}
+		seen[w] = true
+		ps := r.post[w]
+		if len(ps) == 0 {
+			continue
+		}
+		df := float64(len(ps))
+		idf := math.Log(1 + (n-df+0.5)/(df+0.5))
+		for _, p := range ps {
+			tf := float64(p.tf)
+			s[p.d] += idf * tf * 2.2 / (tf + 1.2*(0.25+0.75*float64(r.dl[p.d])/r.avg))
+		}
+	}
+	return s
+}
+
+// substring rule, as processor/graph-query/localsearch.go:96-127 at base 125f6823.
+func pterms(q string) []string {
+	var out []string
+	for _, f := range strings.Fields(strings.ToLower(q)) {
+		if !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func psub(searchable, typ string, terms []string) float64 {
+	if len(terms) == 0 {
+		return 0
+	}
+	total := 0.0
+	for _, term := range terms {
+		switch {
+		case term == typ:
+			total += 1
+		case strings.Contains(searchable, term):
+			total += 0.5
+		}
+	}
+	return total / float64(len(terms))
+}
+
+// group score, as processor/graph-query/textsearch.go:136-153.
+func pgroup(c *Community, terms []string) float64 {
+	score := 0.0
+	summary := strings.ToLower(c.StatisticalSummary)
+	for _, term := range terms {
+		if strings.Contains(summary, term) {
+			score += 2.0
+		}
+		for _, k := range c.Keywords {
+			k = strings.ToLower(k)
+			if strings.Contains(k, term) || strings.Contains(term, k) {
+				score += 1.5
+			}
+		}
+	}
+	return score
+}
+
+type ptally struct {
+	name                string
+	n, r1, r10, missing int
+	mrr                 float64
+}
+
+func (t *ptally) add(rank int) { // rank 1-based, 0 when absent
+	t.n++
+	if rank == 0 {
+		t.missing++
+		return
+	}
+	t.mrr += 1 / float64(rank)
+	if rank == 1 {
+		t.r1++
+	}
+	if rank <= 10 {
+		t.r10++
+	}
+}
+
+func (t *ptally) String() string {
+	f := func(x int) float64 { return 100 * float64(x) / float64(t.n) }
+	return fmt.Sprintf("%-58s n %3d  R@1 %5.1f%%  R@10 %5.1f%%  MRR %.3f  not found %5.1f%%", t.name, t.n, f(t.r1), f(t.r10), t.mrr/float64(t.n), f(t.missing))
+}
+
+type pscored struct {
+	i int
+	s float64
+}
+
+// rankIn ranks target among cands (scores above 0), score desc then ID asc, as both rankers order ties.
+func rankIn(cands []pscored, ids []string, target int) int {
+	var ts float64 = -1
+	for _, c := range cands {
+		if c.i == target {
+			ts = c.s
+		}
+	}
+	if ts <= 0 {
+		return 0
+	}
+	r := 1
+	for _, c := range cands {
+		if c.s > ts || (c.s == ts && ids[c.i] < ids[target]) {
+			r++
+		}
+	}
+	return r
+}
+
+func TestGQProbe(t *testing.T) {
+	corpus, items := pload(t)
+	rule := entitytext.New(nil, 16000)
+	ids := make([]string, len(corpus))
+	pos := map[string]int{}
+	groupOf := make([]string, len(corpus))
+	searchable := make([]string, len(corpus))
+	typ := make([]string, len(corpus))
+	toks := make([][]string, len(corpus))
+	states := make([]*graph.EntityState, len(corpus))
+	ix := lexical.NewIndex()
+	type grp struct {
+		members      []int
+		types, words map[string]int
+	}
+	groups := map[string]*grp{}
+	for i, s := range corpus {
+		ids[i], pos[s.ID] = s.ID, i
+		st := &graph.EntityState{ID: s.ID, Triples: []message.Triple{
+			{Subject: s.ID, Predicate: "doc.section.title", Object: s.Name},
+			{Subject: s.ID, Predicate: "doc.section.content", Object: s.Body},
+		}}
+		states[i] = st
+		doc := rule.Document(st, "")
+		if err := ix.Put(s.ID, lexical.Document{Name: doc.Name, Body: doc.Body}); err != nil {
+			t.Fatal(err)
+		}
+		toks[i] = lexical.Tokens(doc.Name + " " + doc.Body)
+		eid, err := semtypes.ParseEntityID(s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		typ[i] = strings.ToLower(eid.Type)
+		searchable[i] = "doc.section.title " + strings.ToLower(s.Name) + " doc.section.content " + strings.ToLower(s.Body) + " "
+		c, err := newContribution(s.ID, st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		groupOf[i] = c.groups[0]
+		g := groups[c.groups[0]]
+		if g == nil {
+			g = &grp{types: map[string]int{}, words: map[string]int{}}
+			groups[c.groups[0]] = g
+		}
+		g.members = append(g.members, i)
+		g.types[c.typ]++
+		for _, w := range c.words {
+			g.words[w]++
+		}
+	}
+	ref := newPref(toks)
+	records := map[string]*Community{}
+	var keys []string
+	for id, g := range groups {
+		sort.Slice(g.members, func(a, b int) bool { return ids[g.members[a]] < ids[g.members[b]] })
+		records[id] = newCommunity(0, id, len(g.members), 1, g.types, g.words, nil)
+		keys = append(keys, id)
+	}
+	sort.Strings(keys)
+	t.Logf("corpus %d sections, %d questions, %d level-0 groups", len(corpus), len(items), len(keys))
+	for _, k := range keys {
+		t.Logf("  group %-40s %4d members; keywords %v", k, len(groups[k].members), records[k].Keywords)
+	}
+
+	phrasings := []struct {
+		name string
+		wrap func(string) string
+	}{{"keyword", func(h string) string { return h }}, {"question", func(h string) string { return "what is the " + h + "?" }}}
+
+	for _, ph := range phrasings {
+		gRef := &ptally{name: "global, plain BM25 reference (" + ph.name + ")"}
+		gLex := &ptally{name: "global, word index over everything (" + ph.name + ")"}
+		gSubAll := &ptally{name: "global, substring rule over the whole corpus (" + ph.name + ")"}
+		gToday := &ptally{name: "global, today's text tier: 5 groups x 1 page (" + ph.name + ")"}
+		lRef := &ptally{name: "local, plain BM25 reference within the group (" + ph.name + ")"}
+		lLex := &ptally{name: "local, word index scoped to the group (" + ph.name + ")"}
+		lToday := &ptally{name: "local, today: substring rule over one page (" + ph.name + ")"}
+		over100, in100, refused, groupInTop10 := 0, 0, 0, 0
+		var refusedWhy []string
+		for _, it := range items {
+			q := ph.wrap(it.Query)
+			target := pos[it.ID]
+			g := groupOf[target]
+			// reference
+			rs := ref.scores(lexical.Tokens(q))
+			var all, inGroup []pscored
+			for i, s := range rs {
+				if s > 0 {
+					all = append(all, pscored{i, s})
+					if groupOf[i] == g {
+						inGroup = append(inGroup, pscored{i, s})
+					}
+				}
+			}
+			gRef.add(rankIn(all, ids, target))
+			lRef.add(rankIn(inGroup, ids, target))
+			// word index
+			pq, err := lexical.ParseQuery(q)
+			if err != nil {
+				refused++
+				if len(refusedWhy) < 5 {
+					refusedWhy = append(refusedWhy, fmt.Sprintf("%q: %v", q, err))
+				}
+				gLex.add(0)
+				lLex.add(0)
+			} else {
+				res, err := ix.Search(pq, lexical.Options{Limit: ix.Len()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				rank := slices.IndexFunc(res.Hits, func(h lexical.Hit) bool { return h.EntityID == it.ID }) + 1
+				gLex.add(rank)
+				if res.Matched > 100 {
+					over100++
+				}
+				if rank > 0 && rank <= 100 {
+					in100++
+				}
+				for _, h := range res.Hits[:min(10, len(res.Hits))] {
+					if groupOf[pos[h.EntityID]] == g {
+						groupInTop10++
+						break
+					}
+				}
+				sres, err := ix.Search(pq, lexical.Options{Limit: ix.Len(), Scope: []string{g}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				lLex.add(slices.IndexFunc(sres.Hits, func(h lexical.Hit) bool { return h.EntityID == it.ID }) + 1)
+			}
+			// substring rule
+			terms := pterms(q)
+			var subAll []pscored
+			for i := range corpus {
+				if s := psub(searchable[i], typ[i], terms); s >= 0.3 {
+					subAll = append(subAll, pscored{i, s})
+				}
+			}
+			gSubAll.add(rankIn(subAll, ids, target))
+			// local today: first page (1000 by ID) of the answer's group
+			var page []pscored
+			for _, m := range groups[g].members[:min(1000, len(groups[g].members))] {
+				if s := psub(searchable[m], typ[m], terms); s >= 0.3 {
+					page = append(page, pscored{m, s})
+				}
+			}
+			lToday.add(rankIn(page, ids, target))
+			// global today: up to 5 records scoring above 0, one page each
+			type sg struct {
+				k string
+				s float64
+			}
+			var matched []sg
+			for _, k := range keys {
+				if s := pgroup(records[k], terms); s > 0 {
+					matched = append(matched, sg{k, s})
+				}
+			}
+			slices.SortFunc(matched, func(a, b sg) int { return cmp.Or(cmp.Compare(b.s, a.s), cmp.Compare(a.k, b.k)) })
+			var hits []pscored
+			for _, m := range matched[:min(5, len(matched))] {
+				for _, mem := range groups[m.k].members[:min(1000, len(groups[m.k].members))] {
+					if s := psub(searchable[mem], typ[mem], terms); s >= 0.3 {
+						hits = append(hits, pscored{mem, s})
+					}
+				}
+			}
+			gToday.add(rankIn(hits, ids, target))
+		}
+		for _, x := range []*ptally{gRef, gLex, gSubAll, gToday, lRef, lLex, lToday} {
+			t.Log(x)
+		}
+		n := float64(len(items))
+		t.Logf("  %s: word index refused %d of %d; matched above 100 for %.1f%%; answer within the first 100 hits %.1f%%; answer's group among the groups of the first 10 hits %.1f%%",
+			ph.name, refused, len(items), 100*float64(over100)/n, 100*float64(in100)/n, 100*float64(groupInTop10)/n)
+		for _, w := range refusedWhy {
+			t.Logf("    refused: %s", w)
+		}
+	}
+
+	// reply size if hits are hydrated with their stored entity
+	var size10, size100 []int
+	for _, it := range items {
+		pq, err := lexical.ParseQuery(it.Query)
+		if err != nil {
+			continue
+		}
+		res, _ := ix.Search(pq, lexical.Options{Limit: 100})
+		total := 0
+		for k, h := range res.Hits {
+			b, _ := json.Marshal(states[pos[h.EntityID]])
+			total += len(b)
+			if k == 9 {
+				size10 = append(size10, total)
+			}
+		}
+		size100 = append(size100, total)
+	}
+	slices.Sort(size10)
+	slices.Sort(size100)
+	t.Logf("hydrated entity bytes per reply: first 10 hits median %d max %d; first 100 hits median %d max %d (1 MiB = 1048576)",
+		size10[len(size10)/2], size10[len(size10)-1], size100[len(size100)/2], size100[len(size100)-1])
+	_ = errors.New
+}

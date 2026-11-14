@@ -233,35 +233,6 @@ func TestLoadDomainExamples_FileErrors(t *testing.T) {
 	})
 }
 
-// TestExample_VectorField tests that Vector field is properly initialized
-func TestExample_VectorField(t *testing.T) {
-	// The Vector field should not be populated from JSON, it's runtime-only
-	json := `{
-		"domain": "test",
-		"version": "1.0",
-		"examples": [
-			{
-				"query": "test query",
-				"intent": "test_intent",
-				"options": {"key": "value"}
-			}
-		]
-	}`
-
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test.json")
-	err := os.WriteFile(filePath, []byte(json), 0644)
-	require.NoError(t, err)
-
-	examples, err := LoadDomainExamples(filePath)
-	require.NoError(t, err)
-	require.Len(t, examples.Examples, 1)
-
-	ex := examples.Examples[0]
-	// Vector should be nil/empty when loaded from JSON
-	assert.Nil(t, ex.Vector)
-}
-
 // TestExample_JSONRoundTrip tests marshaling and unmarshaling
 func TestExample_JSONRoundTrip(t *testing.T) {
 	original := Example{
@@ -272,7 +243,6 @@ func TestExample_JSONRoundTrip(t *testing.T) {
 			"limit":   10,
 			"enabled": true,
 		},
-		Vector: []float32{0.1, 0.2, 0.3}, // Runtime field
 	}
 
 	// Marshal to JSON
@@ -292,10 +262,6 @@ func TestExample_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "test", restored.Options["pattern"])
 	assert.Equal(t, float64(10), restored.Options["limit"]) // JSON numbers are float64
 	assert.Equal(t, true, restored.Options["enabled"])
-
-	// Vector should NOT be preserved through JSON (json:"-" tag)
-	// It's a runtime-only field, so restored.Vector should be nil
-	assert.Nil(t, restored.Vector)
 }
 
 // TestExample_EmptyQueryString tests handling of empty query strings

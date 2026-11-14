@@ -49,7 +49,7 @@ with their class, code and detail.
 
 #### Scenario: A question the word index refuses
 
-- **WHEN** an NL question holds 33 distinct words, or `name:retry`
+- **WHEN** an NL question holds a syntax the word index refuses, such as `name:retry`
 - **THEN** `Fuse` returns the word index's refusal, class invalid, code `invalid_request`
   (`TestNLWordIndexRefusalReturned`)
 

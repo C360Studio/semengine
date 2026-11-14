@@ -47,8 +47,8 @@ type RetrievalClient interface {
 //
 // It carries Similarity because a natural-language resolve reports a per-result
 // score; without it the engine could rank only by the ORDER seeds arrived in, so a
-// caller asking "how confident is this match?" would have nothing to read. Modes that carry no score (symbol, prefix) leave it zero, which
-// is why HasSimilarity exists rather than treating 0 as a value.
+// caller asking "how confident is this match?" would have nothing to read. Modes
+// that carry no score (symbol, prefix) leave it zero, which is why HasSimilarity exists rather than treating 0 as a value.
 type Seed struct {
 	// ID is the resolved entity ID.
 	ID string

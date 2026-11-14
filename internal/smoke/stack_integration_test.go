@@ -42,6 +42,7 @@ import (
 	graphembedding "github.com/c360studio/semengine/processor/graph-embedding"
 	graphindex "github.com/c360studio/semengine/processor/graph-index"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
+	graphlexical "github.com/c360studio/semengine/processor/graph-lexical"
 	graphquery "github.com/c360studio/semengine/processor/graph-query"
 	"github.com/c360studio/semengine/service"
 	"github.com/c360studio/semengine/types"
@@ -64,7 +65,7 @@ func run(m *testing.M) int {
 	return code
 }
 
-// stackConfig is the one configuration the seven-component stack boots from, as a product would
+// stackConfig is the one configuration the eight-component stack boots from, as a product would
 // write it. The child fills the placeholders from its environment: the NATS URL and the three ports
 // the test picked, and graph-ingest's configuration, {} (its defaults) unless the test passes one.
 // Every other component takes its defaults, except that graph-embedding runs BM25 only,
@@ -90,6 +91,7 @@ const stackConfig = `{
       "config": {"embedder_type": "bm25"}},
     "graph-clustering": {"type": "processor", "name": "graph-clustering", "enabled": true,
       "config": {"detection_interval": "1s"}},
+    "graph-lexical": {"type": "processor", "name": "graph-lexical", "enabled": true, "config": {}},
     "graph-query": {"type": "processor", "name": "graph-query", "enabled": true, "config": {}},
     "graph-gateway": {"type": "gateway", "name": "graph-gateway", "enabled": true, "config": {}},
     "websocket": {"type": "output", "name": "websocket", "enabled": true, "config": {"ports": {
@@ -140,16 +142,17 @@ type composition struct {
 	labels []string
 }
 
-// fullStack is the seven-component stack every test but the no-embedder one boots. graph-clustering's
+// fullStack is the eight-component stack every test but the no-embedder one boots. graph-clustering's
 // key counts what its maintainer holds, not what it has published (readiness.KeyGraphClustering), so
 // awaitIndexed's wait on it orders no community read: checkCommunities waits on the record's own
 // entity_revision.
 var fullStack = composition{
 	name:   "full",
 	config: stackConfig,
-	components: []string{"graph-clustering", "graph-embedding", "graph-gateway", "graph-index", "graph-ingest", "graph-query",
-		"websocket"},
-	indexKeys: []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering},
+	components: []string{"graph-clustering", "graph-embedding", "graph-gateway", "graph-index", "graph-ingest",
+		"graph-lexical", "graph-query", "websocket"},
+	indexKeys: []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering,
+		readiness.KeyGraphLexical},
 }
 
 // graphOnlyStack is the stack with no embedder: graph-embedding neither configured nor registered.
@@ -178,6 +181,7 @@ var componentFactories = map[string]func(*component.Registry) error{
 	"graph-index":      graphindex.Register,
 	"graph-embedding":  graphembedding.Register,
 	"graph-clustering": graphclustering.Register,
+	"graph-lexical":    graphlexical.Register,
 	"graph-query":      graphquery.Register,
 	"graph-gateway":    graphgateway.Register,
 	"websocket":        wsoutput.Register,
@@ -474,7 +478,7 @@ func freeLoopbackPort(t *testing.T) int {
 	return port
 }
 
-// startStack boots the seven-component stack in a child against url, on three ports it picks, and
+// startStack boots the eight-component stack in a child against url, on three ports it picks, and
 // returns once StartAll has returned in it.
 func startStack(t *testing.T, o observer, url string, env ...string) stack {
 	t.Helper()
@@ -727,9 +731,9 @@ func latched(status graph.IndexStatusResponse) string {
 
 // awaitIndexed is the rest of the wait order, after the acknowledgement or a mutation's reply: the
 // ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one, not
-// degraded; then the envelope of each index the composition runs (graph-index, and graph-embedding
-// and graph-clustering where they are configured) at or above that revision; then, where the
-// websocket output is configured, a client it accepts streamed through that revision
+// degraded; then the envelope of each index the composition runs (graph-index, and graph-embedding,
+// graph-clustering and graph-lexical where they are configured) at or above that revision; then,
+// where the websocket output is configured, a client it accepts streamed through that revision
 // (awaitStreamed). It returns the revision. A latched state fails at once, naming it.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	t.Helper()

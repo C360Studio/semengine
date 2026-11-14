@@ -85,6 +85,8 @@ func TestReservedSubjectsDeclaredOnceSensitivity(t *testing.T) {
 			"package x\n\nconst s = \"graph.spatial.query.bounds\"\n", "processor/x/x.go:3"},
 		{"temporal range subject", "processor/x/x.go",
 			"package x\n\nconst s = \"graph.temporal.query.range\"\n", "processor/x/x.go:3"},
+		{"lexical search subject", "processor/x/x.go",
+			"package x\n\nconst s = \"graph.lexical.query.search\"\n", "processor/x/x.go:3"},
 		{"mutation prefix", "processor/x/x.go",
 			"package x\n\nfunc subject(op string) string {\n\treturn \"graph.mutation.\" + op\n}\n", "processor/x/x.go:4"},
 		{"mutation family", "processor/x/x.go", "package x\n\nconst family = \"graph.mutation.>\"\n",

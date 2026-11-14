@@ -66,6 +66,11 @@ readonly targets=(
   "pkg/fusion/fusionnats unit"
   # graph/lexical is in-memory only: its unit lane is the whole of its tests.
   "graph/lexical unit"
+  # setup-04b-02-lexical-processor task 3.1: entitytext is the one text rule graph-embedding and graph-lexical
+  # share, in-memory only, so its unit lane holds the floor alone; graph-lexical's unit lane (fakes) and
+  # integration lane (real NATS and an object store) test different code.
+  "graph/entitytext unit"
+  "processor/graph-lexical merged"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

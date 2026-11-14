@@ -147,14 +147,21 @@ func wantOf(inputs ...entityInput) want {
 // ask sends request to graph-query's verb and returns the reply bytes or the classified refusal.
 func (o observer) ask(t *testing.T, verb string, request any) ([]byte, error) {
 	t.Helper()
+	return o.askResponder(t, graph.ResponderGraphQuery, verb, request)
+}
+
+// askResponder sends request to responder's verb, its subject read from graph's verb table, and
+// returns the reply bytes or the classified refusal.
+func (o observer) askResponder(t *testing.T, responder, verb string, request any) ([]byte, error) {
+	t.Helper()
 	subject := ""
 	for _, v := range graph.QueryVerbs() {
-		if v.Responder == graph.ResponderGraphQuery && v.Name == verb {
+		if v.Responder == responder && v.Name == verb {
 			subject = v.Subject
 		}
 	}
 	if subject == "" {
-		t.Fatalf("graph-query has no verb %s", verb)
+		t.Fatalf("%s has no verb %s", responder, verb)
 	}
 	data, err := json.Marshal(request)
 	if err != nil {
@@ -236,9 +243,10 @@ func requireRefusal(t *testing.T, what string, reply []byte, err error, code, te
 
 // checkAnswers is the one oracle: every answer the stack gives about w, read after the ordered
 // waits. revision is the ENTITY_STATES revision awaitIndexed read after the last write, which the
-// community checks wait on. deleted are IDs the stack must no longer hold. s is the running stack,
-// which the search and community checks' waits watch.
-func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted ...string) {
+// community and word search checks wait on. deleted are IDs the stack must no longer hold. s is the
+// running stack, which the search and community checks' waits watch. It returns graph-lexical's
+// replies by word (checkLexical), which a restart test compares with the restarted stack's.
+func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted ...string) lexicalReplies {
 	t.Helper()
 	lead := f.id(drone1)
 	ids := slices.Sorted(maps.Keys(w))
@@ -311,6 +319,7 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision
 		t.FailNow()
 	}
 	checkSearch(t, o, s, f, w, deleted)
+	return checkLexical(t, o, s, f, w, revision, deleted)
 }
 
 // checkSummary compares the summary with the counts written from w.
@@ -409,9 +418,9 @@ func (e entityInput) name() string {
 	return ""
 }
 
-// words is e's name as graph-embedding's BM25 embedder tokenizes these names: lowercased, split
-// on spaces. No fixture name holds a stopword, a word under two letters, or a suffix the
-// embedder's stemmer strips.
+// words is e's name as graph-embedding's BM25 embedder and graph-lexical's word index tokenize these
+// names: lowercased, split on spaces. No fixture name holds a stopword, a word under two letters, a
+// suffix the embedder's stemmer strips, or a plural the word index folds.
 func (e entityInput) words() []string { return strings.Fields(strings.ToLower(e.name())) }
 
 // fixedInput is the fixed entity id.
@@ -597,6 +606,129 @@ func checkSearch(t *testing.T, o observer, s stack, f fixture, w want, deleted [
 	}
 }
 
+// lexicalReplies are graph-lexical's search replies, by the word asked.
+type lexicalReplies map[string]graph.LexicalSearchData
+
+// lexicalAnswer is one graph-lexical search reply, or the refusal.
+type lexicalAnswer struct {
+	reply graph.QueryResponse[graph.LexicalSearchData]
+	raw   []byte
+	err   error
+}
+
+// lexicalSearch asks graph-lexical's search verb for word until the reply's indexed_revision reaches
+// revision. The word index applies ENTITY_STATES in its own process, so the reply's
+// indexed_revision is the one event that orders the read after the writes up to revision.
+// index_not_ready before the first build is asked again; a lost feed, which holds until the process
+// restarts, and every other refusal end the wait and fail.
+func (o observer) lexicalSearch(t *testing.T, s stack, word string, revision uint64) graph.QueryResponse[graph.LexicalSearchData] {
+	t.Helper()
+	request := graph.LexicalSearchRequest{Query: word}
+	what := fmt.Sprintf("graph-lexical search %q at indexed_revision %d or above", word, revision)
+	got := await(t, s, what, func(context.Context) (lexicalAnswer, error) {
+		var a lexicalAnswer
+		a.raw, a.err = o.askResponder(t, graph.ResponderGraphLexical, "search", request)
+		if a.err == nil {
+			a.err = json.Unmarshal(a.raw, &a.reply)
+		}
+		return a, nil
+	}, func(a lexicalAnswer) bool {
+		var refusal *errs.ClassifiedError
+		if errors.As(a.err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady {
+			return strings.Contains(refusal.Error(), "feed is lost")
+		}
+		return a.err != nil || a.reply.IndexedRevision >= revision
+	})
+	if got.err != nil {
+		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
+	}
+	if got.reply.Producer != graph.ResponderGraphLexical {
+		t.Fatalf("%s: producer %q, want %q", what, got.reply.Producer, graph.ResponderGraphLexical)
+	}
+	return got.reply
+}
+
+// lexicalIDs is the hits' entity IDs, in the order the reply gave them.
+func lexicalIDs(hits []graph.LexicalHit) []string {
+	out := make([]string, len(hits))
+	for i, hit := range hits {
+		out[i] = hit.EntityID
+	}
+	return out
+}
+
+// checkLexical checks graph-lexical's search verb against w (composed-stack, "Answers from one
+// configuration"), each reply read once it reflects revision. The expected hits are written from
+// the fixed names: each entity's keyword (keywords), held by its name alone, answers that entity
+// alone while it is live and nothing once it is deleted; and "field", which every base's name holds,
+// answers exactly the live bases. Every base's name is two words, one of them "field", and holds no
+// other text, so each base scores the same and the ties order by entity ID. The fixture has no
+// offloaded bodies, so none is counted as not indexed. It returns the replies by word.
+func checkLexical(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) lexicalReplies {
+	t.Helper()
+	inputs := slices.Collect(maps.Values(w))
+	for _, id := range deleted {
+		inputs = append(inputs, f.fixedInput(t, id))
+	}
+	replies := lexicalReplies{}
+	check := func(word string, wantHits []string) {
+		data := o.lexicalSearch(t, s, word, revision).Data
+		replies[word] = data
+		hits := lexicalIDs(data.Results)
+		if !slices.Equal(hits, wantHits) || data.Matched != len(wantHits) || data.BodiesNotIndexed != 0 {
+			t.Errorf("graph-lexical search %q answered %v (matched %d, %d bodies not indexed), want %v (matched %d, 0)",
+				word, hits, data.Matched, data.BodiesNotIndexed, wantHits, len(wantHits))
+		}
+		for _, hit := range data.Results {
+			if hit.Score <= 0 || hit.Score != data.Results[0].Score {
+				t.Errorf("graph-lexical search %q scored %+v, want every hit the same score above 0", word, data.Results)
+				break
+			}
+		}
+	}
+
+	keyword := keywords(t, inputs)
+	for _, e := range inputs {
+		wantHits := []string{}
+		if _, live := w[e.id]; live {
+			wantHits = []string{e.id}
+		}
+		check(keyword[e.id], wantHits)
+	}
+
+	const baseWord = "field"
+	bases := []string{}
+	for _, id := range slices.Sorted(maps.Keys(w)) {
+		if slices.Contains(w[id].words(), baseWord) {
+			bases = append(bases, id)
+		}
+	}
+	if len(bases) == 0 {
+		t.Fatalf("no live entity's name holds %q, so the search would prove nothing", baseWord)
+	}
+	check(baseWord, bases)
+	if t.Failed() {
+		t.FailNow()
+	}
+	return replies
+}
+
+// requireLexicalKept fails unless graph-lexical answers each word in before as it did then, hits,
+// order and scores, once its reply reflects revision. A restarted process rebuilds its word index
+// from ENTITY_STATES, and nothing is written between the two replies, so the index it rebuilt must
+// score as the one it replaced.
+func requireLexicalKept(t *testing.T, o observer, s stack, revision uint64, before lexicalReplies) {
+	t.Helper()
+	for _, word := range slices.Sorted(maps.Keys(before)) {
+		if got := o.lexicalSearch(t, s, word, revision).Data; !reflect.DeepEqual(got, before[word]) {
+			t.Errorf("graph-lexical search %q answered %+v after the restart, want %+v as before it", word, got, before[word])
+		}
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+}
+
 // matching is a one-word search's matches among w, sorted by ID, written from the text score
 // localSearch and the text search state (graph.LocalSearchData; processor/graph-query/localsearch.go,
 // score): one word matches an entity when it equals the ID's type position or lies within one of the
@@ -740,7 +872,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	o := newObserver(t, url)
 	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
-	// StartAll has returned, so the composition is fixed: the seven components are listed.
+	// StartAll has returned, so the composition is fixed: the eight components are listed.
 	requireComponentsListed(t, s)
 
 	inputs := f.fixedEntities()
@@ -803,9 +935,9 @@ func (o observer) deleteEntity(t *testing.T, id string) {
 // checkWritesAfterRestart publishes one new entity and one edit to a restarted stack, waits on the
 // ordered waits after them, and checks the answers: before plus the two writes. It returns what the
 // stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
-// graph-index, graph-embedding and graph-clustering envelopes and the community record an earlier
-// process left, at a lower revision, cannot pass them; the new entity's record and the edit's
-// record at its new revision are ones no earlier process can have written.
+// graph-index, graph-embedding, graph-clustering and graph-lexical envelopes and the community
+// record an earlier process left, at a lower revision, cannot pass them; the new entity's record
+// and the edit's record at its new revision are ones no earlier process can have written.
 func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, before want) want {
 	t.Helper()
 	o.publish(t, f.newDrone())
@@ -821,7 +953,8 @@ func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, befor
 
 // TestSmoke_StackRestartKeepsAnswers holds composed-stack, "Stop and start the stack": the stack
 // stops on SIGTERM, a new process boots from the same configuration on the same server, and it
-// answers what the first one did plus what is published after the restart.
+// answers what the first one did plus what is published after the restart. Before any new write,
+// graph-lexical's replies equal the first process's, hits, order and scores.
 func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -838,7 +971,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	revision := o.awaitIndexed(t, first)
 	requireComponentsHealthy(t, first)
 	before := wantOf(inputs...)
-	checkAnswers(t, o, first, f, before, revision)
+	lexical := checkAnswers(t, o, first, f, before, revision)
 	t.Logf("first process, %s: %v", reindexMetric, readReindexCounter(t, first))
 	stopStack(t, first)
 
@@ -848,6 +981,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 		t.Fatalf("the restarted stack reports platform %q, want the first process's %q", second.platform, first.platform)
 	}
 	requireComponentsListed(t, second)
+	requireLexicalKept(t, o, second, revision, lexical)
 	checkWritesAfterRestart(t, o, second, f, before)
 	t.Logf("second process, %s: %v", reindexMetric, readReindexCounter(t, second))
 	stopStack(t, second)
@@ -1029,7 +1163,8 @@ func restartBrokerKeepingURL(t *testing.T, broker *natsfixture.Fixture) {
 // TestSmoke_BrokerRestartBetweenRuns holds composed-stack, "Restart the broker while the stack is
 // stopped": the stack stops on SIGTERM, the NATS server restarts on the same URL with its file
 // storage, and a new process boots from the same configuration and answers what the first one did
-// plus what is published after the restart.
+// plus what is published after the restart. Before any new write, graph-lexical's replies equal the
+// first process's, hits, order and scores.
 func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 	// Own server: restarts the NATS server between the two boots, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -1043,9 +1178,11 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 	// The first boot runs in a subtest, so its observer's connection is closed before the restart:
 	// Restart's caller stops what it built on the URL first (natsfixture/restart.go).
 	var (
-		first  stack
-		f      fixture
-		before want
+		first    stack
+		f        fixture
+		before   want
+		revision uint64
+		lexical  lexicalReplies
 	)
 	if !t.Run("first boot", func(t *testing.T) {
 		o := newObserver(t, url)
@@ -1059,10 +1196,10 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 			last = o.publish(t, e)
 		}
 		o.awaitAcknowledged(t, first, last)
-		revision := o.awaitIndexed(t, first)
+		revision = o.awaitIndexed(t, first)
 		requireComponentsHealthy(t, first)
 		before = wantOf(inputs...)
-		checkAnswers(t, o, first, f, before, revision)
+		lexical = checkAnswers(t, o, first, f, before, revision)
 		stopStack(t, first)
 	}) {
 		return
@@ -1078,6 +1215,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 			second.platform, first.platform)
 	}
 	requireComponentsListed(t, second)
+	requireLexicalKept(t, o, second, revision, lexical)
 	checkWritesAfterRestart(t, o, second, f, before)
 	stopStack(t, second)
 }
@@ -1085,7 +1223,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 // TestSmoke_BrokerRestartUnderRunningStack holds composed-stack, "Restart the broker under the
 // running stack": the NATS server restarts on the same URL with its file storage while the stack
 // keeps running, and the same process, never restarted, applies a new entity, an edit and a delete
-// published after it, answers what it did before plus those writes, and lists its seven components
+// published after it, answers what it did before plus those writes, and lists its eight components
 // healthy, with no envelope reporting a lost feed or reset_required.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.

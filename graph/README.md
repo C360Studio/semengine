@@ -49,7 +49,8 @@ transport"; `TestGraphImportsNoTransport`).
   graph-ingest's `entity`, `batch` and `prefix` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
   `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`, `byName`) on
   `graph.index.query.*`, the four verbs of the embedding, spatial and temporal responders (`search` and `similar` on
-  `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), and graph-query's
+  `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), graph-lexical's
+  word `search` on `graph.lexical.query.*` (`processor/graph-lexical`), and graph-query's
   `entity`, `batch`, `prefix`, `byName`, `predicate`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`,
   `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and `temporal` on
   `graph.query.*`. A name is unique only within its responder: `entity` is declared for graph-ingest and for

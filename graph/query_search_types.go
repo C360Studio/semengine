@@ -17,10 +17,10 @@ type SimilarityHit struct {
 }
 
 const (
-	// DefaultSimilarityLimit is what a semantic or similar request's limit of 0 means.
+	// DefaultSimilarityLimit is what a semantic, similar or word search request's limit of 0 means.
 	DefaultSimilarityLimit = 10
-	// MaxSimilarityLimit is the largest limit a semantic or similar request may send; a larger or
-	// negative one is refused, never clamped.
+	// MaxSimilarityLimit is the largest limit a semantic, similar or word search request may send; a
+	// larger or negative one is refused, never clamped.
 	MaxSimilarityLimit = 100
 )
 

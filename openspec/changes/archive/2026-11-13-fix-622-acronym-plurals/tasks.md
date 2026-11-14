@@ -31,5 +31,5 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md` and `no
   adds and stating the length limits in bytes (plain words, no history). Accept: 2.1's tests pass;
   `TestScorecardHoldsItsFloor` logs R@1, R@10 and MRR no lower than 24.6%, 56.0% and 0.356, recorded in
   `notes/2.2.md`; every `TestScorecardBehaviour` question passes; full `task verify` passes on a clean tree.
-- [ ] 2.3 Archive: `openspec archive fix-622-acronym-plurals --yes` promotes the delta; `task spec:check` and
+- [x] 2.3 Archive: `openspec archive fix-622-acronym-plurals --yes` promotes the delta; `task spec:check` and
   `task docs:check` pass.

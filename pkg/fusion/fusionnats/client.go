@@ -150,7 +150,8 @@ func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fu
 // its refusals are returned as it sent them. A non-empty scope keeps only
 // entities under its ID prefixes (ADR-071); an empty one is left out of the
 // request. Seeds keep the reply's order and carry each hit's score as the
-// mode's own score. A request nothing answers, graph-lexical not composed
+// mode's own score; the reply's bodies_not_indexed and excluded ride along in
+// the Resolution. A request nothing answers, graph-lexical not composed
 // included, is a transient internal error naming the subject.
 func (c *Client) resolveWords(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
 	if err := validateScope(scope); err != nil {
@@ -179,7 +180,7 @@ func (c *Client) resolveWords(ctx context.Context, query string, scope []string,
 	if err := graph.ValidateDecodedEntityIDs(ids); err != nil {
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate word search: %w", err)
 	}
-	return fusion.Resolution{Seeds: seeds}, nil
+	return fusion.Resolution{Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded}, nil
 }
 
 func validatePrefix(prefix string) error {

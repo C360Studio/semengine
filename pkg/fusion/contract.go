@@ -57,6 +57,7 @@ type Provenance string
 // The provenance tiers, in increasing order of uncertainty.
 const (
 	ProvenanceDeterministic Provenance = "deterministic" // exact lookup + structural walk
+	ProvenanceLexical       Provenance = "lexical"       // seeds came from the word index
 	ProvenanceEmbedding     Provenance = "embedding"     // seeds came from semantic search
 	ProvenanceLLM           Provenance = "llm"           // an LLM reasoned over the result
 )
@@ -177,15 +178,18 @@ type Response struct {
 	// index was not ready, or DeferReasonAllSeedsUnhydrated when seeds resolved and
 	// none could be read. Empty when not deferred.
 	DeferReason string `json:"defer_reason,omitempty"`
-	// UnreadableRecords and FailedRecords are the natural-language search's counts
-	// of records it could not read and records whose embedding failed, copied from
-	// its reply onto every response built after it answered: nodes, a miss, or a
-	// later deferral. A miss beside a non-zero count is not "nothing there". Each is
-	// omitted when 0, and both always are after a symbol or prefix resolve.
-	UnreadableRecords int    `json:"unreadable_records,omitempty"`
-	FailedRecords     int    `json:"failed_records,omitempty"`
-	Truncated         bool   `json:"truncated"`
-	ContractVersion   string `json:"contract_version"`
+	// BodiesNotIndexed and Excluded are what the word index left out of a
+	// natural-language search, copied from its reply onto every response built
+	// after it answered: nodes, a miss, or a later deferral. BodiesNotIndexed is
+	// the number of entities whose offloaded body the index did not hold, found
+	// only by their inline text; Excluded is the question's excluded terms, every
+	// entity holding one removed. A miss beside either is not "nothing there".
+	// Each is omitted when empty, and both always are after a symbol or prefix
+	// resolve.
+	BodiesNotIndexed int      `json:"bodies_not_indexed,omitempty"`
+	Excluded         []string `json:"excluded,omitempty"`
+	Truncated        bool     `json:"truncated"`
+	ContractVersion  string   `json:"contract_version"`
 }
 
 const (

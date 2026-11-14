@@ -33,7 +33,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   `TestVerbLookupNamesMissingRow` refuses a table without graph-lexical's `search`; `TestSubjectsComeFromVerbTable`
   updated; the integration test resolves `nl` against a running graph-lexical (`client_integration_test.go:116`
   composes graph-lexical, not graph-embedding).
-- [ ] 2.3 PR B. What an `nl` answer reports, and its provenance (design D3, D4; owner question 2). Premise: the counts
+- [x] 2.3 PR B. What an `nl` answer reports, and its provenance (design D3, D4; owner question 2). Premise: the counts
   are the embedding cache's (`pkg/fusion/contract.go:180-186`, `retrieval.go:66-73`); `nl` is `embedding`
   (`lens.go:195-204`). Accept: `TestNLAnswerCarriesWordIndexCounts` (`bodies_not_indexed` and `excluded` beside the
   nodes and on a miss), new `TestWordIndexCountsReachResolution`, `TestSymbolAnswerOmitsCounts`,

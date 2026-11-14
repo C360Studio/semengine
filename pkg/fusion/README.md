@@ -57,9 +57,10 @@ or false:
   The seeds that were read still answer.
 - `misses`: the graph answered and found nothing, with near-matches in `did_you_mean`. A miss does not prove the
   entity is absent.
-- `unreadable_records` and `failed_records`: a word search (`nl` resolve) counts the records it could not read and the
-  records whose embedding failed. They ride on every response built after that search answered, including a miss.
-  Symbol and prefix resolves never set them.
+- `bodies_not_indexed` and `excluded`: what the word index left out of a word search (`nl` resolve).
+  `bodies_not_indexed` counts the entities whose offloaded body the index did not hold, found only by their inline
+  text; `excluded` lists the question's excluded terms (`-word`), every entity holding one removed. They ride on every
+  response built after that search answered, including a miss. Symbol and prefix resolves never set them.
 - `relations_truncated` (on a node): a role had more than 12 relations, a relations read failed, or a target could not
   be read.
 - `paths_truncated`, and `truncated` on a path: more than 10 paths existed, or a path stopped at a node that could not
@@ -129,8 +130,10 @@ An `nl` question goes to the word index unchanged, so its query rules apply: a q
 holding `name:`, comes back as graph-lexical sent it, class invalid, code `invalid_request`. A stack with no
 graph-lexical fails every `nl` question with a transient `internal` error naming `graph.lexical.query.search`.
 
-`symbol` and `prefix` questions need no graph-lexical: `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers them
-over a stack of graph-ingest, graph-index and graph-query alone.
+An `nl` answer's `provenance` is `lexical`: its seeds are ranked word matches, neither an exact lookup nor an
+embedding search. `symbol` and `prefix` answers are `deterministic`. `symbol` and `prefix` questions need no
+graph-lexical; `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers all three over a stack of graph-ingest,
+graph-index, graph-lexical and graph-query, with no graph-embedding.
 
 ## Packages
 

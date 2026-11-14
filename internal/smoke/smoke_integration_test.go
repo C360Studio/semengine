@@ -546,33 +546,6 @@ func checkSearch(t *testing.T, o observer, s stack, f fixture, w want, deleted [
 			query, got.data.EmbedderType, got.data.UnreadableRecords, got.data.FailedRecords)
 	}
 
-	// fusion's word question, read after the same answer: a word lens resolves through
-	// graph.query.semantic, and its nodes are the live entities whose name holds the word, written
-	// from w. Only the entity set is checked: node order follows the scores, and relations are
-	// checked through graph-query's own verbs above.
-	const fieldWord = "field"
-	holders := []string{}
-	for _, id := range live {
-		if slices.Contains(w[id].words(), fieldWord) {
-			holders = append(holders, id)
-		}
-	}
-	if len(holders) == 0 {
-		t.Fatalf("no live entity's name holds %q, so the word question would prove nothing", fieldWord)
-	}
-	resp, err := o.fusionEngine(t).Fuse(t.Context(), fusion.Request{Query: fieldWord}, fleetLens{fusion.ResolveModeNL})
-	if err != nil {
-		t.Fatalf("NL %q: Fuse: %v", fieldWord, err)
-	}
-	handles := []string{}
-	for _, n := range resp.Nodes {
-		handles = append(handles, n.Handle)
-	}
-	slices.Sort(handles)
-	if resp.Provenance != fusion.ProvenanceEmbedding || resp.Deferred || len(resp.Misses) > 0 || !slices.Equal(handles, holders) {
-		t.Fatalf("NL %q answered %+v (nodes %v), want embedding provenance and nodes %v", fieldWord, resp, handles, holders)
-	}
-
 	// semantic on one keyword: its entity, the only hit and so the top one; a deleted one, none.
 	for _, e := range inputs {
 		wantHits := []string{}
@@ -709,6 +682,24 @@ func checkLexical(t *testing.T, o observer, s stack, f fixture, w want, revision
 	check(baseWord, bases)
 	if t.Failed() {
 		t.FailNow()
+	}
+
+	// fusion's word question: a word lens resolves through graph-lexical's word search, and its
+	// nodes are the live entities whose name holds the word, with provenance lexical. fusion's
+	// request names no revision; the search for the same word above reflected revision, and nothing
+	// is written in between, so this one reads the same index. Only the entity set is checked:
+	// relations are checked through graph-query's own verbs.
+	resp, err := o.fusionEngine(t).Fuse(t.Context(), fusion.Request{Query: baseWord}, fleetLens{fusion.ResolveModeNL})
+	if err != nil {
+		t.Fatalf("NL %q: Fuse: %v", baseWord, err)
+	}
+	handles := []string{}
+	for _, n := range resp.Nodes {
+		handles = append(handles, n.Handle)
+	}
+	slices.Sort(handles)
+	if resp.Provenance != fusion.ProvenanceLexical || resp.Deferred || len(resp.Misses) > 0 || !slices.Equal(handles, bases) {
+		t.Fatalf("NL %q answered %+v (nodes %v), want lexical provenance and nodes %v", baseWord, resp, handles, bases)
 	}
 	return replies
 }

@@ -63,14 +63,13 @@ type Seed struct {
 }
 
 // Resolution is what Resolve found: the seeds, most relevant first, and, for a
-// natural-language (semantic) search, the counts its reply reports of records it
-// could not search: UnreadableRecords (a record it could not read) and
-// FailedRecords (a record whose embedding failed). Symbol and prefix resolves
-// leave both 0.
+// natural-language search, what the word index's reply says it left out:
+// BodiesNotIndexed (entities whose offloaded body it did not hold) and Excluded
+// (the question's excluded terms). Symbol and prefix resolves leave both empty.
 type Resolution struct {
-	Seeds             []Seed
-	UnreadableRecords int
-	FailedRecords     int
+	Seeds            []Seed
+	BodiesNotIndexed int
+	Excluded         []string
 }
 
 // SeedIDs projects seeds to their IDs, for the batch-hydration call and anywhere else

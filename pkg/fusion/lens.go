@@ -71,13 +71,13 @@ func objectString(o any) string {
 // ResolveMode picks how the engine turns a raw query string into seed entities.
 // The Lens classifies the query; the engine maps the mode to a resolve strategy
 // (symbol → graph.query.byName exact lookup, prefix → graph.query.prefix, nl →
-// semantic search). Provenance follows from the mode: symbol/prefix are
-// deterministic, nl is embedding.
+// the word index's search). Provenance follows from the mode: symbol/prefix are
+// deterministic, nl is lexical.
 type ResolveMode string
 
 const (
-	// ResolveModeNL routes the query to semantic (embedding) search. Seeds are
-	// embedding-ranked, so the response provenance is "embedding", not
+	// ResolveModeNL routes the query to the word index's search. Seeds are
+	// ranked by a word match, so the response provenance is "lexical", not
 	// "deterministic".
 	ResolveModeNL ResolveMode = "nl"
 
@@ -177,9 +177,10 @@ type Lens interface {
 }
 
 // ProvenanceForMode maps a ResolveMode to the honesty-envelope provenance tier:
-// symbol/prefix seeds are deterministic exact lookups; nl seeds come from
-// embedding search. (The research_graph LLM sibling is the only "llm" source —
-// the deterministic engine never sets it.) Exported so the engine's assemble
+// symbol/prefix seeds are deterministic exact lookups; nl seeds come from the
+// word index, a ranked word match that is neither an exact lookup nor an
+// embedding search, so it is lexical. (The research_graph LLM sibling is the
+// only "llm" source — the deterministic engine never sets it.) Exported so the engine's assemble
 // step and any lens-driven caller stamp provenance consistently.
 //
 // Deliberate divergence from semsource's provenanceFor (source/fusion/engine.go),
@@ -197,7 +198,7 @@ func ProvenanceForMode(mode ResolveMode) Provenance {
 	case ResolveModeSymbol, ResolveModePrefix:
 		return ProvenanceDeterministic
 	case ResolveModeNL:
-		return ProvenanceEmbedding
+		return ProvenanceLexical
 	default:
 		return ProvenanceEmbedding
 	}

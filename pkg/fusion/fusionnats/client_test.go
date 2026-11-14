@@ -350,6 +350,45 @@ func TestResolve_NLEmptyScopeEntryRemainsMatchAll(t *testing.T) {
 	assert.JSONEq(t, `{"query":"find a widget","limit":10,"scope":[""]}`, string(fake.lastData))
 }
 
+// TestWordIndexCountsReachResolution holds that an NL resolve copies the word
+// index reply's bodies_not_indexed and excluded into the Resolution, and that a
+// symbol or prefix resolve leaves both empty even when its reply carries keys of
+// those names.
+func TestWordIndexCountsReachResolution(t *testing.T) {
+	t.Run("nl", func(t *testing.T) {
+		fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{
+			Results:  []graph.LexicalHit{{EntityID: "a.b.c.d.e.1", Score: 1}},
+			Matched:  1,
+			Excluded: []string{"race"}, BodiesNotIndexed: 2,
+		})}
+		res, err := newClient(t, fake).Resolve(t.Context(), fusion.ResolveQuery{Query: "retry -race", Mode: fusion.ResolveModeNL, Limit: 10})
+		require.NoError(t, err)
+		assert.Equal(t, 2, res.BodiesNotIndexed)
+		assert.Equal(t, []string{"race"}, res.Excluded)
+	})
+
+	for name, tc := range map[string]struct {
+		mode  fusion.ResolveMode
+		query string
+		reply string
+	}{
+		"symbol": {fusion.ResolveModeSymbol, "Widget",
+			`{"producer":"graph-index","data":{"matches":[{"entity_id":"a.b.c.d.e.1","matched_name":"Widget"}],` +
+				`"bodies_not_indexed":2,"excluded":["race"]}}`},
+		"prefix": {fusion.ResolveModePrefix, "a.b.c",
+			`{"ids":["a.b.c.d.e.1"],"total":1,"bodies_not_indexed":2,"excluded":["race"]}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeRequester{resp: []byte(tc.reply)}
+			res, err := newClient(t, fake).Resolve(t.Context(), fusion.ResolveQuery{Query: tc.query, Mode: tc.mode, Limit: 10})
+			require.NoError(t, err)
+			require.Equal(t, []string{"a.b.c.d.e.1"}, fusion.SeedIDs(res.Seeds), "the reply decoded")
+			assert.Zero(t, res.BodiesNotIndexed)
+			assert.Nil(t, res.Excluded)
+		})
+	}
+}
+
 // nlLens resolves every query as natural language and walks no edges, so a
 // Fuse call reads only the word search and the seeds.
 type nlLens struct{}

@@ -4673,7 +4673,11 @@
     with no nodes and no miss, any other seed-read error is returned, a relations neighbour read replying
     index_not_ready also defers, any other walk read's error other than an ended context is skipped and declared; defer_reason is index_not_ready or all_seeds_unhydrated only; ContractVersion
     is "2" (D1). (2) The graph facet's view_revision is gone (D2). (3) Resolve returns a Resolution whose
-    unreadable_records and failed_records every response built after a natural-language resolve carries (D3). (4)
+    BodiesNotIndexed and Excluded, the word index's bodies_not_indexed and excluded, every response built after a
+    natural-language resolve carries, each omitted when empty, and a symbol or prefix response never does; an nl
+    answer's provenance is lexical, a fourth value ADR-062 does not list (setup-04b-04-removal-keywords D3, D4;
+    owner question 2 ruled (b), epic #10 comment 6880665588); these replace the embedding search's
+    unreadable_records and failed_records (D3). (4)
     Every left-out piece is declared: Neighbors results are sorted by predicate then target and deduplicated before
     any cap; relations_truncated, paths_truncated, Impact.Truncated and GraphProjection.Truncated mark a cap or a
     skipped read; a path never names a node by its entity ID; each skip counts on
@@ -4689,7 +4693,8 @@
     StoreResolver; registers two counters on the injected metrics registry when one is given
   known_risks: >-
     Consumer break (migration note, owner 2026-11-02 on PR #504): NewEngine's signature, RetrievalClient without
-    Status and with Resolution, the wire's index and view_revision gone, four defer_reason values gone, a reset the
+    Status and with Resolution, an nl answer's provenance lexical where it was embedding, the wire's index and
+    view_revision gone, four defer_reason values gone, a reset the
     pin deferred is an error on a seed read and a truncated facet on a walk read, refs listed by predicate then
     target. A fatal Resolve or Entities fails the call (D1); fusionnats lists a poisoned seed unhydrated error
     instead of failing Entities (its row, setup-04a-05-fusionnats design D3), and a poisoned entity in a prefix
@@ -4706,8 +4711,8 @@
     pkg/fusion: engine_lens_readiness_test.go (TestDeferredOnIndexNotReady, TestFatalReplyReturnsError,
     TestFatalWalkReadSkipped, TestEndedContextReturnsError, TestEndedContextDuringBodyRead,
     TestEngine_GenuineError_Propagates); contract_test.go (TestContractVersionIsTwo,
-    TestFuse_AnsweredResponseIsNotMarkedDeferred); engine_search_counts_test.go (TestNLAnswerCarriesSearchCounts,
-    TestNLMissCarriesSearchCounts, TestSymbolAnswerOmitsCounts); engine_labels_test.go (TestEdgesSortedBeforeCap,
+    TestFuse_AnsweredResponseIsNotMarkedDeferred); engine_search_counts_test.go (TestNLAnswerCarriesWordIndexCounts,
+    TestSymbolAnswerOmitsCounts); lens_test.go (TestProvenanceForMode); engine_labels_test.go (TestEdgesSortedBeforeCap,
     TestRelationsCapLabelled, TestRelationsFaultLabelled, TestRelationsUnreadTargetLabelled, TestPathsCapLabelled,
     TestPathStopsAtUnreadNode, TestImpactUnreadFileTruncates, TestGraphCounterpartFaultTruncates,
     TestGraphCapsIgnoreTripleOrder, TestGraphEvidenceCapIgnoresTripleOrder); construction_test.go
@@ -4717,7 +4722,8 @@
     TestResolveBodyRefusesNilContext and the pin's BodyResolver tests); body_reason_test.go, engine_facets_test.go,
     engine_graph_test.go, engine_lens_test.go, engine_rank_order_test.go, engine_rank_permutation_test.go,
     engine_scores_test.go, lens_test.go, per_facet_test.go, response_unhydrated_test.go (the pin's tests, adapted to
-    the changes above); notes/2.1.md-2.3.md of the change record the mutation checks
+    the changes above); notes/2.1.md-2.3.md of the change record the mutation checks, and
+    setup-04b-04-removal-keywords notes/2.3.md those of the word index counts and the lexical provenance
   owner: setup-04a-05-fusion developer
   disposition: adapt
 
@@ -4776,22 +4782,26 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the RetrievalClient over NATS (ADR-062): a product passes fusionnats.New(natsClient, timeout) to
-    fusion.NewEngine and gets its answers from graph-query's public graph.query.* verbs. semsource's code-context
+    fusion.NewEngine and gets its answers from graph-query's public graph.query.* verbs and, for an nl resolve,
+    graph-lexical's word search. semsource's code-context
     calls fusionnats.New (processor/code-context/component.go:136) and its governance tests call Client.Neighbors
     (internal/governance/fusion_gateway_integration_test.go:304) (inventory § 5)
   destination: pkg/fusion/fusionnats
   contract: >-
     the pin's client with these adaptations (spec fusion; design D1-D3). (1) New(requester, timeout) (*Client,
     error) refuses a nil requester and a negative timeout; a zero timeout is passed to the requester
-    (natsclient's DefaultRequestTimeout). New reads the six graph-query rows it uses (entity, batch, prefix, byName,
-    relationships, semantic) from graph.QueryVerbs() and refuses, naming the verb, when one is missing; the package
-    spells no subject. (2) The client holds no goroutine, watch, context or lock and has no Status and no Close; it
+    (natsclient's DefaultRequestTimeout). New reads the rows it uses, graph-query's entity, batch, prefixIDs,
+    byName and relationships and graph-lexical's search (setup-04b-04-removal-keywords D2), from graph.QueryVerbs()
+    and refuses, naming the verb, when one is missing; the package spells no subject. (2) The client holds no goroutine, watch, context or lock and has no Status and no Close; it
     reads no readiness status: index_not_ready arrives on the reply (owner ruling 4, PR #550 comment 6716972354;
     ADR-109 D1, D3). (3) Each reply is decoded as its row declares: an enveloped row (byName, relationships,
-    semantic) as a graph.QueryResponse, refused when it names no producer; a bare row (entity, batch, prefix) as the
+    graph-lexical's search) as a graph.QueryResponse, refused when it names no producer; a bare row (entity, batch, prefix) as the
     row's type, unknown keys ignored. (4) Requests use graph.EntityRequest, EntityBatchRequest, PrefixQueryRequest
-    and SemanticRequest, whose scope is left out when empty (ADR-071); Neighbors reads the edge's predicate; an nl
-    Resolve copies unreadable_records and failed_records into fusion.Resolution; Entity decodes through
+    and, for an nl Resolve, graph.LexicalSearchRequest with the question unchanged, whose scope is left out when
+    empty (ADR-071); seeds keep the hits' order and scores; a refusal from the word index is returned as it arrived,
+    and any other failure of that request is transient internal naming graph.lexical.query.search
+    (setup-04b-04-removal-keywords D2); Neighbors reads the edge's predicate; an nl Resolve copies the word index
+    reply's bodies_not_indexed and excluded into fusion.Resolution (D3); Entity decodes through
     graph.UnmarshalEntityState and reads entity_not_found, and only that code, as (nil, nil). (5) Entities
     reconciles each batch reply with the request (reconcileHydration, ADR-084 D6): every distinct requested ID once,
     Entities in request order, an ID the reply lists nowhere unhydrated unknown. (6) A poisoned seed (one whose
@@ -4828,13 +4838,15 @@
     prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
     questions outright when the composition offers no embedder; closed by the embedding_enabled key: set it false and
     a word question is refused invalid not_enabled, left true it is a transient internal refusal naming
-    graph.embedding.query.search, design D5 Q-B). Issues: #195 adopted here (the
+    graph.embedding.query.search, design D5 Q-B; since setup-04b-04-removal-keywords an nl resolve asks
+    graph-lexical and never reaches graph-query's semantic). Issues: #195 adopted here (the
     integration test opens its client with natsfixture.Open) and stays open for other packages; #110 stays open for
     item 3; #563 stays open (fusionnats never calls searchGraph)
   proving_tests: >-
     pkg/fusion/fusionnats: client_test.go (TestNewRefusesNilRequester, TestNewRefusesNegativeTimeout,
     TestNewZeroTimeoutUsesDefault, TestSubjectsComeFromVerbTable, TestVerbLookupNamesMissingRow,
-    TestEnvelopedRowNeedsProducer, TestNeighborsReadsPredicate, TestSemanticCountsReachResolution,
+    TestEnvelopedRowNeedsProducer, TestNeighborsReadsPredicate, TestNLResolveAsksTheWordIndex,
+    TestNLWordIndexRefusalReturned, TestNLIndexNotReadyDefers, TestWordIndexCountsReachResolution,
     TestEntitiesRefusesNilContext and the pin's resolve, entity, batch, neighbors and names tests);
     exact_entity_test.go (TestSliceEFusionEntityUsesExactEntityWire,
     TestSliceEFusionEntityRejectsInvalidExactEvidence); reconcile_test.go (TestReconcileHydration);
@@ -4843,7 +4855,7 @@
     TestPoisonFallbackReturnsOtherError, TestPoisonFallbackEndedContext, TestPoisonFallbackEmptyID,
     TestOwnValidationNotRetried, TestBatchFaultNotReadAlone, TestPoisonFallbackOneSeedCancelled,
     TestPoisonFallbackFinalSeedCancelled); the integration-tagged client_integration_test.go
-    (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders); internal/harness/contract/fusionnats_test.go
+    (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex); internal/harness/contract/fusionnats_test.go
     (TestFusionNATSImportsNoEmbedding and its sensitivity case); internal/harness/contract/reservedsubjects_test.go
     (TestReservedSubjectsDeclaredOnce); internal/smoke/noembedder_integration_test.go (TestSmoke_NoEmbedderAnswers);
     notes/2.1.md-3.1.md of the change record seeds and mutation checks

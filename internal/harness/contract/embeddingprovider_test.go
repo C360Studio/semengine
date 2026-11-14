@@ -38,6 +38,45 @@ func TestQueryImportsNoProviderModule(t *testing.T) {
 		providerViolations(t, root, "./graph/query", queryProviderRule))
 }
 
+// TestQueryImportsNoEmbedding holds the rule that graph/query classifies without embedding code:
+// neither it nor any package it reaches is graph/embedding or a package under it. The chain's
+// tiers are keyword patterns and an LLM the caller supplies; a vector index is not one of them.
+//
+// Requirement: query-classification/Tier 0 classification imports no provider code
+func TestQueryImportsNoEmbedding(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "graph/query embedding imports", queryEmbeddingPaths(
+		modulePath(t, root), goList(t, root, "./graph/query", "-deps", "{{.ImportPath}}")))
+}
+
+// Requirement: query-classification/Tier 0 classification imports no provider code
+func TestQueryImportsNoEmbeddingSensitivity(t *testing.T) {
+	const module = "example.com/fixture"
+	self := module + "/graph/query"
+	requireNoViolations(t, "name-prefixed sibling", queryEmbeddingPaths(module,
+		[]string{self, module + "/graph/embeddingindex", module + "/pkg/errs"}))
+	for _, dep := range []string{module + "/graph/embedding", module + "/graph/embedding/sub"} {
+		requireViolation(t, queryEmbeddingPaths(module, []string{self, dep}), dep, queryProviderRule)
+	}
+	requireViolation(t, queryEmbeddingPaths(module, nil), "listed no package", queryProviderRule)
+}
+
+// queryEmbeddingPaths names graph/embedding, or a package under it, in graph/query's go list -deps
+// listing deps. An empty listing is a violation: a check that saw nothing is not a pass.
+func queryEmbeddingPaths(module string, deps []string) []string {
+	if len(deps) == 0 {
+		return []string{"go list -deps listed no package for graph/query; a check that saw nothing is not a pass " +
+			queryProviderRule}
+	}
+	var violations []string
+	for _, dep := range deps {
+		if under(dep, module+"/graph/embedding") {
+			violations = append(violations, "graph/query reaches "+dep+" "+queryProviderRule)
+		}
+	}
+	return violations
+}
+
 // graphEmbeddingProviderRule is the requirement every processor/graph-embedding violation names.
 const graphEmbeddingProviderRule = "(graph-embedding › Tier-0 config)"
 

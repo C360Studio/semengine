@@ -95,16 +95,16 @@ func declaredRows(t *testing.T) []forward {
 			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
 			request:    []byte(`{"entity_id":"c360.test.query.system.drone.001","query":"drone"}`),
 		},
-		// A one-token question is an entity reference, so its first downstream request is the alias
-		// verb's.
+		// Every question is searched for its words first, a one-token entity reference included, so
+		// the first downstream request is the word search's.
 		forward{
 			verb:       verbRow(t, graph.ResponderGraphQuery, "globalSearch"),
-			downstream: verbRow(t, graph.ResponderGraphIndex, "alias"),
+			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
 			request:    []byte(`{"query":"sn-1"}`),
 		},
 		forward{
 			verb:       verbRow(t, graph.ResponderGraphQuery, "searchGraph"),
-			downstream: verbRow(t, graph.ResponderGraphIndex, "alias"),
+			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
 			request:    []byte(`{"query":"sn-1"}`),
 		},
 	)

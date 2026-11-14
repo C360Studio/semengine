@@ -2,7 +2,7 @@
 // entities by field-weighted BM25 over the words of their text.
 //
 // Tokens is the one tokenizer: text written into an index and the text of a
-// query go through it alone, so a query word and an indexed word agree exactly
+// query go through it alone, so a query word and an indexed word agree
 // when they come from the same written word, its plural (an acronym's too:
 // "IDs" and "ids" meet "id"), or one part of a split identifier. Folding the
 // plural also joins a few words that are not plurals: "its" meets "it", and a

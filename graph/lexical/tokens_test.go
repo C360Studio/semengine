@@ -47,8 +47,8 @@ func TestTokens(t *testing.T) {
 		},
 		{
 			name: "acronym plurals",
-			text: "IDs IDS URLS CPUs UUIDs ids",
-			want: []string{"id", "id", "url", "cpu", "uuid", "id"},
+			text: "IDs IDS URLs URLS CPUs UUIDs ids",
+			want: []string{"id", "id", "url", "url", "cpu", "uuid", "id"},
 		},
 		{
 			name: "one capital before the s is not an acronym plural",

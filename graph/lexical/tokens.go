@@ -30,7 +30,7 @@ var stopwords = map[string]bool{
 // acronym in the plural: the "s" goes and the capitals stay one part, so
 // "IDs" gives "id" and "URLs" gives "url". Only the end of a run counts,
 // because inside one the same letters are as often an acronym followed by a
-// word ("EntityIDIsTerminated"), so "EntityIDsByType" splits as before.
+// word ("EntityIDIsTerminated"), so "EntityIDsByType" splits by the rules below.
 // A run splits again where an identifier changes case: at a lower-case letter
 // followed by a capital, and before the last capital of a run of capitals
 // followed by lower case, so "withRetry" gives "with" and "retry" and

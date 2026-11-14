@@ -421,8 +421,10 @@ type warnRecord struct {
 	attrs map[string]string
 }
 
-// warnCapture is a slog.Handler keeping the records logged with global search's unreadable message.
+// warnCapture is a slog.Handler keeping the records logged with one message, so a test sees only
+// the warning it asserts on.
 type warnCapture struct {
+	message string
 	mu      sync.Mutex
 	records []warnRecord
 }
@@ -432,7 +434,7 @@ func (w *warnCapture) WithAttrs([]slog.Attr) slog.Handler       { return w }
 func (w *warnCapture) WithGroup(string) slog.Handler            { return w }
 
 func (w *warnCapture) Handle(_ context.Context, r slog.Record) error {
-	if r.Message != "global search answered past unreadable community records" {
+	if r.Message != w.message {
 		return nil
 	}
 	record := warnRecord{level: r.Level, attrs: map[string]string{}}
@@ -469,7 +471,7 @@ func TestUnreadableRecordIsDeclared(t *testing.T) {
 	if _, err := kv.Put(t.Context(), "0.c360.test.query.poison", []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	logs := &warnCapture{}
+	logs := &warnCapture{message: "global search answered past unreadable community records"}
 	built, err := CreateGraphQuery(json.RawMessage(`{}`), component.Dependencies{NATSClient: client, Logger: slog.New(logs)})
 	if err != nil {
 		t.Fatal(err)

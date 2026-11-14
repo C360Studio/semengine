@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -467,12 +468,21 @@ func TestLocalSearchIsScopedToTheGroup(t *testing.T) {
 
 // TestLocalSearchRecordStates: the same matches are answered whether the community view is missing,
 // holds the group's record, holds none for it or holds an unreadable one; record_state says which,
-// and only the unreadable record counts an error (spec, "No community record").
+// and only the unreadable record counts an error and logs a Warn naming the verb, the level, the
+// count and why answering is safe (spec, "No community record", "An answer past unreadable records
+// is signalled"). The handler logs and counts before it replies, so each read below is ordered
+// after the reply it follows.
 func TestLocalSearchRecordStates(t *testing.T) {
 	client := fixtureClient(t)
 	stubWordIndex(t, client, lexicalReply(t, 9, graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: drone1, Score: 1.5}}, Matched: 1}))
 	stubBatch(t, client, `{"entities":[`+titled(drone1, "pump")+`]}`)
-	c := startComponent(t, client, `{}`)
+	logs := &warnCapture{message: "local search answered past an unreadable community record"}
+	built, err := CreateGraphQuery(json.RawMessage(`{}`), component.Dependencies{NATSClient: client, Logger: slog.New(logs)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startLifecycle(t, "graph-query", built)
+	c := built.(*Component)
 	const (
 		inGroup     = `{"entity_id":"` + drone1 + `","query":"pump"}`
 		unpublished = `{"entity_id":"c360.test.query.unpublished.drone.001","query":"pump"}`
@@ -518,6 +528,9 @@ func TestLocalSearchRecordStates(t *testing.T) {
 	if got := c.Health().ErrorCount; got != 0 {
 		t.Errorf("ErrorCount = %d, want 0: a missing record is not an error", got)
 	}
+	if got := logs.snapshot(); len(got) != 0 {
+		t.Errorf("warnings = %+v, want none: only an unreadable record is warned about", got)
+	}
 
 	t.Run("an unreadable record", func(t *testing.T) {
 		if _, err := kv.Put(t.Context(), "0.c360.test.query.poison", []byte(`{"id":"c360.test.query.poison","level":0,"member_count":1}`)); err != nil {
@@ -526,12 +539,19 @@ func TestLocalSearchRecordStates(t *testing.T) {
 		// Until the view applies the put, the group has no record.
 		_, data := awaitAnswer(t, client, poisoned, func(d graph.LocalSearchData) bool { return d.RecordState != graph.RecordNone })
 		answered(t, data, graph.RecordUnreadable)
-		errorsBefore := c.Health().ErrorCount
+		errorsBefore, warnsBefore := c.Health().ErrorCount, len(logs.snapshot())
 		raw, err := search(t, client, poisoned)
 		_, data = searchSuccess(t, raw, err)
 		answered(t, data, graph.RecordUnreadable)
 		if got := c.Health().ErrorCount; got != errorsBefore+1 {
 			t.Errorf("ErrorCount = %d after one answer past an unreadable record, want %d", got, errorsBefore+1)
+		}
+		wantWarn := warnRecord{level: slog.LevelWarn, attrs: map[string]string{
+			"verb": "localSearch", "level": "0", "unreadable": "1", "community_id": "c360.test.query.poison",
+			"reason": "the record only describes the group; the matches come from the word index",
+		}}
+		if got := logs.snapshot(); len(got) != warnsBefore+1 || !reflect.DeepEqual(got[len(got)-1], wantWarn) {
+			t.Errorf("warnings = %+v, want one more, %+v", got, wantWarn)
 		}
 	})
 }

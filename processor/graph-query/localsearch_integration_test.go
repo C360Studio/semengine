@@ -467,6 +467,15 @@ func TestLocalSearchRefusals(t *testing.T) {
 
 // TestLocalSearchRefusesBadRequests: with the view ready, each bad request is invalid_request
 // naming its field, with no downstream request and no error counted (spec, "A bad request").
+// overTermLimit is a query of graph.MaxSearchTerms+1 distinct terms.
+func overTermLimit() string {
+	terms := make([]string, graph.MaxSearchTerms+1)
+	for i := range terms {
+		terms[i] = fmt.Sprintf("t%02d", i)
+	}
+	return strings.Join(terms, " ")
+}
+
 func TestLocalSearchRefusesBadRequests(t *testing.T) {
 	client := fixtureClient(t)
 	withCommunityRecord(t, client)
@@ -486,7 +495,7 @@ func TestLocalSearchRefusesBadRequests(t *testing.T) {
 		{"a five-part entity_id", `{"entity_id":"c360.test.query.system.drone","query":"drone"}`, "entity_id"},
 		{"level 3", `{"entity_id":"` + drone1 + `","query":"drone","level":3}`, "level"},
 		{"an empty query", `{"entity_id":"` + drone1 + `","query":"  "}`, "query"},
-		{"seventeen terms", `{"entity_id":"` + drone1 + `","query":"a b c d e f g h i j k l m n o p q"}`, "query"},
+		{"too many terms", `{"entity_id":"` + drone1 + `","query":"` + overTermLimit() + `"}`, "query"},
 		{"not JSON", `not json`, "invalid character"},
 	} {
 		raw, err := search(t, client, tc.request)

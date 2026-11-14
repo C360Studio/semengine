@@ -2,7 +2,8 @@
 
 base: b6d97ad04f6fa583df6bdab3ba643a8605849d2d (main a8dd7912 + empty claim commit; worktree
 .worktrees/claude-lexical-removal-keywords). Track: design (touches graph-embedding, embedding-index,
-query-classification, fusion, community-grouping, composed-stack and graph-query specs).
+query-classification, fusion, community-grouping, composed-stack, entity-text and graph-query specs). SemSource read
+at its local checkout, commit 4ca2072c5d9d6bf4ec5ad76dc33b92d61c1614c1 (from `.git/HEAD`, read as a file).
 
 Terms. *Word index*: `graph/lexical`, served by graph-lexical on `graph.lexical.query.search`. *Hashed embedder*:
 `graph/embedding.BM25Embedder`, words hashed into 384 slots and ranked by cosine. *Example classifier*:
@@ -31,6 +32,10 @@ and comments read.
 | #111 | Silent degrades; item 3's NL sites are not carried (comments 2026-11-07) | stays (item 4, change 7) |
 | #486, #487, #484 | Tier 2 classifier, synthesis, epic | stay; #486 joins the chain whose tier 1 this change empties |
 | #535, #616 | Keyword classifier places; router | PR B's; the keyword tier is untouched here |
+| #656 | A batch read refuses every entity when one is damaged; fusionnats reads each ID alone on that refusal (fusion spec `:323-339`) | stays; the hydrate step after any NL resolve source |
+| #620 | Re-measure `NameWeight` on SemSource names | stays; §7's probe has no SemSource data either |
+| #651 | Tokenizer keeps `base64Encode` as one word | stays; bears on question 5 if keywords use `lexical.Tokens` |
+| #619 | cover-check target count is stale | stays; the `graph/embedding merged` floor (`scripts/cover-check.sh:54`) changes here |
 | #109, #110, #141, #155, #195, #196, #477, #68, #635, #570, #574, #571, #630, #641, #602, #108, #300, #350, #24, #84, #36, #361, #9, #10, #134, #536, #554 | Name the word, a sibling package or an epic, not this territory | n/a |
 
 ## 2. Overlapping open PRs, and order
@@ -43,6 +48,12 @@ PR #660 overlaps on `internal/smoke/smoke_integration_test.go` (its 8eefecdd cha
 files, `graph/query_*search_types.go` (the record fields that carry keywords) and the graph-query spec. Change 3's
 proposal: "Code merges after change 3's PR B". This change's code PRs merge after #660; the second to land merges
 `origin/main`.
+
+Spec overlap with change 3 (in flight): its composed-stack delta
+(`openspec/changes/setup-04b-03-graph-query-lexical/specs/composed-stack/spec.md:5-20`) modifies "The graph stack
+boots from one configuration", which asserts `semantic`, `similar` and one embedding record per entity; this change
+rewrites the same requirement. Its graph-lexical delta (`specs/graph-lexical/spec.md:5`, "A search reply is scoped,
+limited, ranked and counted") overlaps if fusion's NL resolve reads that reply. Both archive with PR B first.
 
 ## 3. What PR B leaves for this change
 
@@ -58,6 +69,8 @@ Read from change 3's `tasks.md` and `design.md` and #660's worktree at 8eefecdd 
   `query.NewClassifierChain(query.NewKeywordClassifier(), nil)` (`processor/graph-query/globalsearch.go:326`).
 - `semantic`, `similar` and `embedding_enabled` are untouched by PR B (change 3 delta graph-query `:245`).
 - Smoke: task 2.6 leaves "the bm25 assertions" here.
+- The similarity hint stays: PR B reports it unhonoured (`processor/graph-query/globalsearch.go:426-427` at 9f9ac44d,
+  `hints.similarity` named "a similarity"); see §4 for its name.
 - Keywords after PR B are read for display only. At 8eefecdd: `processor/graph-query/localsearch.go:185` (record in
   the local reply) and, until 2.3 lands, `textsearch.go:139-145` (the gate) and `:177-178,216-217` (reply and the
   "Key themes" sentence). The change 3 delta keeps `keywords` and `community_summary` in both replies (delta
@@ -70,7 +83,7 @@ gopls `references`, run with and without `-tags=integration`, gave the same resu
 - `BM25Embedder` (`graph/embedding/bm25_embedder.go:61`), `BM25Config` (`:75`), `NewBM25Embedder` (`:90`): outside
   their own two files, only `processor/graph-embedding/component.go:87` — `embedder *embedding.BM25Embedder` — and
   `:325` — `c.embedder = embedding.NewBM25Embedder(embedding.BM25Config{})`; plus
-  `graph/query/classifier_embedding.go` (`:29`, `:72`). `stem` and `stopwords` (`:277`, `:18`) have no caller
+  `graph/query/classifier_embedding.go` (`:29`, `:71`). `stem` and `stopwords` (`:277`, `:18`) have no caller
   outside the file.
 - `Embedder` interface (`graph/embedding/embedder.go:9`): implementers are `BM25Embedder` and two test fakes
   (`graph/embedding/review_findings_test.go:258`, `worker_fakes_test.go:146`). Readers:
@@ -82,11 +95,16 @@ gopls `references`, run with and without `-tags=integration`, gave the same resu
   `classifier_outcomes_test.go:140,148,155,310,336`. No production caller.
   `Example.Vector` (`graph/query/examples.go:14`) is written only by it; `Example` and `DomainExamples` are also read by
   the LLM tier (`classifier_llm.go:56,65,173,176`). `LoadDomainExamples` (`examples.go:25`) has no production caller.
+- The `use_embeddings` hint, named for the tier this change takes off tier 0: `SearchOptions.UseEmbeddings`
+  (`graph/query/search_options.go:37`), set by the keyword tier (`classifier.go:151-153`), counted and mapped by the
+  chain (`classifier_chain.go:181,204-205`), the LLM tier (`classifier_llm.go:34,129,220,272,313-314`) and the example
+  classifier (`classifier_embedding.go:207-208`); read by graph-query as `hints.similarity`
+  (`processor/graph-query/globalsearch.go:367`).
 - `graph/embedding` importers: `graph/query/classifier_embedding.go` and processor/graph-embedding only (production);
   `internal/smoke/smoke_integration_test.go` (test).
 - graph-embedding composed in tests outside its package: `pkg/fusion/fusionnats/client_integration_test.go:116`,
   `processor/graph-query/embedding_integration_test.go:32,87` (138 lines),
-  `internal/smoke/stack_integration_test.go:90-91,182`.
+  `internal/smoke/stack_integration_test.go:71,90-91,152,182,734`.
 - Smoke: `checkSearch` (`internal/smoke/smoke_integration_test.go:515-607`): `:544` asserts `EmbedderType == "bm25"`;
   `:563` fuses an NL question; `:572` wants `fusion.ProvenanceEmbedding`; `:510-513` the comment on the hashed embedder;
   `checkEmbeddingRecords` (`:377`); `internal/smoke/doc.go:6,9`; `noembedder_integration_test.go:181-191` wants the NL
@@ -98,17 +116,19 @@ gopls `references`, run with and without `-tags=integration`, gave the same resu
   `"graph/embedding merged"` (`scripts/cover-check.sh:54`).
 - Specs: query-classification `:5`, `:35-41`, `:73`, `:110-120`, `:122-136`, `:220-231`, `:233-252`, `:254-266`;
   graph-embedding `:4`, `:54-67` ("Tier-0 config": refuse any `embedder_type` other than `bm25`), `:82`;
-  embedding-index `:4`; composed-stack `:4`, `:15`, `:27-29`, `:105-116`; fusion `:68-86`, `:263-276`, `:305-314`;
-  community-grouping `:128-160`.
-- Docs: `graph/embedding/README.md:25`, `doc.go:2,13-14`; `graph/query/README.md:15,36,50-60`, `doc.go:8`;
+  embedding-index `:4`; entity-text `:4,13,47`; composed-stack `:4`, `:15`, `:27-29`, `:105-116`; fusion `:68-86`,
+  `:263-276`, `:305-314`; community-grouping `:128-160`.
+- Docs: `.agents/skills/query-pattern/SKILL.md:30-35` (graph-embedding answers `semantic`, `similar`);
+  `graph/embedding/README.md:25`, `doc.go:2,13-14`; `graph/query/README.md:15,36,50-60`, `doc.go:8`;
   `processor/graph-embedding/README.md:9,65,75,134,189`, `MIGRATION.md:21-24`; `processor/graph-query/README.md:15-16,
   34,43,317`, `MIGRATION.md:118-119,156-157,209-216`; `docs/repository-map.md:74,76,91`; `docs/contract.md:33`
   ("keyword search (BM25, computed in process)"); `docs/setup-plan.md:78,91,125` ("text relevance by BM25 … BM25 is in
   process").
 - Ledger: `graph/embedding` (`docs/admission-ledger.yaml:3834-3907`; `:3837`, `:3883` "BM25 is a lexical embedder, not
   a correct lexical index"); `graph/query` (`:3927-4000`; `:3932`, `:3939-3989`); `processor/graph-embedding`
-  (`:4591-4667`; `:4594`, `:4601-4603`); `pkg/fusion/fusionnats` (`:4782-4863`); `graph/clustering` (`:4110-4181`;
-  `:4134`, `:4159`).
+  (`:4591-4667`; `:4594`, `:4601-4603`); `pkg/fusion` (`:4668`); `processor/graph-query` (`:4327`);
+  `pkg/fusion/fusionnats` (`:4782-4863`); `processor/graph-clustering` (`:4864`, if a text-suffix key is added);
+  `graph/clustering` (`:4110-4181`; `:4134`, `:4159`).
 - ADR text: `docs/adr/062-deterministic-graph-fusion.md:97,168,181-182`; `071-fusion-domain-scoped-nl-retrieval.md:5-18,
   49-51`; `063-store-substrate-and-resolver.md:365`.
 
@@ -136,8 +156,12 @@ gopls `references`, run with and without `-tags=integration`, gave the same resu
   (`:868-890`), sets `embedding_enabled` false only for `none` (`:789-791`), accepts `none`, `bm25`, `http`
   (`config/config.go:259`), and has a disabled-readiness path (`processor/source-manifest/readiness.go:56-69`). No
   SemSource Go calls `semantic`, `similar` or `graph.embedding.query.*` directly (rg, 0 hits); its route to them is
-  fusion's NL resolve. semteams, semconnect, semboids: no import of `graph/embedding`, `graph/query`, `pkg/fusion` or
-  graph-embedding (rg, 0 hits).
+  fusion's NL resolve. It does read graph-embedding's readiness as the gate for code search:
+  `internal/graphstatus/reader.go:37-38` ("KeyGraphEmbedding is the semantic index: it backs code_search"); the
+  `embedding` field of the agent-facing `source_status` tool (`processor/mcp-gateway/tools.go:143-147`); the workbench
+  `semantic` capability (`processor/source-manifest/workbench_capabilities.go:31,293`, `component.go:747`).
+  graph-lexical publishes its readiness under `graph-lexical` (`graph/readiness/watcher.go:59`). semteams, semconnect,
+  semboids: no import of `graph/embedding`, `graph/query`, `pkg/fusion` or graph-embedding (rg, 0 hits).
 
 ## 6. Fusion's NL resolve
 
@@ -151,9 +175,11 @@ gopls `references`, run with and without `-tags=integration`, gave the same resu
   (`contract.go:180-186`, spec fusion `:68-86`, `:305-314`).
 - The word index's verb takes the same request fields (`graph/query_lexical_types.go:10-15` against
   `graph/query_search_types.go:33-38`): `query`, `limit`, `scope` (entity-ID prefixes, before the limit),
-  `min_revision`. Its reply has `score` (BM25F, "on no fixed scale, comparable only within one reply", `:17-22`), `matched`,
-  `excluded`, `bodies_not_indexed`; no `unreadable_records` or `failed_records`. No graph-query row forwards it
-  (`graph/query_verbs.go:73-145`).
+  `min_revision`. Its reply has `score` (BM25F, "on no fixed scale, comparable only within one reply", `:17-22`),
+  `matched`, `excluded`, `bodies_not_indexed`; no `unreadable_records` or `failed_records`. No graph-query row
+  forwards it (`graph/query_verbs.go:73-145`).
+- Readiness: if NL resolve moves off graph-embedding, SemSource's code-search gate (§5) still names the
+  `graph-embedding` key, a producer that no longer serves those seeds (ADR-062: only `ready` licenses not-found).
 - Lenses: SemSource's docs lens resolves `nl` by default (`source/fusion/lens/docs/docs.go:57,65`), the code lens on
   `:38`; `processor/code-context/component.go:297` marshals `fusion.Response` (provenance included) to its callers.
 - Tests: `pkg/fusion/fusionnats/client_test.go` (30 lines naming semantic/NL), `client_integration_test.go:116`,
@@ -179,7 +205,8 @@ gopls `references`, run with and without `-tags=integration`, gave the same resu
 - Measured (`notes/probes/keywords-probe.log`, scorecard corpus, 2,000 sections, 500 questions). Reference: two textbook
   keyness scores of a word in a group against the whole corpus (TF-IDF over groups; Dunning's log-likelihood G2),
   written in the probe. "Generic": a keyword held by 20% or more of all sections. "Kw-query P@10": the group's
-  keywords searched on the word index, share of the first ten hits inside the group.
+  keywords searched on the word index, share of the first ten hits inside the group, over groups of at least ten
+  members only (5 of the 21 groups; 46 of the 263).
 
 | Grouping | Keywords | Generic | Kw-query P@10 | Answer's group ranked first by keyword overlap |
 | --- | --- | --- | --- | --- |
@@ -191,7 +218,8 @@ gopls `references`, run with and without `-tags=integration`, gave the same resu
 | | G2, lexical.Tokens | 7.2% | 82.4% | 13.2% |
 
 Today's top words for the largest group: `test not graph its that one check after task only`; G2: `notes task
-test shall inventory design simplify 04a mutant`. Drift: removing every 20th section changes the G2 keywords of
+test shall inventory design simplify 04a specification mutant`. Drift (the `lexical.Tokens` variants):
+removing every 20th section changes the G2 keywords of
 97 of the 201 groups that lost no member (TF-IDF: 103); today's rule, 0 by construction. The drift count includes
 reordering inside the ten. Folded forms appear as keywords under `lexical.Tokens` (`thi`, `alway`). Limit: the
 corpus is one repository's Markdown, where both predicates are text suffixes, so `entitytext` and "every string
@@ -221,6 +249,8 @@ This change carries no package from the pin; it removes and edits ported code. R
 - ADR-099 (`099-…:9-17`): groups kept from changes, records bounded; keyword rule stated in its port note `:13`.
 - ADR-087 (`087-…:72`): `COMMUNITY_INDEX` is detector-exclusive, keywords included; change 3's proposal stops its
   Decision 5 (readiness) applying to search, which leaves keywords descriptive.
+- ADR-066 §3 (`066-…:284-295`): graph-embedding's own terminal-outcome watermark (only text-bearing entities are
+  embedded), which any embedder question 3 settles keeps.
 - ADR-083, ADR-088, ADR-109: readiness per producer; a tier-0 composition without graph-embedding has no
   `graph-embedding` key (composed-stack `:113`), which consumers aggregate.
 - ADR-054 (pin, not ported; ledger `:4642`): indexing eligibility for embedding. No other pin record names the
@@ -242,16 +272,19 @@ This change carries no package from the pin; it removes and edits ported code. R
 ## 11. Adopter seam inventory
 
 Who: (a) a SemSource developer whose docs and code lenses resolve `nl`; (b) a deployment author with
-`embedder_type: bm25` (SemSource's default); (c) an agent reading community keywords in a search reply.
+`embedder_type: bm25` (SemSource's default); (c) an agent reading community keywords in a search reply; (d) an agent
+reading SemSource's `source_status` or workbench readiness before code search.
 
 1. What they must know today. (a) `nl` answers from graph-embedding through graph-query and is labelled `embedding`;
    (b) `embedder_type` takes only `bm25`; graph-query's `embedding_enabled` must be false when graph-embedding is not
-   composed; (c) keywords are a group's commonest words.
+   composed; (c) keywords are a group's commonest words; (d) the `embedding` readiness entry gates code search.
 2. If they do nothing. (a) If graph-embedding stops serving at tier 0, `nl` is refused: invalid `not_enabled` with
    `embedding_enabled` false, transient `internal` per request with it left true (section 5). (b) Depends on the
    design: a refused `bm25` fails at boot naming the key (loud); an accepted one that embeds nothing would be silent.
-   (c) Keyword meaning changes with no shape change (silent; no reader decides on them after PR B).
-3. Where they find out. (a) typed runtime error per request; (b) boot error or nowhere; (c) nowhere.
+   (c) Keyword meaning changes with no shape change (silent; no reader decides on them after PR B). (d) The agent
+   waits on, or trusts, graph-embedding's key while seeds come from the word index, keyed `graph-lexical`: a not-ready
+   word index reads as ready, or a disabled embedder reads as no code search (silent).
+3. Where they find out. (a) typed runtime error per request; (b) boot error or nowhere; (c) nowhere; (d) nowhere.
 4. What they should have to know is the design's question. Recorded gap: (a) predicts which component answers words.
 
 Collision table: not triggered by the inventory; the design triggers it if it adds a stored statistic or a verb.
@@ -268,7 +301,7 @@ Collision table: not triggered by the inventory; the design triggers it if it ad
 | `graph/clustering` | 872 / 2,290 | `terms.go` 150 + test 230; `maintainer.go:353-379,414` |
 | `internal/smoke` | 21 / 2,736 | `checkSearch` 93 lines (`:515-607`), `doc.go`, `noembedder_integration_test.go:181-191` |
 
-Build order, measured from imports: `graph/query` imports `NewBM25Embedder` (`classifier_embedding.go:72`) and
+Build order, measured from imports: `graph/query` imports `NewBM25Embedder` (`classifier_embedding.go:71`) and
 processor/graph-embedding builds it (`component.go:325`), so both change before or with its deletion; smoke's NL check
 (`:563-573`) fails if graph-embedding stops serving before fusion's NL source changes.
 

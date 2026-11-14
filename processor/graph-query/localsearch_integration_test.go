@@ -465,8 +465,6 @@ func TestLocalSearchRefusals(t *testing.T) {
 	})
 }
 
-// TestLocalSearchRefusesBadRequests: with the view ready, each bad request is invalid_request
-// naming its field, with no downstream request and no error counted (spec, "A bad request").
 // overTermLimit is a query of graph.MaxSearchTerms+1 distinct terms.
 func overTermLimit() string {
 	terms := make([]string, graph.MaxSearchTerms+1)
@@ -476,6 +474,8 @@ func overTermLimit() string {
 	return strings.Join(terms, " ")
 }
 
+// TestLocalSearchRefusesBadRequests: with the view ready, each bad request is invalid_request
+// naming its field, with no downstream request and no error counted (spec, "A bad request").
 func TestLocalSearchRefusesBadRequests(t *testing.T) {
 	client := fixtureClient(t)
 	withCommunityRecord(t, client)

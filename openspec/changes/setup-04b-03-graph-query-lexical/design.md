@@ -90,11 +90,12 @@ graph-query on the index (D1-D5, D8), smoke (#628 item 2), docs, archive; it rea
 request (one review spanning three packages and two capabilities). #655 changes the prefix read, which search stops
 reading: no dependency either way; the second to land merges `origin/main`.
 
-Exported `graph` changes: `LocalSearchRequest` and `GlobalSearchRequest` gain `limit`; `LocalSearchData` and
-`TextSearchData` lose `entities_scanned` and `entities_truncated` and gain `matched`, `excluded`, `missing` and
-`truncated`, with `record_state` on local search and on each group; `GlobalSearchData` loses `strategy`, `temporal`
-and `spatial` and gains `hints`; `TextSearchData` loses `unhonoured_hints`; `LexicalSearchData` gains `excluded`;
-`MaxSearchTerms` becomes 32, its comment naming the word index.
+Exported `graph` changes: both search requests gain `limit`; `LocalSearchData` and `TextSearchData` lose
+`entities_scanned`, `entities_truncated` and gain `matched`, `excluded`, `missing`, `truncated`; `LocalSearchData`'s
+`entities` becomes `matches`, and `member_count`, `community_summary`, `keywords` move under `record`; `record_state`
+is on local search and on each `TextSearchGroup`, which also gains its match count; `GlobalSearchData` loses
+`strategy`, `temporal`, `spatial` and gains `hints`; `TextSearchData` loses `unhonoured_hints`; `LexicalSearchData`
+gains `excluded`; `MaxSearchTerms` becomes 32, its comment naming the word index.
 
 ## Risks / Trade-offs
 

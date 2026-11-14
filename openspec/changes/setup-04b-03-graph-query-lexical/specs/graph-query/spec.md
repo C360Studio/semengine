@@ -388,7 +388,7 @@ word search".
 
 ### Requirement: Global search refuses hints it cannot honour together
 
-**Reason**: No question is refused for its words (plan item 3, #616). Replaced by "Every question gets a word search".
+**Reason**: No hint's trigger word refuses (plan item 3, #616). Replaced by "Every question gets a word search".
 
 ### Requirement: A one-word question is an entity reference
 

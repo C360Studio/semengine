@@ -1,74 +1,108 @@
 # Design: fix-578-prefix-damaged-entities
 
-Premises cite `inventory.md` (base `ecbd4b92`).
+The premises are pinned in `inventory.md` (base `88c7deec`). This design starts from the recommendation on PR #655
+(comment 6877450943). I re-checked every premise.
+
+## Premises
+
+1. Fusion uses only the page's IDs. Seeds come from `resp.Entities[i].ID` (`client.go:140`), and `fuseSeeds` reads
+   them again through batch (`engine_lens.go:135`). Holds.
+2. graph-ingest has the keys, total and page before any decode (`query.go:237-323`). The first decode is at `:330`.
+   Holds, with one correction: an exact six-part prefix reads its stored value at `:286` to see whether the key
+   exists. That read decodes nothing and records nothing.
+3. A damaged seed reaches fusion's answer as unhydrated `error` (`client.go:265-270`, `:292-334`). Holds.
+4. Not in the recommendation: fusion sends up to 40 seeds (`engine_lens.go:31`), and the batch reply has no byte fit
+   (`query.go:150`). See "What changes for a caller".
 
 ## Options
 
-- **A (owner's choice). The prefix reply lists damaged entities; readers in this repository that would hide a partial
-  page refuse it.** Cost: five packages in one pull request. A direct outside reader that ignores `missing` sees fewer
-  entities (migration note).
-- **B. The request opts in** (for example `partial: true`, sent only by fusionnats); by default the page is still
-  refused. Cost: a new request field and two behaviours for one verb. No other reader changes. The owner chose
-  against this shape ("return the rest"); recorded for completeness.
-- **C. Do nothing.** Fusion keeps failing a prefix answer for one damaged record; ADR-109 D1 stays untrue for prefix.
+- **A. A verb, `prefixIDs` (chosen).** It costs two table rows, one forward entry, one reply type, and a row added to
+  five tests that list the table (inventory § 3). Each of those tests fails loudly until its row is added.
+- **B. A flag on `PrefixQueryRequest`.** It is smaller: one field and one branch, no rows. But the spec says "A caller
+  SHALL decode by verb; nothing SHALL decide a reply's shape from its content" (graph-transport-boundary `:433-437`),
+  and a row declares one `Reply`. A flag gives one verb two reply shapes, and the table cannot say which.
+  `TestGraphQueryRepliesDecodeByTheTable` refuses the extra fields. And because graph-ingest decodes without
+  refusing unknown fields (`query.go:237`) and graph-query passes requests through, an older graph-ingest would
+  ignore the flag and answer with full entities. Measured, and rejected.
+- **C. Do nothing.** Fusion's prefix search keeps failing on one damaged record, and #578 stays open.
 
-## D1. What the prefix reply says
+## D1. graph-ingest's `prefixIDs`
 
-``PrefixQueryResponse.Missing []MissingEntity `json:"missing,omitempty"` ``. Each entry is a key on this page whose
-stored value failed the decode rule, reason `MissingError`. `MissingError`'s doc comment changes: it is now also
-sent for a stored value the prefix read refused. The batch verb keeps refusing such a value (inventory § 1).
+- The prefix and `prefixIDs` handlers share one function for the part they have in common: decoding and checking
+  the request, listing, sorting, dropping repeats, the total, the cursor and the limit. The prefix verb's
+  behaviour and tests do not change.
+- Reply: ``graph.PrefixIDsResponse{IDs []string `json:"ids"`; Total int `json:"total"`; NextCursor string
+  `json:"next_cursor,omitempty"`}``. `ids` is never `null`: an empty page is `[]`.
+- The page is the longest leading run of the selected keys whose whole encoded reply fits the server's maximum
+  payload. `next_cursor` is the page's last ID when more keys follow it. When the first key cannot fit, the reply is
+  refused with class invalid, code `response_too_large`, and the detail `response_bytes` and `max_payload`, as on
+  the prefix verb.
+- It reads no stored value except the existence check at `:286`. So it makes no damaged-entity record, does not
+  change health, and touches no cache.
+- A cursor goes back to the verb that gave it. Using one verb's cursor on the other is not promised.
 
-- *Total*: unchanged, the key listing (`query.go:303`).
-- *Fit and cursor*: the page is the sorted run of selected keys. Each key is either an entity or a missing entry.
-  `marshalFittingPrefixPage` keeps the longest leading run whose full encoding (entities, `missing`, `total`, cursor)
-  fits. The cursor is the last key kept when the run is cut short, and the existing following boundary otherwise. A
-  damaged key that ends the page therefore moves the cursor on. One that falls past a byte-trimmed boundary is not
-  listed and is read on the next page. A first key too large to fit is still `response_too_large`.
-- *Not found*: unlisted, as today. The comment at `query.go:325-329` stays true for not-found keys and gains one
-  sentence on decode failures.
-- *Fail closed*: any other read error, or an ended context, refuses the page transient `internal`, even when damaged
-  keys are also present (today the damaged-entity error wins, `query.go:603-607`).
-- *Side effects kept*: the record at the revision read, health, and no cache entry (`mutation_runtime.go:159`;
-  graph-entity-writes `:291`).
+## D2. Forward and table
 
-## D2. Readers
+- Rows: `prefixIDs` on `graph.ingest.query.prefixIDs` (graph-ingest) and on `graph.query.prefixIDs` (graph-query).
+  Both are bare, with `Reply` `PrefixIDsResponse`. graph-query's forward map gains
+  `"prefixIDs": {graph.ResponderGraphIngest, "prefixIDs"}`.
+- **graph-query's counts and summary stay on `prefix`.** They read only IDs (graph-query spec `:333`), so they look
+  like adopters. But ruling 1 has them refuse on damage, and moving them to `prefixIDs` would stop that.
 
-- fusionnats' `resolvePrefix` (`client.go:123-143`): seeds are entities plus `missing` IDs, merged in ID order.
-  `Entities` then takes its existing reset-refusal fallback and lists the damaged seed as unhydrated `error`
-  (`client.go:268-270`, `:319-321`). An empty or invalid `missing` ID is refused like an invalid entity ID.
-- graph-query's `readCountPage` (`counts.go:32-75`): when `missing` is non-empty it refuses fatal
-  `graph_state_reset_required`, naming the IDs. That is what its callers return today when the responder refuses
-  (`openspec/specs/graph-query/spec.md:186-187`). Counting damaged IDs as rows is a possible follow-up (owner Q1).
-- graph-gateway's `entitiesByPrefix` (`resolve.go:128-158`): a page with `missing` makes the field `null` with an error
-  naming the path and the IDs, as an invalid entity does today (spec `:71-74`). Adding `missing` to `EntityPage` is a
-  possible follow-up (owner Q1).
+## D3. Fusion
+
+- `resolvePrefix` requests `prefixIDs` with `Prefix` and the resolve limit. It refuses a listed ID that
+  `graph.ValidateDecodedEntityIDs` refuses, as `resolveSemantic` does, and returns one seed per ID in listed order.
+- The `verbs` lookup replaces `prefix` with `prefixIDs`: nothing else in the client reads the `prefix` row.
+- `Entities` does not change. Its re-read of a refused batch goes with #656.
+
+## What changes for a caller
+
+- Fusion's prefix search answers when an entity under the prefix is damaged, and lists it as unhydrated `error`. A
+  key deleted between the listing and the read is listed `not_found` instead of silently dropping out.
+- The prefix mode now sends up to 40 seeds, as `nl` and symbol do. Forty entities that together exceed the server's
+  maximum payload are refused `response_too_large`. Before, the prefix page's byte fit held fewer seeds. File this as
+  an issue on the batch reply. This change does not fix it.
 
 ## Proving tests (failing first)
 
-- graph-ingest unit, `poison_scoping_test.go`: A good, B damaged, C good → entities A and C, `missing` [B `error`],
-  `total` 3, B recorded, not cached, not deleted. This replaces the prefix halves of
-  `TestAggregateReadNamesEveryPoisonedEntity` and `TestEveryEntityReadRefusesTheSameStoredPoison`; the batch halves
-  stay as they are.
-- Damaged key last on a limited page → cursor is that key and the next page starts after it. Byte fit cut before the
-  damaged key → it is not listed and appears on the next page. Every key damaged → `entities` `[]`, `missing` lists
-  all, cursor set when more keys remain. The existing fit tests (`query_prefix_unit_test.go:196-274`) pass unchanged.
-- A KV read error together with a damaged key → transient `internal`, no body.
-- fusionnats: a prefix reply with `missing` [B] → `Fuse` answers with A and C, and B unhydrated `error`.
-- graph-query: a count page with `missing` → fatal `graph_state_reset_required`. graph-gateway: `entitiesByPrefix`
-  `null` with the path.
-- Generated checks: the page/cursor walk has a stated law. Following cursors to the end visits every listed key
-  exactly once, as an entity or a missing entry. A generated test checks it against a sorted-key reference model,
-  with damaged keys and payload limits drawn at random.
+- **graph-ingest, damaged entity listed.** Use `poisonScopingTestComponent` with A good, B damaged and C good.
+  `prefixIDs` gives `{"ids":[A,B,C],"total":3}`, and `poisonInventoryEntry(B)` is false afterwards. The prefix
+  verb on the same data still refuses fatal `graph_state_reset_required`. An exact six-part prefix naming B gives
+  `[B]`, and still no record.
+- **graph-ingest, first key too large.** A maximum payload too small for the first key gives `response_too_large`.
+- **graph-ingest, refusal codes.** Add `prefixIDs` cases to `TestQueryRefusalsCarryACode`: a bad request, a bad
+  cursor, a bad pattern, a failed listing, and too large.
+- **Generated check (rapid; record the seed and completed runs).** Draw:
+  - keys, some under the prefix and some not, some with damaged values, and repeats where the test bucket can list
+    a key twice;
+  - a limit from −1 to above 1000;
+  - a maximum payload from one-key size upwards.
 
-## Owner questions
+  Walk `prefixIDs` from no cursor until `next_cursor` is empty. Against the sorted, distinct reference keys, every
+  run must hold:
+  - The pages joined together equal the reference, with each key once.
+  - Every `total` is the reference's length.
+  - Every encoded reply fits the maximum payload.
+  - Each page is maximal: it holds min(limit, remaining) keys, or `json.Marshal` of the same `PrefixIDsResponse`
+    with the next key added (and its cursor) exceeds the maximum payload. This oracle is the real encoder, so a size
+    summed by hand that drifts from field order or `omitempty` fails.
+  - No damaged-entity record exists.
 
-- Q1. Keep refusing in graph-query and the gateway (drafted), or show damaged entities there (gateway `missing`
-  field, counts by ID)?
-- Q2. Reuse reason `error` (drafted), or add a new reason (fusion maps an unknown reason to `unknown`,
-  `client.go:344`)?
-- Q3. Pin ADR-079 D3 ("aggregate reads failing loudly") is changed for prefix and kept for batch. Is batch to follow
-  later?
+  The named cases above run as their own tests, before the generated check.
+- **Table.** `TestQueryVerbsDeclareEachRespondersVerbs` with the two rows. The graph-ingest and graph-query tests
+  that list rows gain them (inventory § 3). `TestGraphQueryRepliesDecodeByTheTable` gains a `prefixIDs` request.
+- **fusionnats unit.** A recording requester shows `Resolve` (prefix) sending to `graph.query.prefixIDs`, with seeds
+  in listed order, and an invalid listed ID refused. The fakes in `client_test.go` and `poison_test.go` answer
+  `prefixIDs`.
+- **Fusion over real responders** (`TestDamagedEntityUnderPrefixOverRealResponders`, modelled on
+  `TestPoisonedSeedOverRealResponders`). Store alpha and beta, and put damaged bytes under `poison`. As a
+  precondition, `graph.query.prefix` on `c360.test.fusion.alpha` refuses `graph_state_reset_required`. Then
+  `fusion.Engine.Fuse` with a prefix lens answers alpha and beta, with `unhydrated` `[{poison error}]`. On `main` the
+  same test fails with `graph_state_reset_required`, which shows it can fail.
 
 ## Merge order
 
-PR #655 merges before #654; #654 merges origin/main afterwards. No overlap with `processor/graph-lexical`.
+PR #655 and #654 overlap only in `processor/graph-query` code and tests, not in spec requirements. Whichever is
+approved first merges first, and the other merges `origin/main` and re-runs graph-query's tests. I recommend #655
+first because it is smaller.

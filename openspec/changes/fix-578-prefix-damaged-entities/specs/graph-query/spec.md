@@ -1,14 +1,15 @@
 # graph-query Delta
 
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: A prefix page with a damaged entity is refused
+### Requirement: Authority and name replies are forwarded unchanged
 
-When a prefix page that `hierarchyStats`, `summary`, `localSearch` or `globalSearch` reads lists any entry in
-`missing`, the verb SHALL refuse with class fatal and code `graph_state_reset_required`, naming the IDs, and SHALL NOT
-answer from the rest of the page.
+`entity`, `batch`, `prefix`, `prefixIDs`, `byName` and `predicate` SHALL forward the request bytes to the matching
+`graph.ingest.query.*`, `graph.index.query.byName` or `graph.index.query.predicate` verb and return the reply bytes
+unchanged, without decoding, re-encoding or re-checking either.
 
-#### Scenario: Counts over a damaged entity
+#### Scenario: Bytes pass through
 
-- **WHEN** `hierarchyStats` reads a page whose `missing` lists one entity
-- **THEN** the caller receives fatal `graph_state_reset_required` naming it
+- **WHEN** a caller of `entity`, `batch`, `prefix`, `prefixIDs`, `byName` or `predicate` sends bytes Q, with an unknown
+  field and non-canonical spacing, and the downstream verb replies with such bytes B
+- **THEN** the downstream verb receives exactly Q and the caller receives exactly B (`TestForwardPassesBytesBothWays`)

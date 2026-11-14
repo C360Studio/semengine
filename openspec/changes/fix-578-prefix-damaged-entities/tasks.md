@@ -1,29 +1,31 @@
 # Tasks: fix-578-prefix-damaged-entities
 
-Tests come first. Each code task ends at a clean-tree local `task verify`. "Shown to fail" is failing-first output in
-`notes/<task>.md` or `task mutate:check`. Premises cite `inventory.md` and `design.md`. One pull request (#655,
-`Closes #578`).
+Tests come first. Each code task ends at a clean-tree local `task verify`. "Shown to fail" means failing-first output
+in `notes/<task>.md` or `task mutate:check`. Premises are in `inventory.md` and `design.md`. One pull request: #655,
+which closes #578. #656, #657 and #658 stay open.
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas); INVENTORY PASS, pre-owner design
-  review passes, owner fills `Approved-by:`.
+- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas). Needs INVENTORY PASS, a
+  passing pre-owner design review, and the owner filling `Approved-by:`.
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Code
 
-- [ ] 2.1 graph-ingest tests first (`poison_scoping_test.go`, `query_prefix_unit_test.go`): the cases in design
-  "Proving tests" for graph-ingest, plus the generated cursor-walk check against a sorted-key model (record seed and
-  completed checks). Replace the prefix halves of the two named tests; the batch halves are unchanged.
-  `notes/2.1.md` shows each failing on today's code.
-- [ ] 2.2 `graph`: add `PrefixQueryResponse.Missing` and update the doc comments of `PrefixQueryResponse` and
-  `MissingError`. graph-ingest: the prefix read lists damaged keys, the fit covers them, and other read errors win
-  (design D1). Batch behaviour is unchanged: its tests pass untouched.
-- [ ] 2.3 fusionnats test then code: damaged prefix IDs become seeds (design D2); fusion over a reply with `missing`
-  answers with the rest.
-- [ ] 2.4 graph-query and graph-gateway tests then code: a page with `missing` is refused (design D2).
-- [ ] 2.5 Docs: `processor/graph-ingest/README.md:114-120`, `processor/graph-query/MIGRATION.md` (direct
-  `graph.query.prefix` readers read `missing`), `gateway/graph-gateway/README.md:34`.
+- [ ] 2.1 graph-ingest, tests first. Write the design's graph-ingest tests: damaged entity listed, exact prefix,
+  first key too large, the refusal-code cases, and the generated cursor walk with its seed and completed runs
+  recorded. Then `graph.PrefixIDsResponse`, the shared listing function, and the `prefixIDs` handler in
+  `queryHandlers` (design D1). The prefix verb's tests pass untouched, including `poison_scoping_test.go:296-302`
+  and `:432-434`. `notes/2.1.md` shows each new test failing on today's code.
+- [ ] 2.2 Table and forward. Add the two rows (design D2) and graph-query's forward entry. Update the tests that
+  list rows (inventory § 3) and `composition/reserved_test.go:134-135`'s comment. Update the doc comments of
+  `QueryVerbs` and `PrefixQueryRequest`.
+- [ ] 2.3 fusionnats, tests then code (design D3). Write the unit tests, then
+  `TestDamagedEntityUnderPrefixOverRealResponders`, shown failing on `main`.
+- [ ] 2.4 Docs:
+  - Gap statements: `pkg/fusion/README.md:120-121`, `pkg/fusion/MIGRATION.md:89-90` and `:133`.
+  - Verb lists: `pkg/fusion/README.md:101-109`, `pkg/fusion/fusionnats/doc.go:11-19`, `graph/README.md:48-55`,
+    `processor/graph-ingest/README.md:108-114`, `processor/graph-query/README.md:26`, `processor/graph-query/doc.go:9`.
 
 ## 3. Close
 

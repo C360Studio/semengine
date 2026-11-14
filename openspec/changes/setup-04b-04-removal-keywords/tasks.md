@@ -13,7 +13,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
 
 ## 2. Code
 
-- [ ] 2.1 PR A. The example classifier goes (design D1). Premise: `EmbeddingClassifier` has no production caller and
+- [x] 2.1 PR A. The example classifier goes (design D1). Premise: `EmbeddingClassifier` has no production caller and
   its constructor builds the hashed embedder (`graph/query/classifier_embedding.go:27,47,71`); the chain holds it as
   tier 1 (`classifier_chain.go:30,37,126`); graph-query passes `nil` (`processor/graph-query/globalsearch.go:326`).
   Accept: new `TestChainAnswersFromFirstTier` and `TestChainOptionsAreCopies` (an edit to a returned `Options` map

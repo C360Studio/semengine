@@ -77,7 +77,7 @@ func TestKeywordExclusions(t *testing.T) {
 // TestKeywordExclusionKeepsOtherHints: an excluded operation beside a
 // temporal hint leaves the temporal hint at tier 0.
 func TestKeywordExclusionKeepsOtherHints(t *testing.T) {
-	got, err := NewClassifierChain(NewKeywordClassifier(), nil).ClassifyQuery(t.Context(),
+	got, err := NewClassifierChain(NewKeywordClassifier()).ClassifyQuery(t.Context(),
 		"Do not count sensors from yesterday")
 	require.NoError(t, err)
 	require.NotNil(t, got)
@@ -87,7 +87,8 @@ func TestKeywordExclusionKeepsOtherHints(t *testing.T) {
 }
 
 // exclusionDomains are iot example shapes: an operation in the caller's own
-// words, so no framework hint name says "count".
+// words, so no framework hint name says "count". The LLM tier reads them as
+// few-shot examples.
 func exclusionDomains() []*DomainExamples {
 	return []*DomainExamples{{
 		Domain: "iot",
@@ -106,51 +107,51 @@ func exclusionDomains() []*DomainExamples {
 	}}
 }
 
-// TestChainKeepsExclusions: a later tier cannot restore an operation the
+// TestChainKeepsExclusions: the LLM tier cannot restore an operation the
 // keyword tier excluded.
 func TestChainKeepsExclusions(t *testing.T) {
-	const threshold = 0.7 // the unwanted examples' scores reach it; (1) checks that
-	excludedQuestions := []struct{ query, unwanted string }{
-		{"Do not count devices in error state", "Count devices in error state"},
-		{"Not devices similar to TEMP-001", "Find devices similar to TEMP-001"},
+	excludedQuestions := []string{"Do not count devices in error state", "Not devices similar to TEMP-001"}
+	// The fake LLM answers every question with an aggregation and a similarity.
+	newClient := func() *countingLLMClient {
+		return &countingLLMClient{respond: func(context.Context) (string, error) {
+			return `{"aggregation_type":"count","use_embeddings":true}`, nil
+		}}
 	}
 
-	// (1) The example tier alone would answer each question with the unwanted
-	// example; without this the chain part proves nothing.
-	t.Run("example tier alone matches the unwanted example", func(t *testing.T) {
-		examples, err := NewEmbeddingClassifier(t.Context(), exclusionDomains(), threshold)
-		require.NoError(t, err)
-		for _, q := range excludedQuestions {
-			match, score := examples.FindBestMatch(t.Context(), q.query)
-			require.NotNil(t, match, "%q", q.query)
-			assert.Equal(t, q.unwanted, match.Query, "%q", q.query)
-			assert.GreaterOrEqual(t, score, threshold, "%q", q.query)
+	// (1) The LLM tier alone answers each question; without this the chain part
+	// proves nothing.
+	t.Run("LLM tier alone answers", func(t *testing.T) {
+		client := newClient()
+		chain := NewClassifierChain(nil, NewLLMClassifier(client, exclusionDomains()))
+		for _, query := range excludedQuestions {
+			got, err := chain.ClassifyQuery(t.Context(), query)
+			require.NoError(t, err)
+			require.NotNil(t, got, "%q", query)
+			assert.Equal(t, 3, got.Tier, "%q", query)
+			assert.Equal(t, true, got.Options["use_embeddings"], "%q", query)
 		}
+		assert.Equal(t, int64(len(excludedQuestions)), client.calls.Load())
 	})
 
-	// (2) The full chain gives the default result and never asks the LLM.
+	// (2) With the keyword tier composed, the chain gives the default result and
+	// never asks the LLM.
 	t.Run("chain gives the default result", func(t *testing.T) {
-		for _, q := range excludedQuestions {
-			examples, err := NewEmbeddingClassifier(t.Context(), exclusionDomains(), threshold)
-			require.NoError(t, err)
-			client := &countingLLMClient{respond: func(context.Context) (string, error) {
-				return `{"aggregation_type":"count"}`, nil
-			}}
-			chain := NewClassifierChain(NewKeywordClassifier(), examples, NewLLMClassifier(client, exclusionDomains()))
+		for _, query := range excludedQuestions {
+			client := newClient()
+			chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, exclusionDomains()))
 
-			got, err := chain.ClassifyQuery(t.Context(), q.query)
+			got, err := chain.ClassifyQuery(t.Context(), query)
 			require.NoError(t, err)
 
-			assert.Equal(t, defaultResult(), got, "%q", q.query)
-			assert.Zero(t, client.calls.Load(), "%q: the LLM client was never called", q.query)
+			assert.Equal(t, defaultResult(), got, "%q", query)
+			assert.Zero(t, client.calls.Load(), "%q: the LLM client was never called", query)
 		}
 	})
 
 	// (3) The affirmative questions answer at tier 0.
 	t.Run("affirmative controls answer at tier 0", func(t *testing.T) {
-		examples, err := NewEmbeddingClassifier(t.Context(), exclusionDomains(), threshold)
-		require.NoError(t, err)
-		chain := NewClassifierChain(NewKeywordClassifier(), examples)
+		client := newClient()
+		chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, exclusionDomains()))
 		for query, want := range map[string]map[string]any{
 			"Count devices in error state": agg(AggregationCount, ""),
 			"Devices similar to TEMP-001":  {"use_embeddings": true},
@@ -161,6 +162,7 @@ func TestChainKeepsExclusions(t *testing.T) {
 			assert.Equal(t, 0, got.Tier, "%q", query)
 			assert.Equal(t, want, got.Options, "%q", query)
 		}
+		assert.Zero(t, client.calls.Load(), "a keyword hint stops the ladder")
 	})
 }
 

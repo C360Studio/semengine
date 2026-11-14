@@ -9,10 +9,10 @@ import (
 
 // ClassificationResult contains the classification output from the tiered classifier chain.
 type ClassificationResult struct {
-	Tier       int            // Which tier produced the result (0=keyword, 1=example classifier, 3=LLM)
-	Intent     string         // Classified intent (from an example or the LLM, empty for keyword)
-	Options    map[string]any // SearchOptions hints (from keyword, example or LLM)
-	Confidence float64        // Confidence score (1.0 for keywords, similarity for an example, 0.9 for the LLM)
+	Tier       int            // Which tier produced the result (0=keyword or default, 3=LLM)
+	Intent     string         // Classified intent (from the LLM, empty for keyword)
+	Options    map[string]any // SearchOptions hints (from keyword or LLM)
+	Confidence float64        // Confidence score (1.0 for keywords and the default, 0.9 for the LLM)
 }
 
 // ClassifierChain orchestrates tiered query classification.
@@ -20,29 +20,27 @@ type ClassificationResult struct {
 // Routing logic:
 //   - T0 (keyword): Always try first - a keyword hint stops the ladder
 //   - An operation the keyword tier excluded, with no keyword hint: the default result
-//   - T1 (example classifier): Only if no keyword hint AND one is composed
-//   - T3 (LLM): Only if no earlier tier produced a hint AND one is composed
+//   - T3 (LLM): Only if no keyword hint AND one is composed
 //   - Default: T0 with no hints and confidence 1.0, while the context is live
 //
 // Thread-safe for concurrent ClassifyQuery calls.
 type ClassifierChain struct {
-	keyword   *KeywordClassifier   // T0 - always available (pattern matching)
-	embedding *EmbeddingClassifier // T1 - example classifier (optional)
-	llm       *LLMClassifier       // T3 - LLM-based classification (optional)
+	keyword *KeywordClassifier // T0 - always available (pattern matching)
+	llm     *LLMClassifier     // T3 - LLM-based classification (optional)
 }
 
-// NewClassifierChain creates a classifier chain with keyword and optional embedding/LLM classifiers.
+// NewClassifierChain creates a classifier chain with a keyword classifier and an optional LLM
+// classifier. Tier numbers stay 0 and 3, the values callers read from ClassificationResult.Tier.
 //
 // All parameters may be nil. Chain will route queries through available tiers.
-func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifier, llmClassifiers ...*LLMClassifier) *ClassifierChain {
+func NewClassifierChain(keyword *KeywordClassifier, llmClassifiers ...*LLMClassifier) *ClassifierChain {
 	var llm *LLMClassifier
 	if len(llmClassifiers) > 0 {
 		llm = llmClassifiers[0]
 	}
 	return &ClassifierChain{
-		keyword:   keyword,
-		embedding: embedding,
-		llm:       llm,
+		keyword: keyword,
+		llm:     llm,
 	}
 }
 
@@ -50,8 +48,6 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 // tier that produces a hint:
 //   - T0: the keyword hints (temporal, spatial, similarity, path, zone, aggregation, ranking),
 //     confidence 1.0
-//   - T1: a copy of the matching example's options and its score, when the example classifier
-//     is composed and the match reaches its threshold
 //   - T3: the LLM classifier's result, when it is composed and succeeds
 //   - Default: T0 with no hints and confidence 1.0
 //
@@ -59,13 +55,13 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 //
 //	Keyword outcome                    Chain result
 //	any hint                           tier 0, those hints
-//	no hint, nothing excluded          tiers 1, 3, then the default result
-//	no hint, some operation excluded   the default result; tiers 1 and 3 are not asked
+//	no hint, nothing excluded          tier 3, then the default result
+//	no hint, some operation excluded   the default result; tier 3 is not asked
 //
 // An exclusion (a negated, quoted or undecided operation; KeywordClassifier.ClassifyQuery
-// states the rules) binds the final decision whichever later tiers are composed. A later tier
-// answers in the caller's own words, which no framework rule can read, so the chain does not ask
-// it. The cost: a question whose only operation is excluded gets no tier 1 or tier 3 answer.
+// states the rules) binds the final decision whether or not an LLM tier is composed. The LLM
+// tier answers in the caller's own words, which no framework rule can read, so the chain does not
+// ask it. The cost: a question whose only operation is excluded gets no tier 3 answer.
 //
 // A question with an out-of-range number is refused: no result and an invalid-input
 // error (errs.IsInvalid) naming the phrase and the bound it broke. The bounds: "last N hours" and
@@ -83,7 +79,7 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 // other calendar ranges are in that instant's zone, the server's time.Local.
 //
 // It returns nil and a nil error when the chain is nil, when ctx is nil or has ended before it
-// starts, and when ctx has ended by the time a tier after the keyword tier has produced nothing:
+// starts, and when ctx has ended by the time the LLM tier has produced nothing:
 // an ended context never gets the default result.
 //
 // A failed LLM tier under a live context is a declared degrade to the default result: the chain
@@ -121,21 +117,7 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) (*Cla
 		}
 	}
 
-	// T1: Try the example classifier if available and no keyword match. FindBestMatch returns
-	// a copy, so its Options map is the result's own.
-	if c.embedding != nil {
-		match, score := c.embedding.FindBestMatch(ctx, query)
-		if match != nil && score >= c.embedding.Threshold() {
-			return &ClassificationResult{
-				Tier:       1,
-				Intent:     match.Intent,
-				Options:    match.Options,
-				Confidence: score,
-			}, nil
-		}
-	}
-
-	// T3: Try LLM classifier if available and no keyword/example match
+	// T3: Try LLM classifier if available and no keyword match
 	if c.llm != nil {
 		result, err := c.llm.ClassifyQuery(ctx, query)
 		if err == nil && result != nil {
@@ -144,7 +126,7 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) (*Cla
 		// A failure under a live context degrades to the default result (declared above).
 	}
 
-	// A context that ended during a later tier gets no answer, not the default result.
+	// A context that ended during the LLM tier gets no answer, not the default result.
 	if ctx.Err() != nil {
 		return nil, nil
 	}

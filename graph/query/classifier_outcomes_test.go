@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -25,8 +26,8 @@ func (c *countingLLMClient) ClassifyQuery(ctx context.Context, _ string) (string
 	return c.respond(ctx)
 }
 
-// noHintQuery matches none of the keyword tier's patterns and no example in
-// productExamples, so the chain reaches its later tiers.
+// noHintQuery matches none of the keyword tier's patterns, so the chain reaches
+// its LLM tier.
 const noHintQuery = "tell me about the pumps"
 
 // defaultResult is the chain's default result, written out by hand.
@@ -45,18 +46,22 @@ func endedContext(t *testing.T) context.Context {
 // A chain never answers the default result for an ended context.
 func TestChainEndedContextReturnsNil(t *testing.T) {
 	t.Run("nil context", func(t *testing.T) {
-		chain := NewClassifierChain(NewKeywordClassifier(), createTestEmbeddingClassifier(t))
+		client := &countingLLMClient{respond: func(context.Context) (string, error) {
+			return `{"strategy":"semantic"}`, nil
+		}}
+		chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, nil))
 		var nilCtx context.Context
 		got, err := chain.ClassifyQuery(nilCtx, noHintQuery)
 		require.NoError(t, err)
 		assert.Nil(t, got)
+		assert.Zero(t, client.calls.Load(), "no tier runs for a nil context")
 	})
 
 	t.Run("ended at entry", func(t *testing.T) {
 		client := &countingLLMClient{respond: func(context.Context) (string, error) {
 			return `{"strategy":"semantic"}`, nil
 		}}
-		chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
+		chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, nil))
 		got, err := chain.ClassifyQuery(endedContext(t), noHintQuery)
 		require.NoError(t, err)
 		assert.Nil(t, got)
@@ -70,7 +75,7 @@ func TestChainEndedContextReturnsNil(t *testing.T) {
 			cancel()
 			return "", ctx.Err()
 		}}
-		chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
+		chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, nil))
 		got, err := chain.ClassifyQuery(ctx, noHintQuery)
 		require.NoError(t, err)
 		assert.Nil(t, got)
@@ -84,7 +89,7 @@ func TestChainLLMFailureGivesDefault(t *testing.T) {
 	client := &countingLLMClient{respond: func(context.Context) (string, error) {
 		return "", errors.New("provider unavailable")
 	}}
-	chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
+	chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, nil))
 
 	got, err := chain.ClassifyQuery(t.Context(), noHintQuery)
 	require.NoError(t, err)
@@ -99,7 +104,7 @@ func TestChainKeywordHintStopsTheLadder(t *testing.T) {
 	client := &countingLLMClient{respond: func(context.Context) (string, error) {
 		return `{"strategy":"semantic"}`, nil
 	}}
-	chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
+	chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, nil))
 
 	got, err := chain.ClassifyQuery(t.Context(), "events from yesterday")
 	require.NoError(t, err)
@@ -128,132 +133,83 @@ func TestLLMClassifierRefusesNilContext(t *testing.T) {
 	assert.Zero(t, client.calls.Load(), "the client was never called")
 }
 
-// TestNewEmbeddingClassifierRefusesEndedContext: construction embeds under the
-// caller's context and refuses a nil or ended one with no classifier.
-func TestNewEmbeddingClassifierRefusesEndedContext(t *testing.T) {
-	domains := []*DomainExamples{{
-		Domain:   "test",
-		Examples: []Example{{Query: "test query", Intent: "test"}},
+// TestChainAnswersFromFirstTier composes the chain the way a product does: an
+// example file on disk read with LoadDomainExamples, a KeywordClassifier, and
+// an LLM tier over the product's own LLMClient. A keyword hint answers at tier
+// 0 without the LLM; a question with no keyword hint gets the LLM's answer at
+// tier 3; with no LLM tier composed, that question gets the default result.
+// Each expected result is written out by hand from the fake LLM's JSON.
+func TestChainAnswersFromFirstTier(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pumps.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"domain":"plant","version":"1.0","examples":[
+		{"query":"Which pumps are running?","intent":"entity_lookup","options":{"types":["pump"]}}]}`), 0o600))
+	domains, err := LoadDomainExamples(path)
+	require.NoError(t, err)
+
+	client := &countingLLMClient{respond: func(context.Context) (string, error) {
+		return `{"types":["pump"]}`, nil
 	}}
+	chain := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, []*DomainExamples{domains}))
 
-	t.Run("ended", func(t *testing.T) {
-		c, err := NewEmbeddingClassifier(endedContext(t), domains, 0.5)
-		assert.Nil(t, c)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
+	t.Run("keyword hint", func(t *testing.T) {
+		got, err := chain.ClassifyQuery(t.Context(), "find similar items")
+		require.NoError(t, err)
+		assert.Equal(t, &ClassificationResult{Tier: 0, Options: map[string]any{"use_embeddings": true},
+			Confidence: 1.0}, got)
+		assert.Zero(t, client.calls.Load(), "a keyword hint stops the ladder")
 	})
 
-	t.Run("nil", func(t *testing.T) {
-		var nilCtx context.Context
-		c, err := NewEmbeddingClassifier(nilCtx, domains, 0.5)
-		assert.Nil(t, c)
-		require.Error(t, err)
-		assert.True(t, errs.IsInvalid(err), "want an invalid-input error, got %v", err)
+	t.Run("LLM result", func(t *testing.T) {
+		got, err := chain.ClassifyQuery(t.Context(), noHintQuery)
+		require.NoError(t, err)
+		assert.Equal(t, &ClassificationResult{Tier: 3, Intent: "entity_lookup",
+			Options: map[string]any{"query": noHintQuery, "types": []string{"pump"}}, Confidence: 0.9}, got)
+		assert.Equal(t, int64(1), client.calls.Load())
 	})
 
-	t.Run("ended with no examples", func(t *testing.T) {
-		c, err := NewEmbeddingClassifier(endedContext(t), nil, 0.5)
-		assert.Nil(t, c)
-		assert.ErrorIs(t, err, context.Canceled)
+	t.Run("default without an LLM tier", func(t *testing.T) {
+		got, err := NewClassifierChain(NewKeywordClassifier()).ClassifyQuery(t.Context(), noHintQuery)
+		require.NoError(t, err)
+		assert.Equal(t, defaultResult(), got)
 	})
 }
 
-// TestFindBestMatchEndedContext: no match and a score of 0 for a nil or ended
-// context.
-func TestFindBestMatchEndedContext(t *testing.T) {
-	c := createTestEmbeddingClassifier(t)
-	const query = "Show delayed deliveries"
-
-	var nilCtx context.Context
-	match, score := c.FindBestMatch(nilCtx, query)
-	assert.Nil(t, match)
-	assert.Equal(t, 0.0, score)
-
-	match, score = c.FindBestMatch(endedContext(t), query)
-	assert.Nil(t, match)
-	assert.Equal(t, 0.0, score)
-}
-
-// copyTestDomains returns fresh example domains on each call, sharing no map
-// or slice with an earlier call, so two classifiers built from them start
-// identical and independent.
-func copyTestDomains() []*DomainExamples {
-	return []*DomainExamples{{
-		Domain: "logistics",
-		Examples: []Example{
-			{Query: "Where is shipment ABC-123?", Intent: "entity_lookup",
-				Options: map[string]any{"entity_pattern": "shipment"}},
-			{Query: "Show delayed deliveries", Intent: "temporal_filter",
-				Options: map[string]any{"status_filter": "delayed"}},
-			{Query: "Find packages near location", Intent: "spatial_filter",
-				Options: map[string]any{"spatial": true}},
-		},
+// TestChainOptionsAreCopies: a caller that deletes and adds top-level keys in a
+// returned Options map changes no later result, from each tier and from the
+// default. The expected result is the first answer, copied before the edit.
+func TestChainOptionsAreCopies(t *testing.T) {
+	client := &countingLLMClient{respond: func(context.Context) (string, error) {
+		return `{"types":["pump"]}`, nil
 	}}
-}
-
-// copyTestQueries each match an example at tier 1 and no keyword pattern.
-var copyTestQueries = []string{
-	"Show delayed deliveries",
-	"Where is shipment ABC-123?",
-	"Find packages near location",
-	"Show delayed deliveries",
-	"Where is shipment ABC-123?",
-	"Find packages near location",
-}
-
-// TestResultEditsDoNotReachClassifier: a caller that edits what it was handed
-// changes no later result. Each subtest drives an edited classifier and an
-// untouched control built from identical examples through the same query
-// sequence. Classifying a query leaves a classifier as it was (FindBestMatch
-// embeds with the read-only GenerateQuery), so any difference is the edit's.
-func TestResultEditsDoNotReachClassifier(t *testing.T) {
-	t.Run("FindBestMatch", func(t *testing.T) {
-		edited := mustNewEmbeddingClassifier(t, copyTestDomains(), 0.3)
-		control := mustNewEmbeddingClassifier(t, copyTestDomains(), 0.3)
-
-		for step, query := range copyTestQueries {
-			got, gotScore := edited.FindBestMatch(t.Context(), query)
-			want, wantScore := control.FindBestMatch(t.Context(), query)
-			require.NotNil(t, want, "step %d: the control must match at tier 1", step)
-			require.NotNil(t, got, "step %d: edited classifier lost its match", step)
-			assert.Equal(t, want.Query, got.Query, "step %d: query", step)
-			assert.Equal(t, want.Intent, got.Intent, "step %d: intent", step)
-			assert.Equal(t, want.Options, got.Options, "step %d: options", step)
-			assert.Equal(t, want.Vector, got.Vector, "step %d: vector", step)
-			assert.Equal(t, wantScore, gotScore, "step %d: score", step)
-
-			// The caller edits every part of what it was handed.
-			got.Query = "edited"
-			got.Intent = "edited"
-			for k := range got.Options {
-				delete(got.Options, k)
-			}
-			got.Options["injected"] = true
-			for i := range got.Vector {
-				got.Vector[i] = 0
-			}
-		}
-	})
-
-	t.Run("chain", func(t *testing.T) {
-		edited := NewClassifierChain(NewKeywordClassifier(), mustNewEmbeddingClassifier(t, copyTestDomains(), 0.3))
-		control := NewClassifierChain(NewKeywordClassifier(), mustNewEmbeddingClassifier(t, copyTestDomains(), 0.3))
-
-		for step, query := range copyTestQueries {
-			got, err := edited.ClassifyQuery(t.Context(), query)
+	withLLM := NewClassifierChain(NewKeywordClassifier(), NewLLMClassifier(client, nil))
+	keywordOnly := NewClassifierChain(NewKeywordClassifier())
+	for _, tt := range []struct {
+		name, query string
+		chain       *ClassifierChain
+		tier        int
+	}{
+		{"keyword tier", "find similar items", withLLM, 0},
+		{"LLM tier", noHintQuery, withLLM, 3},
+		{"default result", noHintQuery, keywordOnly, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			first, err := tt.chain.ClassifyQuery(t.Context(), tt.query)
 			require.NoError(t, err)
-			want, err := control.ClassifyQuery(t.Context(), query)
-			require.NoError(t, err)
-			require.NotNil(t, want)
-			require.Equal(t, 1, want.Tier, "step %d: the control must answer at tier 1", step)
-			assert.Equal(t, want, got, "step %d: result", step)
+			require.NotNil(t, first)
+			require.Equal(t, tt.tier, first.Tier)
+			want := *first
+			want.Options = maps.Clone(first.Options)
 
-			for k := range got.Options {
-				delete(got.Options, k)
+			for k := range first.Options {
+				delete(first.Options, k)
 			}
-			got.Options["injected"] = true
-		}
-	})
+			first.Options["injected"] = true
+
+			next, err := tt.chain.ClassifyQuery(t.Context(), tt.query)
+			require.NoError(t, err)
+			assert.Equal(t, &want, next)
+		})
+	}
 }
 
 // TestZoneQueryAddsNoPredicate: a zone or area phrase keeps its path intent and
@@ -268,7 +224,7 @@ func TestZoneQueryAddsNoPredicate(t *testing.T) {
 		{"pumps near area north", "area-north"},
 	}
 	k := NewKeywordClassifier()
-	chain := NewClassifierChain(k, nil)
+	chain := NewClassifierChain(k)
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
 			opts := k.ClassifyQuery(t.Context(), tt.query)
@@ -285,69 +241,13 @@ func TestZoneQueryAddsNoPredicate(t *testing.T) {
 	}
 }
 
-// TestEmbeddingClassifierAsAProduct calls the example tier the way a product
-// does: two example files on disk, LoadDomainExamples, NewEmbeddingClassifier,
-// and a chain beside a KeywordClassifier the product holds as a Classifier.
-func TestEmbeddingClassifierAsAProduct(t *testing.T) {
-	dir := t.TempDir()
-	files := map[string]string{
-		"logistics.json": `{"domain":"logistics","version":"1.0","examples":[
-			{"query":"Show delayed deliveries","intent":"temporal_filter","options":{"status_filter":"delayed","limit":5}},
-			{"query":"Where is shipment ABC-123?","intent":"entity_lookup"}]}`,
-		"iot.json": `{"domain":"iot","version":"1.0","examples":[
-			{"query":"Show temperature readings for every sensor","intent":"sensor_query","options":{"metric":"temperature"}}]}`,
-	}
-	var domains []*DomainExamples
-	for _, name := range []string{"logistics.json", "iot.json"} {
-		path := filepath.Join(dir, name)
-		require.NoError(t, os.WriteFile(path, []byte(files[name]), 0o600))
-		d, err := LoadDomainExamples(path)
-		require.NoError(t, err)
-		domains = append(domains, d)
-	}
-
-	const threshold = 0.3
-	examples, err := NewEmbeddingClassifier(t.Context(), domains, threshold)
-	require.NoError(t, err)
-
-	var keyword Classifier = NewKeywordClassifier()
-	const question = "temperature readings for the pumps"
-	opts := keyword.ClassifyQuery(t.Context(), question)
-	require.NotNil(t, opts)
-	assert.Equal(t, question, opts.Query)
-
-	kc, ok := keyword.(*KeywordClassifier)
-	require.True(t, ok)
-	keywordOnly, err := NewClassifierChain(kc, nil).ClassifyQuery(t.Context(), question)
-	require.NoError(t, err)
-	require.Equal(t, defaultResult(), keywordOnly, "the question must carry no keyword hint")
-	chain := NewClassifierChain(kc, examples)
-
-	got, err := chain.ClassifyQuery(t.Context(), question)
-	require.NoError(t, err)
-
-	require.NotNil(t, got)
-	assert.Equal(t, 1, got.Tier)
-	assert.Equal(t, "sensor_query", got.Intent)
-	// The oracle is the iot file's options as encoding/json decodes them.
-	assert.Equal(t, map[string]any{"metric": "temperature"}, got.Options)
-	// The score's oracle is a control classifier built from the same domains and asked the same
-	// question.
-	control, err := NewEmbeddingClassifier(t.Context(), domains, threshold)
-	require.NoError(t, err)
-	match, wantScore := control.FindBestMatch(t.Context(), question)
-	require.NotNil(t, match)
-	require.Less(t, wantScore, 1.0, "the question must not match an example exactly")
-	assert.Equal(t, wantScore, got.Confidence)
-}
-
 // TestChainRefusesAnEntityBesideAZone: a question naming an entity reference and a zone or area
 // phrase names two places, and the keyword tier answers a path from only one of them, so the chain
 // refuses it naming both, with or without path words. A zone alone and a start
 // alone classify as before, and a reference that holds a zone word ("sensor-zone-1", "zone-b"
 // itself) is one place.
 func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
-	chain := NewClassifierChain(NewKeywordClassifier(), nil)
+	chain := NewClassifierChain(NewKeywordClassifier())
 	for _, tt := range []struct{ query, start, zone string }{
 		{"what is connected to sensor-001 in zone-b", "sensor-001", "zone-b"},
 		{"what is connected to sensor-001 near zone-b", "sensor-001", "zone-b"},

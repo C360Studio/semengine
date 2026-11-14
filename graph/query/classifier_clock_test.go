@@ -150,7 +150,7 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 		{"sensors within 1" + zeros(400) + "km of 0,0", "within 1" + zeros(400) + "km of 0,0", "radius"},
 	}
 
-	chain := NewClassifierChain(NewKeywordClassifier(), nil)
+	chain := NewClassifierChain(NewKeywordClassifier())
 	k := NewKeywordClassifier()
 	for _, tt := range refused {
 		t.Run("refused/"+short(tt.phrase), func(t *testing.T) {
@@ -252,24 +252,14 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 
 // TestOutOfRangeRefusedWithoutKeywordTier: the refusal does not depend on the
 // keyword tier being composed. With no keyword classifier, and
-// with later tiers that would answer, the chain gives no result, an
-// invalid-input error naming the phrase, and asks no later tier.
+// with an LLM tier that would answer, the chain gives no result, an
+// invalid-input error naming the phrase, and does not ask the LLM tier.
 func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
 	questions := []struct{ query, phrase, bound string }{
 		{"events in the last 3000000 hours", "last 3000000 hours", "at most 2562047 hours"},
 		{"sensors within 5km of 95,10", "within 5km of 95,10", "latitude"},
 		{"events in the last -1 hours", "last -1 hours", "at least 1"},
 	}
-	// Each question gets an example tier holding the iot examples and
-	// the question word for word, so that tier would answer it (checked below).
-	const threshold = 0.7
-	domainsFor := func(query string) []*DomainExamples {
-		domains := exclusionDomains()
-		domains[0].Examples = append(domains[0].Examples, Example{Query: query, Intent: "temporal_filter",
-			Options: map[string]any{"status_filter": "active"}})
-		return domains
-	}
-
 	assertRefused := func(t *testing.T, chain *ClassifierChain, q struct{ query, phrase, bound string }) {
 		t.Helper()
 		got, err := chain.ClassifyQuery(t.Context(), q.query)
@@ -281,22 +271,9 @@ func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
 	}
 
 	t.Run("no tier composed", func(t *testing.T) {
-		chain := NewClassifierChain(nil, nil)
+		chain := NewClassifierChain(nil)
 		for _, q := range questions {
 			assertRefused(t, chain, q)
-		}
-	})
-
-	t.Run("an example tier that would answer", func(t *testing.T) {
-		for _, q := range questions {
-			examplesTier, err := NewEmbeddingClassifier(t.Context(), domainsFor(q.query), threshold)
-			require.NoError(t, err)
-			match, score := examplesTier.FindBestMatch(t.Context(), q.query)
-			require.NotNil(t, match, "%q: score %v", q.query, score)
-			require.Equal(t, q.query, match.Query, "the example tier alone answers %q", q.query)
-			require.GreaterOrEqual(t, score, threshold, "%q", q.query)
-
-			assertRefused(t, NewClassifierChain(nil, examplesTier), q)
 		}
 	})
 
@@ -304,7 +281,7 @@ func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
 		client := &countingLLMClient{respond: func(context.Context) (string, error) {
 			return `{"strategy":"semantic"}`, nil
 		}}
-		chain := NewClassifierChain(nil, nil, NewLLMClassifier(client, nil))
+		chain := NewClassifierChain(nil, NewLLMClassifier(client, nil))
 		for _, q := range questions {
 			assertRefused(t, chain, q)
 		}
@@ -312,12 +289,12 @@ func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
 	})
 
 	// The refusal is the only change: a question in range still reaches the
-	// later tiers when the keyword tier is not composed.
+	// LLM tier when the keyword tier is not composed.
 	t.Run("in range control", func(t *testing.T) {
 		client := &countingLLMClient{respond: func(context.Context) (string, error) {
 			return `{"strategy":"semantic"}`, nil
 		}}
-		chain := NewClassifierChain(nil, nil, NewLLMClassifier(client, nil))
+		chain := NewClassifierChain(nil, NewLLMClassifier(client, nil))
 		got, err := chain.ClassifyQuery(t.Context(), "events in the last 3 hours")
 		require.NoError(t, err)
 		require.NotNil(t, got)

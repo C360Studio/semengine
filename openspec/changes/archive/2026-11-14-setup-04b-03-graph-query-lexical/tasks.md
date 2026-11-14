@@ -67,6 +67,6 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   ledger row (`docs/admission-ledger.yaml:4346-4396`), the `graph` ledger row's items (27) to (29) (`:2174-2187`) and
   ADR-087's port note (the changed decision named in the proposal) say what the verbs and types do now;
   `task docs:check` passes.
-- [ ] 3.2 PR B. Link #656 (a batch read refuses every entity when one is damaged) from PR B without a closing keyword,
+- [x] 3.2 PR B. Link #656 (a batch read refuses every entity when one is damaged) from PR B without a closing keyword,
   stating that one damaged hit refuses a search until it is fixed (design D4, option a).
-- [ ] 3.3 PR B. Sync the specs and archive the change as the last content commit; `task spec:check` passes.
+- [x] 3.3 PR B. Sync the specs and archive the change as the last content commit; `task spec:check` passes.

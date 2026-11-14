@@ -24,7 +24,8 @@ entities to a websocket client.
   order, the lead's group named in `groups`; once the lead's level-0 record's `entity_revision` reaches it too, that
   group's `record_state` is `read`
 - **AND** `fusion.Engine` over `fusionnats` answers a word question with the live entities whose name holds the
-  word, with provenance `lexical`
+  word, with provenance `lexical`; a symbol lens and a prefix lens return the expected nodes, relations and paths,
+  and an unknown name is a miss
 - **AND** `entity`, `entitiesByPrefix`, `entitiesByPredicate` and `pathSearch` posted to `/graph-gateway/graphql` on
   the process's HTTP port answer HTTP 200 with no `errors` and the fixed entities' IDs and triples
 - **AND** a websocket client connected to the output's port receives a `put` for each fixed entity, whose payload is
@@ -107,5 +108,5 @@ directly or through a package it imports.
 ### Requirement: The graph stack answers fusion without an embedder
 
 **Reason**: The main stack composes no graph-embedding (design D7), and a word question answers from graph-lexical
-(design D2), so the separate three-component stack checks nothing the main one does not. Its import rule moves to
-"fusionnats imports no embedding code"; the word question moves to "The graph stack boots from one configuration".
+(design D2). The separate stack's symbol, prefix and miss checks, and the word question, move into "The graph stack
+boots from one configuration", and its import rule into "fusionnats imports no embedding code".

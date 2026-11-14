@@ -30,7 +30,8 @@ default result for an ended context.
 
 `ClassifierChain.ClassifyQuery` SHALL return the keyword tier's hints (tier 0, confidence 1.0) when the keyword
 classifier finds any; otherwise the LLM tier's result (tier 3) when one is composed and succeeds; otherwise, while the
-context is live, the default result: tier 0, no hints, confidence 1.0.
+context is live, the default result: tier 0, no hints, confidence 1.0. Every result's top-level `Options` map SHALL be
+the caller's own; values nested inside an entry may be shared.
 
 #### Scenario: A keyword hint stops the ladder
 
@@ -44,6 +45,12 @@ context is live, the default result: tier 0, no hints, confidence 1.0.
   a question no keyword pattern matches
 - **THEN** the result is tier 3 with that hint, and with no LLM tier composed it is the default result
 - **AND** the test that verifies this is `TestChainAnswersFromFirstTier`
+
+#### Scenario: A caller edits a result
+
+- **WHEN** the caller deletes and adds top-level keys in a returned `Options` map
+- **THEN** the next result for the same question is unchanged
+- **AND** the test that verifies this is `TestChainOptionsAreCopies`
 
 ## MODIFIED Requirements
 
@@ -88,8 +95,9 @@ ended context gives no classification".
 
 ### Requirement: A result's top-level map, Example and vector are copies
 
-**Reason**: Only the example classifier returned an `Example` and a vector, and kept the maps it handed out (design
-D1). The keyword and LLM tiers build each result's `Options` map new.
+**Reason**: Only the example classifier returned an `Example` and a vector (design D1). The clause that every
+`Options` map the chain returns is the caller's own moves to "The chain answers from the keyword tier, then the LLM
+tier".
 
 ### Requirement: Classifying a query does not change the example classifier
 
@@ -105,10 +113,12 @@ D1). The keyword and LLM tiers build each result's `Options` map new.
 
 ### Requirement: The chain answers from the first tier that produces a hint
 
-**Reason**: The example classifier (tier 1) is deleted (design D1). Replaced by "The chain answers from the keyword
-tier, then the LLM tier".
+**Reason**: The example classifier (tier 1) is deleted (design D1), and a scenario of this requirement names it; a
+MODIFIED block must keep every current scenario, so the requirement is replaced under a new name. Replaced by "The
+chain answers from the keyword tier, then the LLM tier".
 
 ### Requirement: An ended context yields no classification
 
-**Reason**: `FindBestMatch` is deleted with the example classifier (design D1). Replaced by "An ended context gives no
-classification".
+**Reason**: `FindBestMatch` is deleted with the example classifier (design D1), and a scenario of this requirement
+names it; a MODIFIED block must keep every current scenario, so the requirement is replaced under a new name. Replaced
+by "An ended context gives no classification".

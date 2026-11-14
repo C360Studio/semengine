@@ -38,11 +38,30 @@ An NL `Resolve` SHALL send one `graph.LexicalSearchRequest` holding the query, t
 empty) to graph-lexical's `search` row of `graph.QueryVerbs()`, and SHALL return the hits as seeds in the reply's
 order, each with its score as the mode's own score.
 
+The question SHALL pass unchanged, so the word index's query rules apply, and its refusals SHALL reach the caller
+with their class, code and detail.
+
 #### Scenario: Seeds from the word index
 
 - **WHEN** an NL resolve is answered with three hits
 - **THEN** the one request went to `graph.lexical.query.search` with the query, limit and scope, and the seeds are
   the three hits in order with their scores (`TestNLResolveAsksTheWordIndex`)
+
+#### Scenario: A question the word index refuses
+
+- **WHEN** an NL question holds 33 distinct words, or `name:retry`
+- **THEN** `Fuse` returns the word index's refusal, class invalid, code `invalid_request`
+  (`TestNLWordIndexRefusalReturned`)
+
+#### Scenario: The word index is not ready
+
+- **WHEN** the word index refuses an NL resolve transient `index_not_ready`
+- **THEN** `Fuse` answers `deferred` with `defer_reason` `index_not_ready` (`TestNLIndexNotReadyDefers`)
+
+#### Scenario: No word index composed
+
+- **WHEN** nothing serves `graph.lexical.query.search`
+- **THEN** an NL `Fuse` returns a transient `internal` error naming that subject (`TestNLResolveWithoutWordIndex`)
 
 ## MODIFIED Requirements
 

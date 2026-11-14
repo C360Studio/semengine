@@ -19,7 +19,7 @@ which closes #578. #656, #657 and #658 stay open.
 - [x] 2.2 Table and forward. Add the two rows (design D2) and graph-query's forward entry. Update the tests that
   list rows (inventory § 3) and `composition/reserved_test.go:134-135`'s comment. Update the doc comments of
   `QueryVerbs` and `PrefixQueryRequest`.
-- [ ] 2.3 fusionnats, tests then code (design D3). Write the unit tests, then
+- [x] 2.3 fusionnats, tests then code (design D3). Write the unit tests, then
   `TestDamagedEntityUnderPrefixOverRealResponders`, shown failing on `main`.
 - [ ] 2.4 Docs:
   - Gap statements: `pkg/fusion/README.md:120-121`, `pkg/fusion/MIGRATION.md:89-90` and `:133`.

@@ -22,7 +22,7 @@ type requester interface {
 
 // verbs are the graph-query rows of graph.QueryVerbs() the client uses.
 type verbs struct {
-	entity, batch, prefix, byName, relationships, semantic graph.QueryVerb
+	entity, batch, prefixIDs, byName, relationships, semantic graph.QueryVerb
 }
 
 // lookupVerbs reads the client's rows from table, refusing one that is missing
@@ -36,7 +36,7 @@ func lookupVerbs(table []graph.QueryVerb) (verbs, error) {
 	}{
 		{"entity", &v.entity},
 		{"batch", &v.batch},
-		{"prefix", &v.prefix},
+		{"prefixIDs", &v.prefixIDs},
 		{"byName", &v.byName},
 		{"relationships", &v.relationships},
 		{"semantic", &v.semantic},
@@ -117,27 +117,29 @@ func (c *Client) resolveByName(ctx context.Context, query string, limit int) (fu
 	return fusion.Resolution{Seeds: seeds}, nil
 }
 
-// resolvePrefix resolves an ID prefix through prefix, taking only the first
-// page: seeds are bounded by limit, not exhaustive. An enumeration carries no
-// score, so the seeds carry none.
+// resolvePrefix resolves an ID prefix through prefixIDs, taking only the first
+// page: seeds are bounded by limit, not exhaustive. The listing reads no stored
+// value, so a damaged entity under the prefix becomes a seed and is reported
+// when it is hydrated, rather than failing the resolve. An enumeration carries
+// no score, so the seeds carry none.
 func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fusion.Resolution, error) {
 	if err := validatePrefix(query); err != nil {
 		return fusion.Resolution{}, err
 	}
-	raw, err := c.request(ctx, c.verbs.prefix, graph.PrefixQueryRequest{Prefix: query, Limit: limit})
+	raw, err := c.request(ctx, c.verbs.prefixIDs, graph.PrefixQueryRequest{Prefix: query, Limit: limit})
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
-	resp, err := decodeReply[graph.PrefixQueryResponse](c.verbs.prefix, raw)
+	resp, err := decodeReply[graph.PrefixIDsResponse](c.verbs.prefixIDs, raw)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
-	if err := graph.ValidateDecodedEntityStates(resp.Entities); err != nil {
+	if err := graph.ValidateDecodedEntityIDs(resp.IDs); err != nil {
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate prefix: %w", err)
 	}
-	seeds := make([]fusion.Seed, 0, len(resp.Entities))
-	for i := range resp.Entities {
-		seeds = append(seeds, fusion.Seed{ID: resp.Entities[i].ID})
+	seeds := make([]fusion.Seed, 0, len(resp.IDs))
+	for _, id := range resp.IDs {
+		seeds = append(seeds, fusion.Seed{ID: id})
 	}
 	return fusion.Resolution{Seeds: seeds}, nil
 }

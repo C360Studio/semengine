@@ -35,7 +35,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   search times in `notes/2.2.md`; every `graph/lexical` test, the generated checks and
   `TestScorecardHoldsItsFloor` pass unchanged; the figures, and the entity count and text size they are accepted
   for, are in `notes/2.2.md`. PR body: `Closes #623`.
-- [ ] 2.3 PR C. The component and its apply rule (design D1, D2). Premise: the follower plug-in contract and the
+- [x] 2.3 PR C. The component and its apply rule (design D1, D2). Premise: the follower plug-in contract and the
   Value-apply rule (`graph/follower/follower.go:62-88`, `:75-76`;
   `openspec/specs/entity-state-follower/spec.md:204-205`); the graph-clustering shape
   (`processor/graph-clustering/component.go:192-203`, `:276`); `lexical.Index` holds no revision
@@ -50,7 +50,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   `readiness.KeyGraphLexical` is declared; a mutant that applies a body read whatever the key's revision, one that
   drops the delivery guard, one that calls `Complete` before `Put`, and one that never completes a dropped read's
   revision are each shown to fail.
-- [ ] 2.4 PR C. The body path (design D5). Premise: SemSource offloads every passage and code body (inventory §9);
+- [x] 2.4 PR C. The body path (design D5). Premise: SemSource offloads every passage and code body (inventory §9);
   a missing object is `storage.ErrObjectNotFound`, not transient (`storage/objectstore/store.go:148-153`); store
   providers start and register before other components (`service/component_manager_lifecycle.go:37-54`, `:123`);
   `Failed` above 0 reads degraded (`graph/follower/follower.go:508-512`). Accept: `TestBlockingStoreBoundsFirstBuild`
@@ -61,19 +61,19 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   holds the server down (#574); a mutant that keeps reading a stalled store, one that stalls only on a context
   error, and one that retries a missing body are each shown to fail. `TestBodyCutAtCap` checks the gauge and the
   one warning line.
-- [ ] 2.5 PR C. The verb (design D4). Premise: subjects only in `graph/query_verbs.go` and the guard reads the table
+- [x] 2.5 PR C. The verb (design D4). Premise: subjects only in `graph/query_verbs.go` and the guard reads the table
   (inventory §3); graph-index's `min_revision` order (`openspec/specs/graph-index/spec.md:240-245`). Accept: the
   row, `graph.LexicalSearchRequest`, `graph.LexicalSearchData` and `graph.LexicalHit`;
   `TestSearchWithheldUntilBuilt`, `TestSearchMinRevisionBoundary`, `TestSearchScopeLimitMatched`,
   `TestSearchLimitRange`, `TestSearchRefusesParseErrors`, `TestQueryVerbsDeclareEachRespondersVerbs` (extended) and
   a served-exactly-its-verbs test pass; `AGENTS.md` § 2 and `.agents/rules-index.md` name `graph.lexical.query.*` in
   the reserved-subject row, and `task ateam:doctor` passes.
-- [ ] 2.6 PR C. First-build cost (design D5, D6; open question 1). Premise: a healthy read takes about 0.46 ms
+- [x] 2.6 PR C. First-build cost (design D5, D6; open question 1). Premise: a healthy read takes about 0.46 ms
   (`notes/probes/objectstore-watch-probe.log`); 32k offloaded entities come to about 15 s of reads by arithmetic.
   Accept: a probe, its source and log in `notes/2.6.md`, starts the component over 20,000 and 100,000 entities on
   one NATS server, inline and with bodies in an object store, and records time to the first answer; the result is
   compared with the budget the owner set and posted on #10.
-- [ ] 2.7 PR C. Smoke (design D8; #628 first item). Premise: the composition lists, factories and `indexKeys`
+- [x] 2.7 PR C. Smoke (design D8; #628 first item). Premise: the composition lists, factories and `indexKeys`
   (`internal/smoke/stack_integration_test.go:150-152`, `:177-185`; inventory §4); the running-broker test counts
   seven components (`openspec/specs/composed-stack/spec.md:77-90`). Accept: `TestSmoke_OneConfigAnswers`,
   `TestSmoke_StackRestartKeepsAnswers`, `TestSmoke_BrokerRestartBetweenRuns` and
@@ -85,7 +85,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
 
 ## 3. Land
 
-- [ ] 3.1 PR C. Docs (design D9). Premise: `graph/lexical/README.md:9-11` says no component fills an index; its "Who
+- [x] 3.1 PR C. Docs (design D9). Premise: `graph/lexical/README.md:9-11` says no component fills an index; its "Who
   word search helps" section. Accept: `processor/graph-lexical/README.md` states the verb, config, the four body
   states, the cap and its cut gauge, file paths, memory and restart cost, and says in plain words that sensor or
   drone telemetry and other entities without text gain nothing from word search and are reached by structure;
@@ -93,4 +93,4 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   `processor/graph-embedding/README.md` says its text comes from `graph/entitytext`; `docs/repository-map.md` and
   `scripts/cover-check.sh` gain the two packages; `docs/setup-plan.md:429-430` says SemSource's mainline builds on
   SemEngine (owner ruling on PR #629). The adoption list (design D3) is filed as one issue.
-- [ ] 3.2 PR C. Archive and spec sync.
+- [x] 3.2 PR C. Archive and spec sync.

@@ -6,9 +6,10 @@ that is frequent in the entity and rare across all entities, and that discounts 
 twice (`NameWeight`). The index is in memory and needs no external provider. The package imports no NATS client and
 reads no storage: the caller decides what text each entity has and writes it with `Put`.
 
-No component in this repository fills an index or answers a request with one yet. A product that wants word search
-builds an `Index` and keeps it current itself. Nothing persists: after a restart the caller writes the entities
-again.
+The `graph-lexical` component (`processor/graph-lexical`) fills an index from `ENTITY_STATES` and answers
+`graph.lexical.query.search` with it; its README covers configuration, memory and restart cost. A product that wants
+something else builds an `Index` and keeps it current itself. Nothing persists: after a restart the caller writes the
+entities again, as the component does by reading the bucket.
 
 ## Who word search helps
 

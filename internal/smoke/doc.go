@@ -4,12 +4,13 @@
 // composed-stack).
 //
 // The stack is graph-ingest, graph-index, graph-embedding (BM25, no provider), graph-clustering,
-// graph-query, graph-gateway and an applied-state websocket output on one NATS server. The test is
-// the producer, publishing a fixed set of entities on entity.>, and the observer: graph.query.*
-// answers (semantic, similar, localSearch and the text search among them), graph-gateway's GraphQL
-// answers over HTTP, the websocket output's frames folded against ENTITY_STATES, the GRAPH_STATUS
-// readiness keys, component health over HTTP and the EMBEDDING_INDEX records. Every wait is ordered
-// after the write it checks; a community answer waits on its record's entity_revision.
+// graph-lexical, graph-query, graph-gateway and an applied-state websocket output on one NATS
+// server. The test is the producer, publishing a fixed set of entities on entity.>, and the
+// observer: graph.query.* answers (semantic, similar, localSearch and the text search among them),
+// graph-lexical's word search, graph-gateway's GraphQL answers over HTTP, the websocket output's
+// frames folded against ENTITY_STATES, the GRAPH_STATUS readiness keys, component health over HTTP
+// and the EMBEDDING_INDEX records. Every wait is ordered after the write it checks; a community
+// answer waits on its record's entity_revision, a word search on its reply's indexed_revision.
 //
 // A second composition has no graph-embedding, neither configured nor registered:
 // TestSmoke_NoEmbedderAnswers boots it and asks pkg/fusion, over pkg/fusion/fusionnats, the

@@ -64,6 +64,18 @@ func TestGraphClusteringImportsNoProviderModule(t *testing.T) {
 	requireNoDirectModelProvider(t, "./processor/graph-clustering", llmPlumbingRule)
 }
 
+// graphLexicalProviderRule is the requirement every processor/graph-lexical violation names.
+const graphLexicalProviderRule = "(graph-lexical › Configuration is strict and tier 0)"
+
+// TestGraphLexicalImportsNoProviderModule holds processor/graph-lexical to graph-embedding's
+// guard: it does not import the module's model package, and it reaches the OpenAI SDK through
+// nothing it imports. The word index needs no model at any tier.
+//
+// Requirement: graph-lexical/Configuration is strict and tier 0
+func TestGraphLexicalImportsNoProviderModule(t *testing.T) {
+	requireNoDirectModelProvider(t, "./processor/graph-lexical", graphLexicalProviderRule)
+}
+
 // requireNoDirectModelProvider fails t on each provider path in pkg's listings, naming rule.
 func requireNoDirectModelProvider(t *testing.T, pkg, rule string) {
 	t.Helper()
@@ -76,7 +88,7 @@ func requireNoDirectModelProvider(t *testing.T, pkg, rule string) {
 // Requirement: graph-embedding/Tier-0 config
 func TestGraphEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 	const module = "example.com/fixture"
-	for _, pkg := range []string{"./processor/graph-embedding", "./processor/graph-clustering"} {
+	for _, pkg := range []string{"./processor/graph-embedding", "./processor/graph-clustering", "./processor/graph-lexical"} {
 		t.Run(strings.TrimPrefix(pkg, "./processor/"), func(t *testing.T) {
 			name := strings.TrimPrefix(pkg, "./")
 			self := module + "/" + name

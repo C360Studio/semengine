@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"pgregory.net/rapid"
+
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/message"
@@ -130,5 +132,69 @@ func TestDocumentCap(t *testing.T) {
 		if doc.Body != "été" || !doc.Cut {
 			t.Errorf("Document = %+v, want Body %q, cut", doc, "été")
 		}
+	})
+}
+
+// TestWithBodyMatchesDocument: a body joined later with WithBody to the Document an entity makes
+// with no body gives what Document gives with the body, and both equal the text rule written out
+// here: the name's values joined; the other values, then the body, joined by spaces and cut at
+// the cap as Truncate cuts, the cut reported. The named witnesses put the inline body text below,
+// at and past the cap, cut back to a space with room left for the body, and leave the inline text
+// or the body empty; the generated run draws texts with spaces and multibyte characters around a
+// small cap.
+//
+// Requirement: entity-text/Document splits an entity's text into Name and Body
+func TestWithBodyMatchesDocument(t *testing.T) {
+	type failer interface {
+		Helper()
+		Fatalf(format string, args ...any)
+	}
+	check := func(f failer, maxLen int, rest []string, body string) {
+		f.Helper()
+		state := entity(triple("acme.doc.name", "pumpname"))
+		for _, value := range rest {
+			state.Triples = append(state.Triples, triple("acme.doc.description", value))
+		}
+		var parts []string
+		for _, value := range append(slices.Clone(rest), body) {
+			if value != "" {
+				parts = append(parts, value)
+			}
+		}
+		full := strings.Join(parts, " ")
+		cut := entitytext.Truncate(full, maxLen)
+		want := entitytext.Document{Name: "pumpname", Body: cut, Cut: len(cut) < len(full)}
+
+		rule := entitytext.New(nil, maxLen)
+		if got := rule.Document(state, body); got != want {
+			f.Fatalf("cap %d, rest %q, body %q: Document = %+v; want %+v", maxLen, rest, body, got, want)
+		}
+		if got := rule.WithBody(rule.Document(state, ""), body); got != want {
+			f.Fatalf("cap %d, rest %q, body %q: WithBody = %+v; want %+v", maxLen, rest, body, got, want)
+		}
+	}
+	witnesses := []struct {
+		name string
+		rest []string
+		body string
+	}{
+		{"inline below the cap", []string{"abc"}, "defgh ijk"},
+		{"inline at the cap", []string{"abcdefghij"}, "klm"},
+		{"inline past the cap", []string{"abcde fghijkl"}, "mno"},
+		{"inline cut back to a space, with room for the body", []string{"abcdefg hijklmn"}, "x"},
+		{"no inline text", nil, "abcde fghijkl"},
+		{"no body", []string{"abc"}, ""},
+		{"two inline values", []string{"ab", "cd"}, "efghij"},
+	}
+	for _, w := range witnesses {
+		t.Run(w.name, func(t *testing.T) { check(t, 10, w.rest, w.body) })
+	}
+	if t.Failed() {
+		return // a failing witness is the finding; a generated run would only repeat it
+	}
+	text := rapid.StringOfN(rapid.SampledFrom([]rune{'a', 'b', ' ', 'é', '水'}), 0, 24, -1)
+	rapid.Check(t, func(t *rapid.T) {
+		check(t, rapid.IntRange(1, 16).Draw(t, "maxLen"), rapid.SliceOfN(text, 0, 3).Draw(t, "rest"),
+			text.Draw(t, "body"))
 	})
 }

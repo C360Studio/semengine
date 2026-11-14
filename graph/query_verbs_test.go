@@ -11,8 +11,8 @@ import (
 // entity, batch and prefix on graph.ingest.query.*, and each entry names its
 // subject and responder. There is no suffix verb. graph-index's eight verbs
 // follow on graph.index.query.*. graph-query's forwards follow on
-// graph.query.*, with the derived-index verbs four of them forward to; no
-// other entry exists.
+// graph.query.*, with the derived-index verbs four of them forward to, and
+// graph-lexical's search on graph.lexical.query.*; no other entry exists.
 func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	// The marks are literals per verb, read from what each handler replies with
 	// (graph-transport-boundary, "The verb table declares each reply's shape"):
@@ -51,6 +51,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: true, Reply: reflect.TypeFor[SpatialData]()},
 		{Name: "range", Subject: "graph.temporal.query.range", Responder: "graph-index-temporal",
 			Enveloped: true, Reply: reflect.TypeFor[TemporalData]()},
+		{Name: "search", Subject: "graph.lexical.query.search", Responder: "graph-lexical",
+			Enveloped: true, Reply: reflect.TypeFor[LexicalSearchData]()},
 		{Name: "entity", Subject: "graph.query.entity", Responder: "graph-query",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "batch", Subject: "graph.query.batch", Responder: "graph-query",
@@ -92,9 +94,9 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			ResponderGraphIngest, ResponderGraphIndex, ResponderGraphQuery)
 	}
 	if ResponderGraphEmbedding != "graph-embedding" || ResponderGraphIndexSpatial != "graph-index-spatial" ||
-		ResponderGraphIndexTemporal != "graph-index-temporal" {
-		t.Fatalf("responders = %q, %q, %q; want graph-embedding, graph-index-spatial, graph-index-temporal",
-			ResponderGraphEmbedding, ResponderGraphIndexSpatial, ResponderGraphIndexTemporal)
+		ResponderGraphIndexTemporal != "graph-index-temporal" || ResponderGraphLexical != "graph-lexical" {
+		t.Fatalf("responders = %q, %q, %q, %q; want graph-embedding, graph-index-spatial, graph-index-temporal, graph-lexical",
+			ResponderGraphEmbedding, ResponderGraphIndexSpatial, ResponderGraphIndexTemporal, ResponderGraphLexical)
 	}
 
 	got := QueryVerbs()

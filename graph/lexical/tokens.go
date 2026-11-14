@@ -26,14 +26,19 @@ var stopwords = map[string]bool{
 //
 // A word starts as a run of Unicode letters and digits, so "graph.query.status"
 // and "pump-7" split at their punctuation and one-letter words such as "v" stay.
+// A run that ends in a lower-case "s" right after two or more capitals is an
+// acronym in the plural: the "s" goes and the capitals stay one part, so
+// "IDs" gives "id" and "URLs" gives "url". Only the end of a run counts,
+// because inside one the same letters are as often an acronym followed by a
+// word ("EntityIDIsTerminated"), so "EntityIDsByType" splits by the rules below.
 // A run splits again where an identifier changes case: at a lower-case letter
 // followed by a capital, and before the last capital of a run of capitals
 // followed by lower case, so "withRetry" gives "with" and "retry" and
 // "HTTPServer" gives "http" and "server". The joined form ("withretry") is not
 // a word. Each part is lower-cased and its plural folded to the singular
-// ("services" to "service", "caches" to "cach", like "cache"). A word is
-// dropped when it or its fold is a stopword, so "wills" goes with "will", or
-// when its fold is over 32 bytes.
+// ("services" to "service", "caches" to "cach", like "cache", "ids" to "id").
+// A word is dropped when it or its fold is a stopword, so "wills" goes with
+// "will" and "ins" with "in", or when its fold is over 32 bytes.
 //
 // Tokenizing the words Tokens returns, joined by spaces, gives them back
 // unchanged.
@@ -62,11 +67,15 @@ func notWordRune(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(
 // lower-case form is not a capital, so a lower-cased word never splits again.
 func isCapital(r rune) bool { return unicode.ToLower(r) != r }
 
-// splitIdentifier splits a run at each lower-case letter followed by a
+// splitIdentifier drops the "s" of a run ending in two or more capitals and a
+// lower-case "s", then splits the run at each lower-case letter followed by a
 // capital, and before the last capital of a run of capitals followed by lower
 // case.
 func splitIdentifier(run string) []string {
 	rs := []rune(run)
+	if n := len(rs); n >= 3 && rs[n-1] == 's' && isCapital(rs[n-2]) && isCapital(rs[n-3]) {
+		rs = rs[:n-1]
+	}
 	var parts []string
 	start := 0
 	for i := 1; i < len(rs); i++ {
@@ -83,8 +92,11 @@ func splitIdentifier(run string) []string {
 // fold maps a lower-case plural to its singular by the first rule that
 // applies. The first two rules come before the plain plural rules so that
 // "caches" and "cache" meet at "cach", and "boxes" at "box" rather than "boxe".
-// Words ending in "us" or "ss" (status, class) keep their final "s". Folding a
-// fold changes nothing.
+// Words ending in "us" or "ss" (status, class) keep their final "s". The last
+// rule needs over 2 bytes so that "ids" meets "id" and "prs" meets "pr"; it
+// also folds words that are not plurals: "its" meets "it", and an acronym of
+// three letters ending in "s" loses it ("tls" to "tl", "cas" to "ca"). Two
+// bytes keep their "s" ("os", "ms"). Folding a fold changes nothing.
 func fold(w string) string {
 	n := len(w)
 	switch {
@@ -96,7 +108,7 @@ func fold(w string) string {
 		return w[:n-3] + "y"
 	case n > 3 && strings.HasSuffix(w, "es") && !hasAnySuffix(w, "aes", "ees", "oes"):
 		return w[:n-1]
-	case n > 3 && strings.HasSuffix(w, "s") && !hasAnySuffix(w, "us", "ss"):
+	case n > 2 && strings.HasSuffix(w, "s") && !hasAnySuffix(w, "us", "ss"):
 		return w[:n-1]
 	}
 	return w

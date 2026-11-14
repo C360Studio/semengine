@@ -46,6 +46,26 @@ func TestTokens(t *testing.T) {
 			want: []string{"istanbul", "σασ", "ǆemal"},
 		},
 		{
+			name: "acronym plurals",
+			text: "IDs IDS URLs URLS CPUs UUIDs ids",
+			want: []string{"id", "id", "url", "url", "cpu", "uuid", "id"},
+		},
+		{
+			name: "one capital before the s is not an acronym plural",
+			text: "kBs",
+			want: []string{"k", "bs"},
+		},
+		{
+			name: "a capital run before a word is unchanged",
+			text: "HTTPServer",
+			want: []string{"http", "server"},
+		},
+		{
+			name: "an acronym plural inside a run is unchanged",
+			text: "EntityIDsByType",
+			want: []string{"entity", "i", "ds", "type"},
+		},
+		{
 			name: "no words",
 			text: " .-_/ ",
 			want: nil,
@@ -64,7 +84,7 @@ func TestPluralRules(t *testing.T) {
 	together := [][2]string{
 		{"service", "services"}, {"query", "queries"}, {"class", "classes"}, {"match", "matches"},
 		{"box", "boxes"}, {"hash", "hashes"}, {"cache", "caches"}, {"index", "indexes"},
-		{"process", "processes"}, {"address", "addresses"},
+		{"process", "processes"}, {"address", "addresses"}, {"id", "ids"}, {"pr", "prs"},
 	}
 	for _, p := range together {
 		a, b := Tokens(p[0]), Tokens(p[1])
@@ -87,7 +107,7 @@ func TestPluralRules(t *testing.T) {
 		"boxe": "box", "axe": "axe", // rule 2 needs over 3 bytes
 		"flies": "fly", "pies": "pie", "beies": "beie", "baies": "baie", // rule 3
 		"files": "file", "uses": "use", "trees": "tree", "goes": "goe", "caes": "cae", // rule 4
-		"bugs": "bug", "its": "its", "bonus": "bonus", "chess": "chess", // rule 5
+		"bugs": "bug", "its": "it", "os": "os", "bus": "bus", "bonus": "bonus", "chess": "chess", // rule 5 needs over 2 bytes
 	}
 	for in, want := range folds {
 		if got := Tokens(in); !slices.Equal(got, []string{want}) {
@@ -129,7 +149,7 @@ func FuzzTokens(f *testing.F) {
 	for _, s := range []string{
 		"withRetry HTTPServer graph.query.status docker compose down -v pump-7 Services",
 		"wills does haves ands ares thes fors withs",
-		"İstanbul", "ǅemal", "Xϒ", "Straße", "ﬁle", "ΣΑΣ", "x́y", "a.b-c", "caches boxes queries",
+		"İstanbul", "ǅemal", "Xϒ", "Straße", "ﬁle", "ΣΑΣ", "x́y", "a.b-c", "caches boxes queries", "IDs ids URLs",
 		strings.Repeat("q", 33), "\xff\xfe", "",
 	} {
 		f.Add(s)

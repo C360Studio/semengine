@@ -70,7 +70,7 @@ func objectString(o any) string {
 
 // ResolveMode picks how the engine turns a raw query string into seed entities.
 // The Lens classifies the query; the engine maps the mode to a resolve strategy
-// (symbol → graph.query.byName exact lookup, prefix → graph.query.prefix, nl →
+// (symbol → graph.query.byName exact lookup, prefix → graph.query.prefixIDs, nl →
 // semantic search). Provenance follows from the mode: symbol/prefix are
 // deterministic, nl is embedding.
 type ResolveMode string
@@ -86,7 +86,14 @@ const (
 	ResolveModeSymbol ResolveMode = "symbol"
 
 	// ResolveModePrefix routes to deterministic prefix lookup
-	// (graph.query.prefix) — e.g. a path or namespace stem.
+	// (graph.query.prefixIDs). The query must be an entity-ID prefix: whole
+	// dot-separated ID segments, such as "acme.ops.robotics", or empty for
+	// every entity. A file path is not one, because a path is a triple on an
+	// entity and no part of its ID. A lens that returns this mode for a path
+	// gets an invalid error when the path holds a character an ID segment
+	// cannot ("/"). Any other path is read as an ID prefix ("comp.go" lists
+	// the entities under "comp.go."), which finds nothing or entities that
+	// have nothing to do with the file.
 	ResolveModePrefix ResolveMode = "prefix"
 )
 

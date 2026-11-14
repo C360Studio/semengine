@@ -62,11 +62,11 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
 
 ## 3. Docs and close-out
 
-- [ ] 3.1 PR B. `processor/graph-query/README.md` (`:31-33`, `:129-230`), `MIGRATION.md` (SemSource's `graph_search`,
-  `localSearch` callers), `.agents/skills/query-pattern/SKILL.md:79-134`, the graph-query ledger row
-  (`docs/admission-ledger.yaml:4346-4396`), the `graph` ledger row's items (27) to (29) (`:2174-2187`) and ADR-087's
-  port note (the changed decision named in the proposal) say what the verbs and types do now; `task docs:check`
-  passes.
+- [ ] 3.1 PR B. `processor/graph-query/README.md` (`:31-33`, `:129-230`), `docs/repository-map.md:90`, `MIGRATION.md`
+  (SemSource's `graph_search`, `localSearch` callers), `.agents/skills/query-pattern/SKILL.md:79-134`, the graph-query
+  ledger row (`docs/admission-ledger.yaml:4346-4396`), the `graph` ledger row's items (27) to (29) (`:2174-2187`) and
+  ADR-087's port note (the changed decision named in the proposal) say what the verbs and types do now;
+  `task docs:check` passes.
 - [ ] 3.2 PR B. Link #656 (a batch read refuses every entity when one is damaged) from PR B without a closing keyword,
   stating that one damaged hit refuses a search until it is fixed (design D4, option a).
 - [ ] 3.3 PR B. Sync the specs and archive the change as the last content commit; `task spec:check` passes.

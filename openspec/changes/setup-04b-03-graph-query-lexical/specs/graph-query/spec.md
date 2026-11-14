@@ -231,9 +231,9 @@ input.
 
 ### Requirement: Refusals that are not errors
 
-A responder's classified refusal, a caller's `invalid_request`, a not-honoured hint, a search answered without
-community records, and `not_enabled` SHALL NOT count as an error in `Health`; each request still counts once in
-`DataFlow` on entry.
+A responder's classified refusal, a caller's `invalid_request`, a hint not honoured because a responder refused it or
+global search does not apply it, a search answered without community records, and `not_enabled` SHALL NOT count as an
+error in `Health`; each request still counts once in `DataFlow` on entry.
 
 #### Scenario: A question this build cannot answer
 

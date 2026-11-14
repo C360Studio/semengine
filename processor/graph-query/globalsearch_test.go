@@ -108,7 +108,7 @@ func TestGlobalSearchListsHints(t *testing.T) {
 		{"how many pumps are there", "", "", []notHonoured{{"aggregation", "count", noAggregation}}},
 		// A count of a path: the start is verified and the count is listed.
 		{"how many sensors are connected to pump-42", "path", "pump-42", []notHonoured{{"aggregation", "count", noAggregation}}},
-		// What the old router refused as two filters, or a hint beside a filter.
+		// Two filters, and a hint beside a filter: the path is walked and each other hint is listed.
 		{"what is connected to pump-42 in the last 2 hours", "path", "pump-42", []notHonoured{{"time_range", "*", noTime}}},
 		{"top 5 sensors connected to pump-42", "path", "pump-42", []notHonoured{{"ranking", "", noRanking}}},
 		{"what changed in the last 2 hours within 5km of 40.7,-74.0", "", "", []notHonoured{{"time_range", "*", noTime}, {"area", "*", noPlace}}},
@@ -162,7 +162,7 @@ func TestGlobalSearchListsHints(t *testing.T) {
 	}
 
 	// Through the handler: every question reaches the word search, which a component holding no
-	// connection cannot send, its own refusal and one error; a count is no longer refused before it.
+	// connection cannot send, its own refusal and one error; a count question reaches it like any other.
 	for _, question := range []string{"max retries", "http connection pool", "what is connected to pump-42 in the last 2 hours"} {
 		request := fmt.Sprintf(`{"query":%q}`, question)
 		c, reply, err := askUnstarted(t, request)

@@ -55,7 +55,7 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   and locally, today's paths far below (`notes/probes/search-quality-probe.log`). Accept: `TestSearchScorecard`
   passes, logging R@1, R@10 and MRR for both verbs and the reference; a mutant that drops the local scope, and one that
   re-sorts matches by ID, are each shown to fail it.
-- [ ] 2.6 PR B. Smoke (design D9; #628 second item). Premise: `checkCommunities` reaches local and text search through
+- [x] 2.6 PR B. Smoke (design D9; #628 second item). Premise: `checkCommunities` reaches local and text search through
   the community record (`internal/smoke/smoke_integration_test.go:788`); composed-stack `:32-33` and `:98`. Accept:
   `TestSmoke_OneConfigAnswers` and `TestSmoke_BrokerRestartUnderRunningStack` pass with local and global search
   awaited on graph-lexical's `indexed_revision`, and the bm25 assertions left for change 4.

@@ -1,7 +1,7 @@
 // Package graphquery provides graph-query, the component that answers the graph.query.* verbs
 // declared for it in graph.QueryVerbs. It is a thin layer over graph-ingest and graph-index: they
-// hold the answers. It writes nothing; its one piece of state is a read-only view of the COMMUNITY_INDEX
-// bucket, which localSearch and the text search of globalSearch read.
+// hold the answers, with graph-lexical's word index. It writes nothing; its one piece of state is a
+// read-only view of the COMMUNITY_INDEX bucket, which localSearch and the text search of globalSearch read.
 //
 // The table in graph decides what it serves. Start subscribes a handler to each verb the table
 // declares for graph-query and fails if one has no handler.
@@ -32,39 +32,37 @@
 // error.
 //
 // localSearch searches one group of entities, the entities that share the first 4, 3 or 2 parts of an ID
-// (level 0, 1 or 2). It reads the group's record from the view of COMMUNITY_INDEX, then one page of at most
-// 1,000 entities of the group from graph-ingest's prefix verb, and ranks that page by how well each entity
-// matches the words of the query. The page is in ID order, so on a larger group the matches come from the
-// lexically smallest IDs, and entities_truncated says so. The reply's indexed_revision is the record's
-// entity_revision, and a min_revision above it is refused revision_not_reached before the page is read.
+// (level 0, 1 or 2). It asks graph-lexical's word search, scoped to the group's ID, passing the query, the
+// limit and min_revision unchanged, then reads the hits back with one graph-ingest batch request, so the
+// matches keep the word index's order and each entity comes as graph-ingest sent it. The reply's
+// indexed_revision is the word search's. The group's record from the view of COMMUNITY_INDEX is attached
+// when the view holds one, and record_state says when it does not; a missing record never refuses.
 // Start does not wait for the bucket and does not fail when it is missing: one goroutine opens it, runs
-// the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost, and
-// localSearch and the text search are refused transient index_not_ready until a view has caught up. Stop
-// ends the view. semengine_graph_query_search_truncated_total counts localSearch and text search answers
-// that were cut short.
+// the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost. Stop
+// ends the view. semengine_graph_query_search_truncated_total counts localSearch and text search
+// answers that were cut short.
 //
 // globalSearch, and searchGraph, which is the same handler under a second name with the same data,
-// choose one strategy from the question and answer with it. A question of one word is an entity
-// reference, resolved as entityByAlias resolves it (the alias verb, else a valid entity ID) and
-// answered with the entity verb's reply. Any longer question is classified once by the keyword tier
-// of graph/query, and a strategy answers only when its hint is the question's only hint: a path
-// from a start (the pathSearch walk, both directions, depth 3, 100 entities), a time range (the
-// time-range verb) or an area (the bounds verb). Two of those, an entity beside a zone or area, an
-// impossible number, a count or other aggregation, and path words, a similarity or a ranking beside
-// a start, a time range or an area are refused invalid_request, and a named path start that names
-// no entity is entity_not_found. Every other question is the text strategy: no hint, path words
-// with no start, a similarity or a ranking alone, and a one-word name that names no entity. It
-// scores the COMMUNITY_INDEX records at the request's level against the question's words, reads one
-// page of each of the best five scoring above 0, and replies with the matching entities (id, label,
-// score, the entity as graph-ingest sent it), the groups read, the hints it could not apply
-// (unhonoured_hints) and a plain answer. The matches are a sample, and entities_truncated says so.
-// Its indexed_revision is the highest entity_revision among the level's readable records. A view
-// that is not usable, or a level with no record, is transient index_not_ready; some unreadable
-// records are an answer that says so, one Health error and one Warn. A refusal from the alias or
-// entity verb reaches the caller as it arrived. Until their responders are in the tree, the
-// time-range and bounds strategies are refused transient internal, naming the subject. The keyword
-// classifier's limits stay its own: "from A to B" walks from A, and the refusal of a second place
-// can be wrong for a hyphenated word such as "real-time".
+// answer every question with a word search: graph-lexical's search over every entity, passing the
+// query, the limit and min_revision unchanged, the hits read back with one graph-ingest batch
+// request. The reply's text holds the matches in the word index's order (id, label, score, the
+// entity as graph-ingest sent it), the groups at the request's level that hold them, in the order of
+// each group's best match, with their match counts and records, and a plain answer. Its
+// indexed_revision is the word search's, and a refusal from the word search or the batch verb
+// reaches the caller as it arrived, before any hint is read. A group record that cannot be read is
+// an answer that says so, one Health error and one Warn.
+//
+// What the question asks beyond its words is listed in hints, honoured or not, and no hint refuses
+// the question. A one-word question is an entity reference, and is not classified; any longer
+// question is classified once by the keyword classifier of graph/query, whose refusal (two places,
+// an impossible number) is itself a hint not honoured. A reference, or a path's start, is verified
+// through the resolver entityByAlias uses (the alias verb, else a valid entity ID): when it names an
+// entity, the entity verb's reply or the walk from it (both directions, depth 3, 100 entities) is
+// added beside the text. A reference that names nothing, and any refusal of those reads, leaves the
+// hint not honoured with the refusal's code. A time range, an area, an aggregation, a similarity or
+// a ranking is never honoured here; each is listed with its reason. The keyword classifier's limits
+// stay its own: "from A to B" reads a start at A, and the refusal of a second place can be wrong for
+// a hyphenated word such as "real-time".
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

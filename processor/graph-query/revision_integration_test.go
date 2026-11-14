@@ -98,10 +98,11 @@ func TestReadYourWrites(t *testing.T) {
 }
 
 // TestMinRevisionRefusalThroughGraphQuery: each enveloped verb asked for a revision far above the
-// index's passes on the index's refusal with class, code and detail, localSearch refuses on its
-// group record's revision and the text tier of globalSearch and searchGraph on its level's highest, while the same
-// request without the field, or at the revision reached, succeeds, so it is the field that was refused. The index and the record have reached the only write
-// and nothing else writes, so the detail is that write's revision.
+// index's passes on the index's refusal with class, code and detail, localSearch passes on the word
+// index's, as do globalSearch and searchGraph whatever the question's hints, while the same request without
+// the field, or at the revision reached, succeeds, so it is the field that was refused. The indexes
+// and the record have reached the only write and nothing else writes, so the detail is that write's
+// revision.
 func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 	stack := startCommunityStack(t)
 	written := stack.write(t, drone1,
@@ -110,7 +111,8 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		[2]string{linkTo, drone2})
 	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
-	awaitCommunityView(t, stack.client, drone1, written)
+	awaitCommunityView(t, stack.component, systemGroupKey, written)
+	awaitWordIndexed(t, stack.client, written)
 
 	for _, tc := range []struct{ name, verb, body string }{
 		{"byName", "byName", `"name":"Alpha"`},
@@ -121,12 +123,11 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"pathSearch outgoing", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"outgoing","max_depth":1`, drone1)},
 		{"pathSearch incoming", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"incoming","max_depth":1`, drone1)},
 		{"summary", "summary", `"examples_per_type":1`},
-		// The record's entity_revision is the write's: the one write to its group.
-		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"drone"`, drone1)},
-		// The alias verb refuses for both strategies, before the entity read or the walk.
+		// The word index has applied the one write.
+		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"alpha"`, drone1)},
+		// The word search comes first, so its refusal is the reply whatever the hints.
 		{"globalSearch entity", "globalSearch", `"query":"held-1"`},
 		{"globalSearch path", "globalSearch", `"query":"what is connected to held-1"`},
-		// The text tier's mark is the highest entity_revision at level 0: drone1's group's, the write's.
 		{"globalSearch text", "globalSearch", `"query":"alpha drone"`},
 		{"searchGraph entity", "searchGraph", `"query":"held-1"`},
 		{"searchGraph path", "searchGraph", `"query":"what is connected to held-1"`},
@@ -207,7 +208,8 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	written := stack.write(t, drone3)
 	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
-	awaitCommunityView(t, stack.client, drone1, written)
+	awaitCommunityView(t, stack.component, systemGroupKey, written)
+	awaitWordIndexed(t, stack.client, written)
 
 	for _, stub := range []struct{ responder, name, reply string }{
 		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25","unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},

@@ -3,151 +3,166 @@ package graphquery
 import (
 	"cmp"
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
-	"strings"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/clustering"
-	"github.com/c360studio/semengine/pkg/errs"
-	"github.com/c360studio/semengine/pkg/graphview"
-)
-
-// maxTextGroups is the most groups the text tier reads for one question.
-const maxTextGroups = 5
-
-// A group record's score weights: a summary match counts more than a keyword match.
-const (
-	summaryTermScore = 2.0
-	keywordTermScore = 1.5
 )
 
 // textPastUnreadable is the Warn an answer past unreadable community records logs, and
 // textPastUnreadableReason why answering is safe.
 const (
-	textPastUnreadable       = "text search answered past unreadable community records"
-	textPastUnreadableReason = "community records are independent, and the answer reads only the readable ones"
+	textPastUnreadable       = "global search answered past unreadable community records"
+	textPastUnreadableReason = "a record only describes its group; the matches come from the word index"
 )
 
-// textResult is what the text tier read for one question, from which globalText builds the reply.
-// Its records and bytes are the view's and the pages', read only, and live as long as the request.
-type textResult struct {
-	groups     []clustering.Community // the records read, best first
-	matches    []rankedEntity         // their pages' matches, best first, ties by ID
-	scanned    int                    // the distinct entities the pages held
-	pageCut    bool                   // a group read had more than one page
-	unreadable int                    // the records at the level that could not be read
-	revision   uint64                 // the highest entity_revision among the level's readable records
-}
-
-// searchText reads the community records at the request's level once, refuses before any page read
-// what it cannot answer, then reads one prefix page of each group textGroups chooses and ranks its
-// entities as localSearch does. Its refusals, in order: more than graph.MaxSearchTerms terms is
-// invalid_request; a view it cannot read or a level with no record, readable or not, is transient
-// index_not_ready; every record unreadable is transient internal, one error; a min_revision above
-// the mark is transient revision_not_reached naming it.
-func (c *Component) searchText(ctx context.Context, prefixSubject string, request graph.GlobalSearchRequest, levelPrefix string) (textResult, error) {
-	terms, err := checkedSearchTerms(request.Query)
-	if err != nil {
-		return textResult{}, invalidRequest(err)
-	}
-	records, unreadable, err := levelRecords(c.communities.Load(), levelPrefix)
-	if err != nil {
-		return textResult{}, err
-	}
-	if len(records) == 0 {
-		// An unreadable record's revision is unknown, so there is no mark to answer at.
-		return textResult{}, c.unanswered(fmt.Errorf("all %d community records under %q are unreadable", unreadable, levelPrefix))
-	}
-	result := textResult{unreadable: unreadable}
-	for _, record := range records {
-		result.revision = max(result.revision, record.Value.EntityRevision)
-	}
-	if request.MinRevision > result.revision {
-		return textResult{}, errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached,
-			map[string]any{"indexed_revision": result.revision},
-			fmt.Errorf("min_revision %d is above the highest entity_revision %d under %q", request.MinRevision, result.revision, levelPrefix))
-	}
-	result.groups = textGroups(records, terms)
-	for _, group := range result.groups {
-		page, err := c.readCountPage(ctx, prefixSubject, group.ID, "")
-		if err != nil {
-			return textResult{}, err
-		}
-		matches, scanned, err := rankEntities(page.rows, terms, c.labelPredicates)
-		if err != nil {
-			return textResult{}, c.brokenReply(prefixSubject, err)
-		}
-		// The groups at one level are disjoint, so the merged list is their union.
-		result.matches = append(result.matches, matches...)
-		result.scanned += scanned
-		result.pageCut = result.pageCut || page.nextCursor != ""
-	}
-	slices.SortFunc(result.matches, compareRanked)
-	return result, nil
-}
-
-// levelRecords lists view's records under levelPrefix, sorted by key, and counts the unreadable
-// ones, in one read. No view, a view catching up, lost or stopped, and a level holding no record,
-// readable or not, are transient index_not_ready, counting no error.
-func levelRecords(view *communityView, levelPrefix string) ([]graphview.KeyedEntry[clustering.Community], int, error) {
-	if view == nil {
-		return nil, 0, communityNotReady(errors.New("no view of " + graph.BucketCommunityIndex))
-	}
-	records, unreadable, err := view.ListCounted(levelPrefix)
-	if err != nil {
-		return nil, 0, communityNotReady(err)
-	}
-	if len(records) == 0 && unreadable == 0 {
-		return nil, 0, communityNotReady(fmt.Errorf("%s holds no record under %q", graph.BucketCommunityIndex, levelPrefix))
-	}
-	return records, unreadable, nil
-}
-
-// textGroups returns up to maxTextGroups of records scoring above 0 over terms, best first, ties by
-// key. A record scoring 0 is never read, so the groups read are the ones the question matches, not
-// the first five by key.
-func textGroups(records []graphview.KeyedEntry[clustering.Community], terms []string) []clustering.Community {
-	type scored struct {
-		key    string
-		score  float64
-		record clustering.Community
-	}
-	var matched []scored
-	for _, record := range records {
-		if score := groupScore(record.Value, terms); score > 0 {
-			matched = append(matched, scored{key: record.Key, score: score, record: record.Value})
-		}
-	}
-	slices.SortFunc(matched, func(a, b scored) int {
-		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.key, b.key))
+// globalText is global search's answer: one unscoped word search, passing query, limit and
+// min_revision unchanged, then one batch read of its hits, grouped by their community at the
+// request's level, then the route's reference verified, with the hints listed beside the matches. A
+// refusal from either search verb reaches the caller as it arrived, before any hint is read; a hit
+// whose ID names no group is the word index's broken reply. The reply, fit to max_payload, is under
+// the word search's revision. verb is the verb asked, which the truncation counter and the Warn
+// name.
+//
+// A group's record is attached when the community view holds one, and never decides the answer:
+// record_state says when it is missing. An answer past unreadable records is a declared degrade: it
+// sets unreadable_groups, counts one error and logs one Warn, both only once the reply is encoded,
+// so a request that fails to fit counts the fit's one error alone.
+func (c *Component) globalText(ctx context.Context, verb string, subjects globalSearchSubjects, request graph.GlobalSearchRequest, route globalRoute) ([]byte, error) {
+	search, err := c.wordSearch(ctx, subjects.lexical, graph.LexicalSearchRequest{
+		Query: request.Query, Limit: request.Limit, MinRevisionField: request.MinRevisionField,
 	})
-	groups := make([]clustering.Community, 0, min(len(matched), maxTextGroups))
-	for _, m := range matched[:min(len(matched), maxTextGroups)] {
-		groups = append(groups, m.record)
+	if err != nil {
+		return nil, err
 	}
-	return groups
+	hits := search.Data.Results
+	hitGroups := make(map[string]searchGroup, len(hits))
+	for _, hit := range hits {
+		group, err := groupAt(hit.EntityID, request.Level)
+		if err != nil {
+			return nil, c.brokenReply(subjects.lexical, err)
+		}
+		hitGroups[hit.EntityID] = group
+	}
+	matches, missing, err := c.readMatches(ctx, subjects.batch, hits, c.labelPredicates)
+	if err != nil {
+		return nil, err
+	}
+	data := graph.TextSearchData{
+		Level:            request.Level,
+		Matches:          matches,
+		Matched:          search.Data.Matched,
+		Excluded:         search.Data.Excluded,
+		Missing:          missing,
+		BodiesNotIndexed: search.Data.BodiesNotIndexed,
+		Truncated:        search.Data.Matched > len(hits) || missing > 0,
+	}
+	answer := graph.GlobalSearchData{Hints: []graph.GlobalSearchHint{}}
+	if verified, ok := c.verify(ctx, subjects, route, request.MinRevision); ok {
+		answer.Hints = append(answer.Hints, verified.hint)
+		answer.Entity, answer.Path = verified.entity, verified.path
+	}
+	answer.Hints = append(answer.Hints, route.hints...)
+	limit, err := c.natsClient.MaxPayload()
+	if err != nil {
+		return nil, c.unanswered(err)
+	}
+	groupOf := matchGroups(c.communities.Load(), matches, hitGroups)
+	encoded, sent, err := fitTextSearch(data, groupOf, int(limit), func(data graph.TextSearchData) ([]byte, error) {
+		answer.Text = &data
+		response, err := graph.NewQueryResponse(graph.ResponderGraphQuery, search.IndexedRevision, answer)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(response)
+	})
+	if err != nil {
+		return nil, c.unanswered(err)
+	}
+	if sent.Truncated {
+		c.metrics.searchTruncated.WithLabelValues(verb).Inc()
+	}
+	if sent.UnreadableGroups > 0 {
+		c.lifecycle.CountError()
+		c.logger.Warn(textPastUnreadable, slog.String("verb", verb), slog.Int("level", request.Level),
+			slog.Int("unreadable", sent.UnreadableGroups), slog.String("reason", textPastUnreadableReason))
+	}
+	return encoded, nil
 }
 
-// groupScore is the group score over terms, which searchTerms has lowercased and made distinct:
-// summaryTermScore for each term contained in the record's statistical summary, and
-// keywordTermScore for each keyword and term where one contains the other, lowercased.
-func groupScore(record clustering.Community, terms []string) float64 {
-	summary := strings.ToLower(record.StatisticalSummary)
-	score := 0.0
-	for _, term := range terms {
-		if strings.Contains(summary, term) {
-			score += summaryTermScore
+// matchGroups is each match's group, by entity ID, as the reply lists it: the group's ID, its
+// record state and its record, each group's record read once from view. Matches is left 0 for
+// textGroups to count. hitGroups is each hit's group.
+func matchGroups(view *communityView, matches []graph.TextSearchMatch, hitGroups map[string]searchGroup) map[string]graph.TextSearchGroup {
+	byKey := map[string]graph.TextSearchGroup{}
+	groupOf := make(map[string]graph.TextSearchGroup, len(matches))
+	for _, match := range matches {
+		group := hitGroups[match.ID]
+		listed, ok := byKey[group.key]
+		if !ok {
+			record, state := groupRecord(view, group.key)
+			listed = graph.TextSearchGroup{CommunityID: group.id, RecordState: state, Record: attachedRecord(record, state)}
+			byKey[group.key] = listed
 		}
-		for _, keyword := range record.Keywords {
-			keyword = strings.ToLower(keyword)
-			if strings.Contains(keyword, term) || strings.Contains(term, keyword) {
-				score += keywordTermScore
-			}
+		groupOf[match.ID] = listed
+	}
+	return groupOf
+}
+
+// textGroups lists the groups holding matches, each once, in the order of its best match, since
+// matches are best first; each with the number of matches it holds. It also counts the groups whose
+// record is unreadable.
+func textGroups(matches []graph.TextSearchMatch, groupOf map[string]graph.TextSearchGroup) ([]graph.TextSearchGroup, int) {
+	groups := []graph.TextSearchGroup{}
+	for _, match := range matches {
+		group := groupOf[match.ID]
+		at := slices.IndexFunc(groups, func(listed graph.TextSearchGroup) bool { return listed.CommunityID == group.CommunityID })
+		if at < 0 {
+			groups = append(groups, group)
+			at = len(groups) - 1
+		}
+		groups[at].Matches++
+	}
+	unreadable := 0
+	for _, group := range groups {
+		if group.RecordState == graph.RecordUnreadable {
+			unreadable++
 		}
 	}
-	return score
+	return groups, unreadable
+}
+
+// textSearchAnswer is the answer text: the word index's count and the number of groups holding the
+// reply's matches; and how many are shown when the answer is cut.
+func textSearchAnswer(data graph.TextSearchData) string {
+	answer := fmt.Sprintf("Found %d matching entities in %d groups.", data.Matched, len(data.Groups))
+	if data.Truncated {
+		answer += fmt.Sprintf(" Showing the first %d.", len(data.Matches))
+	}
+	return answer
+}
+
+// fitTextSearch encodes data, with its groups and answer, keeping the most of its best matches whose
+// encoding is at most limit bytes; leaving any out sets Truncated, and the groups are those of the
+// matches kept, so their counts sum to the matches sent. groupOf is each match's group, from
+// matchGroups. It returns the encoding and the data it encodes, and refuses when even no matches do
+// not fit.
+func fitTextSearch(data graph.TextSearchData, groupOf map[string]graph.TextSearchGroup, limit int, encode func(graph.TextSearchData) ([]byte, error)) ([]byte, graph.TextSearchData, error) {
+	keep := func(n int) graph.TextSearchData {
+		kept := data
+		kept.Matches = data.Matches[:n]
+		kept.Groups, kept.UnreadableGroups = textGroups(kept.Matches, groupOf)
+		kept.Truncated = data.Truncated || n < len(data.Matches)
+		kept.Answer = textSearchAnswer(kept)
+		return kept
+	}
+	encoded, n, err := fitFirst(len(data.Matches), limit, func(n int) ([]byte, error) { return encode(keep(n)) })
+	if err != nil {
+		return nil, graph.TextSearchData{}, err
+	}
+	return encoded, keep(n), nil
 }
 
 // labelOrder is the label set DiscoverLabelPredicates returns, most salient first: the lowest
@@ -161,81 +176,4 @@ func labelOrder(priorities map[string]int) []string {
 		return cmp.Or(cmp.Compare(priorities[a], priorities[b]), cmp.Compare(a, b))
 	})
 	return order
-}
-
-// textSearchData is the reply's result for what the text tier read at level, with the hints the
-// question carried that it did not honour, before the fit and the answer. Groups, matches and hints
-// are never null: an empty list says none.
-func textSearchData(result textResult, level int, unhonoured []string) graph.TextSearchData {
-	groups := make([]graph.TextSearchGroup, 0, len(result.groups))
-	for _, group := range result.groups {
-		groups = append(groups, graph.TextSearchGroup{
-			CommunityID:      group.ID,
-			MemberCount:      group.MemberCount,
-			CommunitySummary: group.StatisticalSummary,
-			Keywords:         group.Keywords,
-		})
-	}
-	matches := make([]graph.TextSearchMatch, 0, len(result.matches))
-	for _, match := range result.matches {
-		matches = append(matches, graph.TextSearchMatch{ID: match.id, Label: match.label, Score: match.score, Entity: match.raw})
-	}
-	return graph.TextSearchData{
-		Level:             level,
-		Groups:            groups,
-		Matches:           matches,
-		EntitiesScanned:   result.scanned,
-		EntitiesTruncated: result.pageCut,
-		UnreadableGroups:  result.unreadable,
-		UnhonouredHints:   append([]string{}, unhonoured...),
-	}
-}
-
-// textSearchAnswer is the answer text, {n} being the matches in the reply: the counts, or that no
-// group matched; that it is a sample when it is; each group's summary, or its member count and
-// first five keywords when it has none; the hints not honoured; the records that could not be read.
-func textSearchAnswer(data graph.TextSearchData) string {
-	var sentences []string
-	if len(data.Groups) == 0 {
-		sentences = append(sentences, fmt.Sprintf("No group at level %d matched the question.", data.Level))
-	} else {
-		sentences = append(sentences, fmt.Sprintf("Found %d matching entities among %d read from %d groups at level %d.",
-			len(data.Matches), data.EntitiesScanned, len(data.Groups), data.Level))
-	}
-	if data.EntitiesTruncated {
-		sentences = append(sentences, "This is a sample: a group had more than one page, or matches were left out to fit.")
-	}
-	for _, group := range data.Groups {
-		if group.CommunitySummary != "" {
-			sentences = append(sentences, group.CommunityID+": "+group.CommunitySummary)
-			continue
-		}
-		sentence := fmt.Sprintf("%s: It has %d members.", group.CommunityID, group.MemberCount)
-		if len(group.Keywords) > 0 {
-			sentence += " Key themes: " + strings.Join(group.Keywords[:min(len(group.Keywords), 5)], ", ") + "."
-		}
-		sentences = append(sentences, sentence)
-	}
-	if len(data.UnhonouredHints) > 0 {
-		sentences = append(sentences, "Not honoured: "+strings.Join(data.UnhonouredHints, ", ")+".")
-	}
-	if data.UnreadableGroups > 0 {
-		sentences = append(sentences, fmt.Sprintf("%d group records at this level could not be read.", data.UnreadableGroups))
-	}
-	return strings.Join(sentences, " ")
-}
-
-// fitTextSearch encodes data, with its answer, keeping the most of its best matches whose encoding
-// is at most limit bytes; leaving any out sets EntitiesTruncated, as fitLocalSearch does. It also
-// reports whether the encoded answer is truncated, and refuses when even no matches do not fit.
-func fitTextSearch(data graph.TextSearchData, limit int, encode func(graph.TextSearchData) ([]byte, error)) ([]byte, bool, error) {
-	all := data.Matches
-	encoded, cut, err := fitFirst(len(all), limit, func(n int) ([]byte, error) {
-		kept := data
-		kept.Matches = all[:n]
-		kept.EntitiesTruncated = data.EntitiesTruncated || n < len(all)
-		kept.Answer = textSearchAnswer(kept)
-		return encode(kept)
-	})
-	return encoded, data.EntitiesTruncated || cut, err
 }

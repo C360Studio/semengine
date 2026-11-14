@@ -25,7 +25,7 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   `go test -race`; `TestSearchDeclaresExcluded` (graph-lexical integration) sees `excluded` in the reply;
   `FuzzParseQuery`, `TestScorecardHoldsItsFloor` and `TestScorecardBehaviour` pass unchanged; a mutant that drops
   the leading-star check is shown to fail. `MaxSearchTerms`'s comment names the word index. PR body: `Closes #624`.
-- [ ] 2.2 PR B. Local search on the index (design D2, D4). Premise: today's local search reads one prefix page and
+- [x] 2.2 PR B. Local search on the index (design D2, D4). Premise: today's local search reads one prefix page and
   ranks it by substring (`processor/graph-query/localsearch.go:252-317`, `:96`); a group ID is a valid scope
   (`graph/clustering/storage.go:101-111`, `pkg/types/entity_id.go:190`, `graph/id_prefix.go:45`); the batch reply
   names missing IDs, comes in no set order and re-encodes each entity (`graph/query_batch_types.go:51-56`,
@@ -34,16 +34,17 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   `TestLocalSearchIsScopedToTheGroup`; `TestLocalSearchRecordStates` (`read`, `none`, `not_ready`, `unreadable`, none
   refusing); `TestLocalSearchPassesWordIndexRefusals`; `TestSearchMatchesKeepHitOrder`; `TestSearchDropsMissingHits`;
   `TestLocalSearchEntitiesPassUnchanged` (an integer above 2^53 in the batch reply reaches the caller as sent);
-  `TestLocalSearchFitsMaxPayload` (lowest-ranked left out until it fits). The substring scorer and
-  `checkedSearchTerms` are deleted.
-- [ ] 2.3 PR B. Global search and its groups (design D3, D4). Premise: today's text tier lets records gate the read
+  `TestLocalSearchFitsMaxPayload` (lowest-ranked left out until it fits). Local search no longer
+  reaches the substring scorer; global search's text tier still does, so its deletion is task 2.3's.
+- [x] 2.3 PR B. Global search and its groups (design D3, D4). Premise: today's text tier lets records gate the read
   (`processor/graph-query/textsearch.go:50-92`, `:111-153`); the answer's group is among the first ten hits' groups
   for 98.0% of questions against about 88% by chance (`notes/probes/search-quality-probe.log`). Accept: new
   `TestGlobalSearchGroupsHits` (groups in order of their best match, counts summing to the matches, records
   attached), `TestGlobalSearchWithoutCommunityIndex` (answers with records `not_ready`) and
   `TestGlobalSearchMatchesKeepWordIndexOrder`; `TestTruncatedSearchIsCounted` and `TestGlobalSearchTypesWire`
-  updated to the new fields; today's text tier and its group score are deleted.
-- [ ] 2.4 PR B. The router (design D5). Premise: `chooseRoute` refuses on aggregation, two filters and a hint beside a
+  updated to the new fields; today's text tier and its group score are deleted, with the substring scorer
+  (`checkedSearchTerms`, `searchTerms`, `score`, `rankEntities`, `minTextScore`), `communityNotReady` and their tests.
+- [x] 2.4 PR B. The router (design D5). Premise: `chooseRoute` refuses on aggregation, two filters and a hint beside a
   filter (`processor/graph-query/globalsearch.go:399-449`); 27 plain questions route or refuse as
   `openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/notes/probes/router-probe.log` shows. Accept:
   `TestEveryQuestionIsSearched` feeds the 27 probe questions and #535's: none is refused, each reply holds `text`, and
@@ -61,11 +62,11 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
 
 ## 3. Docs and close-out
 
-- [ ] 3.1 PR B. `processor/graph-query/README.md` (`:31-33`, `:129-230`), `MIGRATION.md` (SemSource's `graph_search`,
-  `localSearch` callers), `.agents/skills/query-pattern/SKILL.md:79-134`, the graph-query ledger row
-  (`docs/admission-ledger.yaml:4346-4396`), the `graph` ledger row's items (27) to (29) (`:2174-2187`) and ADR-087's
-  port note (the changed decision named in the proposal) say what the verbs and types do now; `task docs:check`
-  passes.
+- [ ] 3.1 PR B. `processor/graph-query/README.md` (`:31-33`, `:129-230`), `docs/repository-map.md:90`, `MIGRATION.md`
+  (SemSource's `graph_search`, `localSearch` callers), `.agents/skills/query-pattern/SKILL.md:79-134`, the graph-query
+  ledger row (`docs/admission-ledger.yaml:4346-4396`), the `graph` ledger row's items (27) to (29) (`:2174-2187`) and
+  ADR-087's port note (the changed decision named in the proposal) say what the verbs and types do now;
+  `task docs:check` passes.
 - [ ] 3.2 PR B. Link #656 (a batch read refuses every entity when one is damaged) from PR B without a closing keyword,
   stating that one damaged hit refuses a search until it is fixed (design D4, option a).
 - [ ] 3.3 PR B. Sync the specs and archive the change as the last content commit; `task spec:check` passes.

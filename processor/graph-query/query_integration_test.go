@@ -90,24 +90,21 @@ func declaredRows(t *testing.T) []forward {
 			downstream: verbRow(t, graph.ResponderGraphIndex, "predicateList"),
 			request:    []byte(`{}`),
 		},
-		// Its first downstream request is the page read only once the view holds drone1's record:
-		// a test sending this row calls withCommunityRecord before it starts graph-query and
-		// awaitCommunityView after.
 		forward{
 			verb:       verbRow(t, graph.ResponderGraphQuery, "localSearch"),
-			downstream: verbRow(t, graph.ResponderGraphIngest, "prefix"),
+			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
 			request:    []byte(`{"entity_id":"c360.test.query.system.drone.001","query":"drone"}`),
 		},
-		// A one-token question is an entity reference, so its first downstream request is the alias
-		// verb's.
+		// Every question is searched for its words first, a one-token entity reference included, so
+		// the first downstream request is the word search's.
 		forward{
 			verb:       verbRow(t, graph.ResponderGraphQuery, "globalSearch"),
-			downstream: verbRow(t, graph.ResponderGraphIndex, "alias"),
+			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
 			request:    []byte(`{"query":"sn-1"}`),
 		},
 		forward{
 			verb:       verbRow(t, graph.ResponderGraphQuery, "searchGraph"),
-			downstream: verbRow(t, graph.ResponderGraphIndex, "alias"),
+			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
 			request:    []byte(`{"query":"sn-1"}`),
 		},
 	)
@@ -315,9 +312,7 @@ func TestHandlerBudgetEndsAForward(t *testing.T) {
 	const budget = 300 * time.Millisecond
 	t.Setenv("SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT", budget.String()) // read when the client is built
 	client := fixtureClient(t)
-	withCommunityRecord(t, client)
 	c := startComponent(t, client, `{"query_timeout_ms": 600000}`)
-	awaitCommunityView(t, client, drone1, 1)
 
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) }) // before the Stop and the fixture's Close
@@ -460,9 +455,7 @@ func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			client := fixtureClient(t)
-			withCommunityRecord(t, client)
 			startComponent(t, client, `{}`)
-			awaitCommunityView(t, client, drone1, 1)
 			for _, f := range declaredRows(t) {
 				serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
 					return nil, tc.refusal
@@ -491,9 +484,7 @@ func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 // transport error's is not promised (ADR-112).
 func TestNoRespondersIsTransient(t *testing.T) {
 	client := fixtureClient(t)
-	withCommunityRecord(t, client)
 	startComponent(t, client, `{}`)
-	awaitCommunityView(t, client, drone1, 1)
 	for _, f := range declaredRows(t) {
 		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, f.request, requestTimeout)
 		if err == nil {
@@ -519,9 +510,7 @@ func TestNoRespondersIsTransient(t *testing.T) {
 func TestQueryTimeoutIsRead(t *testing.T) {
 	const configured = 300 * time.Millisecond
 	client := fixtureClient(t)
-	withCommunityRecord(t, client)
 	startComponent(t, client, fmt.Sprintf(`{"query_timeout_ms": %d}`, configured.Milliseconds()))
-	awaitCommunityView(t, client, drone1, 1)
 
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) }) // before the Stop and the fixture's Close
@@ -563,9 +552,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 	url := shared.Reset(t)
 	client := natsfixture.Open(t, url, openClient)
 	other := natsfixture.Open(t, url, openClient) // a connection graph-query does not use
-	withCommunityRecord(t, client)
 	c := startComponent(t, client, `{}`)
-	awaitCommunityView(t, client, drone1, 1)
 
 	rows := declaredRows(t)
 	var declared []string

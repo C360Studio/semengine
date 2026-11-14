@@ -86,6 +86,9 @@ func TestNLAnswerCarriesWordIndexCounts(t *testing.T) {
 		} {
 			t.Run(name, func(t *testing.T) {
 				resp, _ := searchCountKeys(t, g, nlQuery)
+				if resp.Provenance != fusion.ProvenanceLexical {
+					t.Errorf("Provenance = %q, want %q", resp.Provenance, fusion.ProvenanceLexical)
+				}
 				if !resp.Deferred || resp.BodiesNotIndexed != 2 || !slices.Equal(resp.Excluded, excluded) {
 					t.Errorf("Deferred=%v bodies_not_indexed=%d excluded=%v, want true, 2, [race]",
 						resp.Deferred, resp.BodiesNotIndexed, resp.Excluded)
@@ -110,6 +113,34 @@ func TestSymbolAnswerOmitsCounts(t *testing.T) {
 				if v, ok := keys[k]; ok {
 					t.Errorf("%s = %s after a symbol resolve, want no key", k, v)
 				}
+			}
+		})
+	}
+}
+
+// TestDeferralProvenanceFollowsMode: a deferral names the provenance of the
+// resolve mode that was asked, whichever read withheld the answer, so a
+// natural-language question is never reported as deterministic.
+func TestDeferralProvenanceFollowsMode(t *testing.T) {
+	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
+	for name, tc := range map[string]struct {
+		query string
+		g     *fakeGraph
+		want  []fusion.Want
+		prov  fusion.Provenance
+	}{
+		"nl resolve not ready":     {nlQuery, &fakeGraph{resolveErr: indexNotReady()}, nil, fusion.ProvenanceLexical},
+		"nl relations not ready":   {nlQuery, &fakeGraph{seeds: map[string][]string{nlQuery: {seed.ID}}, entities: map[string]*fusion.Entity{seed.ID: seed}, neighborsErr: indexNotReady()}, []fusion.Want{fusion.WantRelations}, fusion.ProvenanceLexical},
+		"symbol resolve not ready": {"OnEvent", &fakeGraph{resolveErr: indexNotReady()}, nil, fusion.ProvenanceDeterministic},
+		"symbol batch not ready":   {"OnEvent", &fakeGraph{seeds: map[string][]string{"OnEvent": {seed.ID}}, entErr: indexNotReady()}, nil, fusion.ProvenanceDeterministic},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, err := mustEngine(t, tc.g, nil).Fuse(t.Context(), fusion.Request{Query: tc.query, Want: tc.want}, refLens{})
+			if err != nil {
+				t.Fatalf("Fuse: %v", err)
+			}
+			if !resp.Deferred || resp.Provenance != tc.prov {
+				t.Errorf("Deferred=%v Provenance=%q, want true, %q", resp.Deferred, resp.Provenance, tc.prov)
 			}
 		})
 	}

@@ -443,6 +443,7 @@ func TestNLIndexNotReadyDefers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, subjectWordSearch, fake.lastSubject)
 	assert.True(t, resp.Deferred)
+	assert.Equal(t, fusion.ProvenanceLexical, resp.Provenance)
 	assert.Equal(t, graph.ErrorCodeIndexNotReady, resp.DeferReason)
 	assert.Empty(t, resp.Nodes)
 	assert.Empty(t, resp.Misses)

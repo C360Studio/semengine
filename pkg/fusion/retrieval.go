@@ -45,16 +45,16 @@ type RetrievalClient interface {
 
 // Seed is one resolved candidate, most relevant first.
 //
-// It carries Similarity because the graph.query.semantic wire already reports a
-// per-result score and the resolve surface was throwing it away — the engine could rank
-// only by the ORDER seeds arrived in, so a caller asking "how confident is this match?"
-// had nothing to read. Modes that carry no score (symbol, prefix) leave it zero, which
+// It carries Similarity because a natural-language resolve reports a per-result
+// score; without it the engine could rank only by the ORDER seeds arrived in, so a
+// caller asking "how confident is this match?" would have nothing to read. Modes that carry no score (symbol, prefix) leave it zero, which
 // is why HasSimilarity exists rather than treating 0 as a value.
 type Seed struct {
 	// ID is the resolved entity ID.
 	ID string
 	// Similarity is the resolve mode's own relevance score, when it has one.
-	// Semantic resolve reports cosine similarity; symbol and prefix report none.
+	// An NL resolve reports the word index's score, on no fixed scale and
+	// comparable only within one resolve; symbol and prefix report none.
 	Similarity float64
 	// HasSimilarity distinguishes "this mode scored it 0" from "this mode does not
 	// score". Without it a prefix seed would surface as a perfect zero-relevance

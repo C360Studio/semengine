@@ -23,7 +23,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   `go list -deps ./graph/query`; `classifier_embedding.go`, its two test files, `Example.Vector` and the tier 1
   scenarios are deleted; `graph/query/README.md`, `doc.go` and the `graph/query` ledger row (`:3927-4000`) say what
   the chain is now.
-- [ ] 2.2 PR B. `nl` asks the word index (design D2). Premise: fusionnats sends `nl` to graph-query's `semantic` row
+- [x] 2.2 PR B. `nl` asks the word index (design D2). Premise: fusionnats sends `nl` to graph-query's `semantic` row
   and looks rows up among graph-query's only (`pkg/fusion/fusionnats/client.go:30-55,151-177`); the word index takes
   `query`, `limit` and `scope` (`graph/query_lexical_types.go:10-15`). Accept: new `TestNLResolveAsksTheWordIndex`
   (subject from graph-lexical's row, the request's bytes, seeds in hit order with their scores), new

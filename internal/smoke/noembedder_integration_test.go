@@ -92,8 +92,8 @@ func (o observer) graphStatusKeys(t *testing.T) []string {
 // TestSmoke_NoEmbedderAnswers holds composed-stack, "The graph stack answers fusion without an
 // embedder": graph-ingest, graph-index and graph-query boot from one configuration with no
 // graph-embedding, and fusion over fusionnats answers symbol and prefix questions from them, misses
-// an unknown name, and refuses a word question as not enabled, naming the semantic verb, never
-// answering it empty.
+// an unknown name, and fails a word question, which needs graph-lexical, as transient internal
+// naming the word search, never answering it empty.
 func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -178,24 +178,24 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 		ContractVersion: fusion.ContractVersion,
 	})
 
-	// A word question goes to graph.query.semantic. graph-query is configured with embedding_enabled
-	// false, so it refuses at once, invalid not_enabled naming the verb, and the refusal reaches the
-	// caller intact (graph-query, "Embedding verbs can be turned off"). Never an empty answer.
+	// A word question goes to graph-lexical's word search, which this stack does not compose, so
+	// nothing answers it: the error is transient internal naming the subject, and never an empty
+	// answer.
 	resp, err = engine.Fuse(t.Context(), fusion.Request{Query: "falcon", Want: wants}, fleetLens{fusion.ResolveModeNL})
 	var refusal *errs.ClassifiedError
 	if !errors.As(err, &refusal) {
-		t.Fatalf("NL falcon answered %+v (error %v), want a classified refusal", resp, err)
+		t.Fatalf("NL falcon answered %+v (error %v), want a classified error", resp, err)
 	}
-	if refusal.Class != errs.ErrorInvalid || refusal.Code != graph.ErrorCodeNotEnabled ||
-		!strings.Contains(refusal.Error(), "semantic is not enabled") {
-		t.Fatalf("NL falcon refused %v (class %v, code %q), want invalid %q naming semantic",
-			refusal, refusal.Class, refusal.Code, graph.ErrorCodeNotEnabled)
+	const wordSearch = "graph.lexical.query.search"
+	if refusal.Class != errs.ErrorTransient || refusal.Code != graph.ErrorCodeInternal ||
+		!strings.Contains(refusal.Error(), wordSearch) {
+		t.Fatalf("NL falcon refused %v (class %v, code %q), want transient %q naming %s",
+			refusal, refusal.Class, refusal.Code, graph.ErrorCodeInternal, wordSearch)
 	}
 	if !reflect.DeepEqual(resp, fusion.Response{}) {
-		t.Fatalf("NL falcon returned %+v beside its refusal, want no response", resp)
+		t.Fatalf("NL falcon returned %+v beside its error, want no response", resp)
 	}
-	// not_enabled is a refusal, not an error of graph-query's, so a word question leaves the stack
-	// healthy.
+	// No component was asked, so a word question leaves the stack healthy.
 	requireComponentsHealthy(t, s)
 
 	stopStack(t, s)

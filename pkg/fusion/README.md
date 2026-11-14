@@ -96,13 +96,14 @@ if err != nil {
 `New` refuses a nil requester and a negative timeout. It starts nothing: the client holds no goroutine, no watch and
 no lock, so it has no `Close`, and it reads no readiness status. A read whose index is still catching up is refused
 with code `index_not_ready`, and the engine reads that reply. Each method sends one request to one of graph-query's
-`graph.query.*` verbs, with the subject read from `graph.QueryVerbs()`:
+`graph.query.*` verbs, or for an `nl` resolve to graph-lexical's word search, with the subject read from
+`graph.QueryVerbs()`:
 
 | Method | Verb |
 | --- | --- |
 | `Resolve`, `symbol` | `byName` |
 | `Resolve`, `prefix` | `prefixIDs` (lists IDs only), then `batch` |
-| `Resolve`, `nl` | `semantic` (with the request's `scope` when it is not empty) |
+| `Resolve`, `nl` | graph-lexical's `search` (with the request's `scope` when it is not empty) |
 | `Entity` | `entity` |
 | `Entities` | `batch` |
 | `Neighbors` | `relationships` |
@@ -124,12 +125,11 @@ when it holds a poisoned entity; only the listing is safe. One limit remains: a 
 to one `batch` read with no check that the reply fits the message size limit, so a prefix over very large entities
 can be refused with `response_too_large`.
 
-A stack with no graph-embedding must say so: set graph-query's `embedding_enabled` to `false` there. An `nl`
-  question is then refused invalid with code `not_enabled`, naming `semantic`, before anything is sent. Left at its
-  default (true), such a stack still fails the question with a transient `internal` refusal naming
-  `graph.embedding.query.search`, which a caller may retry without success.
+An `nl` question goes to the word index unchanged, so its query rules apply: a question it refuses, such as one
+holding `name:`, comes back as graph-lexical sent it, class invalid, code `invalid_request`. A stack with no
+graph-lexical fails every `nl` question with a transient `internal` error naming `graph.lexical.query.search`.
 
-`symbol` and `prefix` questions need no graph-embedding: `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers them
+`symbol` and `prefix` questions need no graph-lexical: `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers them
 over a stack of graph-ingest, graph-index and graph-query alone.
 
 ## Packages

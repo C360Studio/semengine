@@ -91,8 +91,9 @@ const (
 	// every entity. A file path is not one, because a path is a triple on an
 	// entity and no part of its ID. A lens that returns this mode for a path
 	// gets an invalid error when the path holds a character an ID segment
-	// cannot ("/"), and a miss when it does not ("comp.go" is read as the ID
-	// prefix "comp.go").
+	// cannot ("/"). Any other path is read as an ID prefix ("comp.go" lists
+	// the entities under "comp.go."), which finds nothing or entities that
+	// have nothing to do with the file.
 	ResolveModePrefix ResolveMode = "prefix"
 )
 

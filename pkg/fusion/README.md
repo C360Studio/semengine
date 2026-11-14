@@ -121,7 +121,7 @@ A `prefix` query is an entity-ID prefix: whole dot-separated segments of an ID, 
 empty for every entity. The client refuses any other query, class invalid with code `entity_id_prefix_invalid`,
 before it sends a request. A file path is not an entity-ID prefix, because a path is a triple on an entity and no
 part of its ID. A lens must not return `prefix` for one: a path with a slash is refused, and a bare file name such
-as `comp.go` is read as an ID prefix and finds nothing.
+as `comp.go` is read as an ID prefix, so it finds nothing or entities that have nothing to do with the file.
 
 A `prefix` resolve first lists the IDs under the prefix with `prefixIDs`, which reads no stored value, then reads
 those IDs through `Entities`. A poisoned entity under the prefix is therefore listed in `unhydrated` with reason

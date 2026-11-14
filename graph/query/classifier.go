@@ -129,7 +129,7 @@ func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *Sear
 
 // classify is ClassifyQuery at the instant now: every time range comes from now, in now's zone.
 // It also reports whether it excluded an operation, so the chain can keep the exclusion from
-// later tiers. A phrase whose number is out of range gives no hint; the chain refuses such a
+// the LLM tier. A phrase whose number is out of range gives no hint; the chain refuses such a
 // question through numbersOutOfRange before it asks any tier.
 func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOptions, bool) {
 	opts := &SearchOptions{

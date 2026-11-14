@@ -98,8 +98,8 @@ func TestChainLLMFailureGivesDefault(t *testing.T) {
 	assert.Equal(t, int64(1), client.calls.Load(), "the LLM tier was tried")
 }
 
-// TestChainKeywordHintStopsTheLadder: a keyword hint answers at tier 0 and no
-// later tier runs.
+// TestChainKeywordHintStopsTheLadder: a keyword hint answers at tier 0 and the
+// LLM tier does not run.
 func TestChainKeywordHintStopsTheLadder(t *testing.T) {
 	client := &countingLLMClient{respond: func(context.Context) (string, error) {
 		return `{"strategy":"semantic"}`, nil

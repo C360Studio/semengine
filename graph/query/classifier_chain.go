@@ -51,7 +51,7 @@ func NewClassifierChain(keyword *KeywordClassifier, llmClassifiers ...*LLMClassi
 //   - T3: the LLM classifier's result, when it is composed and succeeds
 //   - Default: T0 with no hints and confidence 1.0
 //
-// The keyword tier's outcome decides whether the later tiers are asked:
+// The keyword tier's outcome decides whether the LLM tier is asked:
 //
 //	Keyword outcome                    Chain result
 //	any hint                           tier 0, those hints

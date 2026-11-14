@@ -5,7 +5,6 @@ package graphquery
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync/atomic"
 	"testing"
 
@@ -25,19 +24,6 @@ func startMetered(t *testing.T, client *natsclient.Client, registry *metric.Metr
 		t.Fatalf("CreateGraphQuery: %v", err)
 	}
 	startLifecycle(t, "graph-query", built)
-}
-
-// stubPrefix stands in for graph-ingest's prefix verb, answering one matching row, with a
-// continuation when more is true: a page of a group larger than the page.
-func stubPrefix(t *testing.T, client *natsclient.Client, more *atomic.Bool) {
-	t.Helper()
-	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, func(context.Context, []byte) ([]byte, error) {
-		page := fmt.Sprintf(`{"entities":[{"id":%q,"triples":[]}],"total":1`, drone1)
-		if more.Load() {
-			page += `,"next_cursor":"after"`
-		}
-		return []byte(page + `}`), nil
-	})
 }
 
 // stubOneHit stands in for graph-lexical's word search and graph-ingest's batch verb, answering one
@@ -96,15 +82,12 @@ func TestTruncatedSearchIsCounted(t *testing.T) {
 	for _, verb := range []string{"globalSearch", "searchGraph"} {
 		t.Run(verb, func(t *testing.T) {
 			client := fixtureClient(t)
-			_, m := communityRecords(t, client)
-			publishDrones(t, m, 1, drone1)
 			registry := metric.NewMetricsRegistry()
 			startMetered(t, client, registry)
-			awaitTextMark(t, client, 0, 1)
 			var more atomic.Bool
-			stubPrefix(t, client, &more)
+			stubOneHit(t, client, &more)
 			gatherer := registry.PrometheusRegistry()
-			// drone1's group's summary holds "drone", and drone1 matches by its type.
+			// Two words and no hint: the text strategy.
 			const text = `{"query":"drone fleet"}`
 
 			for _, tc := range []struct {
@@ -113,11 +96,11 @@ func TestTruncatedSearchIsCounted(t *testing.T) {
 				request string
 				want    float64
 			}{
-				{"a page that holds the whole group", false, text, 0},
-				{"a page with a continuation", true, text, 1},
+				{"every match returned", false, text, 0},
+				{"more matched than returned", true, text, 1},
 				{"another", true, text, 2},
 				{"a refused request", true, `{"query":"drone fleet","level":3}`, 2},
-				{"a whole page again", false, text, 2},
+				{"every match again", false, text, 2},
 			} {
 				more.Store(tc.more)
 				// The reply returns only after the handler has counted, so the read is ordered after the write.

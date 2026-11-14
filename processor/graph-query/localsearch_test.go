@@ -12,7 +12,7 @@ import (
 func TestLocalSearchRequestDecoding(t *testing.T) {
 	request, group, err := decodeLocalSearchRequest([]byte(`{"entity_id":"acme.ops.src.docs.note.n00","query":"Alpha","level":2,"limit":100,"min_revision":7}`))
 	want := graph.LocalSearchRequest{EntityID: "acme.ops.src.docs.note.n00", Query: "Alpha", Level: 2, Limit: 100, MinRevisionField: graph.MinRevisionField{MinRevision: 7}}
-	if err != nil || request != want || group != (localGroup{key: "2.acme.ops", id: "acme.ops"}) {
+	if err != nil || request != want || group != (searchGroup{key: "2.acme.ops", id: "acme.ops"}) {
 		t.Errorf("decode = %+v, %+v, %v; want %+v, the group acme.ops under 2.acme.ops", request, group, err, want)
 	}
 	// The group at each level is the ID's first four, three or two parts, the record's key the level
@@ -98,8 +98,22 @@ func FuzzDecodeLocalSearchRequest(f *testing.F) {
 	})
 }
 
-// TestSearchAnswer checks the local search answer template against literal texts.
+// TestSearchAnswer checks both verbs' answer templates against literal texts (spec, "A cut answer").
 func TestSearchAnswer(t *testing.T) {
+	ten := make([]graph.TextSearchMatch, 10)
+	groups := []graph.TextSearchGroup{{CommunityID: "a", Matches: 5}, {CommunityID: "b", Matches: 4}, {CommunityID: "c", Matches: 1}}
+	global := graph.TextSearchData{Groups: groups, Matches: ten, Matched: 40, Truncated: true, UnreadableGroups: 1, UnhonouredHints: []string{"path"}}
+	if got, want := textSearchAnswer(global), "Found 40 matching entities in 3 groups. Showing the first 10."; got != want {
+		t.Errorf("global answer = %q, want %q", got, want)
+	}
+	global.Matches, global.Matched, global.Truncated = ten[:3], 3, false
+	if got, want := textSearchAnswer(global), "Found 3 matching entities in 3 groups."; got != want {
+		t.Errorf("a whole global answer = %q, want %q", got, want)
+	}
+	if got, want := textSearchAnswer(graph.TextSearchData{Groups: []graph.TextSearchGroup{}}), "Found 0 matching entities in 0 groups."; got != want {
+		t.Errorf("no global match = %q, want %q", got, want)
+	}
+
 	const summary = "Community of 7000 entities including 7000 notes. Key themes: alpha, beta."
 	match := graph.TextSearchMatch{ID: "acme.ops.src.docs.note.a", Score: 2, Entity: json.RawMessage(`{}`)}
 	data := graph.LocalSearchData{

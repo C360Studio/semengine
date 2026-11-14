@@ -826,6 +826,11 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	step("localSearch: answered with a record", localSearchSubject, searchRequest, 28)
 	step("localSearch: answered past an unreadable record", localSearchSubject, `{"entity_id":"c360.test.query.poison.drone.001","query":"drone"}`, 29)
 	entity.Store(refusing)
+	// The word index's one hit is now in the group whose record is unreadable, at level 0.
+	const poisonHit = "c360.test.query.poison.drone.001"
+	hitReply := `{"data":{"results":[{"entity_id":"` + poisonHit + `","score":1}],"matched":1},"producer":"graph-lexical"}`
+	word.Store(replying(hitReply))
+	batch.Store(replying(`{"entities":[{"id":"` + poisonHit + `","triples":[]}]}`))
 
 	// globalSearch: the alias stub still refuses and the entity stub too; the edge stubs answer empty.
 	const globalSearch = "graph.query.globalSearch"
@@ -836,8 +841,8 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	alias.Store(replying(`not json`))
 	step("globalSearch: an alias reply that does not decode", globalSearch, entityQuestion, 30)
 	alias.Store(ptr(aliasReply("")))
-	// A reference naming no entity is searched as text, whose level 0 holds the unreadable record
-	// localSearch read above: an answer past it counts one error.
+	// A reference naming no entity is searched as text, whose one match is in the group whose record
+	// localSearch read above as unreadable: an answer past it counts one error.
 	step("globalSearch: a reference naming no entity, searched as text", globalSearch, entityQuestion, 31)
 	alias.Store(ptr(aliasReply(drone1)))
 	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 31)
@@ -856,14 +861,22 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	outgoing.Store(refusing)
 	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 35)
 
-	// The text tier: level 0 holds drone1's group's record, which "drone fleet" matches, and the
-	// unreadable one; level 1 drone1's group's record alone. The prefix stub answers empty.
+	// The text strategy: the hit's level-0 group record is unreadable; its level-1 group, shared with
+	// drone1, has a readable record.
 	const textQuestion = `{"query":"drone fleet"}`
 	step("globalSearch: a text answer past an unreadable record", globalSearch, textQuestion, 36)
 	step("globalSearch: a text answer", globalSearch, `{"query":"drone fleet","level":1}`, 36)
-	step("globalSearch: a text min_revision above the mark", globalSearch, fmt.Sprintf(`{"query":"drone fleet","min_revision":%d}`, farAhead), 36)
-	prefix.Store(replying(`{}`))
-	step("globalSearch: a broken text page, one error past an unreadable record", globalSearch, textQuestion, 37)
-	prefix.Store(refusing)
-	step("globalSearch: a text page refused by the responder", globalSearch, textQuestion, 37)
+	word.Store(refusing)
+	step("globalSearch: the word search refused by the responder", globalSearch, textQuestion, 36)
+	word.Store(replying(`not json`))
+	step("globalSearch: a word reply that does not decode", globalSearch, textQuestion, 37)
+	// The batch would return it, so only the group check refuses.
+	word.Store(replying(`{"data":{"results":[{"entity_id":"c360.test","score":1}],"matched":1},"producer":"graph-lexical"}`))
+	batch.Store(replying(`{"entities":[{"id":"c360.test","triples":[]}]}`))
+	step("globalSearch: a hit that names no group", globalSearch, textQuestion, 38)
+	word.Store(replying(hitReply))
+	batch.Store(refusing)
+	step("globalSearch: the batch refused by the responder", globalSearch, textQuestion, 38)
+	batch.Store(replying(`{"entities":[]}`))
+	step("globalSearch: a batch reply that leaves a hit out unnamed", globalSearch, textQuestion, 39)
 }

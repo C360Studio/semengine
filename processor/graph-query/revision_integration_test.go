@@ -99,9 +99,10 @@ func TestReadYourWrites(t *testing.T) {
 
 // TestMinRevisionRefusalThroughGraphQuery: each enveloped verb asked for a revision far above the
 // index's passes on the index's refusal with class, code and detail, localSearch passes on the word
-// index's and the text tier of globalSearch and searchGraph refuses on its level's highest, while the same
-// request without the field, or at the revision reached, succeeds, so it is the field that was refused. The index and the record have reached the only write
-// and nothing else writes, so the detail is that write's revision.
+// index's, as does the text strategy of globalSearch and searchGraph, while the same request without
+// the field, or at the revision reached, succeeds, so it is the field that was refused. The indexes
+// and the record have reached the only write and nothing else writes, so the detail is that write's
+// revision.
 func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 	stack := startCommunityStack(t)
 	written := stack.write(t, drone1,
@@ -127,7 +128,7 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		// The alias verb refuses for both strategies, before the entity read or the walk.
 		{"globalSearch entity", "globalSearch", `"query":"held-1"`},
 		{"globalSearch path", "globalSearch", `"query":"what is connected to held-1"`},
-		// The text tier's mark is the highest entity_revision at level 0: drone1's group's, the write's.
+		// The text strategy passes the word index's refusal.
 		{"globalSearch text", "globalSearch", `"query":"alpha drone"`},
 		{"searchGraph entity", "searchGraph", `"query":"held-1"`},
 		{"searchGraph path", "searchGraph", `"query":"what is connected to held-1"`},

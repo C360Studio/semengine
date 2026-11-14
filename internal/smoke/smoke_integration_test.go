@@ -729,25 +729,6 @@ func requireLexicalKept(t *testing.T, o observer, s stack, revision uint64, befo
 	}
 }
 
-// matching is a one-word search's matches among w, sorted by ID, written from the text score the
-// text search states (graph.TextSearchData; processor/graph-query/textsearch.go, score): one word matches an entity when it equals the ID's type position or lies within one of the
-// entity's predicates or string values, lowercased. The callers' words are no type, so every match
-// scores the same and ties order by ID. The values include graph-ingest's indexing profile and a
-// relationship's object, the other entity's ID.
-func (w want) matching(word string) []string {
-	out := []string{}
-	for id, e := range w {
-		held := append([]statement{{vocabulary.EntityIndexingProfile, smokeIndexingProfile}}, e.statements...)
-		if slices.ContainsFunc(held, func(s statement) bool {
-			return strings.Contains(strings.ToLower(s.predicate), word) || strings.Contains(strings.ToLower(s.object), word)
-		}) {
-			out = append(out, id)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
-
 // communityAnswer is one localSearch reply, or the refusal, with graph-clustering's envelope read
 // beside it.
 type communityAnswer struct {
@@ -822,8 +803,8 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 		t.Errorf("%s matched %v, want the word index's %v", what, ids, wantIDs)
 	}
 
-	// A text question, asked until its level's records reach revision. One word that names no alias
-	// is searched as text; "field" is in four names, so it is one of the group's most frequent words.
+	// A text question, asked until the word index reaches revision. One word that names no alias is
+	// searched as text; "field" is in four names.
 	const fieldWord = "field"
 	question := graph.GlobalSearchRequest{Query: fieldWord, MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
 	asked := await(t, s, fmt.Sprintf("globalSearch %q at min_revision %d to answer", fieldWord, revision), func(context.Context) (communityAnswer, error) {
@@ -852,19 +833,21 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 	}
 	var groups []string
 	for _, g := range text.Groups {
-		groups = append(groups, fmt.Sprintf("%s/%d", g.CommunityID, g.MemberCount))
+		members := 0
+		if g.Record != nil {
+			members = g.Record.MemberCount
+		}
+		groups = append(groups, fmt.Sprintf("%s/%d", g.CommunityID, members))
 	}
 	if wantGroups := []string{fmt.Sprintf("%s/%d", group, len(w))}; !slices.Equal(groups, wantGroups) ||
 		text.Level != 0 || text.UnreadableGroups != 0 || global.IndexedRevision < revision {
 		t.Errorf("globalSearch %q: groups %v, level %d, %d unreadable, indexed_revision %d; want %v, 0, 0, at %d or above",
 			fieldWord, groups, text.Level, text.UnreadableGroups, global.IndexedRevision, wantGroups, revision)
 	}
-	var matches []string
-	for _, m := range text.Matches {
-		matches = append(matches, m.ID)
-	}
-	if wantMatches := w.matching(fieldWord); !slices.Equal(matches, wantMatches) {
-		t.Errorf("globalSearch %q matched %v, want %v", fieldWord, matches, wantMatches)
+	// Every fixed entity is in the one group, so the matches are the word index's unscoped hits.
+	fieldHits := o.lexicalSearch(t, s, fieldWord, revision).Data.Results
+	if ids, wantIDs := matchIDs(text.Matches), lexicalIDs(fieldHits); !slices.Equal(ids, wantIDs) {
+		t.Errorf("globalSearch %q matched %v, want the word index's %v", fieldWord, ids, wantIDs)
 	}
 }
 

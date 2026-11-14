@@ -18,7 +18,7 @@ import (
 // TestSearchGraphAnswersAsGlobalSearch: searchGraph decodes and answers every request as
 // globalSearch does, with the same data under the same indexed_revision, and the same refusal,
 // class, code and message (spec "searchGraph answers as global search"). One request per outcome
-// global search has, over real ingest, index and community records. No semantic search follows the
+// global search has, over real ingest, index, word index and community records. No semantic search follows the
 // empty text answer: a spy on the embedding verbs holds that none is made. A request global search
 // refuses is refused unchanged.
 func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
@@ -44,8 +44,8 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 	literalData := map[string]string{
 		"a path": `{"strategy":"path","path":{"entities":[{"entity_id":"` + drone1 + `","depth":0},{"entity_id":"` + drone2 + `","depth":1}],` +
 			`"edges":[{"predicate":"` + linkTo + `","from_entity_id":"` + drone1 + `","to_entity_id":"` + drone2 + `"}],"truncated":false}}`,
-		"text that matches no group": `{"strategy":"text","text":{"level":0,"groups":[],"matches":[],"entities_scanned":0,` +
-			`"entities_truncated":false,"unreadable_groups":0,"unhonoured_hints":[],"answer":"No group at level 0 matched the question."}}`,
+		"text that matches nothing": `{"strategy":"text","text":{"level":0,"groups":[],"matches":[],"matched":0,"missing":0,` +
+			`"bodies_not_indexed":0,"truncated":false,"unreadable_groups":0,"unhonoured_hints":[],"answer":"Found 0 matching entities in 0 groups."}}`,
 	}
 	namedKey := map[string]string{"SemSource's summarize_threshold": "summarize_threshold"}
 	globalSubject := verbRow(t, graph.ResponderGraphQuery, "globalSearch").Subject
@@ -59,7 +59,7 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 		{"an entity", `{"query":"held-1"}`, "entity", 0, ""},
 		{"a path", `{"query":"what is connected to held-1"}`, "path", 0, ""},
 		// No semantic fallback follows this answer; it is the answer.
-		{"text that matches no group", `{"query":"zzz qqq"}`, "text", 0, ""},
+		{"text that matches nothing", `{"query":"zzz qqq"}`, "text", 0, ""},
 		{"text that matches", `{"query":"alpha drone"}`, "text", 0, ""},
 		{"a body that is not JSON", `{bad json`, "", errs.ErrorInvalid, graph.ErrorCodeInvalidRequest},
 		{"SemSource's summarize_threshold", `{"query":"alpha drone","summarize_threshold":1}`, "", errs.ErrorInvalid, graph.ErrorCodeInvalidRequest},

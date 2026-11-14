@@ -18,9 +18,9 @@ import (
 // The refusal texts global search sends, spelled here as the oracle rather than read from the code.
 const (
 	pathAndTime = "invalid request: the question names two filters, a path from pump-42 and a time range; ask with one"
-	// noCommunityView is the text tier's refusal while graph-query has no view of COMMUNITY_INDEX, as
-	// in a component that was never started: a question that reaches it was routed to text.
-	noCommunityView = "community index not ready: no view of COMMUNITY_INDEX"
+	// unsentWordSearch begins the refusal of a word search a component that was never started cannot
+	// send: a question that reaches it was routed to text.
+	unsentWordSearch = "request to graph.lexical.query.search: "
 )
 
 // refusalOfRoute returns err as a classified refusal of class and code, failing the test otherwise.
@@ -148,12 +148,15 @@ func TestGlobalSearchRoutesByHints(t *testing.T) {
 	}
 
 	// Through the handler (spec, "A question this build cannot answer"): a count is one input and no
-	// error, and asks nothing downstream, since the component holds no connection. A text question
-	// reaches the text tier, which refuses index_not_ready with no community view, and no error.
-	for _, tc := range []struct{ question, code, want string }{
-		{"max retries", graph.ErrorCodeInvalidRequest, refused[0].want},
-		{"http connection pool", graph.ErrorCodeIndexNotReady, noCommunityView},
-		{"forklift hydraulic leak", graph.ErrorCodeIndexNotReady, noCommunityView},
+	// error, and asks nothing downstream. A text question reaches the word search, which a component
+	// that holds no connection cannot send: its own refusal, one error.
+	for _, tc := range []struct {
+		question, code, want string
+		errors               int
+	}{
+		{"max retries", graph.ErrorCodeInvalidRequest, refused[0].want, 0},
+		{"http connection pool", graph.ErrorCodeInternal, unsentWordSearch, 1},
+		{"forklift hydraulic leak", graph.ErrorCodeInternal, unsentWordSearch, 1},
 	} {
 		request := fmt.Sprintf(`{"query":%q}`, tc.question)
 		c, reply, err := askUnstarted(t, request)
@@ -162,15 +165,15 @@ func TestGlobalSearchRoutesByHints(t *testing.T) {
 			continue
 		}
 		var refusal *errs.ClassifiedError
-		if !errors.As(err, &refusal) || refusal.Code != tc.code || err.Error() != tc.want {
+		if !errors.As(err, &refusal) || refusal.Code != tc.code || !strings.HasPrefix(err.Error(), tc.want) {
 			t.Errorf("globalSearch(%q) refused %v, want %s %q", tc.question, err, tc.code, tc.want)
 		}
 		// The handler counts before it returns.
 		if flow := c.DataFlow(); flow.Messages != 1 || flow.Bytes != int64(len(request)) {
 			t.Errorf("globalSearch(%q) DataFlow = %+v, want one message of %d bytes", tc.question, flow, len(request))
 		}
-		if got := c.Health().ErrorCount; got != 0 {
-			t.Errorf("globalSearch(%q) ErrorCount = %d, want 0", tc.question, got)
+		if got := c.Health().ErrorCount; got != tc.errors {
+			t.Errorf("globalSearch(%q) ErrorCount = %d, want %d", tc.question, got, tc.errors)
 		}
 	}
 }
@@ -352,20 +355,20 @@ func TestGlobalSearchRefusesHintsItCannotRead(t *testing.T) {
 // summarize_threshold, include_*) by name, and bytes after the request are refused.
 func TestGlobalSearchRequestKeys(t *testing.T) {
 	for _, tc := range []struct {
-		data   string
-		level  int
-		prefix string
+		data         string
+		level, limit int
 	}{
-		{`{"query":"what is connected to sensor-001","min_revision":7}`, 0, "0."},
-		{`{"query":"what is connected to sensor-001","min_revision":7,"level":0}`, 0, "0."},
-		{`{"query":"what is connected to sensor-001","min_revision":7,"level":2}`, 2, "2."},
+		{`{"query":"what is connected to sensor-001","min_revision":7}`, 0, 0},
+		{`{"query":"what is connected to sensor-001","min_revision":7,"level":0}`, 0, 0},
+		{`{"query":"what is connected to sensor-001","min_revision":7,"level":2,"limit":1}`, 2, 1},
+		{`{"query":"what is connected to sensor-001","min_revision":7,"limit":100}`, 0, 100},
 	} {
-		request, prefix, err := decodeGlobalSearchRequest([]byte(tc.data))
+		request, err := decodeGlobalSearchRequest([]byte(tc.data))
 		if err != nil {
 			t.Fatalf("decode(%s) = %v", tc.data, err)
 		}
-		if request.Query != "what is connected to sensor-001" || request.MinRevision != 7 || request.Level != tc.level || prefix != tc.prefix {
-			t.Errorf("decode(%s) = %+v, %q, want level %d, prefix %q", tc.data, request, prefix, tc.level, tc.prefix)
+		if request.Query != "what is connected to sensor-001" || request.MinRevision != 7 || request.Level != tc.level || request.Limit != tc.limit {
+			t.Errorf("decode(%s) = %+v, want level %d, limit %d", tc.data, request, tc.level, tc.limit)
 		}
 	}
 
@@ -380,12 +383,14 @@ func TestGlobalSearchRequestKeys(t *testing.T) {
 		{`{"query":"sensor-001","include_summaries":true}`, `json: unknown field "include_summaries"`},
 		{`{"query":"sensor-001","include_relationships":true}`, `json: unknown field "include_relationships"`},
 		{`{"query":"sensor-001","include_sources":true}`, `json: unknown field "include_sources"`},
+		{`{"query":"sensor-001","limit":101}`, "limit 101 is not 0 or 1 to 100"},
+		{`{"query":"sensor-001","limit":-1}`, "limit -1 is not 0 or 1 to 100"},
 		{`{"query":" \t\n"}`, "query is blank"},
 		{`{}`, "query is blank"},
 		{`{"query":"sensor-001"}x`, "bytes after the request"},
 	}
 	for _, tc := range refused {
-		_, _, err := decodeGlobalSearchRequest([]byte(tc.data))
+		_, err := decodeGlobalSearchRequest([]byte(tc.data))
 		if err == nil || err.Error() != tc.want {
 			t.Errorf("decode(%s) error = %v, want %q", tc.data, err, tc.want)
 		}
@@ -412,7 +417,10 @@ func FuzzDecodeGlobalSearchRequest(f *testing.F) {
 		f.Add([]byte(seed))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		request, _, err := decodeGlobalSearchRequest(data)
+		request, err := decodeGlobalSearchRequest(data)
+		if err == nil && (request.Limit < 0 || request.Limit > 100) {
+			t.Fatalf("accepted limit %d", request.Limit)
+		}
 		if err != nil {
 			return
 		}

@@ -348,8 +348,8 @@ func envelopeData(raw []byte) string {
 }
 
 // TestSearchRequestsDecodeStrictly: with the word index and the batch verb served, each bad request
-// is invalid_request naming its field, with no request to either and no error counted (spec, "A bad
-// local request").
+// to either verb is invalid_request naming its key or field, with no request to either and no error
+// counted (spec, "A bad local request", "A bad global request").
 func TestSearchRequestsDecodeStrictly(t *testing.T) {
 	client := fixtureClient(t)
 	c := startComponent(t, client, `{}`)
@@ -374,6 +374,20 @@ func TestSearchRequestsDecodeStrictly(t *testing.T) {
 		requireRefusal(t, raw, err, errs.ErrorInvalid, "invalid_request")
 		if !strings.Contains(err.Error(), tc.says) {
 			t.Errorf("%s: refusal %q does not name %q", tc.name, err, tc.says)
+		}
+	}
+	for _, tc := range []struct{ name, request, says string }{
+		{"summarize_threshold", `{"query":"pump station","summarize_threshold":50}`, "summarize_threshold"},
+		{"max_communities", `{"query":"pump station","max_communities":5}`, "max_communities"},
+		{"include_summaries", `{"query":"pump station","include_summaries":true}`, "include_summaries"},
+		{"a blank query", `{"query":" "}`, "query"},
+		{"level 3", `{"query":"pump station","level":3}`, "level"},
+		{"limit 101", `{"query":"pump station","limit":101}`, "limit"},
+	} {
+		raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(tc.request), requestTimeout)
+		requireRefusal(t, raw, err, errs.ErrorInvalid, "invalid_request")
+		if !strings.Contains(err.Error(), tc.says) {
+			t.Errorf("global %s: refusal %q does not name %q", tc.name, err, tc.says)
 		}
 	}
 	if got := wordRequests(); len(got) != 0 {

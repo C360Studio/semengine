@@ -38,10 +38,9 @@
 // indexed_revision is the word search's. The group's record from the view of COMMUNITY_INDEX is attached
 // when the view holds one, and record_state says when it does not; a missing record never refuses.
 // Start does not wait for the bucket and does not fail when it is missing: one goroutine opens it, runs
-// the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost. The text
-// search of globalSearch is refused transient index_not_ready until a view has caught up. Stop ends the
-// view. semengine_graph_query_search_truncated_total counts localSearch and text search answers that were
-// cut short.
+// the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost. Stop
+// ends the view. semengine_graph_query_search_truncated_total counts localSearch and text search
+// answers that were cut short.
 //
 // globalSearch, and searchGraph, which is the same handler under a second name with the same data,
 // choose one strategy from the question and answer with it. A question of one word is an entity
@@ -53,18 +52,18 @@
 // impossible number, a count or other aggregation, and path words, a similarity or a ranking beside
 // a start, a time range or an area are refused invalid_request, and a named path start that names
 // no entity is entity_not_found. Every other question is the text strategy: no hint, path words
-// with no start, a similarity or a ranking alone, and a one-word name that names no entity. It
-// scores the COMMUNITY_INDEX records at the request's level against the question's words, reads one
-// page of each of the best five scoring above 0, and replies with the matching entities (id, label,
-// score, the entity as graph-ingest sent it), the groups read, the hints it could not apply
-// (unhonoured_hints) and a plain answer. The matches are a sample, and entities_truncated says so.
-// Its indexed_revision is the highest entity_revision among the level's readable records. A view
-// that is not usable, or a level with no record, is transient index_not_ready; some unreadable
-// records are an answer that says so, one Health error and one Warn. A refusal from the alias or
-// entity verb reaches the caller as it arrived. Until their responders are in the tree, the
-// time-range and bounds strategies are refused transient internal, naming the subject. The keyword
-// classifier's limits stay its own: "from A to B" walks from A, and the refusal of a second place
-// can be wrong for a hyphenated word such as "real-time".
+// with no start, a similarity or a ranking alone, and a one-word name that names no entity. It asks
+// graph-lexical's word search over every entity, passing the query, the limit and min_revision
+// unchanged, reads the hits back with one graph-ingest batch request, and replies with the matches
+// in the word index's order (id, label, score, the entity as graph-ingest sent it), the groups at
+// the request's level that hold them, in the order of each group's best match, with their match
+// counts and records, the hints it could not apply (unhonoured_hints) and a plain answer. Its
+// indexed_revision is the word search's. A group record that cannot be read is an answer that says
+// so, one Health error and one Warn. A refusal from the alias, entity, word search or batch verb
+// reaches the caller as it arrived. Until their responders are in the tree, the time-range and
+// bounds strategies are refused transient internal, naming the subject. The keyword classifier's
+// limits stay its own: "from A to B" walks from A, and the refusal of a second place can be wrong
+// for a hyphenated word such as "real-time".
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

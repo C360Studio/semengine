@@ -10,7 +10,6 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/clustering"
-	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/graphview"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
@@ -22,47 +21,64 @@ const (
 	localPastUnreadableReason = "the record only describes the group; the matches come from the word index"
 )
 
-// localGroup is the group a local search runs in: its COMMUNITY_INDEX key and its ID, the entity-ID
-// prefix the word search is scoped to.
-type localGroup struct {
+// searchGroup is an entity's community group at one level: its COMMUNITY_INDEX key and its ID, the
+// entity-ID prefix a local search is scoped to and a global search lists.
+type searchGroup struct {
 	key string
 	id  string
+}
+
+// groupAt is entityID's group at level. GroupKey and LevelPrefix own which levels exist and how a
+// group is named; either refuses an ID that is not a literal entity ID or a level outside 0 to 2.
+func groupAt(entityID string, level int) (searchGroup, error) {
+	key, err := clustering.GroupKey(entityID, level)
+	if err != nil {
+		return searchGroup{}, err
+	}
+	prefix, err := clustering.LevelPrefix(level)
+	if err != nil {
+		return searchGroup{}, err
+	}
+	return searchGroup{key: key, id: strings.TrimPrefix(key, prefix)}, nil
 }
 
 // decodeLocalSearchRequest decodes strictly and checks every field, before any request. It returns
 // the group entity_id is in at level. The query is only checked for being blank: what it holds is
 // the word index's to accept or refuse, so there is one rule for what a search accepts.
-func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, localGroup, error) {
+func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, searchGroup, error) {
 	var request graph.LocalSearchRequest
 	if err := decodeStrict(data, &request); err != nil {
-		return request, localGroup{}, err
+		return request, searchGroup{}, err
 	}
 	if err := semtypes.ValidateEntityID(request.EntityID); err != nil {
-		return request, localGroup{}, fmt.Errorf("entity_id: %w", err)
+		return request, searchGroup{}, fmt.Errorf("entity_id: %w", err)
 	}
-	// GroupKey and LevelPrefix own which levels exist and how a group is named.
-	key, err := clustering.GroupKey(request.EntityID, request.Level)
+	group, err := groupAt(request.EntityID, request.Level)
 	if err != nil {
-		return request, localGroup{}, fmt.Errorf("level: %w", err)
-	}
-	prefix, err := clustering.LevelPrefix(request.Level)
-	if err != nil {
-		return request, localGroup{}, fmt.Errorf("level: %w", err)
+		return request, searchGroup{}, fmt.Errorf("level: %w", err)
 	}
 	if strings.TrimSpace(request.Query) == "" {
-		return request, localGroup{}, errors.New("query is blank")
+		return request, searchGroup{}, errors.New("query is blank")
 	}
-	if request.Limit < 0 || request.Limit > graph.MaxSimilarityLimit {
-		return request, localGroup{}, fmt.Errorf("limit %d is not 0 or 1 to %d", request.Limit, graph.MaxSimilarityLimit)
+	if err := checkSearchLimit(request.Limit); err != nil {
+		return request, searchGroup{}, err
 	}
-	return request, localGroup{key: key, id: strings.TrimPrefix(key, prefix)}, nil
+	return request, group, nil
 }
 
-// groupRecord reads key's record from the current community view, and says whether it could. A
-// record only describes the group, so no outcome refuses the search: no view, or one catching up,
-// lost or stopped, is not_ready; an absent key is none; a poisoned key is unreadable.
-func (c *Component) groupRecord(key string) (clustering.Community, graph.RecordState) {
-	view := c.communities.Load()
+// checkSearchLimit refuses a search limit other than 0, meaning graph.DefaultSimilarityLimit, or 1
+// to graph.MaxSimilarityLimit.
+func checkSearchLimit(limit int) error {
+	if limit < 0 || limit > graph.MaxSimilarityLimit {
+		return fmt.Errorf("limit %d is not 0 or 1 to %d", limit, graph.MaxSimilarityLimit)
+	}
+	return nil
+}
+
+// groupRecord reads key's record from view, and says whether it could. A record only describes the
+// group, so no outcome refuses the search: no view, or one catching up, lost or stopped, is
+// not_ready; an absent key is none; a poisoned key is unreadable.
+func groupRecord(view *communityView, key string) (clustering.Community, graph.RecordState) {
 	if view == nil {
 		return clustering.Community{}, graph.RecordNotReady
 	}
@@ -78,6 +94,14 @@ func (c *Component) groupRecord(key string) (clustering.Community, graph.RecordS
 	default:
 		return clustering.Community{}, graph.RecordNotReady
 	}
+}
+
+// attachedRecord is record as a search reply attaches it: present exactly when state is read.
+func attachedRecord(record clustering.Community, state graph.RecordState) *graph.LocalSearchRecord {
+	if state != graph.RecordRead {
+		return nil
+	}
+	return &graph.LocalSearchRecord{MemberCount: record.MemberCount, CommunitySummary: record.StatisticalSummary, Keywords: record.Keywords}
 }
 
 // localSearchAnswer is the answer text: the word index's count in the group; how many are shown when
@@ -98,47 +122,47 @@ func localSearchAnswer(data graph.LocalSearchData) string {
 // is truncated. It refuses when even no matches do not fit.
 func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.LocalSearchData) ([]byte, error)) ([]byte, bool, error) {
 	all := data.Matches
-	encoded, cut, err := fitFirst(len(all), limit, func(n int) ([]byte, error) {
+	encoded, n, err := fitFirst(len(all), limit, func(n int) ([]byte, error) {
 		kept := data
 		kept.Matches = all[:n]
 		kept.Truncated = data.Truncated || n < len(all)
 		kept.Answer = localSearchAnswer(kept)
 		return encode(kept)
 	})
-	return encoded, data.Truncated || cut, err
+	return encoded, data.Truncated || n < len(all), err
 }
 
-// fitFirst returns encodeFirst(n) for the largest n up to count whose encoding is at most limit
-// bytes, and whether that n is below count. An encoding shrinks as items are left out, so n is
-// found by bisection. It refuses when even encodeFirst(0) does not fit. localSearch and the text
-// search share it.
-func fitFirst(count, limit int, encodeFirst func(n int) ([]byte, error)) ([]byte, bool, error) {
+// fitFirst returns encodeFirst(n) and n, for the largest n up to count whose encoding is at most
+// limit bytes. An encoding shrinks as items are left out, so n is found by bisection. It refuses
+// when even encodeFirst(0) does not fit. Local and global search share it.
+func fitFirst(count, limit int, encodeFirst func(n int) ([]byte, error)) ([]byte, int, error) {
 	encoded, err := encodeFirst(count)
 	if err != nil {
-		return nil, false, err
+		return nil, 0, err
 	}
 	if len(encoded) <= limit {
-		return encoded, false, nil
+		return encoded, count, nil
 	}
 	// The largest count in lo to hi that fits; all of them do not.
 	lo, hi := 0, count-1
 	var best []byte
+	kept := 0
 	for lo <= hi {
 		mid := lo + (hi-lo)/2
 		candidate, err := encodeFirst(mid)
 		if err != nil {
-			return nil, false, err
+			return nil, 0, err
 		}
 		if len(candidate) <= limit {
-			best, lo = candidate, mid+1
+			best, kept, lo = candidate, mid, mid+1
 		} else {
 			hi = mid - 1
 		}
 	}
 	if best == nil {
-		return nil, false, fmt.Errorf("a reply with no entities is over the %d-byte limit", limit)
+		return nil, 0, fmt.Errorf("a reply with no entities is over the %d-byte limit", limit)
 	}
-	return best, true, nil
+	return best, kept, nil
 }
 
 // localSearch answers with the word index's matches in entity_id's group at level: one word search
@@ -179,12 +203,8 @@ func (c *Component) localSearch(lexicalSubject, batchSubject string) queryHandle
 			Truncated:        search.Data.Matched > len(hits) || missing > 0,
 		}
 		var record clustering.Community
-		record, reply.RecordState = c.groupRecord(group.key)
-		if reply.RecordState == graph.RecordRead {
-			reply.Record = &graph.LocalSearchRecord{
-				MemberCount: record.MemberCount, CommunitySummary: record.StatisticalSummary, Keywords: record.Keywords,
-			}
-		}
+		record, reply.RecordState = groupRecord(c.communities.Load(), group.key)
+		reply.Record = attachedRecord(record, reply.RecordState)
 		limit, err := c.natsClient.MaxPayload()
 		if err != nil {
 			return nil, c.unanswered(err)
@@ -209,10 +229,6 @@ func (c *Component) localSearch(lexicalSubject, batchSubject string) queryHandle
 		}
 		return encoded, nil
 	}
-}
-
-func communityNotReady(err error) error {
-	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady, fmt.Errorf("community index not ready: %w", err))
 }
 
 // unanswered is graph-query's own refusal of a request it could not answer, counted as an error.

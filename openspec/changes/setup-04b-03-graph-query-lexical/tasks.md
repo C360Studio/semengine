@@ -36,7 +36,7 @@ and `notes/probes/`. Each code task names its pull request (design D9): A, then 
   `TestLocalSearchEntitiesPassUnchanged` (an integer above 2^53 in the batch reply reaches the caller as sent);
   `TestLocalSearchFitsMaxPayload` (lowest-ranked left out until it fits). Local search no longer
   reaches the substring scorer; global search's text tier still does, so its deletion is task 2.3's.
-- [ ] 2.3 PR B. Global search and its groups (design D3, D4). Premise: today's text tier lets records gate the read
+- [x] 2.3 PR B. Global search and its groups (design D3, D4). Premise: today's text tier lets records gate the read
   (`processor/graph-query/textsearch.go:50-92`, `:111-153`); the answer's group is among the first ten hits' groups
   for 98.0% of questions against about 88% by chance (`notes/probes/search-quality-probe.log`). Accept: new
   `TestGlobalSearchGroupsHits` (groups in order of their best match, counts summing to the matches, records

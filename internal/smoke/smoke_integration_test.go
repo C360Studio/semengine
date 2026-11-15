@@ -547,9 +547,9 @@ func checkLexical(t *testing.T, o observer, s stack, f fixture, w want, revision
 		handles = append(handles, n.Handle)
 	}
 	slices.Sort(handles)
-	bases := expected[baseWord]
-	if resp.Provenance != fusion.ProvenanceLexical || resp.Deferred || len(resp.Misses) > 0 || !slices.Equal(handles, bases) {
-		t.Fatalf("NL %q answered %+v (nodes %v), want lexical provenance and nodes %v", baseWord, resp, handles, bases)
+	if resp.Provenance != fusion.ProvenanceLexical || resp.Deferred || len(resp.Misses) > 0 || !slices.Equal(handles, expected[baseWord]) {
+		t.Fatalf("NL %q answered %+v (nodes %v), want lexical provenance and nodes %v", baseWord, resp, handles,
+			expected[baseWord])
 	}
 	return replies
 }

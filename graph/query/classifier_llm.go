@@ -47,8 +47,8 @@ type llmRange struct {
 
 // LLMClassifier classifies queries by asking an LLM to return structured SearchOptions.
 //
-// It is the T3 tier in the ClassifierChain — called only when T0 (keyword) and T1
-// (example classifier) tiers produce no confident match. When the LLM call fails or returns
+// It is the T3 tier in the ClassifierChain — called only when the T0 (keyword) tier produces
+// no hint and excludes no operation. When the LLM call fails or returns
 // unparseable JSON, LLMClassifier returns an error so the chain can fall back
 // gracefully rather than silently returning a wrong classification.
 type LLMClassifier struct {

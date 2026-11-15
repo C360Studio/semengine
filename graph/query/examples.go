@@ -11,7 +11,6 @@ type Example struct {
 	Query   string         `json:"query"`   // Natural language query
 	Intent  string         `json:"intent"`  // Intent category
 	Options map[string]any `json:"options"` // SearchOptions hints (optional)
-	Vector  []float32      `json:"-"`       // Runtime field - embedding vector (not serialized)
 }
 
 // DomainExamples represents a collection of examples for a domain.

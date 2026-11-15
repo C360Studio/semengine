@@ -1,0 +1,454 @@
+package clustering
+
+// Throwaway design probe for setup-04b-04 (community keywords). Not for merge.
+// Copy into graph/clustering/ in a copy of the tree and run:
+//   go test ./graph/clustering -run TestKeywordProbe -v -count=1
+
+import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
+	"github.com/c360studio/semengine/graph/lexical"
+	"github.com/c360studio/semengine/message"
+)
+
+type kpSec struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Body string `json:"body"`
+}
+type kpKnown struct {
+	Query string `json:"query"`
+	ID    string `json:"id"`
+}
+
+func kpLoad(t *testing.T) ([]kpSec, []kpKnown) {
+	dir := filepath.Join("..", "lexical", "testdata", "scorecard")
+	data, err := os.ReadFile(filepath.Join(dir, "corpus.jsonl.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus []kpSec
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(nil, 1<<20)
+	for sc.Scan() {
+		var s kpSec
+		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {
+			t.Fatal(err)
+		}
+		corpus = append(corpus, s)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "known.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var known []kpKnown
+	if err := json.Unmarshal(raw, &known); err != nil {
+		var wrapped struct {
+			Questions []kpKnown `json:"questions"`
+		}
+		if err2 := json.Unmarshal(raw, &wrapped); err2 != nil {
+			t.Fatal(err, err2)
+		}
+		known = wrapped.Questions
+	}
+	return corpus, known
+}
+
+var kpNonWord = regexp.MustCompile(`[^a-z0-9]+`)
+
+// kpGroupByDir is a finer grouping than the corpus IDs: the file's parent directory, so
+// openspec/specs/graph-query and each archived change are groups of their own.
+func kpGroupByDir(path string) string {
+	d := filepath.Dir(path)
+	if d == "." {
+		d = "root"
+	}
+	parts := strings.Split(d, "/")
+	if len(parts) > 3 {
+		parts = parts[len(parts)-1:]
+	}
+	g := kpNonWord.ReplaceAllString(strings.ToLower(strings.Join(parts, "-")), "")
+	if g == "" {
+		g = "root"
+	}
+	return g
+}
+
+type kpGroup struct {
+	id      string
+	members []int
+}
+
+type kpScheme struct {
+	name     string
+	keywords map[string][]string // group -> keywords
+	queryTok func(string) []string
+}
+
+func TestKeywordProbe(t *testing.T) {
+	corpus, known := kpLoad(t)
+	pos := map[string]int{}
+	for i, s := range corpus {
+		pos[s.ID] = i
+	}
+	rule := entitytext.New(nil, 16000)
+	for _, grouping := range []struct {
+		name string
+		of   func(s kpSec) string
+	}{
+		{"corpus level-0 groups (top directory)", func(s kpSec) string { return strings.Join(strings.Split(s.ID, ".")[:4], ".") }},
+		{"finer groups (parent directory)", func(s kpSec) string { return kpGroupByDir(s.Path) }},
+	} {
+		groups := map[string]*kpGroup{}
+		groupOf := make([]string, len(corpus))
+		lexToks := make([]map[string]bool, len(corpus))
+		extToks := make([]map[string]bool, len(corpus))
+		todayWords := make([][]string, len(corpus))
+		ix := lexical.NewIndex()
+		for i, s := range corpus {
+			g := grouping.of(s)
+			groupOf[i] = g
+			if groups[g] == nil {
+				groups[g] = &kpGroup{id: g}
+			}
+			groups[g].members = append(groups[g].members, i)
+			st := &graph.EntityState{ID: s.ID, Triples: []message.Triple{
+				{Subject: s.ID, Predicate: "doc.section.title", Object: s.Name},
+				{Subject: s.ID, Predicate: "doc.section.content", Object: s.Body},
+			}}
+			todayWords[i] = entityWords(st) // today's rule: top 32 extractWords per entity
+			doc := rule.Document(st, "")
+			lexToks[i] = map[string]bool{}
+			for _, w := range lexical.Tokens(doc.Name + " " + doc.Body) {
+				lexToks[i][w] = true
+			}
+			extToks[i] = map[string]bool{}
+			for _, w := range extractWords(s.Name + " " + s.Body) {
+				extToks[i][w] = true
+			}
+			if err := ix.Put(s.ID, lexical.Document{Name: doc.Name, Body: doc.Body}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var keys []string
+		for k := range groups {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		N := float64(len(corpus))
+
+		dfOf := func(toks []map[string]bool) map[string]int {
+			df := map[string]int{}
+			for _, m := range toks {
+				for w := range m {
+					df[w]++
+				}
+			}
+			return df
+		}
+		dfLex, dfExt := dfOf(lexToks), dfOf(extToks)
+
+		// today's keywords: group counts of each member's top-32 words, top 10 by count.
+		today := map[string][]string{}
+		for _, k := range keys {
+			counts := map[string]int{}
+			for _, m := range groups[k].members {
+				for _, w := range todayWords[m] {
+					counts[w]++
+				}
+			}
+			today[k] = topCounted(counts, MaxKeywords)
+		}
+
+		// distinctive keywords: a textbook keyness score of a word in the group against the
+		// whole corpus. tfidf: (dfG/nG)*log(N/df). g2: Dunning's log-likelihood ratio on
+		// (dfG, nG-dfG, df-dfG, N-nG-(df-dfG)), kept only when the word is over-represented.
+		distinct := func(toks []map[string]bool, df map[string]int, score string) map[string][]string {
+			out := map[string][]string{}
+			for _, k := range keys {
+				g := groups[k]
+				nG := float64(len(g.members))
+				dfG := map[string]int{}
+				for _, m := range g.members {
+					for w := range toks[m] {
+						dfG[w]++
+					}
+				}
+				minDF := 2
+				if len(g.members) < 2 {
+					minDF = 1
+				}
+				type ws struct {
+					w string
+					s float64
+				}
+				var cand []ws
+				for w, a := range dfG {
+					if a < minDF {
+						continue
+					}
+					d := float64(df[w])
+					var s float64
+					switch score {
+					case "tfidf":
+						s = float64(a) / nG * math.Log(N/d)
+					case "g2":
+						A, B, C := float64(a), nG-float64(a), d-float64(a)
+						D := N - nG - C
+						if A/nG <= d/N {
+							continue
+						}
+						s = kpG2(A, B, C, D)
+					}
+					cand = append(cand, ws{w, s})
+				}
+				sort.Slice(cand, func(i, j int) bool {
+					if cand[i].s != cand[j].s {
+						return cand[i].s > cand[j].s
+					}
+					return cand[i].w < cand[j].w
+				})
+				for i := 0; i < len(cand) && i < MaxKeywords; i++ {
+					out[k] = append(out[k], cand[i].w)
+				}
+			}
+			return out
+		}
+
+		lexQ := func(q string) []string { return lexical.Tokens(q) }
+		extQ := func(q string) []string { return extractWords(q) }
+		schemes := []kpScheme{
+			{"today: most frequent (extractWords, top 32 per entity)", today, extQ},
+			{"tfidf over extractWords", distinct(extToks, dfExt, "tfidf"), extQ},
+			{"g2 over extractWords", distinct(extToks, dfExt, "g2"), extQ},
+			{"tfidf over lexical.Tokens (entitytext)", distinct(lexToks, dfLex, "tfidf"), lexQ},
+			{"g2 over lexical.Tokens (entitytext)", distinct(lexToks, dfLex, "g2"), lexQ},
+		}
+
+		largest := keys[0]
+		for _, k := range keys {
+			if len(groups[k].members) > len(groups[largest].members) {
+				largest = k
+			}
+		}
+		t.Logf("==== %s: %d sections, %d groups, largest %s with %d; %d questions",
+			grouping.name, len(corpus), len(keys), largest, len(groups[largest].members), len(known))
+
+		// Show keywords for the five largest groups under each scheme.
+		bySize := slices.Clone(keys)
+		sort.SliceStable(bySize, func(i, j int) bool { return len(groups[bySize[i]].members) > len(groups[bySize[j]].members) })
+		for _, sc := range schemes {
+			t.Logf("  -- %s", sc.name)
+			for _, k := range bySize[:min(6, len(bySize))] {
+				t.Logf("     %-40s %4d  %v", k, len(groups[k].members), sc.keywords[k])
+			}
+		}
+
+		for _, sc := range schemes {
+			// generic share: a keyword held by >= 20% of all sections.
+			generic, total := 0, 0
+			// lift: the share of a keyword's holders inside the group over the group's share.
+			var liftSum float64
+			var liftN int
+			df := dfExt
+			toks := extToks
+			if strings.Contains(sc.name, "lexical") {
+				df, toks = dfLex, lexToks
+			}
+			for _, k := range keys {
+				g := groups[k]
+				for _, w := range sc.keywords[k] {
+					total++
+					if float64(df[w])/N >= 0.20 {
+						generic++
+					}
+					in := 0
+					for _, m := range g.members {
+						if toks[m][w] {
+							in++
+						}
+					}
+					if df[w] > 0 {
+						liftSum += (float64(in) / float64(df[w])) / (float64(len(g.members)) / N)
+						liftN++
+					}
+				}
+			}
+			// routing: rank groups by question words among their keywords; is the answer's group first?
+			first, top3, anyHit := 0, 0, 0
+			for _, q := range known {
+				i, ok := pos[q.ID]
+				if !ok {
+					continue
+				}
+				want := groupOf[i]
+				qw := map[string]bool{}
+				for _, w := range sc.queryTok(q.Query) {
+					qw[w] = true
+				}
+				type gs struct {
+					k string
+					n int
+				}
+				var ranked []gs
+				for _, k := range keys {
+					n := 0
+					for _, w := range sc.keywords[k] {
+						if qw[w] {
+							n++
+						}
+					}
+					ranked = append(ranked, gs{k, n})
+				}
+				sort.SliceStable(ranked, func(a, b int) bool {
+					if ranked[a].n != ranked[b].n {
+						return ranked[a].n > ranked[b].n
+					}
+					return len(groups[ranked[a].k].members) > len(groups[ranked[b].k].members)
+				})
+				for r, g := range ranked {
+					if g.k == want {
+						if r == 0 {
+							first++
+						}
+						if r < 3 {
+							top3++
+						}
+						if g.n > 0 {
+							anyHit++
+						}
+					}
+				}
+			}
+			// keyword query precision: search the word index with a group's keywords; share of top 10 hits in the group.
+			var precSum float64
+			var precN int
+			for _, k := range keys {
+				if len(groups[k].members) < 10 || len(sc.keywords[k]) == 0 {
+					continue
+				}
+				q, err := lexical.ParseQuery(strings.Join(sc.keywords[k], " "))
+				if err != nil {
+					continue
+				}
+				res, err := ix.Search(q, lexical.Options{Limit: 10})
+				if err != nil {
+					t.Fatal(err)
+				}
+				in := 0
+				for _, h := range res.Hits {
+					if groupOf[pos[h.EntityID]] == k {
+						in++
+					}
+				}
+				if len(res.Hits) > 0 {
+					precSum += float64(in) / float64(len(res.Hits))
+					precN++
+				}
+			}
+			n := float64(len(known))
+			t.Logf("  %-56s generic %5.1f%%  mean lift %6.2f  route first %5.1f%%  top3 %5.1f%%  answer group keyword hit %5.1f%%  kw-query P@10 %5.1f%% (%d groups >=10)",
+				sc.name, 100*float64(generic)/float64(total), liftSum/float64(max(liftN, 1)),
+				100*float64(first)/n, 100*float64(top3)/n, 100*float64(anyHit)/n, 100*precSum/float64(max(precN, 1)), precN)
+		}
+		t.Logf("  baseline: always the largest group: %5.1f%% of questions", 100*kpShare(known, pos, groupOf, largest))
+		// drift: drop 5% of sections (every 20th) from the corpus; count groups that lost no
+		// member whose distinctive keywords still change (a change outside the group moves them).
+		{
+			keep := make([]bool, len(corpus))
+			for i := range keep {
+				keep[i] = i%20 != 0
+			}
+			touched := map[string]bool{}
+			for i, k := range keep {
+				if !k {
+					touched[groupOf[i]] = true
+				}
+			}
+			for _, sc := range []string{"tfidf", "g2"} {
+				full := distinct(lexToks, dfLex, sc)
+				dfPart := map[string]int{}
+				part := make([]map[string]bool, len(corpus))
+				for i, m := range lexToks {
+					if keep[i] {
+						part[i] = m
+						for w := range m {
+							dfPart[w]++
+						}
+					} else {
+						part[i] = map[string]bool{}
+					}
+				}
+				savedN := N
+				N = 0
+				for _, k := range keep {
+					if k {
+						N++
+					}
+				}
+				after := distinct(part, dfPart, sc)
+				N = savedN
+				untouched, changed, todayChanged := 0, 0, 0
+				for _, k := range keys {
+					if touched[k] {
+						continue
+					}
+					untouched++
+					if !slices.Equal(full[k], after[k]) {
+						changed++
+					}
+					_ = todayChanged
+				}
+				t.Logf("  drift (%s over lexical.Tokens): 5%% of sections removed from %d groups; of %d untouched groups, %d change keywords (today's rule: 0 by construction)",
+					sc, len(touched), untouched, changed)
+			}
+		}
+
+	}
+}
+
+func kpShare(known []kpKnown, pos map[string]int, groupOf []string, g string) float64 {
+	n, in := 0, 0
+	for _, q := range known {
+		if i, ok := pos[q.ID]; ok {
+			n++
+			if groupOf[i] == g {
+				in++
+			}
+		}
+	}
+	return float64(in) / float64(max(n, 1))
+}
+
+func kpG2(a, b, c, d float64) float64 {
+	n := a + b + c + d
+	term := func(o, e float64) float64 {
+		if o == 0 || e == 0 {
+			return 0
+		}
+		return o * math.Log(o/e)
+	}
+	r1, r2, c1, c2 := a+b, c+d, a+c, b+d
+	return 2 * (term(a, r1*c1/n) + term(b, r1*c2/n) + term(c, r2*c1/n) + term(d, r2*c2/n))
+}
+
+var _ = fmt.Sprintf

@@ -27,6 +27,9 @@ start.
   *Do:* at tier 0, leave graph-embedding out of the composition (graph-lexical answers word questions); from tier 1,
   register it with `graphembedding.RegisterWithEmbedder(registry, name, newEmbedder)`, where `newEmbedder` builds
   your `embedding.Embedder` (for example a client for semembed). The registration asks boot for no model registry.
+- **`graphembedding.CreateGraphEmbedding` is gone.** SemStreams exported the factory, so a caller could build the
+  component without a registry. *Do:* register with `RegisterWithEmbedder` and create the component through the
+  component manager.
 - **Ports are checked.** An input other than a `kv-watch` of every `ENTITY_STATES` key with no history, or a
   `store-read`, is refused naming the port, and one such watch is required. Any declared output is refused: the
   component writes `EMBEDDING_INDEX` and `EMBEDDING_DEDUP` itself. A `ports` block that is present is used as

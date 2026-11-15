@@ -157,10 +157,10 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 	return config, inputs, nil, nil
 }
 
-// CreateGraphEmbedding is the factory Register adds. It always refuses, class invalid:
+// refuseWithoutEmbedder is the factory Register adds. It always refuses, class invalid:
 // graph-embedding has no embedder of its own, so a product with one (tier 1, such as semembed)
 // registers it with RegisterWithEmbedder, and a tier 0 composition leaves graph-embedding out.
-func CreateGraphEmbedding(json.RawMessage, component.Dependencies) (component.Discoverable, error) {
+func refuseWithoutEmbedder(json.RawMessage, component.Dependencies) (component.Discoverable, error) {
 	return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "CreateGraphEmbedding", "factory",
 		"embedder check: graph-embedding has no embedder of its own (from tier 1 a product registers one with RegisterWithEmbedder)")
 }
@@ -218,7 +218,7 @@ func create(rawConfig json.RawMessage, deps component.Dependencies, embedderType
 // registration every component package exports, so a composition that lists graph-embedding
 // without an embedder fails at construction rather than running without one.
 func Register(registry *component.Registry) error {
-	return register(registry, CreateGraphEmbedding)
+	return register(registry, refuseWithoutEmbedder)
 }
 
 // RegisterWithEmbedder registers graph-embedding with a product's embedder. embedderType names

@@ -115,17 +115,24 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 	mode := lens.ResolveMode(req.Query)
 	resolution, err := e.graph.Resolve(ctx, ResolveQuery{Query: req.Query, Mode: mode, Scope: req.Scope, Limit: resolveLimit})
 	if err != nil {
-		return seedReadFailure(ctx, err)
+		resp, err := seedReadFailure(ctx, err)
+		if err != nil {
+			return Response{}, err
+		}
+		// A deferral still says which kind of search was asked.
+		resp.Provenance = ProvenanceForMode(mode)
+		return resp, nil
 	}
 	resp, err := e.fuseSeeds(ctx, req, lens, mode, resolution.Seeds, skips)
 	if err != nil {
 		return Response{}, err
 	}
+	resp.Provenance = ProvenanceForMode(mode)
 	// Every response built after a natural-language search answered carries what
-	// the search could not read; symbol and prefix resolves count nothing, so
-	// their responses carry neither count.
+	// the word index left out; symbol and prefix resolves leave nothing out, so
+	// their responses carry neither.
 	if mode == ResolveModeNL {
-		resp.UnreadableRecords, resp.FailedRecords = resolution.UnreadableRecords, resolution.FailedRecords
+		resp.BodiesNotIndexed, resp.Excluded = resolution.BodiesNotIndexed, resolution.Excluded
 	}
 	return resp, nil
 }

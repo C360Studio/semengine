@@ -20,9 +20,10 @@ type requester interface {
 	RequestClassified(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error)
 }
 
-// verbs are the graph-query rows of graph.QueryVerbs() the client uses.
+// verbs are the rows of graph.QueryVerbs() the client uses: graph-query's, and
+// graph-lexical's search for an NL resolve.
 type verbs struct {
-	entity, batch, prefixIDs, byName, relationships, semantic graph.QueryVerb
+	entity, batch, prefixIDs, byName, relationships, wordSearch graph.QueryVerb
 }
 
 // lookupVerbs reads the client's rows from table, refusing one that is missing
@@ -31,26 +32,26 @@ type verbs struct {
 func lookupVerbs(table []graph.QueryVerb) (verbs, error) {
 	var v verbs
 	for _, want := range []struct {
-		name string
-		row  *graph.QueryVerb
+		responder, name string
+		row             *graph.QueryVerb
 	}{
-		{"entity", &v.entity},
-		{"batch", &v.batch},
-		{"prefixIDs", &v.prefixIDs},
-		{"byName", &v.byName},
-		{"relationships", &v.relationships},
-		{"semantic", &v.semantic},
+		{graph.ResponderGraphQuery, "entity", &v.entity},
+		{graph.ResponderGraphQuery, "batch", &v.batch},
+		{graph.ResponderGraphQuery, "prefixIDs", &v.prefixIDs},
+		{graph.ResponderGraphQuery, "byName", &v.byName},
+		{graph.ResponderGraphQuery, "relationships", &v.relationships},
+		{graph.ResponderGraphLexical, "search", &v.wordSearch},
 	} {
 		found := false
 		for _, verb := range table {
-			if verb.Responder == graph.ResponderGraphQuery && verb.Name == want.name {
+			if verb.Responder == want.responder && verb.Name == want.name {
 				*want.row = verb
 				found = true
 				break
 			}
 		}
 		if !found {
-			return verbs{}, fmt.Errorf("fusionnats: the verb table has no %s verb %q", graph.ResponderGraphQuery, want.name)
+			return verbs{}, fmt.Errorf("fusionnats: the verb table has no %s verb %q", want.responder, want.name)
 		}
 	}
 	return v, nil
@@ -97,7 +98,7 @@ func (c *Client) Resolve(ctx context.Context, q fusion.ResolveQuery) (fusion.Res
 	case fusion.ResolveModePrefix:
 		return c.resolvePrefix(ctx, q.Query, q.Limit)
 	case fusion.ResolveModeNL:
-		return c.resolveSemantic(ctx, q.Query, q.Scope, q.Limit)
+		return c.resolveWords(ctx, q.Query, q.Scope, q.Limit)
 	default:
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: unsupported resolve mode %q", q.Mode)
 	}
@@ -144,36 +145,42 @@ func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fu
 	return fusion.Resolution{Seeds: seeds}, nil
 }
 
-// resolveSemantic resolves a natural-language query through semantic. A
-// non-empty scope keeps only entities under its ID prefixes (ADR-071); an empty
-// one is left out of the request. The reply's counts of records the search
-// could not read are passed on in the Resolution.
-func (c *Client) resolveSemantic(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
+// resolveWords resolves a natural-language query through graph-lexical's word
+// search. The query passes unchanged, so the word index's query rules apply and
+// its refusals are returned as it sent them. A non-empty scope keeps only
+// entities under its ID prefixes (ADR-071); an empty one is left out of the
+// request. Seeds keep the reply's order and carry each hit's score as the
+// mode's own score; the reply's bodies_not_indexed and excluded ride along in
+// the Resolution. A request nothing answers, graph-lexical not composed
+// included, is a transient internal error naming the subject.
+func (c *Client) resolveWords(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
 	if err := validateScope(scope); err != nil {
 		return fusion.Resolution{}, err
 	}
-	raw, err := c.request(ctx, c.verbs.semantic, graph.SemanticRequest{Query: query, Limit: limit, Scope: scope})
+	verb := c.verbs.wordSearch
+	raw, err := c.request(ctx, verb, graph.LexicalSearchRequest{Query: query, Limit: limit, Scope: scope})
 	if err != nil {
-		return fusion.Resolution{}, err
+		var refusal *errs.ClassifiedError
+		if errors.As(err, &refusal) {
+			return fusion.Resolution{}, err
+		}
+		return fusion.Resolution{}, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
+			fmt.Errorf("fusionnats: request to %s: %w", verb.Subject, err))
 	}
-	resp, err := decodeReply[graph.SemanticData](c.verbs.semantic, raw)
+	resp, err := decodeReply[graph.LexicalSearchData](verb, raw)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
 	seeds := make([]fusion.Seed, 0, len(resp.Results))
 	ids := make([]string, 0, len(resp.Results))
-	for _, r := range resp.Results {
-		seeds = append(seeds, fusion.Seed{ID: r.EntityID, Similarity: r.Similarity, HasSimilarity: true})
-		ids = append(ids, r.EntityID)
+	for _, hit := range resp.Results {
+		seeds = append(seeds, fusion.Seed{ID: hit.EntityID, Similarity: hit.Score, HasSimilarity: true})
+		ids = append(ids, hit.EntityID)
 	}
 	if err := graph.ValidateDecodedEntityIDs(ids); err != nil {
-		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate semantic: %w", err)
+		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate word search: %w", err)
 	}
-	return fusion.Resolution{
-		Seeds:             seeds,
-		UnreadableRecords: resp.UnreadableRecords,
-		FailedRecords:     resp.FailedRecords,
-	}, nil
+	return fusion.Resolution{Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded}, nil
 }
 
 func validatePrefix(prefix string) error {

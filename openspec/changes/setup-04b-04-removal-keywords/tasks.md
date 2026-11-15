@@ -23,7 +23,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   `go list -deps ./graph/query`; `classifier_embedding.go`, its two test files, `Example.Vector` and the tier 1
   scenarios are deleted; `graph/query/README.md`, `doc.go` and the `graph/query` ledger row (`:3927-4000`) say what
   the chain is now.
-- [ ] 2.2 PR B. `nl` asks the word index (design D2). Premise: fusionnats sends `nl` to graph-query's `semantic` row
+- [x] 2.2 PR B. `nl` asks the word index (design D2). Premise: fusionnats sends `nl` to graph-query's `semantic` row
   and looks rows up among graph-query's only (`pkg/fusion/fusionnats/client.go:30-55,151-177`); the word index takes
   `query`, `limit` and `scope` (`graph/query_lexical_types.go:10-15`). Accept: new `TestNLResolveAsksTheWordIndex`
   (subject from graph-lexical's row, the request's bytes, seeds in hit order with their scores), new
@@ -33,7 +33,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   `TestVerbLookupNamesMissingRow` refuses a table without graph-lexical's `search`; `TestSubjectsComeFromVerbTable`
   updated; the integration test resolves `nl` against a running graph-lexical (`client_integration_test.go:116`
   composes graph-lexical, not graph-embedding).
-- [ ] 2.3 PR B. What an `nl` answer reports, and its provenance (design D3, D4; owner question 2). Premise: the counts
+- [x] 2.3 PR B. What an `nl` answer reports, and its provenance (design D3, D4; owner question 2). Premise: the counts
   are the embedding cache's (`pkg/fusion/contract.go:180-186`, `retrieval.go:66-73`); `nl` is `embedding`
   (`lens.go:195-204`). Accept: `TestNLAnswerCarriesWordIndexCounts` (`bodies_not_indexed` and `excluded` beside the
   nodes and on a miss), new `TestWordIndexCountsReachResolution`, `TestSymbolAnswerOmitsCounts`,

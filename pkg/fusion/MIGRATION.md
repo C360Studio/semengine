@@ -35,11 +35,11 @@ Each of these is a compile error. Fix them first.
 - **`Fuse` and `BodyResolver.ResolveBody` refuse a nil context** with an error. The pin did not check.
 - **`RetrievalClient` has no `Status`, and `Resolve` returns a `Resolution`.** `IndexStatus`, `IndexState` and its
   constants, and `ErrReadinessUnknown` are gone. `Resolve(ctx, ResolveQuery)` returns
-  `Resolution{Seeds, UnreadableRecords, FailedRecords}` where it returned `[]Seed`. *Do:* in `fusiontest.MemGraph`
-  delete `Status`, and wrap the seeds: `return fusion.Resolution{Seeds: seeds}, nil`. A client over the graph's
-  semantic search copies the reply's `unreadable_records` and `failed_records` into the two counts; any other
-  resolve leaves them 0. A wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a
-  rebuilt one, or the two counts are lost.
+  `Resolution{Seeds, BodiesNotIndexed, Excluded}` where it returned `[]Seed`. *Do:* in `fusiontest.MemGraph`
+  delete `Status`, and wrap the seeds: `return fusion.Resolution{Seeds: seeds}, nil`. A client over the word index
+  copies the reply's `bodies_not_indexed` and `excluded` into the two fields; any other resolve leaves them empty. A
+  wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a rebuilt one, or the two
+  are lost.
 - **`fusionnats.New` returns an error, and the client has no `Status` and no `Close`.** It was
   `fusionnats.New(nats, timeout) *Client`, which accepted a nil client and bound a readiness watch on its first
   `Status` call. It is now `New(requester, timeout) (*Client, error)`: a nil requester and a negative timeout are
@@ -67,6 +67,17 @@ Each of these is a compile error. Fix them first.
 Read these. Nothing fails to compile, and a consumer that reads the JSON can be wrong without an error.
 
 - **The wire is `contract_version` `"2"`.** Check it before you rely on anything below.
+- **A word question asks graph-lexical, not an embedder.** SemStreams sent an `nl` resolve to the graph's semantic
+  (embedding) search; `fusionnats` now sends it to graph-lexical's word search, `graph.lexical.query.search`, with the
+  question unchanged. The word index's query rules apply: a question of more than 32 distinct words or of stopwords
+  only, or one holding `name:`, `body:` or a final `*`, is refused class invalid, code `invalid_request`, and `Fuse`
+  returns that refusal; `-word` excludes a word and double quotes make a phrase. A stack with no graph-lexical fails
+  every `nl` question with a transient `internal` error naming the subject. Seeds carry the word index's score, which
+  has no fixed scale.
+  *Do:* compose graph-lexical, and gate word questions on its `graph-lexical` readiness key.
+- **An `nl` answer's `provenance` is `lexical`.** It was `embedding`. `symbol` and `prefix` stay `deterministic`, and
+  a mode the engine does not know stays `embedding`. *Do:* update UI fixtures and any code or docs that expect
+  `embedding` on a word question.
 - **`index` is gone from the response.** The pin sent the graph index's readiness record there. Read `deferred`
   (and `defer_reason`) to learn whether you got an answer. The engine asks for no status; a read that replies
   `index_not_ready` is what defers. A reader of `index.ready` now sees a missing key.
@@ -98,11 +109,11 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **Graph facts and evidence list in key order.** Facts are sorted by predicate, datatype, then value before the 64-fact
   cap; each fact's or edge's evidence is sorted by source, timestamp, confidence, then context, with repeats dropped,
   before the cap of 8. Pin output followed the order the triples were stored in.
-- **New labels, all omitted when zero or false.** `unreadable_records` and `failed_records` on the response (only
-  after a word search, `nl` resolve; omitted at 0 and never set for symbol or prefix resolves; they also ride on a
-  miss and on a deferral that follows the search's answer); `relations_truncated` on a node; `paths_truncated` on the
-  response. Where SemStreams sent a short answer, a truncated flag may now be set; an answer whose search could not read
-  records is no longer the same as an answer that read them all. A path now ends, marked `truncated`, at the last node
+- **New labels, all omitted when zero, empty or false.** `bodies_not_indexed` and `excluded` on the response (only
+  after a word search, `nl` resolve; never set for symbol or prefix resolves; they also ride on a miss and on a
+  deferral that follows the search's answer); `relations_truncated` on a node; `paths_truncated` on the response.
+  Where SemStreams sent a short answer, a truncated flag may now be set; an answer that left out entities holding an
+  excluded word, or bodies the index did not hold, says so. A path now ends, marked `truncated`, at the last node
   it could read and never names an unread node.
 - **`impact.truncated` and `graph.truncated` are set in more cases:** a skipped read for an affected node's file
   (impact), and an incoming counterpart whose read failed (graph). A counterpart that reads as absent keeps its edge
@@ -124,10 +135,8 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   fields named above.
 - `WithSignals` and the predicate-weight half of `fusionvocab` (read from `vocabulary`'s registry).
 
-A deployment with no graph-embedding sets `"embedding_enabled": false` in graph-query's config. A word question
-(`nl` lens) is then refused invalid `not_enabled`, naming `semantic`, instead of a transient `internal` refusal a
-retrying caller would repeat without success. Left at its default, true, the old refusal stays. Symbol and
-prefix lenses answer either way.
+A deployment with no graph-embedding still answers word questions (`nl` lens) when it composes graph-lexical: fusion
+reads no embedding. Symbol and prefix lenses need neither.
 
 ## Still open
 

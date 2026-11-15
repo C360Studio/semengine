@@ -42,8 +42,9 @@ type fakeGraph struct {
 	// what happens when a transport breaks the promise, and the engine's ranking is
 	// position-based (see TestEngine_RankingFollowsHydrationOrder).
 	entitiesFn func(ids []string) ([]*fusion.Entity, error)
-	// unreadable and failed are the search counts Resolve reports.
-	unreadable, failed int
+	// bodiesNotIndexed and excluded are the word index counts Resolve reports.
+	bodiesNotIndexed int
+	excluded         []string
 	// unhydrated, when set, is reported alongside whatever entitiesFn returns.
 	unhydrated []fusion.Unhydrated
 	// seedsFn, when set, overrides seed resolution so a test can attach similarity
@@ -54,7 +55,7 @@ type fakeGraph struct {
 func (g *fakeGraph) Resolve(_ context.Context, q fusion.ResolveQuery) (fusion.Resolution, error) {
 	g.lastResolve = q
 	counted := func(seeds []fusion.Seed) fusion.Resolution {
-		return fusion.Resolution{Seeds: seeds, UnreadableRecords: g.unreadable, FailedRecords: g.failed}
+		return fusion.Resolution{Seeds: seeds, BodiesNotIndexed: g.bodiesNotIndexed, Excluded: g.excluded}
 	}
 	if g.seedsFn != nil {
 		return counted(g.seedsFn(q)), g.resolveErr

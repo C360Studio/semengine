@@ -57,13 +57,12 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		handlers["relationships"] = c.relationships(outgoing, incoming)
 	}
 	prefix := subjectOf(graph.ResponderGraphIngest, "prefix")
+	lexical, batch := subjectOf(graph.ResponderGraphLexical, "search"), subjectOf(graph.ResponderGraphIngest, "batch")
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
-		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
-		if alias != "" && temporal != "" && spatial != "" && prefix != "" {
+		if alias != "" && lexical != "" && batch != "" {
 			subjects := globalSearchSubjects{
-				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
-				prefix: prefix,
+				lexical: lexical, batch: batch, alias: alias, entity: entity, outgoing: outgoing, incoming: incoming,
 			}
 			// searchGraph answers as globalSearch, counted and logged under its own name, with no
 			// semantic fallback.
@@ -76,9 +75,9 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		if predicateList := subjectOf(graph.ResponderGraphIndex, "predicateList"); predicateList != "" {
 			handlers["summary"] = c.summary(predicateList, prefix)
 		}
-		if entity != "" {
-			handlers["localSearch"] = c.localSearch(entity, prefix)
-		}
+	}
+	if lexical != "" && batch != "" {
+		handlers["localSearch"] = c.localSearch(lexical, batch)
 	}
 	return handlers
 }

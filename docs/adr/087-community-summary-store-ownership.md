@@ -12,9 +12,11 @@
 >   `processor/graph-clustering`, change 7). `processor/graph-query` holds no write handle on it: it opens the bucket
 >   through `kvcatalog.OpenCatalogReader`, which reads and never creates, and watches it through `pkg/graphview`. The
 >   enhancement worker this decision keeps out of the bucket does not exist here.
-> - Decision 5 is kept. `localSearch` is ready per request, from its own view of `COMMUNITY_INDEX` alone: it never
->   reads `GRAPH_STATUS` or `COMMUNITY_SUMMARIES`, and a missing summaries bucket changes no answer
->   (`TestLocalSearchBeforeCommunityIndexExists`, `TestLocalSearchAfterCommunityIndexAppears`). The pin's community
+> - Decision 5 changes here. `localSearch` and `globalSearch` are not gated on `COMMUNITY_INDEX`: a search is ready
+>   when graph-lexical answers, and the community view only describes groups. A search reads the view once per
+>   request and says in `record_state` whether a group's record was read, was absent, was unreadable or the view was
+>   not ready; none of these refuses the search. The decision's purpose still holds: nothing here reads
+>   `GRAPH_STATUS` or `COMMUNITY_SUMMARIES`, and a missing summaries bucket changes no answer. The pin's community
 >   cache that watched both buckets is not carried (`community_cache.go`); the view replaces it, and the summary
 >   fallback is the record's own `statistical_summary`.
 > - The summary store is not ported: Decisions 1, 3, 4 and 6, the staleness trade and the worker-side consequences

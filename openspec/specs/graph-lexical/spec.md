@@ -74,10 +74,9 @@ reply would carry it SHALL refuse transient `revision_not_reached` with that rev
 ### Requirement: A search reply is scoped, limited, ranked and counted
 
 A reply SHALL be a `graph.QueryResponse` from producer `graph-lexical` whose `indexed_revision` is a lower bound on
-what it reflects, holding `graph.LexicalSearchData`: `results`, at most `limit` hits ordered by score then entity
-ID, each `entity_id` and `score`; `matched`, every match under the scope before the limit; and
-`bodies_not_indexed`, the number of entities in the whole index, not the scope or the hits, whose offloaded body is
-not in the index when the reply is built.
+what it reflects, holding `graph.LexicalSearchData`: `results`, at most `limit` hits by score then entity ID, each
+`entity_id` and `score`; `matched`, every match in scope before the limit; `excluded`, the excluded words, omitted
+when none; and `bodies_not_indexed`, how many entities in the whole index have an offloaded body not yet indexed.
 
 #### Scenario: The limit's range
 
@@ -90,6 +89,11 @@ not in the index when the reply is built.
 - **WHEN** `lexical.ParseQuery` refuses the query, here `pump*`
 - **THEN** it is refused `invalid_request`, the message naming the rule, here reserved syntax
   (`TestSearchRefusesParseErrors`)
+
+#### Scenario: Excluded words are declared
+
+- **WHEN** the query is `go test -race`
+- **THEN** the reply's `excluded` is `["race"]` (`TestSearchDeclaresExcluded`)
 
 ### Requirement: A search is scoped by entity-ID prefix before the limit
 

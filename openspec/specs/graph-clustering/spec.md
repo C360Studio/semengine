@@ -100,8 +100,8 @@ After `Stop` returns nil, no goroutine of the component, the follower or the tic
 ### Requirement: Text is read through the shared text rule
 
 graph-clustering SHALL read an entity's words only from `graph/entitytext`'s `Values` under its `text_suffixes`, which
-SHALL select values as graph-lexical's key does, empty meaning the default list. Label predicates and an offloaded
-body, which graph-lexical also indexes, SHALL add no words.
+SHALL select values as graph-lexical's key does, empty meaning the default list. A label predicate outside
+those suffixes SHALL add no words, though graph-lexical indexes it; an offloaded body SHALL not be read.
 
 #### Scenario: The values the text rule selects
 

@@ -54,8 +54,8 @@ func isWordByte(b byte) bool {
 
 // entityWords returns what an entity contributes to its groups' keywords: its
 // MaxEntityTerms most frequent words, most frequent first, ties broken lexically. Words
-// come only from the values text selects (entitytext.Rule.Values), so keywords read the
-// same text as the word index; the ID's positions, predicate names, other values and the
+// come only from the values text selects (entitytext.Rule.Values), the same text
+// graph-embedding reads; the ID's positions, predicate names, other values and the
 // object of a relationship (another entity's ID) add none.
 func entityWords(text entitytext.Rule, state *graph.EntityState) []string {
 	counts := map[string]int{}

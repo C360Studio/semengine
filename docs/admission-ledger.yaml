@@ -4584,16 +4584,21 @@
 - source_path: processor/graph-embedding
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the graph's tier-0 embedding records: follows ENTITY_STATES and keeps one BM25 record per entity with text in
-    EMBEDDING_INDEX, with its dedup keys in EMBEDDING_DEDUP, and reports on the graph-embedding readiness key;
-    semsource composes it with coalesce_ms, embedder_type, batch_size and text_suffixes (inventory § 5)
+    the graph's embedding records from tier 1 up: follows ENTITY_STATES and keeps one record per entity with text,
+    embedded by the embedder a product registers, in EMBEDDING_INDEX, with its dedup keys in EMBEDDING_DEDUP, and
+    reports on the graph-embedding readiness key; semsource composes it with coalesce_ms, embedder_type, batch_size
+    and text_suffixes (inventory § 5)
   destination: processor/graph-embedding
   contract: >-
     the write path as at the pin, with these adaptations (spec graph-embedding; design D1-D6). Configuration (D4):
     (1) strict configuration: an unknown key is refused naming it, batch_size (read nowhere at the pin)
-    and cache_ttl among them, which replaces the pin's targeted cache_ttl probe; (2) embedder_type is bm25 only, an
-    empty value means bm25, and any other value, http included, is refused naming the value and tier 0; the
-    registration asks boot for no model registry; (3) max_text_len 0 resolves at construction to BM25's 4,000 and
+    and cache_ttl among them, which replaces the pin's targeted cache_ttl probe; (2) the embedder is the product's,
+    registered with RegisterWithEmbedder under a non-empty name that is the dedup key's type part and search's
+    embedder_type; it is built in Start, never at construction, and closed once in Stop, and a Start failing after
+    the build closes it or, when that close fails, reports both errors and keeps it for Stop; plain Register's
+    factory refuses construction, class invalid, naming RegisterWithEmbedder and tier 1; embedder_type is refused as
+    an unknown key; the registration asks boot for no model registry (change setup-04b-04 design D5, owner question
+    3); (3) max_text_len 0 resolves at construction to 4,000 and
     text_suffixes empty to the pin's nine defaults, so each reader sees one value; workers 0 is 5, negative workers
     or max_text_len and max_text_len past embedding.MaxSourceTextLenCeiling are refused, as at the pin; (4) a
     configuration with no ports takes the default ports and a ports block that is present is used as written (ruling
@@ -4623,7 +4628,8 @@
     content_unresolved_total on the injected metrics registry (metrics.go)
   known_risks: >-
     Config break for consumers: semsource's configuration sets batch_size under graph-embedding and fails at boot
-    until the line is deleted; an embedder_type of http fails at boot; the status card loses first_failure_at;
+    until the line is deleted; embedder_type fails at boot whatever its value, and plain Register refuses
+    construction, so a tier 0 composition leaves graph-embedding out; the status card loses first_failure_at;
     graph.embedding.query.status has no responder; the query verbs refuse unknown keys, limits outside 0 to 100 and
     a min_revision above 0, and drop score-0 hits; the degraded rule is completion-based at 30 s for every plug-in
     (MIGRATION.md). Hop 1 runs serially on the follower's goroutine, so a slow pending write delays delivery
@@ -4632,14 +4638,14 @@
     body's store the Worker's replay and hop 1's re-read count two exclusions in content_unresolved_total. The
     Worker's other metrics are dropped
     until their collectors are ported. Not carried: the http embedder and the model import (#32, #489), BatchSize,
-    the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the pin's bucket-scan query fallback, its
+    the in-process BM25 embedder as the component's own, the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the pin's bucket-scan query fallback, its
     test hook subscribeForRequests, and its nil-storage, nil-embedder and empty-vector branches
   proving_tests: >-
-    processor/graph-embedding/config_test.go (TestConfigRefusesUnknownKey, TestConfigRefusesHTTPEmbedder,
-    TestConfigEmbedderType, TestConfigWorkers, TestConfigMaxTextLen, TestConfigTextSuffixes, TestConfigStartupWait,
+    processor/graph-embedding/config_test.go (TestConfigRefusesUnknownKey, TestConfigWorkers, TestConfigMaxTextLen, TestConfigTextSuffixes, TestConfigStartupWait,
     TestConfigCoalesceMs, TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
     TestConfigRefusesOutputs, TestConfigRefusesInputsTheFollowerDoesNotRead, TestStoreReadInputAdmitsStoreRegistry,
     FuzzResolveConfig), factory_test.go (TestCreateGraphEmbeddingRequiresNATSClient, TestRegisterAddsGraphEmbedding),
+    embedder_test.go (TestRegisterWithoutEmbedderRefuses),
     failed_test.go (TestFailedMapHistoryMatchesModel), the integration-tagged files (TestReadinessWaitsForHopTwo,
     TestRestartCompletesGeneratedRevision, TestCoalescedRevisionsComplete, TestRecreatedRevisionWaitsForWorker,
     TestStorageRefLaneEmbedsIdentityThenBody,
@@ -4650,7 +4656,8 @@
     TestSearchAnswersEnveloped, TestSearchLimitEdges, TestSearchQueryEdges, TestSearchScopeEdges, TestSimilarEdges,
     TestTopKAtTie, TestScopedSearch, TestQueriesWithheldUntilReady, TestWorkerFailureAnswersAndCounts,
     TestHealthNamesLostCacheWatch, TestNoResponderAfterStop,
-    TestGraphEmbeddingLifecycleSuite), internal/harness/contract/embeddingprovider_test.go
+    TestGraphEmbeddingLifecycleSuite, TestEmbedderClosedOnStop, TestProductEmbedderIsUsed),
+    internal/harness/contract/embeddingprovider_test.go
     (TestGraphEmbeddingImportsNoProviderModule)
   owner: setup-04a-05-first-consumer-graph-embedding developer
   disposition: adapt

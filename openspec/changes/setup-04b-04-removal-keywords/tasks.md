@@ -42,7 +42,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   no-embedder stack composes graph-lexical and answers it; a mutant mapping `nl` to `embedding` is shown to fail.
   `pkg/fusion/MIGRATION.md`, ADR-062's and ADR-071's port notes and the `pkg/fusion`, fusionnats ledger rows
   (`:4668`, `:4782-4863`) say what changed.
-- [ ] 2.4 PR C. graph-embedding takes a product's embedder (design D5; owner question 3). Premise: the component
+- [x] 2.4 PR C. graph-embedding takes a product's embedder (design D5; owner question 3). Premise: the component
   builds the hashed embedder itself (`processor/graph-embedding/component.go:87,325`) and accepts only `embedder_type:
   bm25` (`config.go:15,69-71,121-122`). Accept: new `TestRegisterWithoutEmbedderRefuses`, `TestProductEmbedderIsUsed`
   (the registered name is the dedup type and `search`'s `embedder_type`), `TestEmbedderClosedOnStop` (built and never

@@ -98,7 +98,7 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 	}
 	return reply(graph.SemanticData{
 		Results:           results,
-		EmbedderType:      c.config.EmbedderType,
+		EmbedderType:      c.embedderType,
 		UnreadableRecords: unreadable,
 		FailedRecords:     c.workerFailures(),
 	})

@@ -193,8 +193,8 @@ func TestSearchAnswersEnveloped(t *testing.T) {
 			t.Errorf("reply %s: results is not the empty array", got.raw)
 		}
 	}
-	if data := empty.reply.Data; data.EmbedderType != "bm25" || data.UnreadableRecords != 0 || data.FailedRecords != 0 {
-		t.Errorf("empty search data = %+v, want embedder_type bm25 and no record left out", data)
+	if data := empty.reply.Data; data.EmbedderType != testEmbedderType || data.UnreadableRecords != 0 || data.FailedRecords != 0 {
+		t.Errorf("empty search data = %+v, want embedder_type %s and no record left out", data, testEmbedderType)
 	}
 }
 
@@ -260,8 +260,8 @@ func TestSearchQueryEdges(t *testing.T) {
 	}
 }
 
-// TestSearchScopeEdges: a malformed scope prefix is refused invalid_request and leaves the
-// embedder's statistics as they were (the same search answers the same scores after it); an empty
+// TestSearchScopeEdges: a malformed scope prefix is refused invalid_request and changes nothing
+// (the same search answers the same scores after it); an empty
 // scope element matches every entity; a scope matching nothing answers no hit; a scope keeps only
 // the entities under it.
 func TestSearchScopeEdges(t *testing.T) {

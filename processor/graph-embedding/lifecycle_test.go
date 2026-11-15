@@ -1,12 +1,10 @@
 package graphembedding
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/c360studio/semengine/component"
-	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -19,15 +17,11 @@ var _ component.LifecycleComponent = (*Component)(nil)
 func TestLifecycleBeforeStart(t *testing.T) {
 	newComponent := func(t *testing.T) *Component {
 		t.Helper()
-		client, err := natsclient.NewClient("")
+		c, err := createFromJSON(t, `{}`)
 		if err != nil {
-			t.Fatalf("NewClient: %v", err)
+			t.Fatalf("build: %v", err)
 		}
-		built, err := CreateGraphEmbedding(json.RawMessage(`{}`), component.Dependencies{NATSClient: client})
-		if err != nil {
-			t.Fatalf("CreateGraphEmbedding: %v", err)
-		}
-		return built.(*Component)
+		return c
 	}
 
 	t.Run("health and data flow before Start", func(t *testing.T) {

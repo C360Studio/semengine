@@ -13,8 +13,7 @@ import (
 // unstartedHandlers returns the query handlers of a graph-embedding built through its factory and
 // never started: it has no vector cache, no embedder and no storage, so a request that got past
 // the entry checks to the embedder, the bucket or the cache panics rather than returns. A refusal
-// from these handlers is therefore made before anything is read or embedded, which is also why
-// the embedder's statistics cannot have changed.
+// from these handlers is therefore made before anything is read or embedded.
 func unstartedHandlers(t *testing.T) map[string]func(context.Context, []byte) ([]byte, error) {
 	t.Helper()
 	handlers := mustCreate(t, `{}`).queryHandlers()

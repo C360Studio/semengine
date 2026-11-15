@@ -81,10 +81,15 @@ type Component struct {
 	// verbs refuse from then on.
 	cacheLost atomic.Bool
 
-	// The query side (query.go). embedder is the Worker's BM25 embedder, whose statistics the
-	// search verb reads without changing (GenerateQuery); cache is the in-memory view of the
-	// generated vectors in EMBEDDING_INDEX the verbs rank. start sets both.
-	embedder *embedding.BM25Embedder
+	// embedderType is the name the product registered its embedder under: the type part of the
+	// dedup key and search's embedder_type. newEmbedder builds the embedder; start calls it.
+	embedderType string
+	newEmbedder  func() (embedding.Embedder, error)
+	// embedder is the one embedder start built: the Worker embeds documents with it and the search
+	// verb embeds queries with it (GenerateQuery). cleanup closes it last and clears it once
+	// closed. cache is the in-memory view of the generated vectors in EMBEDDING_INDEX the verbs
+	// rank; start sets it.
+	embedder embedding.Embedder
 	cache    *embedding.VectorCache
 	// subscriptions are the query request subscriptions, one per verb the table in graph declares
 	// for graph-embedding; cleanup drains them first.
@@ -107,7 +112,7 @@ type Component struct {
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-embedding: the ports
-// CreateGraphEmbedding will report for rawConfig, computed without dependencies.
+// the factory will report for rawConfig, computed without dependencies.
 func DeclarePorts(rawConfig json.RawMessage, _ string) (component.PortConfig, error) {
 	_, inputs, outputs, err := resolveConfig(rawConfig)
 	if err != nil {
@@ -117,7 +122,7 @@ func DeclarePorts(rawConfig json.RawMessage, _ string) (component.PortConfig, er
 }
 
 // resolveConfig parses rawConfig, applies defaults, validates, and resolves the effective
-// ports. It is the one derivation DeclarePorts and CreateGraphEmbedding share.
+// ports. It is the one derivation DeclarePorts and the factory share.
 func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []component.Port, error) {
 	var config Config
 	if len(rawConfig) > 0 {
@@ -152,9 +157,24 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 	return config, inputs, nil, nil
 }
 
-// CreateGraphEmbedding is the factory function for creating graph-embedding components. It
-// opens no connection.
-func CreateGraphEmbedding(rawConfig json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
+// CreateGraphEmbedding is the factory Register adds. It always refuses, class invalid:
+// graph-embedding has no embedder of its own, so a product with one (tier 1, such as semembed)
+// registers it with RegisterWithEmbedder, and a tier 0 composition leaves graph-embedding out.
+func CreateGraphEmbedding(json.RawMessage, component.Dependencies) (component.Discoverable, error) {
+	return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "CreateGraphEmbedding", "factory",
+		"embedder check: graph-embedding has no embedder of its own (from tier 1 a product registers one with RegisterWithEmbedder)")
+}
+
+// newFactory returns the factory RegisterWithEmbedder adds: it builds graph-embedding with the
+// product's embedder constructor, which only Start calls. It opens no connection.
+func newFactory(embedderType string, newEmbedder func() (embedding.Embedder, error)) component.Factory {
+	return func(rawConfig json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
+		return create(rawConfig, deps, embedderType, newEmbedder)
+	}
+}
+
+func create(rawConfig json.RawMessage, deps component.Dependencies, embedderType string,
+	newEmbedder func() (embedding.Embedder, error)) (component.Discoverable, error) {
 	if deps.NATSClient == nil {
 		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "CreateGraphEmbedding", "factory", "NATSClient required")
 	}
@@ -188,12 +208,39 @@ func CreateGraphEmbedding(rawConfig json.RawMessage, deps component.Dependencies
 		metrics:         metrics,
 		text:            entitytext.New(config.TextSuffixes, config.MaxTextLen),
 		storeRegistry:   storeRegistry,
+		embedderType:    embedderType,
+		newEmbedder:     newEmbedder,
 	}, nil
 }
 
-// Register registers the graph-embedding factory with the component registry. It asks boot
-// for no model registry: at tier 0 the embedder is BM25, which needs no provider.
+// Register registers a graph-embedding factory that refuses construction, naming
+// RegisterWithEmbedder and tier 1: graph-embedding has no embedder of its own. It is the
+// registration every component package exports, so a composition that lists graph-embedding
+// without an embedder fails at construction rather than running without one.
 func Register(registry *component.Registry) error {
+	return register(registry, CreateGraphEmbedding)
+}
+
+// RegisterWithEmbedder registers graph-embedding with a product's embedder. embedderType names
+// the embedder: it is the type part of the dedup key, so two embedders never share a stored
+// vector, and search replies it as embedder_type. newEmbedder is called once per Start, never at
+// construction, and the embedder it returns is closed by Stop. An empty embedderType or a nil
+// newEmbedder is refused, class invalid, and nothing is registered. Registering asks boot for no
+// model registry: the product owns the embedder and whatever it connects to.
+func RegisterWithEmbedder(registry *component.Registry, embedderType string,
+	newEmbedder func() (embedding.Embedder, error)) error {
+	if embedderType == "" {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "RegisterWithEmbedder",
+			"embedder type is required")
+	}
+	if newEmbedder == nil {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "RegisterWithEmbedder",
+			"embedder constructor is required")
+	}
+	return register(registry, newFactory(embedderType, newEmbedder))
+}
+
+func register(registry *component.Registry, factory component.Factory) error {
 	return registry.Register(component.Registration{
 		Name:        key,
 		Type:        "processor",
@@ -202,7 +249,7 @@ func Register(registry *component.Registry) error {
 		Description: "Graph entity embedding generation processor",
 		Version:     "1.0.0",
 		Schema:      schema,
-		Factory:     CreateGraphEmbedding,
+		Factory:     factory,
 		Ports:       DeclarePorts,
 	})
 }
@@ -238,7 +285,8 @@ func (c *Component) DataFlow() component.FlowMetrics { return c.lifecycle.DataFl
 // configuration.
 func (c *Component) Initialize() error { return c.lifecycle.Initialize() }
 
-// Start begins following ENTITY_STATES and writing pending records. The lifecycle state is
+// Start builds the embedder, then begins following ENTITY_STATES and writing pending records.
+// The lifecycle state is
 // the shell's (component.Lifecycle): Start before Initialize, a nil or ended context and a
 // second Start are refused, the second with errs.ErrAlreadyStarted, and a Start that fails is
 // rolled back through cleanup. A component with no NATS client is refused first.
@@ -254,9 +302,19 @@ func (c *Component) Start(ctx context.Context) error {
 	return c.lifecycle.Start(ctx, c.start, c.cleanup)
 }
 
-// start opens the follower and the buckets, then starts what Stop joins. Nothing it acquires
-// before the run context needs releasing.
+// start builds the embedder, opens the follower and the buckets, then starts what Stop joins.
+// Of what it acquires before the run context, only the embedder needs releasing; cleanup closes
+// it when a later step fails.
 func (c *Component) start(ctx context.Context) error {
+	embedder, err := c.newEmbedder()
+	if err != nil {
+		return errs.Wrap(err, "Component", "Start", "build the embedder")
+	}
+	if embedder == nil {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Component", "Start", "the embedder constructor returned no embedder")
+	}
+	c.embedder = embedder
+
 	f, err := follower.Open(ctx, follower.Config{
 		Client:          c.natsClient,
 		Key:             key,
@@ -320,13 +378,12 @@ func (c *Component) start(ctx context.Context) error {
 	}()
 
 	// Hop 2: the Worker embeds each pending record and reports its terminal outcome to
-	// onTerminal. Its embedder also embeds the search verb's queries: one instance serves both,
-	// so a query is weighed by the corpus statistics the Worker's embeddings built.
-	c.embedder = embedding.NewBM25Embedder(embedding.BM25Config{})
+	// onTerminal. Its embedder also embeds the search verb's queries, so documents and queries
+	// share one vector space.
 	worker := embedding.NewWorker(c.storage, c.embedder, c.logger).
 		WithWorkers(c.config.Workers).
 		WithMaxSourceTextLen(c.config.MaxTextLen).
-		WithEmbedderType(c.config.EmbedderType).
+		WithEmbedderType(c.embedderType).
 		WithMetrics(c.metrics).
 		WithOnTerminal(c.onTerminal)
 	// A nil *storeregistry.Registry in the interface would be a non-nil resolver that panics.
@@ -402,7 +459,9 @@ func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ct
 // partial start. It initiates every query subscription drain, ends the run context, waits up to
 // ctx for the follower's Run, repair lane, Worker's Run, and vector cache's Run, and initiates
 // coalescer shutdown without returning early on an earlier ctx error. A ctx that ends before
-// all joins complete returns its error with the handles kept, and the next Stop resumes.
+// all joins complete returns its error with the handles kept, and the next Stop resumes. The
+// embedder is closed last, once nothing that embeds can still run; a close that fails is
+// returned with the embedder kept, and the next Stop closes it again.
 func (c *Component) cleanup(ctx context.Context) error {
 	var cleanupErr error
 	for _, sub := range c.subscriptions {
@@ -431,5 +490,11 @@ func (c *Component) cleanup(ctx context.Context) error {
 		return err
 	}
 	c.runCancel, c.feeds, c.repairs, c.worked, c.cached, c.coalescer, c.subscriptions = nil, nil, nil, nil, nil, nil, nil
+	if c.embedder != nil {
+		if err := c.embedder.Close(); err != nil {
+			return errs.Wrap(err, "Component", "Stop", "close the embedder")
+		}
+		c.embedder = nil
+	}
 	return nil
 }

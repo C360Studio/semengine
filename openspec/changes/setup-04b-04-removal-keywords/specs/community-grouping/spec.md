@@ -47,6 +47,44 @@ a scan of the group.
 - **WHEN** the smallest text-bearing member is deleted
 - **THEN** the next smallest text-bearing member becomes a representative (`TestRepresentativesWithoutScan`)
 
+## MODIFIED Requirements
+
+### Requirement: Applying a change depends only on the latest revision
+
+The maintainer SHALL keep each present entity's last-applied revision and contribution; an `Upsert` or `Delete` at
+or below that revision SHALL change nothing; a newer `Upsert` SHALL replace the contribution, and a `Delete` SHALL
+remove it. The caller SHALL pass, with each `Upsert`, the revision of the exact value decoded, in increasing order per
+key. A record SHALL be built from its members' latest values and the graph-wide word counts of the tick that writes
+it. After a restart, whose first tick builds every group, the published records SHALL equal those computed from the
+final entity values alone, apart from `entity_revision`. Between restarts, a group not written since the graph-wide
+word counts changed MAY keep keywords, and the summary naming them, scored against older counts.
+
+#### Scenario: Records are scored when written
+
+- **WHEN** entities change and ticks run, some ticks failing partway
+- **THEN** each record equals one built from its members' latest values and the graph-wide counts of the last
+  successful tick after the group last changed
+- **AND** the test that verifies this is `TestMaintainerMatchesModel`
+
+#### Scenario: Two histories, one final state
+
+- **WHEN** two histories interleave entities in different orders, keep each entity's own revision order, and end with
+  the same entity values, and each is followed by a restart over its own bucket
+- **THEN** the published records are byte-identical apart from `entity_revision`
+- **AND** the tests that verify this are `TestHistoryOrderIrrelevant` and `TestMaintainerMatchesModel`
+
+#### Scenario: A change outside the text
+
+- **WHEN** an entity's only change is a value its text rule does not read
+- **THEN** no graph-wide count changes and its groups' keywords equal those a restart would publish
+- **AND** the test that verifies this is `TestTelemetryRevisionKeepsKeywords`
+
+#### Scenario: An obsolete delivery
+
+- **WHEN** an entity applied at revision 9 receives an upsert or delete at revision 7
+- **THEN** its contribution is unchanged
+- **AND** the test that verifies this is `TestObsoleteDeliveryIgnored`
+
 ## REMOVED Requirements
 
 ### Requirement: Keywords and representatives come from the group alone

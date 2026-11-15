@@ -72,8 +72,12 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   to set `text_suffixes` to graph-lexical's list. PR body: `Closes #650`.
 - [ ] 2.9 PR D. Distinctive keywords (design D8; owner question 1). Premise: keywords are the most counted words
   (`terms.go:89`), 27.9% of them corpus-common on the probe (`notes/probes/keywords-probe.log`). Accept: new
-  `TestKeywordsScorecard` and `TestKeywordsScoredWhenWritten`; `TestTickCost` and the maintainer's property test pass
-  unchanged; a mutant that drops the graph-wide count is shown to fail the scorecard. The floors and the first run's
+  `TestKeywordsScorecard`, `TestKeywordsScoredWhenWritten` and `TestTelemetryRevisionKeepsKeywords`;
+  `TestTickCost` passes unchanged;
+  `TestMaintainerMatchesModel` and
+  `TestHistoryOrderIrrelevant` follow the amended requirement (records scored when written; equal after a restart;
+  owner ruling, #10 comment 6893325675), the model test's generator drawing revisions that change only
+  `docs.note.size`; a mutant that drops the graph-wide count fails the scorecard. The floors and the first run's
   numbers are recorded in `notes/2.9.md`.
 
 ## 3. Docs and close-out

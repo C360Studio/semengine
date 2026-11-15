@@ -410,7 +410,7 @@ func (c *Component) start(ctx context.Context) error {
 
 	// The vector cache the verbs answer from. Until it has applied its watch's first snapshot,
 	// and after its watch is lost, the verbs refuse index_not_ready.
-	c.cache = embedding.NewVectorCache(c.storage)
+	c.cache = embedding.NewVectorCache(c.storage, c.embedder.Model(), c.embedder.Dimensions())
 	cached := make(chan struct{})
 	c.cached = cached
 	go func() {

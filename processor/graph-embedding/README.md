@@ -169,9 +169,14 @@ in neither.
   `invalid_request`, naming what was refused.
 - **No revision claim.** The verbs do not say how current the cache is. `indexed_revision` is always 0, and a
   `min_revision` above 0 is refused `invalid_request` rather than answered.
-- **`similar` needs a vector.** An entity with no record, a record that is not generated, or a generated record with no
-  vector is refused class invalid, code `embedding_unavailable`; a record that cannot be decoded is refused class
-  invalid with no code.
+- **`similar` needs a vector.** An entity with no record, a record that is not generated, a generated record with no
+  vector, or one another embedder generated is refused class invalid, code `embedding_unavailable`; a record that
+  cannot be decoded is refused class invalid with no code.
+- **Changing the embedder.** A restart with an embedder of another model or width, against the same NATS state,
+  regenerates every vector the previous embedder left: hop 1 replaces such a record with a pending one, and the Worker
+  embeds it again. Until it has, the verbs score only vectors the running embedder made, so an entity whose vector is
+  not regenerated yet is not a hit and is refused as a `similar` source, rather than compared across two models'
+  vector spaces. A restart with the same embedder keeps every stored vector.
 
 ### When a call is withheld
 

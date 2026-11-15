@@ -246,7 +246,7 @@ func TestPendingRecordBeforeStartIsEmbedded(t *testing.T) {
 	earlier := embedding.NewStorage(client.NewKVStore(index), client.NewKVStore(dedup))
 	if _, err := earlier.SavePendingGuarded(t.Context(), &embedding.Record{
 		EntityID: a, SourceText: "written before Start", SourceRevision: rev,
-	}); err != nil {
+	}, "m", 0); err != nil {
 		t.Fatalf("SavePendingGuarded: %v", err)
 	}
 
@@ -281,7 +281,7 @@ func TestWorkerExclusionCountedAfterRestart(t *testing.T) {
 	if _, err := earlier.SavePendingGuarded(t.Context(), &embedding.Record{
 		EntityID: a, SourceRevision: rev, IdentityText: "retained title",
 		StorageRef: &embedding.StorageRef{StorageInstance: bodyInstance, Key: "old-body"},
-	}); err != nil {
+	}, "m", 0); err != nil {
 		t.Fatal(err)
 	}
 

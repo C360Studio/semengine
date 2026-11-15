@@ -168,7 +168,7 @@ func (h *history) apply(o historyOp) (string, error) {
 	var outcome string
 	switch o.op {
 	case opPending:
-		saved, err := h.s.SavePendingGuarded(h.ctx, &Record{EntityID: e, SourceText: "t", SourceRevision: r})
+		saved, err := h.s.SavePendingGuarded(h.ctx, &Record{EntityID: e, SourceText: "t", SourceRevision: r}, "m", 1)
 		if err != nil {
 			return "", fmt.Errorf("SavePendingGuarded(%s, %d): %w", e, r, err)
 		}

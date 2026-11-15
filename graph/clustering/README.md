@@ -44,8 +44,10 @@ To read every record at one level, a reader lists the keys that start with `Leve
 which refuses a level outside 0 to 2.
 
 A member's *text* is the values `graph/entitytext` selects: string values, relationships skipped, whose predicates end
-in one of the suffixes given to `NewMaintainer` (empty means `entitytext.DefaultSuffixes`). That is the rule
-graph-lexical's `text_suffixes` applies, so given the same list, keywords and the word index read the same text. A
+in one of the suffixes given to `NewMaintainer` (empty means `entitytext.DefaultSuffixes`): the values
+`entitytext.Rule.Values` returns, the same text graph-embedding reads. Given the same list as graph-lexical's
+`text_suffixes`, keywords read the values the word index reads by suffix; the word index also indexes the names that
+registered label predicates hold and an entity's offloaded body, which keywords do not read. A
 *word* is a run of 3 to `MaxWordBytes` (32) ASCII letters and digits in that text, ignoring case and a short list of
 stop words. A longer run is not a word, and nothing is cut. IDs, predicate names, values under other suffixes and the
 objects of relationships (other entity IDs) add no words; a group whose members have no text has no keywords and no
@@ -78,6 +80,7 @@ if err != nil {
     return err
 }
 // textSuffixes: the list your graph-lexical's text_suffixes holds; nil is the default list.
+// Keywords read only the values those suffixes select, not label predicates or offloaded bodies.
 m, err := clustering.NewMaintainer(storage, textSuffixes)
 if err != nil {
     return err

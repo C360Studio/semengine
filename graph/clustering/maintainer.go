@@ -94,9 +94,9 @@ type groupRef struct {
 	id    string
 }
 
-// NewMaintainer returns a Maintainer publishing to storage. Keywords are counted from an
-// entity's values whose predicates end in one of textSuffixes, as graph-lexical's text_suffixes
-// selects them (entitytext.New); empty means entitytext.DefaultSuffixes. It refuses a nil storage.
+// NewMaintainer returns a Maintainer publishing to storage. Keywords are counted from the
+// values entitytext.Rule.Values selects under textSuffixes, the text graph-embedding reads;
+// empty means entitytext.DefaultSuffixes. It refuses a nil storage.
 func NewMaintainer(storage *NATSCommunityStorage, textSuffixes []string) (*Maintainer, error) {
 	if storage == nil {
 		return nil, errs.WrapInvalid(errs.ErrMissingConfig, "Maintainer", "NewMaintainer", "storage is nil")

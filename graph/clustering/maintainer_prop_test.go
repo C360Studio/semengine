@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -86,12 +87,13 @@ const (
 	kindMismatched = "mismatched"
 )
 
-// propValue is one generated delivery's value: its text's words and a size, a value no text
-// rule reads.
+// propValue is one generated delivery's value: its text's words, and a size and a status, values
+// no text rule reads.
 type propValue struct {
-	kind  string
-	words []string
-	size  float64
+	kind   string
+	words  []string
+	size   float64
+	status string
 }
 
 func (v propValue) state(id string) *graph.EntityState {
@@ -105,7 +107,8 @@ func (v propValue) state(id string) *graph.EntityState {
 		}
 		return &graph.EntityState{ID: other}
 	}
-	state := &graph.EntityState{ID: id, Triples: []message.Triple{{Subject: id, Predicate: "docs.note.size", Object: v.size}}}
+	state := &graph.EntityState{ID: id, Triples: []message.Triple{{Subject: id, Predicate: "docs.note.size", Object: v.size},
+		{Subject: id, Predicate: "docs.note.status", Object: v.status}}}
 	if len(v.words) > 0 {
 		state.Triples = append(state.Triples, message.Triple{Subject: id, Predicate: "docs.note.body", Object: strings.Join(v.words, " ")})
 	}
@@ -118,7 +121,7 @@ func drawValue(rt *rapid.T, bad bool) propValue {
 		kind = kindValid // a bad ID is refused whatever its state
 	}
 	words := rapid.SliceOfN(rapid.SampledFrom(propVocabulary), 0, 60).Draw(rt, "words")
-	return propValue{kind: kind, words: words, size: 7}
+	return propValue{kind: kind, words: words, size: 7, status: "idle"}
 }
 
 // modelEntity is the model's view of one held entity.
@@ -455,13 +458,14 @@ func TestMaintainerMatchesModel(t *testing.T) {
 				revision++
 				upsert(id, revision, drawValue(rt, bad[id]))
 			case "size-only":
-				// A new revision whose only change is a value no text rule reads.
+				// A new revision whose only changes are values no text rule reads.
 				if len(entities) == 0 {
 					continue
 				}
 				id := rapid.SampledFrom(slices.Sorted(maps.Keys(entities))).Draw(rt, "resized")
 				v := entities[id].value
 				v.size++
+				v.status = map[string]string{"": "running", "running": "idle", "idle": "running"}[v.status]
 				revision++
 				upsert(id, revision, v)
 				c.sizeOnly++
@@ -606,9 +610,10 @@ type propDelivery struct {
 
 // TestHistoryOrderIrrelevant: two histories that interleave the same per-entity
 // deliveries differently, each entity's in its own revision order, with ticks at
-// different points, give the same Tick result, and after a restart over each history's
-// own bucket leave records byte-identical apart from entity_revision. Before the restart
-// they may differ in keywords: a group is scored when it is written. Revisions here ascend
+// different points, give the same Tick result and, after a restart over each history's own
+// bucket, records byte-identical apart from entity_revision. Before the restart the records
+// are equal too, apart from entity_revision, the keywords and the summary naming them: a
+// group is scored when it is written, so those may lag. Revisions here ascend
 // per entity only, not across entities, so entity_revision, which only an ascending feed
 // fixes, is masked before comparing. Obsolete deliveries are inserted only after an
 // upsert, where the entity is still held.
@@ -648,14 +653,13 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 			finals = append(finals, final)
 		}
 
-		run := func(label string) (map[string][]byte, string, []string) {
+		run := func(label string) (before, after map[string][]byte, result string, order []string) {
 			m, kv, err := newFakeMaintainer(nil)
 			if err != nil {
 				rt.Fatal(err)
 			}
 			m.BootstrapDone()
 			next := make([]int, len(perEntity))
-			var order []string
 			for {
 				var open []int
 				for i, seq := range perEntity {
@@ -680,10 +684,12 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 				}
 				order = append(order, fmt.Sprintf("%s@%d", d.id, d.revision))
 			}
-			var result string
 			if err := m.Tick(t.Context()); err != nil {
 				result = err.Error()
 			}
+			kv.mu.Lock()
+			before = maps.Clone(kv.data)
+			kv.mu.Unlock()
 			// A restart over this history's bucket, fed the final values, builds every group.
 			restarted, err := newMaintainerOver(kv, nil)
 			if err != nil {
@@ -704,12 +710,15 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 			}
 			kv.mu.Lock()
 			defer kv.mu.Unlock()
-			return maps.Clone(kv.data), result, order
+			return before, maps.Clone(kv.data), result, order
 		}
-		dataA, resultA, orderA := run("A")
-		dataB, resultB, orderB := run("B")
+		beforeA, dataA, resultA, orderA := run("A")
+		beforeB, dataB, resultB, orderB := run("B")
 		if resultA != resultB {
 			rt.Fatalf("final Tick: %q after %q, %q after %q", resultA, orderA, resultB, orderB)
+		}
+		if !maps.EqualFunc(beforeA, beforeB, func(a, b []byte) bool { return bytes.Equal(maskLagging(rt, a), maskLagging(rt, b)) }) {
+			rt.Fatalf("records before the restart differ outside keywords:\n%q\n%q\nafter %q and %q", beforeA, beforeB, orderA, orderB)
 		}
 		if !maps.EqualFunc(dataA, dataB, func(a, b []byte) bool { return bytes.Equal(maskRevision(a), maskRevision(b)) }) {
 			rt.Fatalf("records differ:\n%q\n%q\nafter %q and %q", dataA, dataB, orderA, orderB)
@@ -723,6 +732,23 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 	})
 	t.Logf("assertions run: differing interleavings %d, obsolete deliveries %d, non-empty final indexes %d",
 		differing, obsolete, nonEmpty)
+}
+
+// maskLagging returns record without the fields a record not written since the graph-wide word
+// counts moved may hold from older counts (keywords, statistical_summary), and entity_revision.
+func maskLagging(rt *rapid.T, record []byte) []byte {
+	var fields map[string]any
+	if err := json.Unmarshal(record, &fields); err != nil {
+		rt.Fatalf("decode %s: %v", record, err)
+	}
+	delete(fields, "keywords")
+	delete(fields, "statistical_summary")
+	delete(fields, "entity_revision")
+	masked, err := json.Marshal(fields)
+	if err != nil {
+		rt.Fatal(err)
+	}
+	return masked
 }
 
 // entityRevisionField is the encoded entity_revision field; a record holds it once.

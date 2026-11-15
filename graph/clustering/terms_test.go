@@ -244,15 +244,16 @@ func TestSummaryTemplate(t *testing.T) {
 	}
 }
 
-// TestKeywordTextMatchesLexical: an entity's keywords are counted from the values graph-lexical
-// reads as its text under the same suffixes, and from nothing else. Two entities hold the same
-// values under configured and unconfigured suffixes, a number and a relationship; each text value
-// is one word held once by each, so the words the maintainer publishes are exactly those values,
-// lexically ordered. A third member, smaller by ID, holds a string only under a suffix no case selects: it
-// adds no keyword and is no representative. An entity in another deployment holds one other
-// word under every case's suffixes, so no text value is held by every member with words. The
-// expected values come from entitytext built as graph-lexical builds it.
-func TestKeywordTextMatchesLexical(t *testing.T) {
+// TestKeywordTextIsTheRuleValues: an entity's keywords are counted from the values the text rule
+// selects (entitytext.Rule.Values, the text graph-embedding reads) under the same suffixes, and
+// from nothing else. Two entities hold the same values under configured and unconfigured
+// suffixes, a number and a relationship; each text value is one word held once by each, so the
+// words the maintainer publishes are exactly those values, lexically ordered. A third member,
+// smaller by ID, holds a string only under a suffix no case selects: it adds no keyword and is no
+// representative. An entity in another deployment holds one other word under every case's
+// suffixes, so no text value is held by every member with words. The expected values come from
+// entitytext.New(suffixes, ...).Values.
+func TestKeywordTextIsTheRuleValues(t *testing.T) {
 	stateOf := func(id string) *graph.EntityState {
 		return &graph.EntityState{ID: id, Triples: []message.Triple{
 			{Subject: id, Predicate: "code.func.name", Object: "parse"},

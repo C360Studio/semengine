@@ -54,11 +54,12 @@ Read these. Nothing errors.
   prefix grouping the edges do not count: the test sees one group per source prefix, so its expectation changes.
   *Do:* assert on the groups of the IDs you wrote.
 - **Keywords read only text.** SemStreams counted the words of every string value an entity held. Here keywords are
-  counted only from values whose predicates end in one of `text_suffixes`, the rule graph-lexical indexes by; values
-  under other suffixes add nothing, and a group whose members hold no such value has no keywords and no
-  representatives. *Do:* set `text_suffixes` to the list your graph-lexical uses, so keywords and word search read
-  the same text. SemSource adds `.signature` and `.comment` to the default list (for graph-embedding); carry those two
-  over too, or a function's signature and doc comment stop counting.
+  counted only from values whose predicates end in one of `text_suffixes`, the values graph-embedding reads; values
+  under other suffixes add nothing, and a group whose members hold no such value has no keywords and no representatives.
+  graph-lexical selects the same values under the same list, and also indexes registered label predicates and offloaded
+  bodies, which keywords do not read. *Do:* set `text_suffixes` to the list your graph-lexical uses, so keywords and
+  word search select the same values. SemSource adds `.signature` and `.comment` to the default list (for
+  graph-embedding); carry those two over too, or a function's signature and doc comment stop counting.
 - **Keywords are the words that set a group apart.** SemStreams' keywords were the words a group used most, so most
   groups shared the same few (`not`, `that`, `graph`). Here each word is scored by how many of the group's members
   hold it against how many of the whole graph's do, and a word every member with words holds is never a keyword: a

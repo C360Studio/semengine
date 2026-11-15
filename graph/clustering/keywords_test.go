@@ -129,32 +129,36 @@ func TestFailedTickRebuildsUnchangedGroups(t *testing.T) {
 	wantKeywords(t, kv, s1)
 }
 
-// TestTelemetryRevisionKeepsKeywords: revisions that change only a value no text rule reads
-// (a size) change no graph-wide count, so every record a tick publishes equals the record a
-// restart fed the same values would publish, and a group none of whose members changed is
-// never written.
+// TestTelemetryRevisionKeepsKeywords: revisions that change only values no text rule reads (a
+// size, and a status string outside the text suffixes) change no graph-wide count, so every
+// record a tick publishes equals the record a restart fed the same values would publish, and a
+// group none of whose members changed is never written. The statuses are chosen so that read as
+// text they would move a count: once both of s1's members are idle, every member holds idle, and
+// dep2's keywords, scored then, would lose it while its unwritten record kept it.
 func TestTelemetryRevisionKeepsKeywords(t *testing.T) {
-	state := func(id, text string, size float64) *graph.EntityState {
-		return &graph.EntityState{ID: id, Triples: []message.Triple{
-			{Subject: id, Predicate: "docs.note.body", Object: text},
-			{Subject: id, Predicate: "docs.note.size", Object: size},
-		}}
-	}
 	type value struct {
 		revision uint64
 		text     string
 		size     float64
+		status   string
+	}
+	state := func(id string, v *value) *graph.EntityState {
+		return &graph.EntityState{ID: id, Triples: []message.Triple{
+			{Subject: id, Predicate: "docs.note.body", Object: v.text},
+			{Subject: id, Predicate: "docs.note.size", Object: v.size},
+			{Subject: id, Predicate: "docs.note.status", Object: v.status},
+		}}
 	}
 	values := map[string]*value{
-		"acme.dep1.s1.docs.note.a0": {1, "alpha shared", 1},
-		"acme.dep1.s1.docs.note.a1": {1, "alpha shared", 1},
-		"acme.dep2.s1.docs.note.b0": {1, "beta shared", 1},
-		"acme.dep2.s1.docs.note.b1": {1, "beta shared", 1},
+		"acme.dep1.s1.docs.note.a0": {1, "alpha shared", 1, "running"},
+		"acme.dep1.s1.docs.note.a1": {1, "alpha shared", 1, "running"},
+		"acme.dep2.s1.docs.note.b0": {1, "beta shared", 1, "idle"},
+		"acme.dep2.s1.docs.note.b1": {1, "beta shared", 1, "idle"},
 	}
 	feed := func(m *Maintainer) {
 		for _, id := range slices.Sorted(maps.Keys(values)) {
 			v := values[id]
-			if err := m.Upsert(id, v.revision, state(id, v.text, v.size)); err != nil {
+			if err := m.Upsert(id, v.revision, state(id, v)); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -176,10 +180,11 @@ func TestTelemetryRevisionKeepsKeywords(t *testing.T) {
 
 	for i := range 20 {
 		id := []string{"acme.dep1.s1.docs.note.a0", "acme.dep1.s1.docs.note.a1"}[i%2]
-		values[id].revision++
-		values[id].size++
 		v := values[id]
-		if err := m.Upsert(id, v.revision, state(id, v.text, v.size)); err != nil {
+		v.revision++
+		v.size++
+		v.status = map[string]string{"running": "idle", "idle": "running"}[v.status]
+		if err := m.Upsert(id, v.revision, state(id, v)); err != nil {
 			t.Fatal(err)
 		}
 		mustTick(t, m)

@@ -48,10 +48,11 @@ type Config struct {
 	// DetectionInterval is the time between publications of the changed groups, a Go duration
 	// such as 30s or 5m; empty means 30s.
 	DetectionInterval string `json:"detection_interval,omitempty" schema:"type:string,description:Interval between publications of changed groups (e.g. 30s or 5m),category:basic"`
-	// TextSuffixes are the predicate suffixes whose string values keywords are counted from, as
-	// graph-lexical's text_suffixes selects an entity's text; empty means
-	// entitytext.DefaultSuffixes. Set it to graph-lexical's list so both read the same text.
-	TextSuffixes []string `json:"text_suffixes,omitempty" schema:"type:array,description:Predicate suffixes whose values keywords are counted from; set it to graph-lexical's text_suffixes. Defaults to common text predicates,category:advanced"`
+	// TextSuffixes are the predicate suffixes whose string values keywords are counted from: the
+	// values entitytext.Rule.Values selects, as graph-embedding reads them; empty means
+	// entitytext.DefaultSuffixes. Set it to graph-lexical's list so both select the same values;
+	// graph-lexical also indexes label predicates and offloaded bodies, which keywords do not read.
+	TextSuffixes []string `json:"text_suffixes,omitempty" schema:"type:array,description:Predicate suffixes whose string values keywords are counted from; set it to graph-lexical's text_suffixes. Defaults to common text predicates,category:advanced"`
 
 	// Dependency startup configuration
 	StartupAttempts int `json:"startup_attempts,omitempty" schema:"type:int,description:Max attempts to wait for dependencies at startup,category:advanced"`

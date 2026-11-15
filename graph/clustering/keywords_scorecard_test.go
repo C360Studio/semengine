@@ -245,6 +245,16 @@ func TestKeywordsScorecard(t *testing.T) {
 
 	got := measureKeywords(t, published, groupOf, words, size, ix, corpusIDs)
 	ref := measureKeywords(t, referenceKeywords(groupOf, words), groupOf, words, size, ix, corpusIDs)
+	large := 0
+	for _, n := range size {
+		if n >= precisionMinMembers {
+			large++
+		}
+	}
+	if got.measured != large || ref.measured != large {
+		t.Fatalf("searched %d groups (reference %d), want every group of %d or more members (%d)",
+			got.measured, ref.measured, precisionMinMembers, large)
+	}
 	t.Logf("%d sections, %d groups, %d searched", len(corpus), len(size), got.measured)
 	t.Logf("published keywords: common %.1f%%, precision %.1f%%", 100*got.common, 100*got.precision)
 	t.Logf("reference TF-IDF:   common %.1f%%, precision %.1f%%", 100*ref.common, 100*ref.precision)

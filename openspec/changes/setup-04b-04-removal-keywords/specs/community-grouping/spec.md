@@ -4,9 +4,10 @@
 
 ### Requirement: Keywords are the group's distinctive words
 
-Keywords SHALL be the `MaxKeywords` words that score best, ties broken lexically, where a word's score is the share
-of the group's members holding it times the natural log of the graph's members with words over the graph's members
-holding it. A change outside the group SHALL change its keywords only when the group's record is next built.
+Keywords SHALL be the `MaxKeywords` words that score best among those scoring above zero, ties broken lexically, where a
+word's score is the share of the group's members holding it times the natural log of the graph's members with words over
+the graph's members holding it. A change outside the group SHALL change its keywords only when the group's record is
+next built.
 
 #### Scenario: A word common to the graph
 

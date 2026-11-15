@@ -17,4 +17,4 @@ SHALL read their text only through it. Empty `text_suffixes` SHALL mean the defa
 #### Scenario: graph-clustering reads the same values
 
 - **WHEN** an entity is read by graph-clustering and through `Values` under the same suffixes
-- **THEN** the values are equal (`TestKeywordTextMatchesLexical`)
+- **THEN** the values are equal (`TestKeywordTextIsTheRuleValues`)

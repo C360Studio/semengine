@@ -4165,7 +4165,7 @@
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
     TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate,
-    TestKeywordTextMatchesLexical); keywords_test.go (TestKeywordsScoredWhenWritten,
+    TestKeywordTextIsTheRuleValues); keywords_test.go (TestKeywordsScoredWhenWritten,
     TestFailedTickRebuildsUnchangedGroups, TestTelemetryRevisionKeepsKeywords); keywords_scorecard_test.go
     (TestKeywordsScorecard); storage_test.go
     (TestLevelPrefix, TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go

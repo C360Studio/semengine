@@ -67,7 +67,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   `TestFusionNATSImportsNoEmbedding` passes. PR body: `Closes #628`.
 - [x] 2.8 PR D. Text through `graph/entitytext` (design D9; #650). Premise: `entityWords` reads every string value
   (`graph/clustering/terms.go:57`); graph-clustering has no `text_suffixes` (`processor/graph-clustering/
-  config.go:46-53`). Accept: new `TestKeywordTextMatchesLexical`, `TestTextSuffixesIsRead`;
+  config.go:46-53`). Accept: new `TestKeywordTextIsTheRuleValues`, `TestTextSuffixesIsRead`;
   `TestRepresentativesWithoutScan` and `TestRecordIsBounded` pass; `processor/graph-clustering/MIGRATION.md` says
   to set `text_suffixes` to graph-lexical's list. PR body: `Closes #650`.
 - [x] 2.9 PR D. Distinctive keywords (design D8; owner question 1). Premise: keywords are the most counted words

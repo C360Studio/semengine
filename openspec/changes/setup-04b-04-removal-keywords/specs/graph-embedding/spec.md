@@ -50,6 +50,22 @@ could not decode, and its `failed_records` the number of entities whose latest e
 - **WHEN** a `search` request arrives after the first build with no generated record
 - **THEN** the reply's `data.results` is `[]` and `indexed_revision` is 0 (`TestSearchAnswersEnveloped`)
 
+### Requirement: Hits are ranked before the limit
+
+Every hit SHALL score above 0. The full match set SHALL be sorted by similarity, then by entity ID, before the limit
+applies. The entity `similar` names SHALL never be one of its own hits.
+
+#### Scenario: A query of stopwords only
+
+- **WHEN** `query` embeds to the zero vector, as a query of stopwords only does under the test embedder
+- **THEN** the reply's `results` is `[]` (`TestSearchQueryEdges`)
+
+#### Scenario: Ties across the limit
+
+- **WHEN** several entities tie on similarity across the limit
+- **THEN** the hits kept are those with the smallest entity IDs among the tied, the same on every run
+  (`TestTopKAtTie`)
+
 ## REMOVED Requirements
 
 ### Requirement: Tier-0 config

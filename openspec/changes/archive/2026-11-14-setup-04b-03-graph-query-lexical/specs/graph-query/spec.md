@@ -62,8 +62,8 @@ the group's `COMMUNITY_INDEX` record (`member_count`, `community_summary`, `keyw
 
 `globalSearch` SHALL search every entity, unscoped, and answer enveloped `graph.GlobalSearchData` whose `text` is a
 `graph.TextSearchData`: `level`; `matches`; and `groups`, one for each level-`level` group holding a match, in the
-order of its best match, each with `community_id`, `matches` (its match count), `record_state` and, when read, its
-record's `member_count`, `community_summary` and `keywords`. `unreadable_groups` SHALL count the groups whose record
+order of its best match, each with `community_id`, `matches` (its match count), `record_state` and `record`, its
+record as local search names it, present exactly when read. `unreadable_groups` SHALL count the groups whose record
 could not be read.
 
 #### Scenario: Grouped hits
@@ -187,12 +187,13 @@ matching entities in {community_id}.` for local search, followed by a space and 
 
 On the word index's frozen scorecard corpus and its 500 questions, `globalSearch` and `localSearch` (each question's
 answer's level-0 group) SHALL each have the answer in the first ten at most one point below a plain BM25 computed in
-the test, and at or above 55% and 58% respectively.
+the test, and at or above 55% and 58% respectively, and an MRR at most 0.01 below that reference's on the same
+questions.
 
 #### Scenario: The scorecard
 
 - **WHEN** the corpus is ingested and the questions asked through both verbs
-- **THEN** both bars hold, and the test logs R@1, R@10 and MRR for both verbs and the reference
+- **THEN** the R@10 and MRR bars hold, and the test logs R@1, R@10 and MRR for both verbs and the reference
   (`TestSearchScorecard`)
 
 ## MODIFIED Requirements
@@ -231,9 +232,9 @@ input.
 
 ### Requirement: Refusals that are not errors
 
-A responder's classified refusal, a caller's `invalid_request`, a not-honoured hint, a search answered without
-community records, and `not_enabled` SHALL NOT count as an error in `Health`; each request still counts once in
-`DataFlow` on entry.
+A responder's classified refusal, a caller's `invalid_request`, a hint not honoured because a responder refused it or
+global search does not apply it, a search answered without community records, and `not_enabled` SHALL NOT count as an
+error in `Health`; each request still counts once in `DataFlow` on entry.
 
 #### Scenario: A question this build cannot answer
 

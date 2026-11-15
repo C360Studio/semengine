@@ -314,11 +314,11 @@ transient `internal`, and no partial answer is returned. Every hop SHALL carry t
 
 ### Requirement: A request's cost is bounded
 
-`pathSearch` SHALL make at most 1 + `max_nodes` requests, or 1 + 2 × `max_nodes` for `both`.
-`hierarchyStats` SHALL make exactly one prefix request, and `summary` one prefix request and, unless predicates are
-excluded, one `predicateList` request first. `localSearch` SHALL make one word search and at most one batch request;
-`globalSearch` the same, plus at most one alias, one entity and one path request for its reference. A long request
-on one verb SHALL NOT stop another verb answering.
+`pathSearch` SHALL make at most 1 + `max_nodes` requests (1 + 2 × `max_nodes` for `both`). `hierarchyStats` SHALL
+make exactly one prefix request; `summary` one prefix request and, unless predicates are excluded, one `predicateList` first.
+`localSearch` SHALL make one word search and at most one batch request; `globalSearch` the same, plus at most one
+alias and one entity request and one walk within `pathSearch`'s bound. A long request on one verb SHALL NOT stop
+another verb answering.
 
 #### Scenario: Counting the requests
 

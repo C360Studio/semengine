@@ -326,14 +326,14 @@ on one of these verbs, is the `request_subject_conflict` error that refuses boot
 `ErrorCount` never lowers `Healthy`.
 
 `DataFlow` counts every request a verb receives, with its bytes, once however many requests it makes downstream; the
-replies' bytes are not counted. `ErrorCount`, and `DataFlow`'s `ErrorRate` with it, counts the requests `graph-query`
-refuses because no usable answer arrived, once per request: a downstream request got no answer, so an outage of
-graph-ingest or graph-index shows here, or a reply `entityByAlias` or `relationships` reads was broken, so a broken
-responder shows here too. So does a search verb whose word-search or `batch` reply is broken or has no responder, whose
-reply
-cannot fit `max_payload`, or that answered past an unreadable group record. A
-refusal the responder sent is an answer and is not counted: "no such entity" is ordinary traffic. Neither is a
-caller's `invalid_request`.
+replies' bytes are not counted. `ErrorCount`, and `DataFlow`'s `ErrorRate` with it, counts each time `graph-query`
+got no usable answer from downstream: a request got no answer, so an outage of graph-ingest or graph-index shows here,
+or a reply was broken, so a broken responder shows here too. A refused request counts once: a reply `entityByAlias` or
+`relationships` reads was broken or missing, or a search's word-search or `batch` reply was, or its reply cannot fit
+`max_payload`. A search that still answers can count too: one error when it answered past an unreadable group record,
+and, in `globalSearch`, one when the lookup for a hint got no usable answer and the hint is reported not honoured. So
+one `globalSearch` can count two. A refusal the responder sent is an answer and is not counted: "no such entity" is
+ordinary traffic. Neither is a caller's `invalid_request`.
 
 ## Metrics
 

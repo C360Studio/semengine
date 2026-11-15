@@ -34,7 +34,7 @@ func benchCache(b *testing.B) (*VectorCache, []float32) {
 	kv := &replayKV{memKV: newMemKV()}
 	for n := range benchRecords {
 		id := fmt.Sprintf("acme.ops.robotics.gcs.drone.d%05d", n)
-		data, err := json.Marshal(&Record{EntityID: id, Vector: vector(), Model: cacheModel, Status: StatusGenerated})
+		data, err := json.Marshal(&Record{EntityID: id, Vector: vector(), EmbedderType: testIdentity.Type, Model: testIdentity.Model, Dimensions: testIdentity.Dimensions, Status: StatusGenerated})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -46,7 +46,7 @@ func benchCache(b *testing.B) (*VectorCache, []float32) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	cache := NewVectorCache(NewStorage(client.NewKVStore(kv), nil), cacheModel, 0)
+	cache := NewVectorCache(NewStorage(client.NewKVStore(kv), nil), cacheIdentity)
 	ctx, cancel := context.WithCancel(b.Context())
 	done := make(chan error, 1)
 	go func() { done <- cache.Run(ctx) }()

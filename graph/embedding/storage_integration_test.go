@@ -168,7 +168,7 @@ func (h *history) apply(o historyOp) (string, error) {
 	var outcome string
 	switch o.op {
 	case opPending:
-		saved, err := h.s.SavePendingGuarded(h.ctx, &Record{EntityID: e, SourceText: "t", SourceRevision: r}, "m", 1)
+		saved, err := h.s.SavePendingGuarded(h.ctx, &Record{EntityID: e, SourceText: "t", SourceRevision: r}, EmbedderIdentity{Model: "m", Dimensions: 1})
 		if err != nil {
 			return "", fmt.Errorf("SavePendingGuarded(%s, %d): %w", e, r, err)
 		}
@@ -195,7 +195,7 @@ func (h *history) apply(o historyOp) (string, error) {
 		var err error
 		status := StatusGenerated
 		if o.op == opGenerated {
-			err = h.s.SaveGenerated(h.ctx, e, []float32{float32(r)}, "m", 1, "h", r)
+			err = h.s.SaveGenerated(h.ctx, e, []float32{float32(r)}, EmbedderIdentity{Model: "m", Dimensions: 1}, "h", r)
 		} else {
 			status = StatusFailed
 			err = h.s.SaveFailed(h.ctx, e, "boom", failReasonInternal, r)

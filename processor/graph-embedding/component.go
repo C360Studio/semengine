@@ -277,6 +277,13 @@ func (c *Component) Health() component.HealthStatus {
 	return c.lifecycle.Health(stuck...)
 }
 
+// identity is the running embedder's identity as the Worker folds it into the dedup key: the
+// registered type, the embedder's live Model and Dimensions, and the text cap. It is read on
+// each call, because a remote embedder resolves its width from its first response.
+func (c *Component) identity() embedding.EmbedderIdentity {
+	return embedding.IdentityOf(c.embedderType, c.embedder, c.config.MaxTextLen)
+}
+
 // DataFlow reports input messages: one per delivered ENTITY_STATES entry, update or delete,
 // with the delivered value's length, counted before coalescing.
 func (c *Component) DataFlow() component.FlowMetrics { return c.lifecycle.DataFlow() }
@@ -410,7 +417,7 @@ func (c *Component) start(ctx context.Context) error {
 
 	// The vector cache the verbs answer from. Until it has applied its watch's first snapshot,
 	// and after its watch is lost, the verbs refuse index_not_ready.
-	c.cache = embedding.NewVectorCache(c.storage, c.embedder.Model(), c.embedder.Dimensions())
+	c.cache = embedding.NewVectorCache(c.storage, c.identity)
 	cached := make(chan struct{})
 	c.cached = cached
 	go func() {

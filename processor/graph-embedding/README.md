@@ -92,7 +92,7 @@ running without one.
 | --- | --- | --- | --- |
 | `ports` | object | the ports above | Inputs only. A `ports` block that is present is used as written; one that is absent takes the defaults |
 | `workers` | int | 5 | Concurrent Worker goroutines; negative is refused |
-| `max_text_len` | int | 4000 | Characters of text embedded per entity, 0 to 1,000,000. A change applies to records generated after it; a record already generated keeps its text until the entity has a new revision, such as a re-ingest |
+| `max_text_len` | int | 4000 | Characters of text embedded per entity, 0 to 1,000,000. A change takes effect at the restart that applies it: every stored vector is embedded again from the new text (see "Changing the embedder") |
 | `text_suffixes` | array | `.title .content .description .summary .text .name .body .abstract .subject` | Predicate suffixes whose string values are embedded |
 | `startup_attempts` | int | 30 | Tries to find `ENTITY_STATES` at startup |
 | `startup_interval_ms` | int | 500 | Pause between those tries |
@@ -170,13 +170,16 @@ in neither.
 - **No revision claim.** The verbs do not say how current the cache is. `indexed_revision` is always 0, and a
   `min_revision` above 0 is refused `invalid_request` rather than answered.
 - **`similar` needs a vector.** An entity with no record, a record that is not generated, a generated record with no
-  vector, or one another embedder generated is refused class invalid, code `embedding_unavailable`; a record that
+  vector, or one made under another embedder identity is refused class invalid, code `embedding_unavailable`; a record that
   cannot be decoded is refused class invalid with no code.
-- **Changing the embedder.** A restart with an embedder of another model or width, against the same NATS state,
+- **Changing the embedder.** Each generated record stores the identity it was made under: the registered type, the
+  embedder's model and width, and `max_text_len`. A restart against the same NATS state with any of those changed
   regenerates every vector the previous embedder left: hop 1 replaces such a record with a pending one, and the Worker
-  embeds it again. Until it has, the verbs score only vectors the running embedder made, so an entity whose vector is
-  not regenerated yet is not a hit and is refused as a `similar` source, rather than compared across two models'
-  vector spaces. A restart with the same embedder keeps every stored vector.
+  embeds it again. Until it has, the verbs score only vectors made under the running identity, so an entity whose
+  vector is not regenerated yet is not a hit and is refused as a `similar` source, rather than compared across two
+  vector spaces. A restart with the same embedder keeps every stored vector, provided the embedder reports its width
+  from the start: one that reports 0 until its first response cannot vouch for a stored vector, so the entities hop 1
+  replays before that response are embedded again.
 
 ### When a call is withheld
 

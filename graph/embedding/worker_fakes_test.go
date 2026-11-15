@@ -191,7 +191,7 @@ func stopWorker(t *testing.T, stop func() error) {
 func pendingText(ctx context.Context, s *Storage, entityID, contentHash, text string, sourceRevision uint64) error {
 	_, err := s.SavePendingGuarded(ctx, &Record{
 		EntityID: entityID, ContentHash: contentHash, SourceText: text, SourceRevision: sourceRevision,
-	}, "m", 0)
+	}, EmbedderIdentity{Model: "m"})
 	return err
 }
 
@@ -199,7 +199,7 @@ func pendingText(ctx context.Context, s *Storage, entityID, contentHash, text st
 func pendingRef(ctx context.Context, s *Storage, entityID, contentHash, identity string, ref *StorageRef, sourceRevision uint64) error {
 	_, err := s.SavePendingGuarded(ctx, &Record{
 		EntityID: entityID, ContentHash: contentHash, IdentityText: identity, StorageRef: ref, SourceRevision: sourceRevision,
-	}, "m", 0)
+	}, EmbedderIdentity{Model: "m"})
 	return err
 }
 

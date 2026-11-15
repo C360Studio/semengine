@@ -238,7 +238,7 @@ func TestStartSeedsFailedMap(t *testing.T) {
 		if _, err := earlier.SavePendingGuarded(t.Context(), &embedding.Record{
 			EntityID: a, IdentityText: "failed before Start", SourceRevision: 4,
 			StorageRef: &embedding.StorageRef{StorageInstance: bodyInstance, Key: "seeded"},
-		}, "m", 0); err != nil {
+		}, embedding.EmbedderIdentity{Model: "m"}); err != nil {
 			t.Fatal(err)
 		}
 		if err := earlier.SaveFailed(t.Context(), a, "embedder timed out", "timeout", 4); err != nil {
@@ -285,7 +285,7 @@ func TestLateFailureAfterAbsenceNotCounted(t *testing.T) {
 	a := entityID(99)
 	if _, err := h.c.storage.SavePendingGuarded(t.Context(), &embedding.Record{
 		EntityID: a, SourceRevision: 4, SourceText: "older work",
-	}, "m", 0); err != nil {
+	}, embedding.EmbedderIdentity{Model: "m"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.c.storage.SaveFailed(t.Context(), a, "embedder timed out", "content_error", 4); err != nil {

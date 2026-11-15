@@ -7,9 +7,10 @@
 `Storage` SHALL write every read-modify-write through `natsclient.KVStore.UpdateWithRetryRead`. `SaveGenerated` and
 `SaveFailed` SHALL return `ErrRecordGone` for an absent key and `ErrSupersededRevision` when the stored record has a
 newer source revision, writing nothing; `SaveFailed` SHALL not replace a generated record at the same revision.
-`SavePendingGuarded` SHALL not replace a generated record at the same or a newer revision that the running embedder
-made (same model, and same width when the embedder reports one); a generated record another embedder made is
-replaced, so it is regenerated, and the vector cache never scores it.
+`SavePendingGuarded` SHALL not replace a generated record at the same or a newer revision made under the running
+embedder's identity (the dedup key's `EmbedderIdentity`: registered type, model, width and text cap, the width
+resolved); any other generated record is replaced, so it is regenerated. The vector cache and `similar` SHALL use only
+vectors made under the running identity, read when the request is answered, and none while its width is unresolved.
 
 #### Scenario: Any sequence of writes
 
@@ -27,8 +28,10 @@ replaced, so it is regenerated, and the vector cache never scores it.
 
 #### Scenario: A restart under a different embedder
 
-- **WHEN** graph-embedding restarts on the same state with an embedder of another model
-- **THEN** every stored vector is regenerated under the new model before readiness, a vector of the old model is
-  never a search hit or a `similar` source, and a restart with the same embedder keeps every stored vector
+- **WHEN** graph-embedding restarts on the same state with an embedder of another registered type, model, or width,
+  including a width the embedder reports only after its first response
+- **THEN** every stored vector of an entity in `ENTITY_STATES` is regenerated under the new embedder before readiness,
+  a vector the old embedder made is never a search hit, a `similar` source or a `similar` hit, and a restart with the
+  same embedder keeps every stored vector
 - **AND** the tests that verify this are `TestProviderSwitchRestart`, `TestVectorCacheKeepsOnlyItsEmbeddersVectors`
   and `TestSavePendingGuarded_Decisions`

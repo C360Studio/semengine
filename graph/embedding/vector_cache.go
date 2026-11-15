@@ -23,23 +23,30 @@ var errNoView = errors.New("embedding: the vector cache has not run")
 // refuses with an error matching graphview.ErrNotReady otherwise.
 type VectorCache struct {
 	storage *Storage
-	// model and dimensions name the embedder whose vectors the cache keeps (Record.GeneratedBy).
-	model      string
-	dimensions int
-	running    atomic.Bool
+	// identity is the running embedder's identity, read on each FindSimilar (Record.GeneratedBy).
+	identity func() EmbedderIdentity
+	running  atomic.Bool
 	// view is the view of the latest Run, nil before the first. A view runs once, so each Run
 	// builds and stores a new one; the last stays after its Run returns and refuses every read.
-	view atomic.Pointer[graphview.View[[]float32]]
+	view atomic.Pointer[graphview.View[cachedVector]]
 }
 
-// NewVectorCache returns a cache over the storage's EMBEDDING_INDEX bucket that keeps only the
-// vectors the embedder named by model and dimensions produced (Record.GeneratedBy): a query
-// that embedder embeds is scored against vectors in its own space only. A vector another
-// embedder left, as after a restart under a different one, is absent, as a pending record is,
-// until the new embedder regenerates it. It answers nothing until Run has applied the watch's
-// initial snapshot.
-func NewVectorCache(storage *Storage, model string, dimensions int) *VectorCache {
-	return &VectorCache{storage: storage, model: model, dimensions: dimensions}
+// cachedVector is one generated record as the cache keeps it: its vector and the identity it
+// was made under.
+type cachedVector struct {
+	vector []float32
+	id     EmbedderIdentity
+}
+
+// NewVectorCache returns a cache over the storage's EMBEDDING_INDEX bucket that scores only the
+// vectors made under the identity identity returns (Record.GeneratedBy): a query the running
+// embedder embeds is scored against vectors in its own space only. FindSimilar calls identity
+// once per call, so an embedder that resolves its width after Start is matched by its resolved
+// width; while the width is unresolved nothing is scored. A vector another embedder left, as
+// after a restart under a different one, is not scored until the running embedder regenerates
+// it. It answers nothing until Run has applied the watch's initial snapshot.
+func NewVectorCache(storage *Storage, identity func() EmbedderIdentity) *VectorCache {
+	return &VectorCache{storage: storage, identity: identity}
 }
 
 // Run keeps the cache in step with EMBEDDING_INDEX on the caller's goroutine until ctx ends or
@@ -68,7 +75,7 @@ func (c *VectorCache) Run(ctx context.Context) error {
 	}
 	defer c.running.Store(false)
 
-	view, err := graphview.New(indexSource{c.storage.index}, c.decodeVector)
+	view, err := graphview.New(indexSource{c.storage.index}, decodeVector)
 	if err != nil {
 		return err
 	}
@@ -84,19 +91,18 @@ func (s indexSource) WatchAll(ctx context.Context, _ ...jetstream.WatchOpt) (jet
 	return s.index.Watch(ctx, jetstream.AllKeys)
 }
 
-// decodeVector is the view's decode: a record the cache's embedder generated with a vector is
-// kept as its vector, any other record (pending, failed, generated without a vector or by
-// another embedder) is absent, and a value that is not a record poisons its key until a valid
-// write or a delete replaces it.
-func (c *VectorCache) decodeVector(_ string, value []byte, _ graphview.EntryMeta) ([]float32, bool, error) {
+// decodeVector is the view's decode: a generated record with a vector is kept as its vector
+// and identity, any other record (pending, failed, generated without a vector) is absent, and a
+// value that is not a record poisons its key until a valid write or a delete replaces it.
+func decodeVector(_ string, value []byte, _ graphview.EntryMeta) (cachedVector, bool, error) {
 	var record Record
 	if err := json.Unmarshal(value, &record); err != nil {
-		return nil, false, err
+		return cachedVector{}, false, err
 	}
-	if !record.GeneratedBy(c.model, c.dimensions) || len(record.Vector) == 0 {
-		return nil, false, nil
+	if record.Status != StatusGenerated || len(record.Vector) == 0 {
+		return cachedVector{}, false, nil
 	}
-	return record.Vector, true, nil
+	return cachedVector{vector: record.Vector, id: record.identity()}, true, nil
 }
 
 // FindSimilar returns up to limit cached entities by cosine similarity to query, best first,
@@ -107,6 +113,8 @@ func (c *VectorCache) decodeVector(_ string, value []byte, _ graphview.EntryMeta
 // or not keep accepts its key. excludeID is never scored ("" excludes nothing). keep, when
 // non-nil, is applied before scoring and before the limit: only the entity IDs it accepts are
 // scored, so a scoped search (ADR-071) returns the best in-scope entities. A limit of 0 or less returns no entities.
+// Only vectors made under the running embedder's identity, read once at the call, are scored
+// (Record.GeneratedBy); another identity's vectors are left out as pending records are.
 //
 // It returns an error matching graphview.ErrNotReady, and no entities, before Run has applied
 // the watch's initial snapshot, after the watch was lost, and after Run returned.
@@ -125,12 +133,16 @@ func (c *VectorCache) FindSimilar(excludeID string, query []float32, keep func(s
 	if limit <= 0 {
 		return nil, unreadable, nil
 	}
+	id := c.identity()
 	results := make([]ScoredEntity, 0, len(records))
 	for _, record := range records {
 		if record.Key == excludeID || (keep != nil && !keep(record.Key)) {
 			continue
 		}
-		results = append(results, ScoredEntity{EntityID: record.Key, Similarity: CosineSimilarity(query, record.Value)})
+		if !sameSpace(record.Value.id, id) {
+			continue
+		}
+		results = append(results, ScoredEntity{EntityID: record.Key, Similarity: CosineSimilarity(query, record.Value.vector)})
 	}
 	sort.Slice(results, func(i, j int) bool { return ScoredEntityLess(results[i], results[j]) })
 	if len(results) > limit {

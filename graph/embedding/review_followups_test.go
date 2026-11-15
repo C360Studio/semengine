@@ -79,7 +79,7 @@ func TestSaveAndNotify_SupersededDropSkipsOnGenerated(t *testing.T) {
 		t.Fatalf("pendingText: %v", err)
 	}
 	// A newer revision (10) already landed.
-	if err := s.SaveGenerated(ctx, entityID, []float32{9, 9, 9}, "m", 3, "hash-10", 10); err != nil {
+	if err := s.SaveGenerated(ctx, entityID, []float32{9, 9, 9}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-10", 10); err != nil {
 		t.Fatalf("SaveGenerated(rev 10): %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestSaveAndNotify_SupersededDedupHitDoesNotCount(t *testing.T) {
 	if err := pendingText(ctx, s, entityID, "", "text", 0); err != nil {
 		t.Fatalf("pendingText: %v", err)
 	}
-	if err := s.SaveGenerated(ctx, entityID, []float32{9, 9, 9}, "m", 3, "hash-10", 10); err != nil {
+	if err := s.SaveGenerated(ctx, entityID, []float32{9, 9, 9}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-10", 10); err != nil {
 		t.Fatalf("SaveGenerated(rev 10): %v", err)
 	}
 

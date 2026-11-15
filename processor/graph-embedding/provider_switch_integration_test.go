@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/c360studio/semengine/component"
@@ -16,57 +17,82 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// switchEmbedder is one of two deterministic two-dimension providers: model-A maps every text
-// to [1 0], model-B to [0 1]. A self-text search finds its entity under either, and a vector
-// from one scores 0 against a query from the other, so a stale vector shows in the results.
-type switchEmbedder struct{ second bool }
+// switchEmbedder is a deterministic provider that maps every text to one vector. When lazy, it
+// reports width 0 until its first Generate, as a remote embedder that learns its width from its
+// first response does.
+type switchEmbedder struct {
+	model   string
+	vector  []float32
+	lazy    bool
+	learned atomic.Bool
+}
 
-func (e switchEmbedder) Generate(_ context.Context, texts []string) ([][]float32, error) {
+func (e *switchEmbedder) Generate(_ context.Context, texts []string) ([][]float32, error) {
+	e.learned.Store(true)
 	out := make([][]float32, len(texts))
 	for i := range texts {
-		out[i] = e.vector()
+		out[i] = slices.Clone(e.vector)
 	}
 	return out, nil
 }
 
-func (e switchEmbedder) GenerateQuery(ctx context.Context, texts []string) ([][]float32, error) {
+func (e *switchEmbedder) GenerateQuery(ctx context.Context, texts []string) ([][]float32, error) {
 	return e.Generate(ctx, texts)
 }
 
-func (e switchEmbedder) vector() []float32 {
-	if e.second {
-		return []float32{0, 1}
+func (e *switchEmbedder) Model() string { return e.model }
+
+func (e *switchEmbedder) Dimensions() int {
+	if e.lazy && !e.learned.Load() {
+		return 0
 	}
-	return []float32{1, 0}
+	return len(e.vector)
 }
 
-func (e switchEmbedder) Model() string {
-	if e.second {
-		return "model-B"
-	}
-	return "model-A"
+func (*switchEmbedder) Close() error { return nil }
+
+// provider is one registration: the type it is registered under and how to build its embedder.
+type provider struct {
+	embedderType string
+	model        string
+	vector       []float32
+	lazy         bool
 }
 
-func (switchEmbedder) Dimensions() int { return 2 }
-func (switchEmbedder) Close() error    { return nil }
+func (p provider) embedder() *switchEmbedder {
+	return &switchEmbedder{model: p.model, vector: p.vector, lazy: p.lazy}
+}
 
-// TestProviderSwitchRestart: a product restarts against the same NATS state, once with the same
-// provider and once with a different one. With the same provider the stored vector stands and is
-// not regenerated. With a different one every entity in ENTITY_STATES is regenerated under it
-// before readiness, and a vector the old provider left for an entity nothing regenerates (one
-// with no ENTITY_STATES entry, standing for an entity whose regeneration has not run yet) is
-// neither scored by search nor used as a similar source.
+// TestProviderSwitchRestart: a product restarts against the same NATS state under another
+// provider. A provider that differs from the first in registered type, model, or width (the
+// last learned only from its first response) regenerates every entity in ENTITY_STATES before
+// readiness, and search finds an entity by its own text. A vector the old provider left for an
+// entity nothing regenerates (one with no ENTITY_STATES entry, standing for an entity whose
+// regeneration has not run yet) is neither scored by search nor used or returned by similar. The
+// same provider again keeps the stored vector.
 func TestProviderSwitchRestart(t *testing.T) {
-	t.Run("same-provider", func(t *testing.T) { providerRestart(t, false) })
-	t.Run("changed-provider", func(t *testing.T) { providerRestart(t, true) })
+	a := provider{embedderType: "model-A", model: "model-A", vector: []float32{1, 0}}
+	for _, tc := range []struct {
+		name          string
+		first, second provider
+	}{
+		{"same-provider", a, a},
+		{"changed-model", a, provider{embedderType: "model-B", model: "model-B", vector: []float32{0, 1}}},
+		{"changed-type", provider{embedderType: "provider-A", model: "same-model", vector: []float32{1, 0}},
+			provider{embedderType: "provider-B", model: "same-model", vector: []float32{0, 1}}},
+		{"unknown-width", provider{embedderType: "provider", model: "same-model", vector: []float32{1, 0}},
+			provider{embedderType: "provider", model: "same-model", vector: []float32{0, 1, 0}, lazy: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) { providerRestart(t, tc.first, tc.second) })
+	}
 }
 
-func providerRestart(t *testing.T, switchProvider bool) {
+func providerRestart(t *testing.T, before, after provider) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
-	start := func(e switchEmbedder) *harness {
+	start := func(p provider) *harness {
 		factory := registeredFactory(t, func(r *component.Registry) error {
-			return RegisterWithEmbedder(r, e.Model(), func() (embedding.Embedder, error) { return e, nil })
+			return RegisterWithEmbedder(r, p.embedderType, func() (embedding.Embedder, error) { return p.embedder(), nil })
 		})
 		built, err := factory(json.RawMessage(`{}`), component.Dependencies{NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry()})
 		if err != nil {
@@ -83,22 +109,24 @@ func providerRestart(t *testing.T, switchProvider bool) {
 		return &harness{c: c, client: client, states: states, f: c.follower.Load()}
 	}
 
-	first := start(switchEmbedder{})
+	first := start(before)
 	id := entityID(1)
 	rev := first.put(t, id, entityValue(t, id, nil, "doc.meta.title", "widget"))
-	before := first.awaitGenerated(t, id, rev)
+	stored := first.awaitGenerated(t, id, rev)
 	stopComponent(t, first.c)
 
-	// stale is a vector model-A left for an entity with no ENTITY_STATES entry, so nothing
-	// regenerates it: the old half of a mixed old/new state. Its vector is the one model-B
-	// produces, so a search or similar that scored it regardless of model would return it.
+	// stale is a vector the first provider left for an entity with no ENTITY_STATES entry, so
+	// nothing regenerates it: the old half of a mixed old/new state. Its vector is the one the
+	// second provider produces, so a search or similar that scored it regardless of identity
+	// would return it.
 	stale := entityID(2)
 	index, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketEmbeddingIndex)
 	if err != nil {
 		t.Fatal(err)
 	}
 	staleRecord, err := json.Marshal(embedding.Record{
-		EntityID: stale, Vector: []float32{0, 1}, Model: "model-A", Dimensions: 2,
+		EntityID: stale, Vector: slices.Clone(after.vector), EmbedderType: stored.EmbedderType,
+		Model: stored.Model, Dimensions: stored.Dimensions, MaxTextLen: stored.MaxTextLen,
 		Status: embedding.StatusGenerated, SourceRevision: 1, ContentHash: "stale",
 	})
 	if err != nil {
@@ -108,20 +136,21 @@ func providerRestart(t *testing.T, switchProvider bool) {
 		t.Fatal(err)
 	}
 
-	running := switchEmbedder{second: switchProvider}
-	second := start(running)
+	second := start(after)
 	// Readiness orders the read after the Worker's terminal write for the replayed revision.
 	second.awaitIndexed(t, "replayed after the restart", rev)
-	after, err := second.record(t.Context(), id)
+	got, err := second.record(t.Context(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after == nil || after.Status != embedding.StatusGenerated || after.Model != running.Model() ||
-		!slices.Equal(after.Vector, running.vector()) {
-		t.Fatalf("record after the restart = %+v; want generated by %s with vector %v", after, running.Model(), running.vector())
+	if got == nil || got.Status != embedding.StatusGenerated || got.EmbedderType != after.embedderType ||
+		got.Model != after.model || got.Dimensions != len(after.vector) || !slices.Equal(got.Vector, after.vector) {
+		t.Fatalf("record after the restart = %+v; want generated by %s/%s with vector %v",
+			got, after.embedderType, after.model, after.vector)
 	}
-	if !switchProvider && !after.GeneratedAt.Equal(before.GeneratedAt) {
-		t.Fatalf("same-provider restart regenerated the record: generated at %v, then %v", before.GeneratedAt, after.GeneratedAt)
+	same := before.embedderType == after.embedderType && before.model == after.model && slices.Equal(before.vector, after.vector)
+	if same && !got.GeneratedAt.Equal(stored.GeneratedAt) {
+		t.Fatalf("same-provider restart regenerated the record: generated at %v, then %v", stored.GeneratedAt, got.GeneratedAt)
 	}
 
 	hits := func(r graph.QueryResponse[graph.SemanticData]) []string {
@@ -133,17 +162,20 @@ func providerRestart(t *testing.T, switchProvider bool) {
 	}
 	// The cache applies the regenerated record after readiness, so the wait ends on the first
 	// reply that holds the entity, or on one that holds the stale vector, which must never show.
-	got := awaitAnswer(t, second, "search", `{"query":"widget"}`, func(r graph.QueryResponse[graph.SemanticData]) bool {
+	// Under the same provider the stale record is that provider's own vector, the same one the
+	// entity holds, so it is a legitimate hit.
+	reply := awaitAnswer(t, second, "search", `{"query":"widget"}`, func(r graph.QueryResponse[graph.SemanticData]) bool {
 		return slices.Contains(hits(r), id) || slices.Contains(hits(r), stale)
 	})
-	// Under the same provider the stale record is model-A's own vector, [0 1], which scores 0
-	// against model-A's query [1 0] and is dropped as no match, so both cases want the one entity.
 	want := []string{id}
-	if ids := hits(got.reply); !slices.Equal(ids, want) || got.reply.Data.EmbedderType != running.Model() {
-		t.Fatalf("search after the restart: type %s hits %v; want type %s hits %v",
-			got.reply.Data.EmbedderType, ids, running.Model(), want)
+	if same {
+		want = []string{id, stale}
 	}
-	if !switchProvider {
+	if ids := hits(reply.reply); !slices.Equal(ids, want) || reply.reply.Data.EmbedderType != after.embedderType {
+		t.Fatalf("search after the restart: type %s hits %v; want type %s hits %v",
+			reply.reply.Data.EmbedderType, ids, after.embedderType, want)
+	}
+	if same {
 		return
 	}
 

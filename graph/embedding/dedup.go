@@ -43,6 +43,18 @@ type EmbedderIdentity struct {
 	MaxTextLen int
 }
 
+// IdentityOf is the identity of embedder registered as embedderType with the text cap
+// maxTextLen: Model and Dimensions are read now, so a remote embedder's width is 0 until it
+// has resolved it.
+func IdentityOf(embedderType string, embedder Embedder, maxTextLen int) EmbedderIdentity {
+	return EmbedderIdentity{
+		Type:       embedderType,
+		Model:      embedder.Model(),
+		Dimensions: embedder.Dimensions(),
+		MaxTextLen: maxTextLen,
+	}
+}
+
 // DedupKey derives the EMBEDDING_DEDUP key for text under a given embedder
 // identity, or "" when the identity is not yet resolved.
 //

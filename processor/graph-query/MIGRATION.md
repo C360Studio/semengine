@@ -7,7 +7,9 @@ comes from reading it.
 
 `processor/graph-query` is whole in the tree: the lookups (`entity`, `batch`, `prefix`, `byName`, `entityByAlias`,
 `relationships`), path search and counts (`pathSearch`, `hierarchyStats`, `summary`), the forwards (`semantic`,
-`similar`, `spatial`, `temporal`), `localSearch`, `globalSearch` with its text search, and `searchGraph`.
+`similar`, `spatial`, `temporal`), `localSearch`, `globalSearch` and `searchGraph`, which find entities by the words of
+their
+text.
 
 ## The changes that fail silently
 
@@ -17,17 +19,23 @@ Read these first. Nothing errors.
   `timestamp`. `graphSearch` (`processor/mcp-gateway/query_tools.go:113`) decodes into `graphSearchBody`
   (`graph_matches.go:107`), which has no `data` field. It ignores the unexpected wrapper instead of failing, so you get
   no error, no matches and no answer. Inside `data`, none of the keys `graphSearchBody` reads is sent: a text answer
-  is `data.text`, with `matches` (`id`, `label`, `score`, `entity`), `groups` and `answer`; `entity_digests`,
+  is `data.text`, with `matches` (`id`, `label`, `score`, `entity`), `groups` and `answer`, and `data.hints` says what
+  else the
+  question asked for; `entity_digests`,
   `entities`, `entity_ids`, `community_summaries` and `count` are gone (the `globalSearch` rows below). Today your
   first call fails loudly before this: its `summarize_threshold` key is refused (SemSource section).
 - **SemSource `deriveDisclosure` (with `searchGraph`).** It reads the same bytes for top-level fields
   (`disclosure.go:86`), so it reports no answer rather than a failure.
-- **SemSource `searchGraph` on a deployment with embeddings but no community records.** The old version answered
+- **SemSource `searchGraph` on a deployment with embeddings but no matching words.** The old version answered
   from the embedding index when global search was empty or refused `index_not_ready`: strategy `semantic_fallback`, up
-  to 8 entities, marked degraded. That fallback is not carried. Until graph-clustering's first tick writes
-  `COMMUNITY_INDEX` every text question is refused transient `index_not_ready`, so a deployment that relied on the
-  fallback gets a refusal where it got matches, and an empty text answer is returned as empty, not retried against
-  embeddings. Adding the semantic fallback back is planned; it is not in this tree.
+  to 8 entities, marked degraded. That fallback is not carried, and no semantic request is made: a question whose words
+  match nothing gets an empty `data.text.matches`, not a retry against embeddings. Search no longer waits for
+  graph-clustering, so a deployment without clustering gets matches with `record_state` `not_ready`, not a refusal.
+  Adding the semantic fallback back is planned; it is not in this tree.
+- **SemSource `searchGraph` for a time range, an area or a count.** The old version answered "what changed in the last
+  2 hours" and "what is within 5km" from the time and place verbs, and refused a count. Every question is now answered
+  by its words, and what the words did not carry is listed in `data.hints` with `honoured` false and a `reason`. A
+  caller that took the old refusal or the old `temporal` and `spatial` answers as a signal must read `hints`.
 - **Fix for both:** unwrap once before reading, and assert it on a real reply. No framework mechanism does this for
   you.
 - **A copy of the GraphQL gateway.** It nests every wrapped answer one
@@ -63,34 +71,41 @@ Read these first. Nothing errors.
   check, so its failure is loud; see its section.
 - **A bare `localSearch` decoder (the `localSearch` verb).** The reply is now wrapped: the answer is in `data`.
   An old decoder reads no entities, no community and no answer, and no error.
-- **A `localSearch` decoder that reads `communityId`.** The key is now `community_id`, so the old field reads
-  empty. `count`, `durationMs`, `entity_digests`, `answer_model`, `degraded` and `degraded_reason` are gone and read
-  as zero values. Use the length of `entities` for the count.
-- **A `localSearch` caller that sends `min_revision` from a write outside the group it searches.** The reply's
-  `indexed_revision` is the latest entity write the group's record took in. A write to another group does not move
-  it, so the request is refused `revision_not_reached` until something in the searched group changes. A large group
-  (level 2, the whole deployment) catches up at its next publish; a quiet level-0 group may never. A retry loop on that
-  refusal can spin for ever. Send the `kv_revision` of a write to an entity in the group you search, or no
-  `min_revision` at all.
+- **A `localSearch` decoder that reads `communityId`, `entities` or a count.** The key is now `community_id`, so the old
+  field reads empty. The matches are `data.matches` (was `entities`), each with `id`, `label`, `score` and `entity`;
+  `matched` is the count in the group before `limit`. `member_count`, `community_summary` and `keywords` moved into
+  `data.record`, which is absent unless `record_state` is `read`. `entities_scanned`, `entities_truncated`, `count`,
+  `durationMs`, `entity_digests`, `answer_model`, `degraded` and `degraded_reason` are gone and read as zero values;
+  `truncated` replaces `entities_truncated`.
+- **A `localSearch` or `searchGraph` caller that matched by substring.** The old version scored a term that was a
+  substring of a predicate name or a string value. Matching is now by word (BM25), so `pum` no longer finds `pump`;
+  send the whole word. A trailing `*` is refused by the word index, not a prefix match.
+- **A `localSearch` caller that sends `min_revision`.** It now goes to the word index: the reply's `indexed_revision`
+  is the word index's, and a revision from a write to any entity is reached once the word index has applied it. A
+  write outside the searched group no longer leaves the request refused for good.
 
 ## SemSource
 
-**Use cases kept:** free-text search (`searchGraph`, answering as `globalSearch`; its time-range and area answers need
-the spatial and temporal responders, which are not in the tree); prefix paging
-(`processor/supersession/prefixquery.go:19`, bare reply, which gains `total`); your own verbs on the same family
+**Use cases kept:** free-text search (the `graph_search` tool's `searchGraph` call, answering as `globalSearch`); prefix
+paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `total`); your own verbs on the same family
 (`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table does not reserve.
 
 **What you change:**
 
-- The search decode above.
+- The search decode above, for `graph_search` and `deriveDisclosure`. Read `data.text.matches`, `data.text.groups`,
+  `data.text.answer` and `data.hints`; a question for a time range, an area, a count, a similarity or a ranking comes
+  back
+  with matches for its words and a hint that says it was not applied.
 - Drop `summarize_threshold` from your `searchGraph` request (`query_tools.go:103`). graph-query refuses it
-  `invalid_request`, naming the key, so every search fails until you do. Nothing replaces it: the old version read it
-  only after a semantic search, to decide whether to add community summaries (SemStreams `graphrag.go:860`,
-  `searchgraph.go:147`), and this graph-query makes no semantic search; a text answer always carries its groups.
-- Nothing for `localSearch`: no SemSource code at `e4febc0d` calls it (the whole tree checked; the only mentions are
+  `invalid_request`, naming the key, so every search fails until you do. Nothing replaces it: a text answer always
+  carries its groups.
+- Search sends words, not meaning. A question over entities whose facts are numbers, such as sensor or drone telemetry,
+  matches nothing: those entities have no text, so word search gains nothing for them. Ask for them by prefix,
+  predicate, name, alias or relationship.
+- `localSearch` callers: SemSource at `e4febc0d` has none (the whole tree checked; the only mentions are
   subject-ownership lists in tests and docs, and its ADR-0010 keeps `localSearch` unexposed), so nothing reads its
-  reply. If you add one, decode `data` by the verb's table row, read `community_id` (not `communityId`), and send a
-  `min_revision` only from a write to an entity in the group you search (see "The changes that fail silently").
+  reply. If you add one, decode `data` by the verb's table row, read `community_id` (not `communityId`) and
+  `data.matches`, and send `min_revision` from any write you want searched.
 - Your collision guard. graph-query's second-responder check sees declared ports only. Your graph requests subscribe
   with no port (`processor/source-manifest/component.go:176`, `InputPorts` empty at `:613`), so your old
   `graph.query.summary` collision (`:34-41`) would still pass it. Change
@@ -157,8 +172,8 @@ change the following.
 | `similar` | Forwards to `graph.embedding.query.similar`, bytes unchanged. Reply enveloped by the responder. `data.similar` is now `data.results`; the echoed `entity_id` and `duration` are gone. Changes of the responder are in `processor/graph-embedding/MIGRATION.md`. Refused transient `internal`, naming the subject, if nothing responds; refused invalid `not_enabled`, naming `similar`, without a request when `embedding_enabled` is false |
 | `spatial` | Forwards to `graph.spatial.query.bounds`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`, with `lat`, `lon`, `alt`; `type` is gone. Refused transient `internal` until its responder is in the tree |
 | `temporal` | Forwards to `graph.temporal.query.range`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`; `type` is gone. Request keys become `start_time` and `end_time`, were `startTime` and `endTime`, with the responder; until then it is refused transient `internal` |
-| `localSearch` | Reply enveloped, was bare, and read from `COMMUNITY_INDEX`; keys and fields change. See "Verb details". |
-| `globalSearch` | Reply enveloped, was bare; strategies are `entity`, `path`, `temporal`, `spatial` and `text`, and several old fields are gone. See "Verb details". |
+| `localSearch` | Reply enveloped, was bare; matches come from the word index, scoped to the group, and the group's record is attached beside them; keys and fields change. See "Verb details". |
+| `globalSearch` | Reply enveloped, was bare; every question is searched for its words, strategies are gone, and `hints` lists what else the question asked for. See "Verb details". |
 | `searchGraph` | New on this table: `globalSearch` under its own name, with the same request, `data` and refusals. See "Verb details". |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
@@ -217,122 +232,76 @@ request when `embedding_enabled` is false. Fusion reads this.
 
 ### `localSearch`
 
-Request keys: `entity_id`, `query`, `level`, `min_revision`; any unknown key is refused. `entity_id` must be a full
-six-part ID; `level` is 0 (the default), 1 or 2; `query` is lowercased and split on white space, repeats removed, and
-must leave 1 to 32 terms. Each failure is `invalid_request`, before any read. Reply enveloped, was bare: `data` holds
-`community_id` (was `communityId`), `level`, `member_count`, `community_summary`, `keywords`, `entities`,
-`entities_scanned`, `entities_truncated` and `answer`; `count`, `durationMs`, `entity_digests`, `answer_model`,
-`degraded` and `degraded_reason` are gone.
+Request keys: `entity_id`, `query`, `level`, `limit`, `min_revision`; any unknown key is refused. `entity_id` must be a
+full six-part ID and names the group, at `level` 0 (the default), 1 or 2; the entity need not exist. `query` is the word
+index's query (words, quoted phrases, `-` exclusions) and must not be blank; `limit` is 0 (the default, 10) or 1 to
+100. Each failure is `invalid_request`, before any read. The old version's limit of 32 terms is `graph.MaxSearchTerms`,
+counted by the word index, which refuses a longer query.
 
-`indexed_revision` is the group record's latest entity write. `processor/graph-clustering` writes `COMMUNITY_INDEX`,
-and its first tick after the replay decides when the refusal ends: until then it is refused transient
-`index_not_ready`. It reads the group's record, then one page of the group (at most 1,000 entities);
-`entities_truncated` is true when the group had more than that page, or matches were left out to fit `max_payload`.
-Matches pass as graph-ingest sent them.
+Reply enveloped, was bare: `data` holds `community_id` (was `communityId`), `level`, `record_state` and `record`
+(`member_count`, `community_summary`, `keywords`, present when `record_state` is `read`), `matches`, `matched`,
+`excluded`, `missing`, `bodies_not_indexed`, `truncated` and `answer`. `count`, `durationMs`, `entity_digests`,
+`answer_model`, `degraded` and `degraded_reason` are gone. `indexed_revision` is the word index's.
 
-`answer` is a plain sentence built from the counts and the record's summary; SemStreams' text ended `(7 entities, 0%
-match)`, and SemStreams' fallbacks to a semantic search when the group had no record, and to the clustering query that
-logged and swallowed every failure, are not carried.
+The old version read a group's record, then one page of up to 1,000 entities in ID order and scored them by substring.
+Now the word index ranks every entity in the group and the reply holds the best `limit`; a match past a page is no
+longer missed. Matches pass as graph-ingest sent them. A group's record only describes it: a missing, unreadable or
+not-yet-written record no longer refuses the search, and `record_state` says which. SemStreams' fallbacks to a semantic
+search when the group had no record, and to the clustering query that logged and swallowed every failure, are not
+carried.
 
-Refusals: transient `index_not_ready` while `COMMUNITY_INDEX` is missing, catching up or lost, or the entity exists
-but its group has no record yet; the entity verb's own refusal, such as `entity_not_found`, when the entity does not
-exist; transient `internal` naming the key for an unreadable record, or for a broken page or no responder; transient
-`revision_not_reached` with `indexed_revision` in detail. See "The changes that fail silently".
+Refusals reach you as they arrived from graph-lexical (such as `index_not_ready` while it rebuilds, and
+`revision_not_reached`) and from the `batch` read. Nothing responding is transient `internal`, naming the subject. One
+damaged hit refuses the search until it is fixed (issue #656), since a batch read refuses every entity when one is
+damaged. See "The changes that fail silently".
 
 ### `globalSearch`
 
-Request keys: `query` (required, not blank), `level` (0 to 2, omitted 0, read only by the text search; any other value
-is `invalid_request`) and `min_revision`; `max_communities`, `summarize_threshold`, `include_summaries`,
+Request keys: `query` (required, not blank), `level` (0 to 2, omitted 0; the size of the groups listed), `limit` (0 or
+1 to 100, as `localSearch`) and `min_revision`; `max_communities`, `summarize_threshold`, `include_summaries`,
 `include_relationships` and `include_sources` are refused `invalid_request` by name, and so is any unknown key. Reply
-enveloped, was bare: `data` holds `strategy` and one of `entity`, `path`, `temporal` or `spatial`; `entities`,
-`count`, `duration_ms`, `answer`, `community_summaries`, `degraded` and `degraded_reason` are gone.
+enveloped, was bare: `data` holds `text`, `hints`, and `entity` or `path` beside an honoured hint. `strategy`,
+`temporal`, `spatial`, `entities`, `count`, `duration_ms`, `answer`, `community_summaries`, `degraded` and
+`degraded_reason` are gone.
 
-Strategy names: `pathrag` is `path`, `entity_lookup` is `entity`; `graphrag` and `semantic` are not answered; the text
-search takes their place (`strategy` `text`). A one-word question is always an entity reference, read before any other
-meaning, so an ID or alias holding a word such as `today`, `zone-a`, `link`, `max` or `most` is looked up, not read as
-a time range, path, count or ranking: `entity` is the entity verb's reply as it came, under the alias reply's
-`indexed_revision`. A lone `today` or `yesterday` that names no entity is searched as text, never read as a time
-range.
+Every question is searched for its words: one word search over every entity, then one `batch` read. `data.text` holds
+`level`; `matches`, best first, each `id`, `label`, `score` and `entity` as graph-ingest sent it; `groups`, each group
+holding a match once, with `community_id`, `matches` (its count), `record_state` and `record`; `matched`, `excluded`,
+`missing`, `bodies_not_indexed`, `truncated`, `unreadable_groups` and `answer`. `indexed_revision` is the word index's.
+`unhonoured_hints` is gone; `hints` replaces it.
 
-A path question ("what is connected to pump-42") is answered by the path search from its start, both directions, depth
-3, 100 entities, all predicates: `path` is the `pathSearch` reply's `data` for that request, IDs and edges, no entity
-states (call `batch` for those), under the walk's `indexed_revision`. A partial ID such as `sensor-001` resolves only
-as an alias: the suffix lookup is gone. A six-part ID is now asked of the alias index first; the old version took it
-as itself.
+The old version chose a strategy from the question and refused what it could not answer; no question is refused for
+what it asks now. The keyword classifier still reads the question once, and `data.hints` lists each thing it found, with
+`hint`, `honoured`, `detail` and, when not honoured, `reason` (and `code` when a refusal caused it):
 
-In a longer path question the start is whatever word with a hyphen the classifier finds, never a whole ID: "what is
-connected to acme.plant.robotics.gcs.drone-x.001" walks from the alias `drone-x`, and a full ID with no hyphenated
-segment gives no start, so with path words it is searched as text, or, beside a zone or area ("what is connected to
-c360.test.x.y.z.001 in zone b"), refused `invalid_request` naming both places; name the start by alias. Only one start
-is read: "from A to B" walks from A, a limit of the keyword classifier.
+- `entity`: a question of one word, looked up as `entityByAlias` does (alias first, else a six-part ID). Honoured when
+  it
+  names an entity, and `data.entity` is the entity verb's reply as it came. An ID or alias holding a word such as
+  `today`, `zone-a` or `max` is looked up, not read as a time range or a count. A reference that names no entity is a
+  hint not honoured, with `entity_not_found`; the word is still searched.
+- `path`: path words. With a start that names an entity ("what is connected to pump-42"), honoured, and `data.path` is
+  the
+  walk from it, both directions, depth 3, 100 entities, all predicates, IDs and edges only (call `batch` for states). A
+  start that names no entity, or path words with no start ("http connection pool"), are not honoured. The start is the
+  hyphenated word the classifier finds, never a whole ID; name the start by alias. Only one start is read: "from A to B"
+  walks from A.
+- `time_range`, `area`, `aggregation`, `similarity`, `ranking`: never honoured, so a question for "the last 2 hours" or
+  "top 5" returns matches for its words. The old version answered a time range and an area from the time and place
+  verbs, and refused an aggregation, a ranking or a similarity beside a start, time range or area; those refusals are
+  gone.
+- `classification`: the classifier refused the question (two places, an impossible number such as "the last 0 hours"),
+  which is the `detail` and the `code` is `invalid_request`. The question is searched for its words anyway.
 
-A question naming an entity and a zone or area ("what is connected to sensor-001 in zone-b", "near zone-b", or "show
-sensor-001 in zone-b", with or without path words), or two different zones or areas however spelled ("what is
-connected to zone a in zone b"), is refused `invalid_request`, naming both places; the old version answered from one
-of them and dropped the other. That refusal is loud and can be wrong: an ordinary hyphenated word ("in real-time",
-"non-zero") or "zone or area" plus a word ("the area with pumps") beside a place can be refused as a second place, a
-known limit.
+A hint's read failing (no alias holder, a broken reply, no responder) leaves it not honoured and never refuses the
+search. The classifier reads ordinary words as hints ("max retries" is an aggregation, "pumps in area 51" a path from
+`area-51`), so a hint says what it saw.
 
-Refusals reach you as they arrived: from the alias verb (`alias_ambiguous`, `index_not_ready`, `internal`,
-`revision_not_reached`) and from the entity verb (any but `entity_not_found`); the old version dropped them and
-answered some other way. A question with two of a path, a time range and an area is `invalid_request`, naming both, as
-is an impossible number ("the last 0 hours"). A question whose path or time range comes with a count ("how many"), a
-ranking ("top 5") or a similarity ("similar to") is not answered by that strategy any more (the old version answered
-the path or time part and dropped the rest).
-
-Any other question, and a name or ID that names no entity (no alias holder and no valid ID, or a valid ID with no
-record), is answered by the text search (below). A zone or area question whose start names no entity
-("the area of the plant") is `entity_not_found`; the old version, once started, passed it on to its community search
-(`graphrag`), whose empty `pathrag` answer ran only without a community cache, which a started component always has.
-
-A time-range question ("what changed in the last 2 hours") is answered by `graph.temporal.query.range`, and an area
-question ("what is within 5km of 40.7,-74.0") by `graph.spatial.query.bounds`: `temporal` or `spatial` is that verb's
-`data` as it came (`results`, rows naming `entity_id`, with `lat`, `lon` and `alt` for an area, and `truncated`), no
-entity states (call `batch` for those; the old version loaded each entity), under that reply's `indexed_revision`.
-
-The time-range request is `start_time` and `end_time` in RFC 3339, `limit` 100 and `min_revision`, was `startTime`,
-`endTime` and `limit`; the area request is `north`, `south`, `east`, `west`, `limit` 100 and `min_revision`. A refusal
-from either verb reaches you as it arrived, its class, code and detail unchanged. A reply missing `results` or
-`truncated` is refused transient `internal` naming the subject, which counts as an error in `Health`: a missing
-`truncated` would read as a complete answer.
-
-Until their responders are in the tree both are refused transient `internal` naming the subject, which counts as an
-error in `Health`.
-A question with no hint, or whose only hints are path words with no start ("http connection pool",
-"file path handling"), a similarity ("similar to") or a ranking ("top 5"), is answered by the text search, `strategy`
-`text`; its reply names each such hint it did not honour in `unhonoured_hints` (`path`, `similarity`, `ranking`) and
-in `answer`. A count or other aggregation ("how many", "max retries", "total memory usage"), with or without other
-hints, is `invalid_request` naming it.
-
-Path words with no start, a similarity or a ranking beside a start, a time range or an area ("top 5 sensors connected
-to pump-42", "what is related to it in the last 2 hours") is `invalid_request` naming both: neither half is dropped. A
-one-word name or ID that names no entity is searched as text. A path start that names no entity ("what is connected to
-pump-99", and "the area of the plant", whose start is `area-of`) is `entity_not_found`, class invalid, as
-`entityByAlias` answers it; a start whose entity is gone passes the entity verb's refusal as it came.
-
-Until graph-clustering's first tick has written `COMMUNITY_INDEX` the text search refuses transient `index_not_ready`,
-which counts no error in `Health`.
-A text question with more than 32 distinct terms (lowercased, repeats removed) is
-`invalid_request`, before any read.
-
-The text search reads the community records at `level` once, and before any page read refuses: transient
-`index_not_ready` while `COMMUNITY_INDEX` is missing, catching up, lost or stopped, or when the level holds no record
-(the old version answered an empty level with an empty success); transient `internal` naming the count when every
-record at the level is unreadable, which counts as an error in `Health`; transient `revision_not_reached`, with
-`indexed_revision` in detail, when `min_revision` is above the highest `entity_revision` among the level's readable
-records, the text answer's `indexed_revision`.
-
-It then reads at most five groups, only those whose record scores above 0 for the question, best first, ties by key
-(the old version read the first five even when none matched, ties left to an unstable sort, and `max_communities`
-raised the count), and one page of at most 1,000 entities from each (the old version loaded every member, up to
-10,000), whose entities are matched and ranked as `localSearch` ranks them.
-
-A text answer is enveloped, `data.strategy` `text` and `data.text` holding: `level`; `groups`, each record read with
-`community_id`, `member_count`, `community_summary` and `keywords`; `matches`, best first, ties by ID, each `id`,
-`label`, `score` and `entity`, the page's bytes as graph-ingest sent them (no entity states are loaded and no digests
-are built); `entities_scanned`; `entities_truncated`; `unreadable_groups`; `unhonoured_hints`, `[]` when none;
-`answer`. The old version's `entities`, `entity_digests`, `community_summaries`, `count`, `duration_ms`, `degraded`,
-`degraded_reason` and `answer_model` are gone.
+The text search no longer depends on `COMMUNITY_INDEX`: a missing bucket, a level with no record and an unreadable
+record
+are `record_state` values (`not_ready`, `none`, `unreadable`) on the group, not refusals. An answer past an unreadable
+record sets `unreadable_groups`, counts one error in `Health` and logs one Warn, "global search answered past
+unreadable community records". The old version's five-group cap, group scoring and one-page reads are gone, along with
+the old match order (a score of 2.0 per summary term, 1.5 per keyword): the word index's BM25 order is the order.
 
 A match's `label` is the first non-empty string value of its most salient label predicate, the ones registered with
 `vocabulary.WithAlias(vocabulary.AliasTypeLabel, priority)` (lowest priority first, ties by name), read once when
@@ -340,26 +309,24 @@ graph-query starts, so register yours before `Start`; it is omitted when the ent
 `dc.terms.title` and three agentic predicates, then fell back to the first string value or the ID's last part: an
 entity with no label predicate now has no `label`.
 
-`entities_truncated` is true when a group had more than one page or matches were left out to fit `max_payload`; the
-answer then says it is a sample, and `semengine_graph_query_search_truncated_total{verb="globalSearch"}` rises by one.
-`answer` is plain text built from these fields: the counts, or that no group at the level matched; each group's
-summary, or its member count and first five keywords; the hints not honoured; the records that could not be read.
+Refusals reach you as they arrived from graph-lexical and the `batch` read; nothing responding is transient `internal`.
+A reply that cannot fit `max_payload` even with no matches is refused transient `internal`, one error; otherwise the
+lowest-ranked matches are left out, `truncated` is true, and
+`semengine_graph_query_search_truncated_total{verb="globalSearch"}` rises by one.
 
-An answer past unreadable records (`unreadable_groups` above 0) counts one error in `Health` and logs one Warn, "text
-search answered past unreadable community records", naming the verb, level and count. A reply that cannot fit even
-with no matches is refused transient `internal`, one error.
+Quality: the package's scorecard test holds both search verbs to a plain BM25 over 2,000 sections and 500 questions:
+recall at 10 within one point of the reference, and mean reciprocal rank at most 0.01 below it.
 
 ### `searchGraph`
 
-Enveloped, `data` a `graph.GlobalSearchData`. It is `globalSearch`, under its own name: the same
-request gets the same `data` and the same refusal (see `globalSearch` above), so `summarize_threshold`,
-`max_communities` and the `include_*` keys are refused `invalid_request`, naming the key. The old version, when
-`globalSearch` answered empty or refused `index_not_ready`, asked the semantic search for 8 entities and answered with
-strategy `semantic_fallback`, marked degraded.
+Enveloped, `data` a `graph.GlobalSearchData`. It is `globalSearch`, under its own name: the same request gets the same
+`data` and the same refusal (see `globalSearch` above), so `summarize_threshold`, `max_communities` and the `include_*`
+keys are refused `invalid_request`, naming the key. The old version, when `globalSearch` answered empty or refused
+`index_not_ready`, asked the semantic search for 8 entities and answered with strategy `semantic_fallback`, marked
+degraded.
 
-That is not carried, and no semantic request is made: an empty answer is the answer, and a missing or unready
-`COMMUNITY_INDEX` refuses transient `index_not_ready`, until a follow-up graph-query change adds the semantic fallback.
-A truncated answer counts under `searchGraph`, not `globalSearch`.
+That is not carried, and no semantic request is made: an empty answer is the answer, until a follow-up graph-query
+change adds the semantic fallback. A truncated answer counts under `searchGraph`, not `globalSearch`.
 
 A stream capturing a declared `graph.query.*` subject refuses boot, and so does a declared NATS-request input
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
@@ -373,8 +340,9 @@ In the new `graphquery` package, the old version's names: `Register`, `DeclarePo
 `PathEntity`, `MaxPathSearchDepth`, `MaxPathSearchNodes`, `DefaultPathSearchNodes`; for counts
 `HierarchyStatsRequest`, `HierarchyStatsData`, `HierarchyChild`, and `PrefixQueryResponse.Total`; for the forwards
 `SemanticData`, `SimilarData`, `SimilarityHit`, `SpatialData`, `SpatialHit`, `TemporalData`, `TemporalHit`.
-`SummaryRequest` and `SummaryData` change as the `summary` row says. For local search, in `graph`:
-`LocalSearchRequest`, `LocalSearchData` and `MaxSearchTerms`. In `graph/clustering`: `Community.EntityRevision`,
-`GroupKey` and `DecodeCommunity`. For `globalSearch`, in `graph`: `GlobalSearchRequest`, `GlobalSearchData`,
-`TemporalRangeRequest` and `SpatialBoundsRequest`. For the text search, in `graph`: `GlobalSearchRequest.Level`,
-`GlobalSearchData.Text`, `TextSearchData`, `TextSearchGroup` and `TextSearchMatch`.
+`SummaryRequest` and `SummaryData` change as the `summary` row says. For the search verbs, in `graph`:
+`LocalSearchRequest`, `LocalSearchData`, `LocalSearchRecord`, `RecordState` (`RecordRead`, `RecordNone`,
+`RecordNotReady`, `RecordUnreadable`), `GlobalSearchRequest`, `GlobalSearchData`, `GlobalSearchHint`, `TextSearchData`,
+`TextSearchGroup`, `TextSearchMatch` and `MaxSearchTerms`. For the time and area requests graph-query no longer sends
+and a responder will decode, in `graph`: `TemporalRangeRequest` and `SpatialBoundsRequest`. In `graph/clustering`:
+`Community.EntityRevision`, `GroupKey` and `DecodeCommunity`.

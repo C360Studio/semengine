@@ -17,8 +17,8 @@ import (
 
 // TestSearchGraphAnswersAsGlobalSearch: searchGraph decodes and answers every request as
 // globalSearch does, with the same data under the same indexed_revision, and the same refusal,
-// class, code and message (spec "searchGraph answers as global search"). One request per outcome
-// global search has, over real ingest, index and community records. No semantic search follows the
+// class, code and message (spec "searchGraph answers as global search"). One request per kind of
+// answer global search has, over real ingest, index, word index and community records. No semantic search follows the
 // empty text answer: a spy on the embedding verbs holds that none is made. A request global search
 // refuses is refused unchanged.
 func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
@@ -29,7 +29,8 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 		linked(drone2))
 	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
-	awaitCommunityView(t, stack.client, drone1, written)
+	awaitCommunityView(t, stack.component, systemGroupKey, written)
+	awaitWordIndexed(t, stack.client, written)
 
 	var semantic atomic.Int64
 	for _, name := range []string{"search", "similar"} {
@@ -39,31 +40,32 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 		})
 	}
 
-	// The answers that carry no timestamp, as literals, so equal replies are also the right ones.
+	// The answers that carry no timestamp, as literals, so equal replies are also the right ones: the
+	// walk alone where the text depends on the word index's scores.
+	literalPath := `{"entities":[{"entity_id":"` + drone1 + `","depth":0},{"entity_id":"` + drone2 + `","depth":1}],` +
+		`"edges":[{"predicate":"` + linkTo + `","from_entity_id":"` + drone1 + `","to_entity_id":"` + drone2 + `"}],"truncated":false}`
 	literalData := map[string]string{
-		"a path": `{"strategy":"path","path":{"entities":[{"entity_id":"` + drone1 + `","depth":0},{"entity_id":"` + drone2 + `","depth":1}],` +
-			`"edges":[{"predicate":"` + linkTo + `","from_entity_id":"` + drone1 + `","to_entity_id":"` + drone2 + `"}],"truncated":false}}`,
-		"text that matches no group": `{"strategy":"text","text":{"level":0,"groups":[],"matches":[],"entities_scanned":0,` +
-			`"entities_truncated":false,"unreadable_groups":0,"unhonoured_hints":[],"answer":"No group at level 0 matched the question."}}`,
+		"text that matches nothing": `{"text":{"level":0,"groups":[],"matches":[],"matched":0,"missing":0,` +
+			`"bodies_not_indexed":0,"truncated":false,"unreadable_groups":0,"answer":"Found 0 matching entities in 0 groups."},"hints":[]}`,
 	}
 	namedKey := map[string]string{"SemSource's summarize_threshold": "summarize_threshold"}
 	globalSubject := verbRow(t, graph.ResponderGraphQuery, "globalSearch").Subject
 	searchSubject := verbRow(t, graph.ResponderGraphQuery, "searchGraph").Subject
 	for _, tc := range []struct {
 		name, request string
-		strategy      string          // the answer's strategy, or "" for a refusal
-		class         errs.ErrorClass // the refusal's class and code
+		beside        string          // the verified answer beside the text: "entity", "path" or ""
+		class         errs.ErrorClass // a refusal's class and code
 		code          string
 	}{
 		{"an entity", `{"query":"held-1"}`, "entity", 0, ""},
 		{"a path", `{"query":"what is connected to held-1"}`, "path", 0, ""},
 		// No semantic fallback follows this answer; it is the answer.
-		{"text that matches no group", `{"query":"zzz qqq"}`, "text", 0, ""},
-		{"text that matches", `{"query":"alpha drone"}`, "text", 0, ""},
+		{"text that matches nothing", `{"query":"zzz qqq"}`, "", 0, ""},
+		{"text that matches", `{"query":"alpha drone"}`, "", 0, ""},
+		{"a named start naming no entity", `{"query":"what is connected to nobody-here"}`, "", 0, ""},
+		{"a time range", `{"query":"what changed in the last 2 hours"}`, "", 0, ""},
 		{"a body that is not JSON", `{bad json`, "", errs.ErrorInvalid, graph.ErrorCodeInvalidRequest},
 		{"SemSource's summarize_threshold", `{"query":"alpha drone","summarize_threshold":1}`, "", errs.ErrorInvalid, graph.ErrorCodeInvalidRequest},
-		{"a named start naming no entity", `{"query":"what is connected to nobody-here"}`, "", errs.ErrorInvalid, graph.ErrorCodeEntityNotFound},
-		{"a time range with no responder", `{"query":"what changed in the last 2 hours"}`, "", errs.ErrorTransient, graph.ErrorCodeInternal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			global, globalErr := stack.client.RequestClassified(t.Context(), globalSubject, []byte(tc.request), requestTimeout)
@@ -82,12 +84,20 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 			if globalErr != nil || searchErr != nil {
 				t.Fatalf("globalSearch: %v; searchGraph: %v; want both to answer", globalErr, searchErr)
 			}
-			want, got := decodeEnvelope(t, global), decodeEnvelope(t, search)
-			var answer struct {
-				Strategy string `json:"strategy"`
+			want, answer := decodeGlobal(t, global)
+			got := decodeEnvelope(t, search)
+			beside := ""
+			switch {
+			case answer.Entity != nil:
+				beside = "entity"
+			case answer.Path != nil:
+				beside = "path"
+				if path, err := json.Marshal(answer.Path); err != nil || string(path) != literalPath {
+					t.Errorf("globalSearch path = %s, want %s", path, literalPath)
+				}
 			}
-			if err := json.Unmarshal(want.Data, &answer); err != nil || answer.Strategy != tc.strategy {
-				t.Fatalf("globalSearch data = %s (%v), want strategy %q", want.Data, err, tc.strategy)
+			if beside != tc.beside {
+				t.Fatalf("globalSearch data = %s, want %q beside the text", want.Data, tc.beside)
 			}
 			if literal, ok := literalData[tc.name]; ok && string(want.Data) != literal {
 				t.Errorf("globalSearch data =\n  %s\nwant\n  %s", want.Data, literal)

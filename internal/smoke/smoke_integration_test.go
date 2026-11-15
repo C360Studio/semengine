@@ -313,7 +313,7 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision
 		t.Errorf("entityByAlias %s holds %v, want %v", leadAlias, got, w[lead].statementStrings())
 	}
 
-	checkCommunities(t, o, s, f, w, revision)
+	checkCommunities(t, o, s, f, w, revision, deleted)
 	checkEmbeddingRecords(t, o, revisions)
 	if t.Failed() {
 		t.FailNow()
@@ -657,21 +657,51 @@ func lexicalIDs(hits []graph.LexicalHit) []string {
 	return out
 }
 
-// checkLexical checks graph-lexical's search verb against w (composed-stack, "Answers from one
-// configuration"), each reply read once it reflects revision. The expected hits are written from
-// the fixed names: each entity's keyword (keywords), held by its name alone, answers that entity
-// alone while it is live and nothing once it is deleted; and "field", which every base's name holds,
-// answers exactly the live bases. Every base's name is two words, one of them "field", and holds no
-// other text, so each base scores the same and the ties order by entity ID. The fixture has no
-// offloaded bodies, so none is counted as not indexed. It returns the replies by word.
-func checkLexical(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) lexicalReplies {
+// wordHits is every word search's expected answer, written from the fixed names: each entity's
+// keyword (keywords), held by its name alone, answers that entity alone while it is live and
+// nothing once it is deleted; and "field", which every base's name holds, answers exactly the live
+// bases. Every base's name is two words, one of them "field", and holds no other text, so each base
+// scores the same and the ties order by entity ID. deleted are IDs the stack must no longer hold.
+func wordHits(t *testing.T, f fixture, w want, deleted []string) map[string][]string {
 	t.Helper()
 	inputs := slices.Collect(maps.Values(w))
 	for _, id := range deleted {
 		inputs = append(inputs, f.fixedInput(t, id))
 	}
+	out := map[string][]string{}
+	keyword := keywords(t, inputs)
+	for _, e := range inputs {
+		out[keyword[e.id]] = []string{}
+		if _, live := w[e.id]; live {
+			out[keyword[e.id]] = []string{e.id}
+		}
+	}
+
+	bases := []string{}
+	for _, id := range slices.Sorted(maps.Keys(w)) {
+		if slices.Contains(w[id].words(), baseWord) {
+			bases = append(bases, id)
+		}
+	}
+	if len(bases) == 0 {
+		t.Fatalf("no live entity's name holds %q, so the search would prove nothing", baseWord)
+	}
+	out[baseWord] = bases
+	return out
+}
+
+// baseWord is the word every base's name holds.
+const baseWord = "field"
+
+// checkLexical checks graph-lexical's search verb against wordHits (composed-stack, "Answers from
+// one configuration"), each reply read once it reflects revision. The fixture has no offloaded
+// bodies, so none is counted as not indexed. It returns the replies by word.
+func checkLexical(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) lexicalReplies {
+	t.Helper()
 	replies := lexicalReplies{}
-	check := func(word string, wantHits []string) {
+	expected := wordHits(t, f, w, deleted)
+	for _, word := range slices.Sorted(maps.Keys(expected)) {
+		wantHits := expected[word]
 		data := o.lexicalSearch(t, s, word, revision).Data
 		replies[word] = data
 		hits := lexicalIDs(data.Results)
@@ -686,27 +716,6 @@ func checkLexical(t *testing.T, o observer, s stack, f fixture, w want, revision
 			}
 		}
 	}
-
-	keyword := keywords(t, inputs)
-	for _, e := range inputs {
-		wantHits := []string{}
-		if _, live := w[e.id]; live {
-			wantHits = []string{e.id}
-		}
-		check(keyword[e.id], wantHits)
-	}
-
-	const baseWord = "field"
-	bases := []string{}
-	for _, id := range slices.Sorted(maps.Keys(w)) {
-		if slices.Contains(w[id].words(), baseWord) {
-			bases = append(bases, id)
-		}
-	}
-	if len(bases) == 0 {
-		t.Fatalf("no live entity's name holds %q, so the search would prove nothing", baseWord)
-	}
-	check(baseWord, bases)
 	if t.Failed() {
 		t.FailNow()
 	}
@@ -729,26 +738,6 @@ func requireLexicalKept(t *testing.T, o observer, s stack, revision uint64, befo
 	}
 }
 
-// matching is a one-word search's matches among w, sorted by ID, written from the text score
-// localSearch and the text search state (graph.LocalSearchData; processor/graph-query/localsearch.go,
-// score): one word matches an entity when it equals the ID's type position or lies within one of the
-// entity's predicates or string values, lowercased. The callers' words are no type, so every match
-// scores the same and ties order by ID. The values include graph-ingest's indexing profile and a
-// relationship's object, the other entity's ID.
-func (w want) matching(word string) []string {
-	out := []string{}
-	for id, e := range w {
-		held := append([]statement{{vocabulary.EntityIndexingProfile, smokeIndexingProfile}}, e.statements...)
-		if slices.ContainsFunc(held, func(s statement) bool {
-			return strings.Contains(strings.ToLower(s.predicate), word) || strings.Contains(strings.ToLower(s.object), word)
-		}) {
-			out = append(out, id)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
-
 // communityAnswer is one localSearch reply, or the refusal, with graph-clustering's envelope read
 // beside it.
 type communityAnswer struct {
@@ -759,33 +748,26 @@ type communityAnswer struct {
 }
 
 // matchIDs is the entity IDs of matches, in the order the reply gave them.
-func matchIDs(t *testing.T, what string, matches []json.RawMessage) []string {
-	t.Helper()
+func matchIDs(matches []graph.TextSearchMatch) []string {
 	out := []string{}
-	for _, raw := range matches {
-		var entity struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(raw, &entity); err != nil || entity.ID == "" {
-			t.Fatalf("%s: a match does not decode to an entity: %s: %v", what, raw, err)
-		}
-		out = append(out, entity.ID)
+	for _, match := range matches {
+		out = append(out, match.ID)
 	}
 	return out
 }
 
-// checkCommunities checks graph-clustering's records through graph-query's localSearch and the text
-// search (composed-stack, "Answers from one configuration"). Every fixed entity's ID starts
-// c360.<platform>.fleet.ops, so they make one level-0 group, whose record holds w's count.
+// checkCommunities checks graph-clustering's records and graph-query's two word searches,
+// localSearch and global search (composed-stack, "Answers from one configuration"). Every fixed
+// entity's ID starts c360.<platform>.fleet.ops, so they make one level-0 group, whose record holds
+// w's count.
 //
-// graph-clustering's GRAPH_STATUS key counts what its maintainer holds, not what it has published, and
-// graph-query answers from its own view of COMMUNITY_INDEX, so neither awaitIndexed nor a bucket read
-// orders a read of the answer. The record's entity_revision does: the highest ENTITY_STATES revision
-// the record reflects, which localSearch compares with min_revision before it answers. So localSearch
-// on the lead with min_revision set to revision is asked until it answers; a refusal that the view is
-// not ready or the record is below revision is asked again, and a latched graph-clustering envelope,
-// which no later tick clears, fails at once.
-func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revision uint64) {
+// localSearch attaches the group's record when graph-query's own view of COMMUNITY_INDEX holds it.
+// Neither GRAPH_STATUS nor a bucket read orders a read of that view, so localSearch on the lead at
+// min_revision revision is asked until it answers with the record of all w's members; a refusal
+// that the word index is not ready or below revision is asked again, and a latched
+// graph-clustering envelope, which no later tick clears, fails at once. Then each word of wordHits
+// is searched both ways (checkWordSearches).
+func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) {
 	t.Helper()
 	lead := f.id(drone1)
 	group := "c360." + f.platform + ".fleet.ops" // level 0: org.platform.system.domain (ADR-102)
@@ -807,11 +789,11 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 		if latched(a.clustering) != "" {
 			return true
 		}
-		var refusal *errs.ClassifiedError
-		if errors.As(a.err, &refusal) {
-			return refusal.Code != graph.ErrorCodeIndexNotReady && refusal.Code != graph.ErrorCodeRevisionNotReached
+		if wordIndexCatchingUp(a.err) {
+			return false
 		}
-		return true
+		record := a.reply.Data.Record
+		return a.err != nil || (record != nil && record.MemberCount == len(w))
 	})
 	if reason := latched(got.clustering); reason != "" {
 		t.Fatalf("%s/%s latched: %s", graph.BucketGraphStatus, readiness.KeyGraphClustering, reason)
@@ -819,48 +801,104 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 	if got.err != nil {
 		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
 	}
-	local := got.reply.Data
-	if got.reply.IndexedRevision < revision || local.CommunityID != group || local.Level != 0 ||
-		local.MemberCount != len(w) || local.EntitiesScanned != len(w) || local.EntitiesTruncated || local.Answer == "" {
-		t.Errorf("%s answered %+v at indexed_revision %d; want group %s, level 0, %d members, %d scanned, "+
-			"not truncated, an answer, at %d or above", what, local, got.reply.IndexedRevision, group, len(w), len(w), revision)
-	}
-	if ids, wantIDs := matchIDs(t, what, local.Entities), w.matching(word); !slices.Equal(ids, wantIDs) {
-		t.Errorf("%s matched %v, want %v", what, ids, wantIDs)
+	if local := got.reply.Data; local.RecordState != graph.RecordRead || local.Answer == "" {
+		t.Errorf("%s answered %+v; want the record read and an answer", what, local)
 	}
 
-	// A text question, read after localSearch's answer: the view held the record at revision then.
-	// One word that names no alias is searched as text; "field" is in four names, so it is one of the
-	// group's most frequent words.
-	const fieldWord = "field"
-	question := graph.GlobalSearchRequest{Query: fieldWord, MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
-	raw, err := o.ask(t, "globalSearch", question)
-	if err != nil {
-		t.Fatalf("globalSearch %q: %s: %v", fieldWord, raw, err)
+	expected := wordHits(t, f, w, deleted)
+	for _, word := range slices.Sorted(maps.Keys(expected)) {
+		checkWordSearches(t, o, s, lead, group, len(w), word, expected[word], revision)
 	}
+	if t.Failed() {
+		t.FailNow()
+	}
+}
+
+// wordIndexCatchingUp reports whether err is graph-lexical's refusal, passed on by graph-query,
+// that its word index has not reached the request's min_revision: index_not_ready before its first
+// build, or revision_not_reached below it. A lost feed, which holds until the process restarts, is
+// not catching up.
+func wordIndexCatchingUp(err error) bool {
+	var refusal *errs.ClassifiedError
+	if !errors.As(err, &refusal) {
+		return false
+	}
+	return refusal.Code == graph.ErrorCodeRevisionNotReached ||
+		(refusal.Code == graph.ErrorCodeIndexNotReady && !strings.Contains(refusal.Error(), "feed is lost"))
+}
+
+// searchAnswer is one graph-query search reply's bytes, or the refusal.
+type searchAnswer struct {
+	raw []byte
+	err error
+}
+
+// askSearch asks graph-query's verb until the reply is not the word index catching up, and
+// decodes it into out. The request carries min_revision, which graph-query passes to graph-lexical,
+// so an answer is read from a word index whose indexed_revision has reached it: that revision is
+// the event that orders the read after the writes.
+func askSearch(t *testing.T, o observer, s stack, verb string, request, out any) {
+	t.Helper()
+	what := fmt.Sprintf("%s %+v", verb, request)
+	got := await(t, s, what+" to answer", func(context.Context) (searchAnswer, error) {
+		var a searchAnswer
+		a.raw, a.err = o.ask(t, verb, request)
+		return a, nil
+	}, func(a searchAnswer) bool { return !wordIndexCatchingUp(a.err) })
+	if got.err != nil {
+		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
+	}
+	if err := json.Unmarshal(got.raw, out); err != nil {
+		t.Fatalf("%s: decode %s: %v", what, got.raw, err)
+	}
+}
+
+// checkWordSearches checks that localSearch on the lead and global search on word answer
+// wantIDs, the word index's expected hits for it, in that order, read at revision or above. Every
+// fixed entity is in the lead's group, so the scoped and the unscoped search find the same
+// entities. Global search names that group, holding every match and its record of members
+// entities, when anything matches, and no group when nothing does.
+func checkWordSearches(t *testing.T, o observer, s stack, lead, group string, members int, word string, wantIDs []string, revision uint64) {
+	t.Helper()
+	at := graph.MinRevisionField{MinRevision: revision}
+
+	var local graph.QueryResponse[graph.LocalSearchData]
+	askSearch(t, o, s, "localSearch", graph.LocalSearchRequest{EntityID: lead, Query: word, MinRevisionField: at}, &local)
+	l := local.Data
+	if ids := matchIDs(l.Matches); !slices.Equal(ids, wantIDs) || l.Matched != len(wantIDs) ||
+		l.CommunityID != group || l.Level != 0 || l.Missing != 0 || l.Truncated || local.IndexedRevision < revision {
+		t.Errorf("localSearch %q on %s: matched %v (%d), group %s level %d, %d missing, truncated %v, "+
+			"indexed_revision %d; want %v (%d), group %s level 0, 0 missing, not truncated, at %d or above",
+			word, lead, ids, l.Matched, l.CommunityID, l.Level, l.Missing, l.Truncated, local.IndexedRevision,
+			wantIDs, len(wantIDs), group, revision)
+	}
+
 	var global graph.QueryResponse[graph.GlobalSearchData]
-	if err := json.Unmarshal(raw, &global); err != nil {
-		t.Fatalf("globalSearch %q: decode %s: %v", fieldWord, raw, err)
-	}
+	askSearch(t, o, s, "globalSearch", graph.GlobalSearchRequest{Query: word, MinRevisionField: at}, &global)
 	text := global.Data.Text
-	if global.Data.Strategy != "text" || text == nil {
-		t.Fatalf("globalSearch %q answered %s, want the text strategy", fieldWord, raw)
+	if text == nil {
+		t.Errorf("globalSearch %q answered %+v, want text", word, global.Data)
+		return
 	}
 	var groups []string
 	for _, g := range text.Groups {
-		groups = append(groups, fmt.Sprintf("%s/%d", g.CommunityID, g.MemberCount))
+		count := 0
+		if g.Record != nil {
+			count = g.Record.MemberCount
+		}
+		groups = append(groups, fmt.Sprintf("%s/%d matches/%s/%d members", g.CommunityID, g.Matches, g.RecordState, count))
 	}
-	if wantGroups := []string{fmt.Sprintf("%s/%d", group, len(w))}; !slices.Equal(groups, wantGroups) ||
-		text.Level != 0 || text.UnreadableGroups != 0 || global.IndexedRevision < revision {
-		t.Errorf("globalSearch %q: groups %v, level %d, %d unreadable, indexed_revision %d; want %v, 0, 0, at %d or above",
-			fieldWord, groups, text.Level, text.UnreadableGroups, global.IndexedRevision, wantGroups, revision)
+	var wantGroups []string
+	if len(wantIDs) > 0 {
+		wantGroups = []string{fmt.Sprintf("%s/%d matches/%s/%d members", group, len(wantIDs), graph.RecordRead, members)}
 	}
-	var matches []string
-	for _, m := range text.Matches {
-		matches = append(matches, m.ID)
-	}
-	if wantMatches := w.matching(fieldWord); !slices.Equal(matches, wantMatches) {
-		t.Errorf("globalSearch %q matched %v, want %v", fieldWord, matches, wantMatches)
+	if ids := matchIDs(text.Matches); !slices.Equal(ids, wantIDs) || text.Matched != len(wantIDs) ||
+		!slices.Equal(groups, wantGroups) || text.Level != 0 || text.UnreadableGroups != 0 || text.Missing != 0 ||
+		text.Truncated || global.IndexedRevision < revision {
+		t.Errorf("globalSearch %q: matched %v (%d), groups %v, level %d, %d unreadable, %d missing, truncated %v, "+
+			"indexed_revision %d; want %v (%d), groups %v, level 0, 0, 0, not truncated, at %d or above",
+			word, ids, text.Matched, groups, text.Level, text.UnreadableGroups, text.Missing, text.Truncated,
+			global.IndexedRevision, wantIDs, len(wantIDs), wantGroups, revision)
 	}
 }
 

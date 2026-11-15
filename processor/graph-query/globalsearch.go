@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/c360studio/semengine/graph"
@@ -15,270 +15,147 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Global search's strategies: the names a reply's strategy field carries.
+// The kinds of hint a global search reply lists, in GlobalSearchHint.Hint.
 const (
-	strategyEntity   = "entity"
-	strategyPath     = "path"
-	strategyTemporal = "temporal"
-	strategySpatial  = "spatial"
-	strategyText     = "text"
+	hintEntity         = "entity"
+	hintPath           = "path"
+	hintTimeRange      = "time_range"
+	hintArea           = "area"
+	hintAggregation    = "aggregation"
+	hintSimilarity     = "similarity"
+	hintRanking        = "ranking"
+	hintClassification = "classification"
 )
 
-// The hints the text tier answers past, named in its reply's unhonoured_hints in this order.
+// Why a hint global search never honours is not honoured. Each is said in the reply, so a caller
+// knows the matches answer the question's words and not that part of it.
 const (
-	hintPath       = "path"
-	hintSimilarity = "similarity"
-	hintRanking    = "ranking"
+	reasonNoStart        = "the question names no start to walk from"
+	reasonPathPredicates = "a walk follows every predicate, not only the question's"
+	reasonTimeRange      = "global search does not filter by time"
+	reasonArea           = "global search does not filter by place"
+	reasonAggregation    = "global search computes no aggregation"
+	reasonSimilarity     = "global search matches words, not meaning"
+	reasonRanking        = "global search orders matches by how well their words match"
+	reasonClassification = "the question classifier refused the question; it is searched for its words"
 )
 
-// The path strategy's walk: a fixed depth and node limit, both directions, every predicate, since
-// the keyword tier names none.
+// A verified start's walk: a fixed depth and node limit, both directions, every predicate, since
+// the keyword classifier names none.
 const (
 	globalPathDepth = 3
 	globalPathNodes = 100
 )
 
-// globalIndexLimit is the most results the temporal and spatial strategies ask for.
-const globalIndexLimit = 100
-
-// globalSearchSubjects are the verbs global search reads: the alias and entity verbs through the
-// resolver, the index's edge verbs for the walk, the time-range and bounds verbs, and the prefix verb
-// for the text tier's pages.
+// globalSearchSubjects are the verbs global search reads: the word search and batch verbs for its
+// matches, the alias and entity verbs through the resolver, and the index's edge verbs for a walk.
 type globalSearchSubjects struct {
-	alias, entity, outgoing, incoming, temporal, spatial, prefix string
+	lexical, batch, alias, entity, outgoing, incoming string
 }
 
-// globalSearch answers a question with the one strategy its hints choose. A request is one input
-// however many requests it makes, and at most one error: ask and brokenReply count theirs, the text
-// tier counts a level whose every record is unreadable, an answer past unreadable records, or a
-// reply it cannot fit, and a classification that could not be read counts here. A caller's
-// invalid_request, a responder's refusal, a named start's entity_not_found and the text tier's
-// index_not_ready and revision_not_reached count none. verb is the verb's name in graph.QueryVerbs,
-// which the text tier's truncation counter and Warn carry.
+// globalSearch answers every question that decodes with a word search (globalText), and lists what
+// the question asked for beyond its words as hints. No hint refuses the question: a hint the
+// framework cannot verify is reported not honoured, with its reason. The question is classified
+// before any request, with no request of its own; a classification that cannot be read refuses
+// transient internal and counts one error. verb is the verb's name in graph.QueryVerbs, which the
+// truncation counter and the Warn carry.
 func (c *Component) globalSearch(verb string, subjects globalSearchSubjects) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))
-		request, levelPrefix, err := decodeGlobalSearchRequest(data)
+		request, err := decodeGlobalSearchRequest(data)
 		if err != nil {
 			return nil, invalidRequest(err)
 		}
 		route, err := routeGlobalSearch(ctx, request.Query)
 		if err != nil {
-			var refusal *errs.ClassifiedError
-			if errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeInternal {
-				c.lifecycle.CountError()
-			}
+			c.lifecycle.CountError()
 			return nil, err
 		}
-		switch route.strategy {
-		case strategyEntity:
-			return c.globalEntity(ctx, verb, subjects, route.reference, request, levelPrefix)
-		case strategyPath:
-			return c.globalPath(ctx, subjects, route.reference, request.MinRevision)
-		case strategyText:
-			return c.globalText(ctx, verb, subjects.prefix, request, levelPrefix, route.unhonoured)
-		case strategyTemporal:
-			return c.globalTemporal(ctx, subjects.temporal, *route.timeRange, request.MinRevision)
-		case strategySpatial:
-			return c.globalSpatial(ctx, subjects.spatial, *route.area, request.MinRevision)
-		default:
-			c.lifecycle.CountError()
-			return nil, internalError(fmt.Errorf("the question was routed to %q, which global search does not answer", route.strategy))
+		return c.globalText(ctx, verb, subjects, request, route)
+	}
+}
+
+// verifiedHint is what verifying a route's reference found: the hint it settles, first in the
+// reply's list, and the entity's bytes or the walk when the hint is honoured.
+type verifiedHint struct {
+	hint   graph.GlobalSearchHint
+	entity json.RawMessage
+	path   *graph.PathSearchData
+}
+
+// verify reads route's reference through the shared resolver, asking the alias verb with
+// minRevision: for an entity hint the entity verb's bytes, for a path hint the walk from it, as
+// pathSearch walks for the same start. A reference that names no entity, and any refusal or failure
+// of a read, leaves the hint not honoured, carrying the refusal's code and message, and never
+// refuses the reply: the word search has answered. A failure that is graph-query's own (no responder,
+// a reply it cannot use) still counts its error where it is found. A route with no reference has
+// nothing to verify.
+func (c *Component) verify(ctx context.Context, subjects globalSearchSubjects, route globalRoute, minRevision uint64) (verifiedHint, bool) {
+	if route.strategy == "" {
+		return verifiedHint{}, false
+	}
+	hint := graph.GlobalSearchHint{Hint: route.strategy, Detail: route.reference}
+	notHonoured := func(err error) (verifiedHint, bool) {
+		refusal := &errs.ClassifiedError{Code: graph.ErrorCodeInternal}
+		errors.As(err, &refusal)
+		hint.Reason, hint.Code = err.Error(), refusal.Code
+		return verifiedHint{hint: hint}, true
+	}
+	id, err := c.resolveGlobal(ctx, subjects, route.reference, minRevision)
+	if err != nil {
+		return notHonoured(err)
+	}
+	if id == "" {
+		return notHonoured(entityNotFound(route.reference))
+	}
+	if route.strategy == hintEntity {
+		entity, err := c.readEntity(ctx, subjects.entity, id)
+		if err == nil && !json.Valid(entity) {
+			// The bytes go into the reply as they came, so bytes that are not JSON would break it.
+			err = c.brokenReply(subjects.entity, errors.New("is not JSON"))
 		}
-	}
-}
-
-// resolveGlobal reads a question's reference through the shared resolver, asking the alias verb
-// with the request's min_revision. A reference that names no entity returns the ID "", for the
-// caller to decide: a one-word reference is searched as text, a named start is entity_not_found.
-func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) (string, uint64, error) {
-	aliasRequest, err := json.Marshal(struct {
-		Alias string `json:"alias"`
-		graph.MinRevisionField
-	}{reference, graph.MinRevisionField{MinRevision: minRevision}})
-	if err != nil {
-		return "", 0, internalError(err)
-	}
-	return c.resolveReference(ctx, subjects.alias, aliasRequest, reference)
-}
-
-// globalEntity answers with the entity verb's reply bytes for the resolved reference, under the
-// alias reply's revision. A reference that names no entity, or an entity_not_found from the entity
-// verb (a valid ID with no record, or a holder since deleted), is searched as text; any other
-// refusal reaches the caller.
-func (c *Component) globalEntity(ctx context.Context, verb string, subjects globalSearchSubjects, reference string, request graph.GlobalSearchRequest, levelPrefix string) ([]byte, error) {
-	id, revision, err := c.resolveGlobal(ctx, subjects, reference, request.MinRevision)
-	if err != nil {
-		return nil, err
-	}
-	if id == "" {
-		return c.globalText(ctx, verb, subjects.prefix, request, levelPrefix, nil)
-	}
-	entity, err := c.readEntity(ctx, subjects.entity, id)
-	if isEntityNotFound(err) {
-		return c.globalText(ctx, verb, subjects.prefix, request, levelPrefix, nil)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if len(entity) == 0 {
-		// Entity is omitted when empty, so an empty reply would answer with no entity at all.
-		return nil, c.brokenReply(subjects.entity, errors.New("is empty"))
-	}
-	return envelope(c, subjects.entity, revision, graph.GlobalSearchData{Strategy: strategyEntity, Entity: json.RawMessage(entity)})
-}
-
-// globalPath answers with the path search's walk from the resolved start, as pathSearch answers it
-// for the same request, under the walk's revision. A start that names no entity is
-// entity_not_found, as entityByAlias answers it, and a start with no record is the entity verb's
-// refusal as it came: a text search would drop the walk.
-func (c *Component) globalPath(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) ([]byte, error) {
-	id, _, err := c.resolveGlobal(ctx, subjects, reference, minRevision)
-	if err != nil {
-		return nil, err
-	}
-	if id == "" {
-		return nil, entityNotFound(reference)
+		if err != nil {
+			return notHonoured(err)
+		}
+		hint.Honoured = true
+		return verifiedHint{hint: hint, entity: entity}, true
 	}
 	if err := c.readPathStart(ctx, subjects.entity, id); err != nil {
-		return nil, err
+		return notHonoured(err)
 	}
 	walk := graph.PathSearchRequest{
 		StartEntity: id, Direction: directionBoth, MaxDepth: globalPathDepth, MaxNodes: globalPathNodes,
 		MinRevisionField: graph.MinRevisionField{MinRevision: minRevision},
 	}
-	found, revision, err := walkPaths(ctx, walk, c.indexHop(subjects.outgoing, subjects.incoming, minRevision))
+	found, _, err := walkPaths(ctx, walk, c.indexHop(subjects.outgoing, subjects.incoming, minRevision))
 	if err != nil {
-		return nil, err
+		return notHonoured(err)
 	}
-	return envelope(c, subjects.outgoing, revision, graph.GlobalSearchData{Strategy: strategyPath, Path: &found})
+	hint.Honoured = true
+	return verifiedHint{hint: hint, path: &found}, true
 }
 
-// globalTemporal answers with what the time-range verb returns for the question's range, truncated
-// included, under that reply's revision; a reply missing results or truncated is refused, one
-// error. Until a responder serves the verb, ask refuses transient internal naming it and counts the
-// error.
-func (c *Component) globalTemporal(ctx context.Context, subject string, span query.TimeRange, minRevision uint64) ([]byte, error) {
-	request, err := json.Marshal(graph.TemporalRangeRequest{
-		StartTime: span.Start, EndTime: span.End, Limit: globalIndexLimit,
-		MinRevisionField: graph.MinRevisionField{MinRevision: minRevision},
-	})
+// resolveGlobal reads a reference through the shared resolver, asking the alias verb with
+// minRevision. A reference that names no entity returns the ID "".
+func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) (string, error) {
+	aliasRequest, err := json.Marshal(struct {
+		Alias string `json:"alias"`
+		graph.MinRevisionField
+	}{reference, graph.MinRevisionField{MinRevision: minRevision}})
 	if err != nil {
-		return nil, internalError(err)
+		return "", internalError(err)
 	}
-	raw, err := c.ask(ctx, subject, request)
-	if err != nil {
-		return nil, err
-	}
-	reply, err := decodeIndexReply[graph.TemporalData](c, subject, raw)
-	if err != nil {
-		return nil, err
-	}
-	if reply.Data.Results == nil {
-		// Results absent would read as nothing changed.
-		return nil, c.brokenReply(subject, errors.New("holds no results"))
-	}
-	if truncatedAbsent(raw) {
-		return nil, c.brokenReply(subject, errors.New("holds no truncated"))
-	}
-	return envelope(c, subject, reply.IndexedRevision, graph.GlobalSearchData{Strategy: strategyTemporal, Temporal: &reply.Data})
+	id, _, err := c.resolveReference(ctx, subjects.alias, aliasRequest, reference)
+	return id, err
 }
 
-// globalSpatial answers with what the bounds verb returns for the question's area, truncated
-// included, under that reply's revision; a reply missing results or truncated is refused, one
-// error. Until a responder serves the verb, ask refuses transient internal naming it and counts the
-// error.
-func (c *Component) globalSpatial(ctx context.Context, subject string, area query.SpatialBounds, minRevision uint64) ([]byte, error) {
-	request, err := json.Marshal(graph.SpatialBoundsRequest{
-		North: area.North, South: area.South, East: area.East, West: area.West, Limit: globalIndexLimit,
-		MinRevisionField: graph.MinRevisionField{MinRevision: minRevision},
-	})
-	if err != nil {
-		return nil, internalError(err)
-	}
-	raw, err := c.ask(ctx, subject, request)
-	if err != nil {
-		return nil, err
-	}
-	reply, err := decodeIndexReply[graph.SpatialData](c, subject, raw)
-	if err != nil {
-		return nil, err
-	}
-	if reply.Data.Results == nil {
-		// Results absent would read as nothing there.
-		return nil, c.brokenReply(subject, errors.New("holds no results"))
-	}
-	if truncatedAbsent(raw) {
-		return nil, c.brokenReply(subject, errors.New("holds no truncated"))
-	}
-	return envelope(c, subject, reply.IndexedRevision, graph.GlobalSearchData{Strategy: strategySpatial, Spatial: &reply.Data})
-}
-
-// truncatedAbsent reports whether a time-range or bounds reply's data holds no truncated, or a null
-// one, which the bool reads as false: a cut-off answer would look complete.
-func truncatedAbsent(raw []byte) bool {
-	var keys struct {
-		Data struct {
-			Truncated *bool `json:"truncated"`
-		} `json:"data"`
-	}
-	return json.Unmarshal(raw, &keys) != nil || keys.Data.Truncated == nil
-}
-
-// globalText is the text tier: searchText's refusals reach the caller as it returns them; otherwise
-// the reply, fit to max_payload, under the level's mark. levelPrefix is the asked level's key
-// prefix, from decodeGlobalSearchRequest, and unhonoured the route's hints the text tier does not
-// honour. verb is the verb asked, which the truncation counter and the Warn name.
-//
-// An answer past unreadable records is a declared degrade: records are independent and the answer
-// reads only the readable ones, so it answers, sets unreadable_groups, counts one error and logs
-// one Warn. Both come only once the reply is encoded, so a request that fails to fit counts the
-// fit's one error alone.
-func (c *Component) globalText(ctx context.Context, verb, prefixSubject string, request graph.GlobalSearchRequest, levelPrefix string, unhonoured []string) ([]byte, error) {
-	result, err := c.searchText(ctx, prefixSubject, request, levelPrefix)
-	if err != nil {
-		return nil, err
-	}
-	limit, err := c.natsClient.MaxPayload()
-	if err != nil {
-		return nil, c.unanswered(err)
-	}
-	encoded, truncated, err := fitTextSearch(textSearchData(result, request.Level, unhonoured), int(limit), func(data graph.TextSearchData) ([]byte, error) {
-		response, err := graph.NewQueryResponse(graph.ResponderGraphQuery, result.revision, graph.GlobalSearchData{Strategy: strategyText, Text: &data})
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(response)
-	})
-	if err != nil {
-		return nil, c.unanswered(err)
-	}
-	if truncated {
-		c.metrics.searchTruncated.WithLabelValues(verb).Inc()
-	}
-	if result.unreadable > 0 {
-		c.lifecycle.CountError()
-		c.logger.Warn(textPastUnreadable, slog.String("verb", verb), slog.Int("level", request.Level),
-			slog.Int("unreadable", result.unreadable), slog.String("reason", textPastUnreadableReason))
-	}
-	return encoded, nil
-}
-
-// isEntityNotFound reports whether err is the entity verb's entity_not_found.
-func isEntityNotFound(err error) bool {
-	var refusal *errs.ClassifiedError
-	return errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeEntityNotFound
-}
-
-// globalRoute is the strategy that answers a question and what that strategy reads: the reference
-// for entity and path (the question, or the path's start), the time range for temporal, the area
-// for spatial, and for text the hints it answers past, in hintPath, hintSimilarity, hintRanking order.
+// globalRoute is what classifying a question found: the reference to verify and the kind of hint it
+// is, strategy "entity" for a one-word question or "path" for a walk's start, "" when there is none;
+// and the hints no read can verify, each not honoured, in the order the reply lists them.
 type globalRoute struct {
-	strategy   string
-	reference  string
-	timeRange  *query.TimeRange
-	area       *query.SpatialBounds
-	unhonoured []string
+	strategy  string
+	reference string
+	hints     []graph.GlobalSearchHint
 }
 
 // questionHints is the typed read of a keyword classification's Options.
@@ -295,38 +172,42 @@ type questionHints struct {
 	ranking                       bool // a ranking or its limit
 }
 
-// decodeGlobalSearchRequest decodes strictly, refusing any key but query, min_revision and level by
-// name, a blank query and a level outside 0 to 2. It returns the level's key prefix, which only the
-// text tier reads; LevelPrefix owns which levels exist.
-func decodeGlobalSearchRequest(data []byte) (graph.GlobalSearchRequest, string, error) {
+// decodeGlobalSearchRequest decodes strictly, refusing any key but query, level, limit and
+// min_revision by name, a blank query, a level outside 0 to 2 and a limit other than 0 or 1 to
+// graph.MaxSimilarityLimit. LevelPrefix owns which levels exist.
+func decodeGlobalSearchRequest(data []byte) (graph.GlobalSearchRequest, error) {
 	var request graph.GlobalSearchRequest
 	if err := decodeStrict(data, &request); err != nil {
-		return request, "", err
+		return request, err
 	}
 	if strings.TrimSpace(request.Query) == "" {
-		return request, "", errors.New("query is blank")
+		return request, errors.New("query is blank")
 	}
-	levelPrefix, err := clustering.LevelPrefix(request.Level)
-	if err != nil {
-		return request, "", fmt.Errorf("level: %w", err)
+	if _, err := clustering.LevelPrefix(request.Level); err != nil {
+		return request, fmt.Errorf("level: %w", err)
 	}
-	return request, levelPrefix, nil
+	if err := checkSearchLimit(request.Limit); err != nil {
+		return request, err
+	}
+	return request, nil
 }
 
-// routeGlobalSearch chooses the strategy that answers question. A one-word question is an entity
-// reference, read before any hint: the keyword patterns find trigger words inside IDs and aliases
-// (today, zone-a, link, max, most). Any other question is classified once with the keyword tier.
-// Every refusal comes before any downstream request: two filters, an impossible number, an
-// aggregation or a text-routed hint beside a filter is invalid_request, and a classification ended
-// with ctx is transient internal, which the caller counts as an error.
+// routeGlobalSearch classifies question. A one-word question is an entity reference, and is not
+// classified: the keyword patterns find trigger words inside IDs and aliases (today, zone-a, link,
+// max, most). Any other question is classified once with the keyword classifier, and a refusal of
+// class invalid (two places, an impossible number) is a not-honoured classification hint carrying
+// its text. Only a classification that cannot be read is refused: one that ended with ctx, a failure
+// of another class, or hints of a shape global search does not know, each transient internal.
 func routeGlobalSearch(ctx context.Context, question string) (globalRoute, error) {
 	if reference := strings.TrimSpace(question); !strings.ContainsFunc(reference, unicode.IsSpace) {
-		return globalRoute{strategy: strategyEntity, reference: reference}, nil
+		return globalRoute{strategy: hintEntity, reference: reference}, nil
 	}
 	result, err := query.NewClassifierChain(query.NewKeywordClassifier(), nil).ClassifyQuery(ctx, question)
 	if err != nil {
 		if errs.IsInvalid(err) {
-			return globalRoute{}, invalidRequest(err)
+			return globalRoute{hints: []graph.GlobalSearchHint{{
+				Hint: hintClassification, Detail: err.Error(), Reason: reasonClassification, Code: graph.ErrorCodeInvalidRequest,
+			}}}, nil
 		}
 		return globalRoute{}, internalError(err)
 	}
@@ -339,7 +220,7 @@ func routeGlobalSearch(ctx context.Context, question string) (globalRoute, error
 	if err != nil {
 		return globalRoute{}, internalError(err)
 	}
-	return chooseRoute(hints)
+	return listHints(hints), nil
 }
 
 // readHints reads the keyword tier's Options (graph/query/classifier_chain.go:182-222) into their
@@ -390,70 +271,40 @@ func readHints(options map[string]any) (questionHints, error) {
 	return hints, nil
 }
 
-// chooseRoute chooses the route for a question of more than one word. Two filters are refused
-// first, since the caller can fix the question, then an aggregation, which no strategy computes. A
-// filter (a path start, a time range or an area) answers only alone: beside a text-routed hint
-// (path words with no start, a similarity or a ranking), or a start beside path predicates, it is
-// refused naming both, since either strategy would drop the other. The rest is the text tier's,
-// each text-routed hint named.
-func chooseRoute(hints questionHints) (globalRoute, error) {
-	var filters []string
-	if hints.pathStart != "" {
-		filters = append(filters, "a path from "+hints.pathStart)
+// listHints turns a classification's hints into the route: a path's start is the reference to
+// verify, unless the question also names path predicates, which a walk would drop; every other hint
+// is listed not honoured, since global search has no verified answer for it.
+func listHints(hints questionHints) globalRoute {
+	var route globalRoute
+	notHonoured := func(hint, detail, reason string) {
+		route.hints = append(route.hints, graph.GlobalSearchHint{Hint: hint, Detail: detail, Reason: reason})
 	}
-	if hints.timeRange != nil {
-		filters = append(filters, "a time range")
+	switch {
+	case hints.pathStart != "" && hints.pathPredicates:
+		notHonoured(hintPath, hints.pathStart, reasonPathPredicates)
+	case hints.pathStart != "":
+		route.strategy, route.reference = hintPath, hints.pathStart
+	case hints.path || hints.pathPredicates:
+		notHonoured(hintPath, "", reasonNoStart)
 	}
-	if hints.area != nil {
-		filters = append(filters, "an area")
+	if span := hints.timeRange; span != nil {
+		notHonoured(hintTimeRange, span.Start.Format(time.RFC3339)+" to "+span.End.Format(time.RFC3339), reasonTimeRange)
 	}
-	if len(filters) > 1 {
-		return globalRoute{}, invalidRequest(errors.New(twoFilters(filters)))
+	if area := hints.area; area != nil {
+		notHonoured(hintArea, fmt.Sprintf("north %g, south %g, east %g, west %g", area.North, area.South, area.East, area.West), reasonArea)
 	}
 	if hints.aggregation != "" {
 		operation := hints.aggregation
 		if hints.aggregationField != "" {
 			operation += " of " + hints.aggregationField
 		}
-		return globalRoute{}, invalidRequest(fmt.Errorf("the question asks for an aggregation (%s), which global search does not compute; ask without it", operation))
-	}
-
-	// textHints are the reply's names, named the refusal's words for the same hints.
-	var textHints, named []string
-	if (hints.path || hints.pathPredicates) && hints.pathStart == "" {
-		textHints, named = append(textHints, hintPath), append(named, "path words with no start")
+		notHonoured(hintAggregation, operation, reasonAggregation)
 	}
 	if hints.similarity {
-		textHints, named = append(textHints, hintSimilarity), append(named, "a similarity")
+		notHonoured(hintSimilarity, "", reasonSimilarity)
 	}
 	if hints.ranking {
-		textHints, named = append(textHints, hintRanking), append(named, "a ranking")
+		notHonoured(hintRanking, "", reasonRanking)
 	}
-	if hints.pathPredicates && hints.pathStart != "" {
-		named = append(named, "path predicates")
-	}
-	if len(named) > 0 && len(filters) == 1 {
-		return globalRoute{}, invalidRequest(fmt.Errorf("the question names %s beside %s, which no strategy answers together; ask with one", strings.Join(named, " and "), filters[0]))
-	}
-
-	switch {
-	case hints.pathStart != "":
-		return globalRoute{strategy: strategyPath, reference: hints.pathStart}, nil
-	case hints.timeRange != nil:
-		return globalRoute{strategy: strategyTemporal, timeRange: hints.timeRange}, nil
-	case hints.area != nil:
-		return globalRoute{strategy: strategySpatial, area: hints.area}, nil
-	}
-	return globalRoute{strategy: strategyText, unhonoured: textHints}, nil
-}
-
-// twoFilters names the filters a question holds together: "two filters, a path from x and a time
-// range".
-func twoFilters(filters []string) string {
-	count := "two"
-	if len(filters) == 3 {
-		count = "three"
-	}
-	last := len(filters) - 1
-	return fmt.Sprintf("the question names %s filters, %s and %s; ask with one", count, strings.Join(filters[:last], ", "), filters[last])
+	return route
 }

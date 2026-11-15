@@ -131,25 +131,25 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 		decoder := json.NewDecoder(bytes.NewReader(rawConfig))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&config); err != nil {
-			return Config{}, nil, nil, errs.WrapInvalid(err, "CreateGraphEmbedding", "factory", "config unmarshal")
+			return Config{}, nil, nil, errs.WrapInvalid(err, "graphembedding", "factory", "config unmarshal")
 		}
 		// Data after the object is refused, as json.Unmarshal refuses it.
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			return Config{}, nil, nil, errs.WrapInvalid(errors.New("data after the configuration object"),
-				"CreateGraphEmbedding", "factory", "config unmarshal")
+				"graphembedding", "factory", "config unmarshal")
 		}
 	} else {
 		config = DefaultConfig()
 	}
 	config.ApplyDefaults()
 	if err := config.Validate(); err != nil {
-		return Config{}, nil, nil, errs.Wrap(err, "CreateGraphEmbedding", "factory", "config validation")
+		return Config{}, nil, nil, errs.Wrap(err, "graphembedding", "factory", "config validation")
 	}
 	inputs := make([]component.Port, 0, len(config.Ports.Inputs))
 	for _, definition := range config.Ports.Inputs {
 		port, err := definition.Resolve(component.DirectionInput)
 		if err != nil {
-			return Config{}, nil, nil, errs.WrapInvalid(err, "CreateGraphEmbedding", "factory", "resolve input port")
+			return Config{}, nil, nil, errs.WrapInvalid(err, "graphembedding", "factory", "resolve input port")
 		}
 		inputs = append(inputs, port)
 	}
@@ -161,7 +161,7 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 // graph-embedding has no embedder of its own, so a product with one (tier 1, such as semembed)
 // registers it with RegisterWithEmbedder, and a tier 0 composition leaves graph-embedding out.
 func refuseWithoutEmbedder(json.RawMessage, component.Dependencies) (component.Discoverable, error) {
-	return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "CreateGraphEmbedding", "factory",
+	return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "factory",
 		"embedder check: graph-embedding has no embedder of its own (from tier 1 a product registers one with RegisterWithEmbedder)")
 }
 
@@ -176,7 +176,7 @@ func newFactory(embedderType string, newEmbedder func() (embedding.Embedder, err
 func create(rawConfig json.RawMessage, deps component.Dependencies, embedderType string,
 	newEmbedder func() (embedding.Embedder, error)) (component.Discoverable, error) {
 	if deps.NATSClient == nil {
-		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "CreateGraphEmbedding", "factory", "NATSClient required")
+		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "factory", "NATSClient required")
 	}
 	config, inputs, outputs, err := resolveConfig(rawConfig)
 	if err != nil {
@@ -187,7 +187,7 @@ func create(rawConfig json.RawMessage, deps component.Dependencies, embedderType
 	for _, input := range inputs {
 		facts, err := input.Facts()
 		if err != nil {
-			return nil, errs.WrapInvalid(err, "CreateGraphEmbedding", "factory", "project input port")
+			return nil, errs.WrapInvalid(err, "graphembedding", "factory", "project input port")
 		}
 		if _, ok := facts.StoreReadBucket(); ok {
 			storeRegistry = deps.StoreRegistry
@@ -196,7 +196,7 @@ func create(rawConfig json.RawMessage, deps component.Dependencies, embedderType
 	}
 	metrics, err := newEmbeddingMetrics(deps.MetricsRegistry)
 	if err != nil {
-		return nil, errs.Wrap(err, "CreateGraphEmbedding", "factory", "register metrics")
+		return nil, errs.Wrap(err, "graphembedding", "factory", "register metrics")
 	}
 	return &Component{
 		config:          config,
@@ -286,8 +286,7 @@ func (c *Component) DataFlow() component.FlowMetrics { return c.lifecycle.DataFl
 func (c *Component) Initialize() error { return c.lifecycle.Initialize() }
 
 // Start builds the embedder, then begins following ENTITY_STATES and writing pending records.
-// The lifecycle state is
-// the shell's (component.Lifecycle): Start before Initialize, a nil or ended context and a
+// The lifecycle state is the shell's (component.Lifecycle): Start before Initialize, a nil or ended context and a
 // second Start are refused, the second with errs.ErrAlreadyStarted, and a Start that fails is
 // rolled back through cleanup. A component with no NATS client is refused first.
 //

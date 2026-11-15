@@ -28,7 +28,7 @@ func TestMaintainerAsAProduct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := clustering.NewMaintainer(storage)
+	m, err := clustering.NewMaintainer(storage, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

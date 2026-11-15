@@ -45,8 +45,10 @@ type Community struct {
 	// MaxKeywords most common types, ties broken lexically.
 	TypeCounts map[string]int `json:"type_counts"`
 
-	// Keywords are the group's MaxKeywords most frequent words, most frequent first,
-	// ties broken lexically. Words come only from members' string values.
+	// Keywords are the group's MaxKeywords most distinctive words, best first, ties
+	// broken lexically: each word's share of the group's members times the log of the
+	// graph's members with words over those holding it, scored when the record is
+	// written. Words come only from members' text (the README says how they are chosen).
 	Keywords []string `json:"keywords,omitempty"`
 
 	// StatisticalSummary is a one-line text built from the counts, three types and five

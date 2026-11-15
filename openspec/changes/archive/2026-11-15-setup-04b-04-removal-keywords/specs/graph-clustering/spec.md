@@ -5,13 +5,14 @@
 ### Requirement: Text is read through the shared text rule
 
 graph-clustering SHALL read an entity's words only from `graph/entitytext`'s `Values` under its `text_suffixes`, which
-SHALL mean what graph-lexical's key means, empty meaning the default list.
+SHALL select values as graph-lexical's key does, empty meaning the default list. Label predicates and an offloaded
+body, which graph-lexical also indexes, SHALL add no words.
 
-#### Scenario: The same text as the word index
+#### Scenario: The values the text rule selects
 
 - **WHEN** an entity holds values under configured and unconfigured suffixes, and a relationship
-- **THEN** the text its keywords are counted from equals `Values` for it under the same suffixes, as graph-lexical
-  reads it (`TestKeywordTextMatchesLexical`)
+- **THEN** the text its keywords are counted from equals `Values` for it under the same suffixes, the text
+  graph-embedding reads (`TestKeywordTextIsTheRuleValues`)
 
 #### Scenario: The key is read
 

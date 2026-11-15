@@ -59,7 +59,7 @@ Each `Run` blocks until `ctx` ends or its watch is lost, so a caller that wants 
 its own goroutine and waits for both to return:
 
 ```go
-worker := embedding.NewWorker(storage, embedder, logger).WithWorkers(5)
+worker := embedding.NewWorker(storage, embedder, logger).WithEmbedderType("my-embedder").WithWorkers(5)
 identity := func() embedding.EmbedderIdentity { return embedding.IdentityOf("my-embedder", embedder, 0) }
 cache := embedding.NewVectorCache(storage, identity) // scores only vectors made under identity()
 

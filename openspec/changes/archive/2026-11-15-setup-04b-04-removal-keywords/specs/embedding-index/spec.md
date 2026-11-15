@@ -32,6 +32,6 @@ vectors made under the running identity, read when the request is answered, and 
   including a width the embedder reports only after its first response
 - **THEN** every stored vector of an entity in `ENTITY_STATES` is regenerated under the new embedder before readiness,
   a vector the old embedder made is never a search hit, a `similar` source or a `similar` hit, and a restart with the
-  same embedder keeps every stored vector
+  same embedder keeps every stored vector when its width is known at startup
 - **AND** the tests that verify this are `TestProviderSwitchRestart`, `TestVectorCacheKeepsOnlyItsEmbeddersVectors`
   and `TestSavePendingGuarded_Decisions`

@@ -20,11 +20,11 @@ from the IDs, which is the decision of [ADR-099](../../docs/adr/099-community-pa
 The pin's label propagation is not carried.
 
 The record for a group is a `Community`: its `ID` (the prefix), `Level`, `MemberCount`, `TypeCounts` (members by the
-ID's fifth part, the 10 most common), `Keywords` (the 10 most frequent words in members' string values), a one-line
-`StatisticalSummary` built from those counts, and `RepEntities` (up to 5 member IDs, the lexically smallest among
-members that have words). It never lists the members, so its size does not grow with the group: every field is
-capped, and the encoded record stays under `MaxRecordBytes` (8 KiB). The key is `{level}.{prefix}`, for example
-`1.acme.dep1.gcs1`.
+ID's fifth part, the 10 most common), `Keywords` (up to 10 words that set the group apart from the rest of the graph,
+below), a one-line `StatisticalSummary` built from those counts, and `RepEntities` (up to 5 member IDs, the lexically
+smallest among members whose text has words). It never lists the members, so its size does not grow with the group:
+every field is capped, and the encoded record stays under `MaxRecordBytes` (8 KiB). The key is `{level}.{prefix}`,
+for example `1.acme.dep1.gcs1`.
 
 A record also carries `EntityRevision` (`entity_revision`), the latest entity write it reflects: the highest
 `ENTITY_STATES` revision among the `Upsert` and `Delete` calls the maintainer applied for entities whose IDs fall in
@@ -43,10 +43,30 @@ not JSON, a record whose level is not 0, 1 or 2, a record whose level and ID do 
 To read every record at one level, a reader lists the keys that start with `LevelPrefix(level)`, the level and a dot,
 which refuses a level outside 0 to 2.
 
-A *word* is a run of 3 to `MaxWordBytes` (32) ASCII letters and digits in a string value, ignoring case and a short
-list of stop words. A longer run is not a word, and nothing is cut. IDs, predicate names and the objects of
-relationships (other entity IDs) add no words. Each entity adds at most its `MaxEntityTerms` (32) most frequent words
+A member's *text* is the values `graph/entitytext` selects: string values, relationships skipped, whose predicates end
+in one of the suffixes given to `NewMaintainer` (empty means `entitytext.DefaultSuffixes`): the values
+`entitytext.Rule.Values` returns, the same text graph-embedding reads. Given the same list as graph-lexical's
+`text_suffixes`, keywords read the values the word index reads by suffix; the word index also indexes the names that
+registered label predicates hold and an entity's offloaded body, which keywords do not read. A
+*word* is a run of 3 to `MaxWordBytes` (32) ASCII letters and digits in that text, ignoring case and a short list of
+stop words. A longer run is not a word, and nothing is cut. IDs, predicate names, values under other suffixes and the
+objects of relationships (other entity IDs) add no words; a group whose members have no text has no keywords and no
+representatives. Each entity adds at most its `MaxEntityTerms` (32) most frequent words
 to each of its groups, so a word that is outside the top 32 of every member cannot become a keyword.
+
+A group's keywords are the words that set it apart from the rest of the graph, not the words it uses most. A member
+*holds* a word when the word is among its 32. Each word the group's members hold is scored: the share of the group's
+members holding it, times the natural log of the number of graph members with any words over the number holding this
+one (a TF-IDF score, with the group as the document). The 10 best are kept, ties broken lexically. A word every member
+with words holds scores 0 and is never a keyword, so a graph whose members all hold the same words, or a graph of one
+entity, has no keywords. In a group of two or more, a word needs two holders: one member's word says nothing about
+the group. The maintainer keeps the graph-wide counts beside each group's, so nothing is rescanned.
+
+A group is scored when its record is written, against the graph-wide counts of that tick. A tick writes only the
+groups whose members changed, so between restarts a group nobody touched keeps keywords, and the summary naming
+them, scored against older counts, even though changes elsewhere moved the counts. Every other field follows its
+members' latest values. A restart scores every group again: replaying the bucket marks every group changed. A change
+to a value outside the text (a size, a status) changes no count, so it adds no lag.
 
 ## Basic use
 
@@ -59,7 +79,9 @@ storage, err := clustering.NewNATSCommunityStorage(client.NewKVStore(kv))
 if err != nil {
     return err
 }
-m, err := clustering.NewMaintainer(storage)
+// textSuffixes: the list your graph-lexical's text_suffixes holds; nil is the default list.
+// Keywords read only the values those suffixes select, not label predicates or offloaded bodies.
+m, err := clustering.NewMaintainer(storage, textSuffixes)
 if err != nil {
     return err
 }

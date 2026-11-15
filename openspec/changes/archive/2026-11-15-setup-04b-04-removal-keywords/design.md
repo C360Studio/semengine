@@ -91,14 +91,18 @@ paths, and an unknown name as a miss, now in the no-embedder stack (`internal/sm
 requirement. Proof: `TestSmoke_OneConfigAnswers`, the restart tests, `TestFusionNATSImportsNoEmbedding`.
 
 **D8. Keywords are the group's distinctive words (PR D;** owner question 1, deltas for option a). When a group's
-record is written, each candidate word is scored by the share of the group's members holding it times the log of the
-graph's member count over the graph's members holding it; the ten best, ties lexical, need at least two holders in a
-group of two or more. Counts come from each member's 32 most frequent words, as today. The maintainer keeps the
-graph-wide counts beside the group counts, so a tick still writes only touched groups. Words are `extractWords`'s, not
+record is written, each candidate word is scored by the share of the group's members holding it times the natural
+log of the number of graph members with words over the number holding it; the ten best, ties lexical, need at least
+two holders in a group of two or more. Counts come from each member's 32 most frequent words, as today.
+The maintainer keeps the graph-wide counts beside the group counts, so a tick still writes only touched groups.
+Words are `extractWords`'s, not
 `lexical.Tokens`' (folded keys such as `thi` and `alway` are not words, §7). Proof: `TestKeywordsScorecard` (the
 scorecard corpus grouped by parent directory: share of corpus-common keywords and keyword-search precision, each
 against a plain TF-IDF over all of every section's words computed in the test; floors set from the first run and
 never worse than today's 27.9% and 66.7%), `TestKeywordsScoredWhenWritten`, `TestTickCost` unchanged.
+`TestMaintainerMatchesModel`'s model scores each group when a tick writes it, against that tick's graph-wide counts,
+and checks that a restart publishes the records of the final values; `TestHistoryOrderIrrelevant` compares two
+histories after a restart; `TestTelemetryRevisionKeepsKeywords` (owner ruling, #10 comment 6893325675).
 
 **D9. graph-clustering reads text through `graph/entitytext` (PR D; #650).** `entityWords` reads
 `entitytext.Rule.Values` under a new `text_suffixes` key with graph-lexical's meaning and default, so both see the
@@ -121,9 +125,11 @@ changed) and D (about 600) are estimates.
 
 ## Risks / Trade-offs
 
-- A group not written since the graph changed keeps keywords scored against older counts: at 5% churn about half of
-  untouched groups would score differently (§7). A restart re-scores every group (bootstrap marks each dirty,
-  `maintainer.go:364`). No reader decides on keywords after change 3.
+- Between restarts, a group not written since the graph-wide word counts changed keeps keywords, and the summary
+  that names them, scored against the older counts: at 5% churn about half of untouched groups would score
+  differently (§7). Every other field of a record follows its members' final values, since any change to a member
+  rewrites its groups. A restart rescores every group (replay adds each member and marks its groups). A change to a
+  value outside the text rule changes no counts, so it adds no lag. No reader decides on keywords after change 3.
 - graph-embedding cannot run until a product registers an embedder; #489 supplies the first one in the tree.
 - `nl` without graph-lexical composed is refused per request, not at boot.
 - A question the embedder answered may now be refused by the word index's query rules (D2).

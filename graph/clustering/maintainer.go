@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/types"
 )
@@ -48,6 +49,7 @@ func (e *IncompleteError) Error() string {
 // may be called from the watch goroutine and a ticker goroutine at once.
 type Maintainer struct {
 	storage *NATSCommunityStorage
+	text    entitytext.Rule // which of an entity's values its keywords are counted from
 
 	// tickMu makes one Tick run at a time. It is held across storage I/O; mu is not, so
 	// Upsert and Delete never wait on a write.
@@ -57,6 +59,7 @@ type Maintainer struct {
 	members      map[string]*member
 	refused      map[string]struct{}
 	groups       [levels]map[string]*group
+	words        graphWords            // over every held member, beside the groups' own counts
 	dirty        map[groupRef]struct{} // touched since their last successful publication
 	published    map[string]*Community // by key: the record last written
 	stale        map[string]struct{}   // listed keys whose removal is pending
@@ -91,18 +94,22 @@ type groupRef struct {
 	id    string
 }
 
-// NewMaintainer returns a Maintainer publishing to storage. It refuses a nil storage.
-func NewMaintainer(storage *NATSCommunityStorage) (*Maintainer, error) {
+// NewMaintainer returns a Maintainer publishing to storage. Keywords are counted from the
+// values entitytext.Rule.Values selects under textSuffixes, the text graph-embedding reads;
+// empty means entitytext.DefaultSuffixes. It refuses a nil storage.
+func NewMaintainer(storage *NATSCommunityStorage, textSuffixes []string) (*Maintainer, error) {
 	if storage == nil {
 		return nil, errs.WrapInvalid(errs.ErrMissingConfig, "Maintainer", "NewMaintainer", "storage is nil")
 	}
 	m := &Maintainer{
 		storage:   storage,
+		text:      entitytext.New(textSuffixes, 0),
 		members:   map[string]*member{},
 		refused:   map[string]struct{}{},
 		dirty:     map[groupRef]struct{}{},
 		published: map[string]*Community{},
 		stale:     map[string]struct{}{},
+		words:     graphWords{holders: map[string]int{}},
 	}
 	for level := range m.groups {
 		m.groups[level] = map[string]*group{}
@@ -122,7 +129,7 @@ func (m *Maintainer) Upsert(entityID string, revision uint64, state *graph.Entit
 	if revision == 0 {
 		return errRevisionZero(entityID, "Upsert")
 	}
-	next, refusal := newContribution(entityID, state)
+	next, refusal := newContribution(m.text, entityID, state)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -228,8 +235,8 @@ func (m *Maintainer) Tick(ctx context.Context) error {
 		m.mu.Unlock()
 	}
 
-	// A failure requeues every taken group, the written ones too: the next tick finds
-	// their records equal to the published ones and does not write them again.
+	// A failure requeues every taken group, the written and the unchanged ones too: the
+	// next tick builds each again and writes only those whose record differs.
 	writes, removals, taken := m.plan()
 	for _, record := range writes {
 		if err := m.write(ctx, record); err != nil {
@@ -273,12 +280,15 @@ func (m *Maintainer) plan() (writes []*Community, removals []string, taken []gro
 			}
 			continue
 		}
-		record := newCommunity(ref.level, ref.id, g.members, g.revision, g.types, g.words, g.textMembers.first(MaxRepEntities))
+		record := newCommunity(ref.level, ref.id, g.members, g.revision, g.types, g.words, m.words, g.textMembers.first(MaxRepEntities))
+		// A record equal to the one written needs no write, but the group stays taken: if
+		// this tick fails, the next one must build it again against the graph-wide counts
+		// of that moment, which may have moved.
+		taken = append(taken, ref)
 		if reflect.DeepEqual(record, m.published[key]) {
 			continue
 		}
 		writes = append(writes, record)
-		taken = append(taken, ref)
 	}
 	for key := range m.stale {
 		if !m.exists(key) { // a live group's write replaces its listed key
@@ -347,6 +357,12 @@ func (m *Maintainer) add(c *contribution) {
 	if c == nil {
 		return
 	}
+	if len(c.words) > 0 {
+		m.words.members++
+	}
+	for _, w := range c.words {
+		m.words.holders[w]++
+	}
 	for level, id := range c.groups {
 		g := m.groups[level][id]
 		if g == nil {
@@ -368,6 +384,12 @@ func (m *Maintainer) add(c *contribution) {
 func (m *Maintainer) subtract(c *contribution) {
 	if c == nil {
 		return
+	}
+	if len(c.words) > 0 {
+		m.words.members--
+	}
+	for _, w := range c.words {
+		decrement(m.words.holders, w)
 	}
 	for level, id := range c.groups {
 		g := m.groups[level][id]
@@ -392,8 +414,9 @@ func decrement(counts map[string]int, key string) {
 	}
 }
 
-// newContribution returns what state adds to its groups, or nil and the refusal.
-func newContribution(entityID string, state *graph.EntityState) (*contribution, error) {
+// newContribution returns what state adds to its groups, its words read under text, or nil and
+// the refusal.
+func newContribution(text entitytext.Rule, entityID string, state *graph.EntityState) (*contribution, error) {
 	refuse := func(err error) (*contribution, error) {
 		return nil, errs.WrapInvalid(fmt.Errorf("entity %q: %w", entityID, err), "Maintainer", "Upsert", "refuse entity")
 	}
@@ -411,7 +434,7 @@ func newContribution(entityID string, state *graph.EntityState) (*contribution, 
 		id:     entityID,
 		groups: groupIDs(eid),
 		typ:    eid.Type,
-		words:  entityWords(state),
+		words:  entityWords(text, state),
 	}, nil
 }
 

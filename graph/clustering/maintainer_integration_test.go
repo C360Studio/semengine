@@ -19,7 +19,7 @@ func TestUnchangedRecordAddsNoRevision(t *testing.T) {
 	setup := func(t *testing.T) (*Maintainer, *NATSCommunityStorage, func() uint64) {
 		t.Helper()
 		kv, storage := communityBucket(t)
-		m, err := NewMaintainer(storage)
+		m, err := NewMaintainer(storage, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

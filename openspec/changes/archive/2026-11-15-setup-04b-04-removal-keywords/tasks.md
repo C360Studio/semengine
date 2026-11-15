@@ -65,23 +65,27 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   symbol, prefix and unknown-name fusion checks from `noembedder_integration_test.go:134,146,174` unchanged; `git grep
   -n -i "bm25\|semantic\|similar" internal/smoke` finds no check; `noembedder_integration_test.go` is deleted and
   `TestFusionNATSImportsNoEmbedding` passes. PR body: `Closes #628`.
-- [ ] 2.8 PR D. Text through `graph/entitytext` (design D9; #650). Premise: `entityWords` reads every string value
+- [x] 2.8 PR D. Text through `graph/entitytext` (design D9; #650). Premise: `entityWords` reads every string value
   (`graph/clustering/terms.go:57`); graph-clustering has no `text_suffixes` (`processor/graph-clustering/
-  config.go:46-53`). Accept: new `TestKeywordTextMatchesLexical`, `TestTextSuffixesIsRead`;
+  config.go:46-53`). Accept: new `TestKeywordTextIsTheRuleValues`, `TestTextSuffixesIsRead`;
   `TestRepresentativesWithoutScan` and `TestRecordIsBounded` pass; `processor/graph-clustering/MIGRATION.md` says
   to set `text_suffixes` to graph-lexical's list. PR body: `Closes #650`.
-- [ ] 2.9 PR D. Distinctive keywords (design D8; owner question 1). Premise: keywords are the most counted words
+- [x] 2.9 PR D. Distinctive keywords (design D8; owner question 1). Premise: keywords are the most counted words
   (`terms.go:89`), 27.9% of them corpus-common on the probe (`notes/probes/keywords-probe.log`). Accept: new
-  `TestKeywordsScorecard` and `TestKeywordsScoredWhenWritten`; `TestTickCost` and the maintainer's property test pass
-  unchanged; a mutant that drops the graph-wide count is shown to fail the scorecard. The floors and the first run's
+  `TestKeywordsScorecard`, `TestKeywordsScoredWhenWritten` and `TestTelemetryRevisionKeepsKeywords`;
+  `TestTickCost` passes unchanged;
+  `TestMaintainerMatchesModel` and
+  `TestHistoryOrderIrrelevant` follow the amended requirement (records scored when written; equal after a restart;
+  owner ruling, #10 comment 6893325675), the model test's generator drawing revisions that change only
+  `docs.note.size`; a mutant that drops the graph-wide count fails the scorecard. The floors and the first run's
   numbers are recorded in `notes/2.9.md`.
 
 ## 3. Docs and close-out
 
-- [ ] 3.1 Each PR updates what it changes: `processor/graph-embedding/README.md`, `MIGRATION.md`;
+- [x] 3.1 Each PR updates what it changes: `processor/graph-embedding/README.md`, `MIGRATION.md`;
   `processor/graph-query/README.md`, `MIGRATION.md`; `.agents/skills/query-pattern/SKILL.md:30-35`;
   `docs/repository-map.md:74,76,91`; `docs/contract.md:33`; the ledger rows named in inventory §4; ADR-099's port note
   (PR D); `task docs:check` passes.
-- [ ] 3.2 PR D. Sync the specs (the Purpose lines of graph-embedding, embedding-index, query-classification and
+- [x] 3.2 PR D. Sync the specs (the Purpose lines of graph-embedding, embedding-index, query-classification and
   composed-stack name the hashed embedder) and archive the change as the last content commit; `task spec:check`
   passes.

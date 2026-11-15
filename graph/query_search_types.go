@@ -47,8 +47,8 @@ type SimilarRequest struct {
 	MinRevisionField
 }
 
-// SemanticData is the reply to a text search over the embeddings. EmbedderType names the embedder that
-// answered ("bm25" or "http"). UnreadableRecords is the number of EMBEDDING_INDEX records the
+// SemanticData is the reply to a text search over the embeddings. EmbedderType is the name the product
+// registered the answering embedder under. UnreadableRecords is the number of EMBEDDING_INDEX records the
 // responder could not decode, and FailedRecords the number of entities whose latest embedding failed;
 // neither entity can be a hit. A 0 in both says no record was left out for either reason; an entity whose
 // embedding is still pending is left out too and counted in neither, so the counts never prove completeness.

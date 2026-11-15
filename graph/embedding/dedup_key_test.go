@@ -6,9 +6,9 @@ import "testing"
 // dedup key.
 //
 // EMBEDDING_DEDUP is durable, has no TTL, and is never cleared. Were the key
-// SHA-256(text) alone, an operator switching embedder_type bm25 -> http against
-// the same NATS state would get every already-embedded entity's BM25 vector
-// back, written into EMBEDDING_INDEX labelled with the neural model's name. Both
+// SHA-256(text) alone, an operator switching from a word-count embedder to a
+// neural one against the same NATS state would get every already-embedded
+// entity's word-count vector back, written into EMBEDDING_INDEX labelled with the neural model's name. Both
 // default to 384 dimensions, so CosineSimilarity would produce a plausible-looking
 // score across two unrelated vector spaces and every health signal would stay
 // green while dedup_hits_total ROSE — the failure reads as a cost win.
@@ -19,8 +19,8 @@ func TestDedupKey_DistinguishesEmbedderIdentity(t *testing.T) {
 	const text = "the quick brown fox jumps over the lazy dog"
 
 	base := EmbedderIdentity{
-		Type:       "bm25",
-		Model:      "bm25-384",
+		Type:       "word-count",
+		Model:      "word-count-384",
 		Dimensions: 384,
 		MaxTextLen: 4000,
 	}
@@ -32,7 +32,7 @@ func TestDedupKey_DistinguishesEmbedderIdentity(t *testing.T) {
 		{
 			// The exact operator action in the report: statistical.json ->
 			// semantic.json. Type, model AND cap all move together.
-			name: "embedder type switch bm25 to http",
+			name: "embedder type switch word-count to http",
 			ident: EmbedderIdentity{
 				Type: "http", Model: "all-MiniLM-L6-v2", Dimensions: 384, MaxTextLen: 8000,
 			},
@@ -45,17 +45,17 @@ func TestDedupKey_DistinguishesEmbedderIdentity(t *testing.T) {
 			// Dimension change alone: CosineSimilarity returns 0.0 on a length
 			// mismatch, so a stale hit here silently ranks the entity last forever.
 			name:  "same model, different dimensions",
-			ident: EmbedderIdentity{Type: "bm25", Model: "bm25-384", Dimensions: 768, MaxTextLen: 4000},
+			ident: EmbedderIdentity{Type: "word-count", Model: "word-count-384", Dimensions: 768, MaxTextLen: 4000},
 		},
 		{
 			// The compounding defect: the cap changes WHICH TEXT was embedded
 			// while the raw input string is byte-identical.
 			name:  "same model, different truncation cap",
-			ident: EmbedderIdentity{Type: "bm25", Model: "bm25-384", Dimensions: 384, MaxTextLen: 8000},
+			ident: EmbedderIdentity{Type: "word-count", Model: "word-count-384", Dimensions: 384, MaxTextLen: 8000},
 		},
 		{
 			name:  "same everything except type label",
-			ident: EmbedderIdentity{Type: "http", Model: "bm25-384", Dimensions: 384, MaxTextLen: 4000},
+			ident: EmbedderIdentity{Type: "http", Model: "word-count-384", Dimensions: 384, MaxTextLen: 4000},
 		},
 	}
 
@@ -151,7 +151,7 @@ func TestInProcessDedupKey_IgnoresWidthAndNeverMatchesDedupKey(t *testing.T) {
 		id   EmbedderIdentity
 		text string
 	}{
-		"type":     {EmbedderIdentity{Type: "bm25", Model: "m", MaxTextLen: 8000}, text},
+		"type":     {EmbedderIdentity{Type: "word-count", Model: "m", MaxTextLen: 8000}, text},
 		"model":    {EmbedderIdentity{Type: "http", Model: "n", MaxTextLen: 8000}, text},
 		"text cap": {EmbedderIdentity{Type: "http", Model: "m", MaxTextLen: 4000}, text},
 		"text":     {unresolved, text + "!"},

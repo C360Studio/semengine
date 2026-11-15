@@ -199,7 +199,7 @@ func TestGetSourceText_EmptyBodyIdentityOnly(t *testing.T) {
 
 	// Cross-lane dedup: an inline record whose whole SourceText is the same identity must
 	// derive the SAME dedup key — the trailing-separator noise would have split them.
-	id := EmbedderIdentity{Type: "bm25", Model: "bm25-384", Dimensions: 384, MaxTextLen: 4000}
+	id := EmbedderIdentity{Type: "word-count", Model: "word-count-384", Dimensions: 384, MaxTextLen: 4000}
 	inlineWorker := &Worker{maxSourceTextLen: 4000}
 	inlineText, err := inlineWorker.getSourceText(t.Context(), &Record{SourceText: identity})
 	if err != nil {
@@ -404,7 +404,7 @@ func TestDedupKey_TracksIdentityAndBody(t *testing.T) {
 	const identity = "Retry Policy"
 	const body = "waits between attempts"
 
-	id := EmbedderIdentity{Type: "bm25", Model: "bm25-384", Dimensions: 384, MaxTextLen: 4000}
+	id := EmbedderIdentity{Type: "word-count", Model: "word-count-384", Dimensions: 384, MaxTextLen: 4000}
 
 	keyFor := func(t *testing.T, identityText, storeBody string) string {
 		t.Helper()

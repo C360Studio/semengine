@@ -98,7 +98,7 @@ func TestSavePendingGuarded_Decisions(t *testing.T) {
 			name: "generated at OLDER revision overwritten (newer source state)",
 			seed: func(t *testing.T, s *Storage) {
 				savePending(t, s, entityID, "", 4)
-				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "bm25-384", 384, "h", 4); err != nil {
+				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "word-count-384", 384, "h", 4); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -111,7 +111,7 @@ func TestSavePendingGuarded_Decisions(t *testing.T) {
 			name: "generated at SAME revision skipped (restart re-delivery)",
 			seed: func(t *testing.T, s *Storage) {
 				savePending(t, s, entityID, "", 5)
-				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "bm25-384", 384, "h", 5); err != nil {
+				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "word-count-384", 384, "h", 5); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -124,7 +124,7 @@ func TestSavePendingGuarded_Decisions(t *testing.T) {
 			name: "generated at NEWER revision skipped (stale repair re-drive)",
 			seed: func(t *testing.T, s *Storage) {
 				savePending(t, s, entityID, "", 6)
-				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "bm25-384", 384, "h", 6); err != nil {
+				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "word-count-384", 384, "h", 6); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -623,18 +623,18 @@ func TestDedupIdentityChange_NeverServesStaleVector(t *testing.T) {
 	s := newTestStorage(t, newMemKV(), newMemKV())
 
 	const text = "an entity description that is identical under both configs"
-	bm25 := EmbedderIdentity{Type: "bm25", Model: "bm25-384", Dimensions: 384, MaxTextLen: 4000}
+	wordCount := EmbedderIdentity{Type: "word-count", Model: "word-count-384", Dimensions: 384, MaxTextLen: 4000}
 	neural := EmbedderIdentity{Type: "http", Model: "all-MiniLM-L6-v2", Dimensions: 384, MaxTextLen: 8000}
 
-	if err := s.SaveDedup(t.Context(), DedupKey(bm25, text), []float32{9, 9, 9}, bm25.Model, bm25.Dimensions); err != nil {
-		t.Fatalf("SaveDedup under bm25: %v", err)
+	if err := s.SaveDedup(t.Context(), DedupKey(wordCount, text), []float32{9, 9, 9}, wordCount.Model, wordCount.Dimensions); err != nil {
+		t.Fatalf("SaveDedup under word-count: %v", err)
 	}
 	got, err := s.GetByContentHash(t.Context(), DedupKey(neural, text))
 	if err != nil {
 		t.Fatalf("GetByContentHash under neural identity: %v", err)
 	}
 	if got != nil {
-		t.Fatalf("stale bm25 vector %v served to the neural embedder", got.Vector)
+		t.Fatalf("stale word-count vector %v served to the neural embedder", got.Vector)
 	}
 }
 

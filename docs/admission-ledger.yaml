@@ -3826,13 +3826,13 @@
   disposition: adapt
 
 # Change setup-04a-04-graph-roots-embedding (PR #458, epic #9): graph/embedding, the two-hop embedding pipeline's storage,
-# BM25 embedder, vector cache and Worker; the processor that drives them arrives in change 5 (processor/graph-embedding).
+# vector cache and Worker (its BM25 embedder later deleted, setup-04b-04); the processor that drives them arrives in change 5 (processor/graph-embedding).
 
 - source_path: graph/embedding
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the tier-0 embedding pipeline: the BM25 embedder (no external provider), Storage over EMBEDDING_INDEX and
-    EMBEDDING_DEDUP, the VectorCache that answers similarity search from memory, and the Worker that turns pending
+    the embedding pipeline a product's Embedder drives (the package holds no embedder and imports no provider):
+    Storage over EMBEDDING_INDEX and EMBEDDING_DEDUP, the VectorCache that answers similarity search from memory, and the Worker that turns pending
     records into generated or failed ones (hop 2). processor/graph-embedding (change 5) calls it (pkg/fusion does
     not import it at the pin or here); graph/query
     (item 6) cannot build without it
@@ -3861,7 +3861,8 @@
     a text cap of 0 means 8,000 runes on both lanes; (11) WorkerMetrics gains IncContentUnresolved and loses
     SetPending; (12) an offloaded body is read through graph/entitytext.ReadBody, which ends the read 10 s after it
     begins, and the truncation routine is graph/entitytext.Truncate (setup-04b-02-lexical-processor, #551). Not
-    carried: http_embedder.go (own row), ContentHash, SavePending, SavePendingWithStorageRef,
+    carried: http_embedder.go (own row), bm25_embedder.go and its test (deleted by setup-04b-04-removal-keywords
+    design D5: no in-process embedder, a product supplies one), ContentHash, SavePending, SavePendingWithStorageRef,
     Record.ContentFields, DedupRecord.EntityIDs, euclideanDistance, dotProduct, magnitude, normalize
   dependencies_and_side_effects: >-
     graph/entitytext, internal/dispatch, internal/kvwatch, message, natsclient, pkg/errs, pkg/types, storage (in-set);
@@ -3877,8 +3878,7 @@
     callbacks only (design D6, Codex finding 2 on PR #458 comment 6474241300). An older pending write may replace a
     newer pending or failed record, as at the pin; only a generated record blocks an older write. A callback that
     blocks holds Run, which has no bound of its own. The nats.go behaviours behind the Run shutdown order are probed
-    at v1.54.0 (PR #458 comment 6472856197) and not promised. BM25 is a lexical embedder, not a correct lexical
-    index. Storage.ListGeneratedEntityIDs is removed (processor/graph-embedding withholds the window the scan
+    at v1.54.0 (PR #458 comment 6472856197) and not promised. Storage.ListGeneratedEntityIDs is removed (processor/graph-embedding withholds the window the scan
     covered). FindSimilar sorts the whole view under its lock, about 37 ms a call and 9 ms of lock at 50,000 records
     (openspec/changes/archive/2026-11-08-setup-04a-05-graph-embedding-query/notes/2.2.md);
     graph-clustering plans around it. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays
@@ -3896,7 +3896,7 @@
     (TestVectorCacheSecondRunRefused, TestVectorCacheNotAuthoritative, TestVectorCachePoisonCountedAndHeals,
     TestFindSimilarOrderAndLimit, TestFindSimilarReadsOneMoment, TestVectorCacheRunLeavesNothingBehind); vector_cache_integration_test.go (TestVectorCacheRunLeavesNoWatchDelivery,
     TestVectorCacheRunReportsLostWatch); worker_storeresolver_integration_test.go
-    (TestWorkerResolvesLiveRegistryStatePerFetch); bm25_embedder_test.go; internal/harness/contract
+    (TestWorkerResolvesLiveRegistryStatePerFetch); internal/harness/contract
     (TestEmbeddingImportsNoProviderModule); notes/2.1.md, 2.2.md, 3.3.md and 3.4.md of the change record each changed
     behaviour shown failing against the pin's shape
   owner: setup-04a-04-graph-roots-embedding developer; docs by setup-04a-04-graph-roots-embedding technical writer

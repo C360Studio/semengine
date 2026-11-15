@@ -1,7 +1,7 @@
 # graph/embedding
 
 Embeds the text of graph entities as vectors, stores them in NATS KV, and finds the entities
-nearest to a query vector. It runs without any external embedding provider.
+nearest to a query vector. It has no embedder of its own: a product supplies one.
 
 ## How embedding runs
 
@@ -22,7 +22,6 @@ tell older work from newer work.
 | Name | What it does |
 | --- | --- |
 | `Embedder` | Interface: `Generate` for documents, `GenerateQuery` for search queries |
-| `BM25Embedder` | The tier-0 embedder. Hashes terms into `Dimensions` slots (default 384) and weights them with BM25. It matches shared words, not meaning |
 | `Storage` | Reads and writes `EMBEDDING_INDEX` (one record per entity) and `EMBEDDING_DEDUP` (one vector per content key) |
 | `VectorCache` | In-memory copy of the generated vectors, kept current by watching `EMBEDDING_INDEX`; `FindSimilar` ranks by cosine similarity |
 | `Worker` | Hop 2: turns pending records into generated or failed ones, and calls `GeneratedCallback` and `TerminalCallback` |

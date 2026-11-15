@@ -211,8 +211,8 @@ func (w *Worker) WithMaxSourceTextLen(n int) *Worker {
 	return w
 }
 
-// WithEmbedderType sets the Type axis of the dedup key identity ("bm25", or a remote
-// embedder's type). The Worker folds it, with the embedder's live Model and Dimensions and the
+// WithEmbedderType sets the Type axis of the dedup key identity: the name the product
+// registered its embedder under. The Worker folds it, with the embedder's live Model and Dimensions and the
 // text cap, into the dedup key, so changing the embedder type cannot serve a vector from the
 // previous vector space.
 func (w *Worker) WithEmbedderType(t string) *Worker {

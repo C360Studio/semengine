@@ -12,7 +12,7 @@ import (
 )
 
 // benchRecords and benchDimensions size the cache benchmarks: 50,000 generated records
-// of the BM25 embedder's default 384 dimensions.
+// of 384 dimensions, a common width for small embedding models.
 const (
 	benchRecords    = 50_000
 	benchDimensions = 384

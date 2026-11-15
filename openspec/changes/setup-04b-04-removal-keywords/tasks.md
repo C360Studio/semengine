@@ -50,7 +50,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   kept and closed by `Stop`); `TestConfigRefusesUnknownKey` refuses `embedder_type`; the lifecycle suite and the 33
   integration tests pass on a test embedder registered through `RegisterWithEmbedder`; `TestEmbeddingTextUnchanged`
   unchanged.
-- [ ] 2.5 PR C. The hashed embedder is deleted (plan item 4). Premise: its only callers are graph-embedding and the
+- [x] 2.5 PR C. The hashed embedder is deleted (plan item 4). Premise: its only callers are graph-embedding and the
   example classifier (inventory §4), gone after 2.1 and 2.4. Accept: `bm25_embedder.go` and its test are deleted;
   `TestEmbeddingImportsNoProviderModule` and the `graph/embedding merged` floor (`scripts/cover-check.sh:54`) pass;
   `doc.go`, `embedder.go`, `dedup.go:25-41` and `README.md:25` name no BM25 embedder.

@@ -51,7 +51,7 @@ func TestTruncate_CrossLaneEquivalence(t *testing.T) {
 	}
 
 	// The load-bearing consequence: identical text → identical dedup key.
-	id := EmbedderIdentity{Type: "bm25", Model: "m", Dimensions: 3, MaxTextLen: capLen}
+	id := EmbedderIdentity{Type: "word-count", Model: "m", Dimensions: 3, MaxTextLen: capLen}
 	if k1, k2 := DedupKey(id, inlineText), DedupKey(id, offloadedText); k1 != k2 {
 		t.Fatalf("dedup keys differ across lanes: %s vs %s; the whole point of one truncation routine is one key", k1, k2)
 	}

@@ -31,8 +31,8 @@ and `temporal`; the first five forward to
 the verb of the same name behind them, and `semantic`, `similar`, `spatial` and `temporal` forward to the embedding,
 spatial and
 temporal verbs. `spatial` and `temporal` have no responder in the tree yet and are refused transient `internal` until
-change 7; `semantic` and `similar` are answered by graph-embedding, or refused invalid `not_enabled` when graph-query's
-`embedding_enabled` is false.
+change 7; `semantic` and `similar` are answered by graph-embedding, or refused invalid `not_enabled` unless graph-query's
+`embedding_enabled` is true (false when left out).
 graph-query lands in steps (`processor/graph-query/README.md` lists what it
 serves now), so a verb not in the table has no responder yet.
 

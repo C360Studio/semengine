@@ -129,6 +129,10 @@ func serve(t *testing.T, client *natsclient.Client, subject string, handler quer
 	}
 }
 
+// tierOneConfig is the configuration of a composition that runs graph-embedding: semantic and similar
+// forward only when embedding_enabled is true, and the tests that drive every forward need them to.
+const tierOneConfig = `{"embedding_enabled": true}`
+
 // startComponent starts graph-query and stops it when the test ends. A held stub's release, if the
 // test registers it after this call, runs before the Stop.
 func startComponent(t *testing.T, client *natsclient.Client, config string) *Component {
@@ -163,7 +167,7 @@ func refusalOf(t *testing.T, err error) *errs.ClassifiedError {
 // downstream verb answers with its own bytes, so a forward wired to the wrong row fails as well.
 func TestForwardPassesBytesBothWays(t *testing.T) {
 	client := fixtureClient(t)
-	startComponent(t, client, `{}`)
+	startComponent(t, client, tierOneConfig)
 
 	received := make(map[string]chan []byte)
 	for _, f := range forwardRows(t) {
@@ -214,7 +218,7 @@ func replyBytes(subject string, request []byte) []byte {
 // the slices they were given, uncopied, and every one is compared only when all have finished.
 func TestForwardsShareNothingBetweenRequests(t *testing.T) {
 	client := fixtureClient(t)
-	startComponent(t, client, `{}`)
+	startComponent(t, client, tierOneConfig)
 	rows := forwardRows(t)
 	const rounds = 20
 
@@ -273,7 +277,7 @@ func TestForwardsShareNothingBetweenRequests(t *testing.T) {
 // start a new trace.
 func TestForwardCarriesTheRequestContext(t *testing.T) {
 	client := fixtureClient(t)
-	startComponent(t, client, `{}`)
+	startComponent(t, client, tierOneConfig)
 
 	f := forwardRows(t)[0]
 	seen := make(chan string, 1)
@@ -312,7 +316,7 @@ func TestHandlerBudgetEndsAForward(t *testing.T) {
 	const budget = 300 * time.Millisecond
 	t.Setenv("SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT", budget.String()) // read when the client is built
 	client := fixtureClient(t)
-	c := startComponent(t, client, `{"query_timeout_ms": 600000}`)
+	c := startComponent(t, client, `{"embedding_enabled": true, "query_timeout_ms": 600000}`)
 
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) }) // before the Stop and the fixture's Close
@@ -356,7 +360,7 @@ func TestHandlerBudgetEndsAForward(t *testing.T) {
 // outage included: ErrorCount never lowers it (component.Lifecycle.Health, ADR-109).
 func TestForwardCountsRequestsAndUnansweredOnes(t *testing.T) {
 	client := fixtureClient(t)
-	c := startComponent(t, client, `{}`)
+	c := startComponent(t, client, tierOneConfig)
 	rows := forwardRows(t)
 
 	var wantMessages, wantBytes int64
@@ -455,7 +459,7 @@ func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			client := fixtureClient(t)
-			startComponent(t, client, `{}`)
+			startComponent(t, client, tierOneConfig)
 			for _, f := range declaredRows(t) {
 				serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
 					return nil, tc.refusal
@@ -484,7 +488,7 @@ func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 // transport error's is not promised (ADR-112).
 func TestNoRespondersIsTransient(t *testing.T) {
 	client := fixtureClient(t)
-	startComponent(t, client, `{}`)
+	startComponent(t, client, tierOneConfig)
 	for _, f := range declaredRows(t) {
 		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, f.request, requestTimeout)
 		if err == nil {
@@ -510,7 +514,7 @@ func TestNoRespondersIsTransient(t *testing.T) {
 func TestQueryTimeoutIsRead(t *testing.T) {
 	const configured = 300 * time.Millisecond
 	client := fixtureClient(t)
-	startComponent(t, client, fmt.Sprintf(`{"query_timeout_ms": %d}`, configured.Milliseconds()))
+	startComponent(t, client, fmt.Sprintf(`{"embedding_enabled": true, "query_timeout_ms": %d}`, configured.Milliseconds()))
 
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) }) // before the Stop and the fixture's Close
@@ -552,7 +556,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 	url := shared.Reset(t)
 	client := natsfixture.Open(t, url, openClient)
 	other := natsfixture.Open(t, url, openClient) // a connection graph-query does not use
-	c := startComponent(t, client, `{}`)
+	c := startComponent(t, client, tierOneConfig)
 
 	rows := declaredRows(t)
 	var declared []string

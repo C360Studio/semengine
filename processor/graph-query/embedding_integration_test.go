@@ -72,7 +72,7 @@ func TestSemanticForwardsMinRevision(t *testing.T) {
 		t.Fatalf("ensure %s: %v", graph.BucketEntityStates, err)
 	}
 	startGraphEmbedding(t, client)
-	startComponent(t, client, `{}`)
+	startComponent(t, client, tierOneConfig)
 	semantic := verbRow(t, graph.ResponderGraphQuery, "semantic").Subject
 
 	// Answered once graph-embedding's cache has applied its first snapshot; until then it refuses

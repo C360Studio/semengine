@@ -110,16 +110,16 @@ func TestConfigTimeout(t *testing.T) {
 	}
 }
 
-// TestConfigEmbeddingEnabled: embedding_enabled is on when left out or null, reads what is written
-// when it is a boolean, and is refused when it is anything else.
+// TestConfigEmbeddingEnabled: embedding_enabled is off when left out or null (tier 0 runs no
+// graph-embedding), reads what is written when it is a boolean, and is refused when it is anything else.
 func TestConfigEmbeddingEnabled(t *testing.T) {
 	for raw, want := range map[string]bool{
-		``:                            true,
-		`{}`:                          true,
-		`{"embedding_enabled":null}`:  true,
+		``:                            false,
+		`{}`:                          false,
+		`{"embedding_enabled":null}`:  false,
 		`{"embedding_enabled":true}`:  true,
 		`{"embedding_enabled":false}`: false,
-		`{"ports":{"inputs":[` + requiredPort + `]}}`: true,
+		`{"ports":{"inputs":[` + requiredPort + `]}}`: false,
 	} {
 		c, err := createFromJSON(t, raw)
 		if err != nil {

@@ -54,7 +54,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   example classifier (inventory §4), gone after 2.1 and 2.4. Accept: `bm25_embedder.go` and its test are deleted;
   `TestEmbeddingImportsNoProviderModule` and the `graph/embedding merged` floor (`scripts/cover-check.sh:54`) pass;
   `doc.go`, `embedder.go`, `dedup.go:25-41` and `README.md:25` name no BM25 embedder.
-- [ ] 2.6 PR C. `embedding_enabled` reads false when left out (design D6). Premise: `processor/graph-query/
+- [x] 2.6 PR C. `embedding_enabled` reads false when left out (design D6). Premise: `processor/graph-query/
   component.go:69-70`. Accept: `TestConfigEmbeddingEnabled` (left out reads false; true still forwards),
   `TestNoRespondersIsTransient` with the key set true.
 - [x] 2.7 PR C. Smoke on tier 0 (design D7; #628). Premise: smoke composes graph-embedding with `bm25`

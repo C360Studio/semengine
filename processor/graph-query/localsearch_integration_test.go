@@ -226,7 +226,7 @@ func startCommunityStack(t *testing.T) communityStack {
 	stack := startIngestAndIndex(t)
 	startWordIndex(t, stack.client)
 	kv, m := communityRecords(t, stack.client)
-	c := startComponent(t, stack.client, `{}`)
+	c := startComponent(t, stack.client, tierOneConfig)
 	return communityStack{graphStack: stack, component: c, records: kv, maintainer: m}
 }
 

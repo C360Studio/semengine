@@ -156,7 +156,7 @@ func TestEveryDeclaredVerbHasAHandler(t *testing.T) {
 
 // TestEmbeddingVerbsRefuseWhenNotEnabled: with embedding_enabled false, semantic and similar refuse
 // every request invalid not_enabled, naming the verb, whatever its bytes; each counts as one input
-// and no error. Left out, the same calls forward: the client is never connected, so the forward's
+// and no error. Set true, the same calls forward: the client is never connected, so the forward's
 // own transient internal refusal names the downstream subject (graph-query spec, "Embedding verbs
 // can be turned off").
 func TestEmbeddingVerbsRefuseWhenNotEnabled(t *testing.T) {
@@ -194,7 +194,7 @@ func TestEmbeddingVerbsRefuseWhenNotEnabled(t *testing.T) {
 		t.Errorf("ErrorCount = %d, want 0: not_enabled is not graph-query's error", got)
 	}
 
-	on, err := createFromJSON(t, `{}`)
+	on, err := createFromJSON(t, `{"embedding_enabled":true}`)
 	if err != nil {
 		t.Fatalf("CreateGraphQuery: %v", err)
 	}

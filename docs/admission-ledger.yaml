@@ -4335,8 +4335,8 @@
     exclude_predicates asks without it and reports indexed_revision 0); and semantic, similar, spatial and temporal
     as forwards to graph.embedding.query.search and similar, graph.spatial.query.bounds and graph.temporal.query.range;
     spatial and temporal are refused transient internal until change 7 brings their responders, and semantic and
-    similar are refused invalid not_enabled, naming the verb and sending nothing, when the embedding_enabled key
-    (true when left out) is false (#579). localSearch and globalSearch
+    similar are refused invalid not_enabled, naming the verb and sending nothing, unless the embedding_enabled key
+    (false when left out) is true (#579). localSearch and globalSearch
     (and searchGraph, its own row served by the same handler, its data equal to globalSearch's for the same request)
     find entities by the words of their text. Each makes one request to graph.lexical.query.search (localSearch
     scoped to the group of entity_id at level 0 to 2, globalSearch over every entity), passing query, limit and
@@ -4806,8 +4806,8 @@
     the ended context. Filed by this change, status:blocked, linked
     without a closing keyword: #578 (graph-ingest's prefix read refuses a whole page for one poisoned entity, so a
     prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
-    questions outright when the composition offers no embedder; closed by the embedding_enabled key: set it false and
-    a word question is refused invalid not_enabled, left true it is a transient internal refusal naming
+    questions outright when the composition offers no embedder; closed by the embedding_enabled key: left out or false,
+    a word question is refused invalid not_enabled, set true it is a transient internal refusal naming
     graph.embedding.query.search, design D5 Q-B; since setup-04b-04-removal-keywords an nl resolve asks
     graph-lexical and never reaches graph-query's semantic). Issues: #195 adopted here (the
     integration test opens its client with natsfixture.Open) and stays open for other packages; #110 stays open for

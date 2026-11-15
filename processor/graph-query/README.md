@@ -13,10 +13,10 @@ holds a record per group of entities and which the search verbs attach to their 
 declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
 left alone, so a consumer can serve its own verb there.
 
-The table below is what graph-query serves. The semantic
-search (`semantic`, `similar`) is answered by graph-embedding when the `embedding_enabled`
-option is true, and refused `not_enabled` otherwise, which is what a tier 0 composition gets, and the time-range and area searches wait for their
-responders, which are not in the tree. `MIGRATION.md` lists what a consumer changes at its cutover.
+The table below is what graph-query serves. The semantic search (`semantic`, `similar`) is answered by
+graph-embedding when the `embedding_enabled` option is true, and refused `not_enabled` otherwise, which is what a
+tier 0 composition gets. The time-range and area searches wait for their responders, which are not in the tree.
+`MIGRATION.md` lists what a consumer changes at its cutover.
 
 ## Verbs
 

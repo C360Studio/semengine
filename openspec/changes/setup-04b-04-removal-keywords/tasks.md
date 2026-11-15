@@ -70,7 +70,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   config.go:46-53`). Accept: new `TestKeywordTextMatchesLexical`, `TestTextSuffixesIsRead`;
   `TestRepresentativesWithoutScan` and `TestRecordIsBounded` pass; `processor/graph-clustering/MIGRATION.md` says
   to set `text_suffixes` to graph-lexical's list. PR body: `Closes #650`.
-- [ ] 2.9 PR D. Distinctive keywords (design D8; owner question 1). Premise: keywords are the most counted words
+- [x] 2.9 PR D. Distinctive keywords (design D8; owner question 1). Premise: keywords are the most counted words
   (`terms.go:89`), 27.9% of them corpus-common on the probe (`notes/probes/keywords-probe.log`). Accept: new
   `TestKeywordsScorecard`, `TestKeywordsScoredWhenWritten` and `TestTelemetryRevisionKeepsKeywords`;
   `TestTickCost` passes unchanged;

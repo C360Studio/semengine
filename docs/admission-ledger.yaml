@@ -4126,7 +4126,12 @@
     graph/entitytext's Values selects under the suffixes NewMaintainer takes (graph-lexical's text_suffixes rule, empty
     the default list; setup-04b-04-removal-keywords D9, where the pin read every string value), never from ID positions,
     predicate names, other values or relationship objects, and a run longer than MaxWordBytes is not a word; kept
-    words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
+    words own their bytes; keywords are the group's distinctive words, each held word scored by the share of the
+    group's members holding it times ln(graph members with words / graph members holding it), the 10 best, ties
+    lexical, a word needing two holders in a group of two or more and a zero score kept out, against graph-wide counts
+    the Maintainer keeps beside the group counts, scored when a tick writes the group; a failed tick requeues the
+    groups it found unchanged too, so the next tick scores them again (setup-04b-04-removal-keywords D8, owner question
+    1, ruling #10 comment 6893325675; the pin kept the most counted words, terms.go:89 at the port); (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
     ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a level outside 0 to 2
     and an ID the canonical parser refuses; LevelPrefix(level) gives the prefix {level}. of every key at a level,
     refusing a level outside 0 to 2, the one range check GroupKey and DecodeCommunity use (new,
@@ -4147,8 +4152,11 @@
   known_risks: >-
     The precondition that each key's deliveries arrive in increasing revision order is change 7's, from one ordered
     watch, not a library promise; entity_revision's promise needs ascending order across keys too, which ADR-066 states
-    unprobed (ADR-112) and change 7 probes on the watch it wires. Keywords are the top words over capped per-entity
-    contributions: a word outside every member's top 32 cannot be a keyword. Tick's cost per changed group is paid while
+    unprobed (ADR-112) and change 7 probes on the watch it wires. Keywords are scored over capped per-entity
+    contributions: a word outside every member's top 32 cannot be a keyword (scorecard: 7.9% common words and 75.7%
+    keyword-search precision, against 2.9% and 77.8% for a TF-IDF over every word; notes/2.9.md). Between restarts a
+    group not written since the graph-wide counts changed keeps keywords scored against older counts; a graph whose
+    members all hold the same words has none. Tick's cost per changed group is paid while
     Upsert and Delete wait. Revision 0 is refused because a KV entry's first revision is 1 on nats.go v1.54.0 and the
     fixture's server image (TestKVRevisionStartsAtOne); nothing beyond that is promised. Held for item 9: the reader's
     consistency contract during a tick and prefix-page reads; held for change 7: the watch wiring and its refused config
@@ -4157,7 +4165,9 @@
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
     TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate,
-    TestKeywordTextMatchesLexical); storage_test.go
+    TestKeywordTextMatchesLexical); keywords_test.go (TestKeywordsScoredWhenWritten,
+    TestFailedTickRebuildsUnchangedGroups, TestTelemetryRevisionKeepsKeywords); keywords_scorecard_test.go
+    (TestKeywordsScorecard); storage_test.go
     (TestLevelPrefix, TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
     (TestRecordNamesItsLatestWrite, TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
     TestRevisionZeroRefused, TestTickBeforeBootstrap, TestFailedWriteRetried,

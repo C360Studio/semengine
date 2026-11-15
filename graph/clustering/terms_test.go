@@ -245,23 +245,27 @@ func TestSummaryTemplate(t *testing.T) {
 }
 
 // TestKeywordTextMatchesLexical: an entity's keywords are counted from the values graph-lexical
-// reads as its text under the same suffixes, and from nothing else. The entity holds values
-// under configured and unconfigured suffixes, a number and a relationship; each text value is
-// one word held once, so the words the maintainer publishes are exactly those values, lexically
-// ordered. A second member, smaller by ID, holds a string only under a suffix no case selects: it
-// adds no keyword and is no representative. The expected values come from entitytext built as
-// graph-lexical builds it.
+// reads as its text under the same suffixes, and from nothing else. Two entities hold the same
+// values under configured and unconfigured suffixes, a number and a relationship; each text value
+// is one word held once by each, so the words the maintainer publishes are exactly those values,
+// lexically ordered. A third member, smaller by ID, holds a string only under a suffix no case selects: it
+// adds no keyword and is no representative. An entity in another deployment holds one other
+// word under every case's suffixes, so no text value is held by every member with words. The
+// expected values come from entitytext built as graph-lexical builds it.
 func TestKeywordTextMatchesLexical(t *testing.T) {
-	id := "acme.dep1.src.code.func.f1"
-	state := &graph.EntityState{ID: id, Triples: []message.Triple{
-		{Subject: id, Predicate: "code.func.name", Object: "parse"},
-		{Subject: id, Predicate: "code.doc.comment", Object: "decoder"},
-		{Subject: id, Predicate: "code.func.signature", Object: "reader"},
-		{Subject: id, Predicate: "code.func.language", Object: "golang"},
-		{Subject: id, Predicate: "code.func.body", Object: "buffer"},
-		{Subject: id, Predicate: "code.func.lines", Object: 12.0},
-		{Subject: id, Predicate: "code.link.caller", Object: "acme.dep1.src.code.func.main"},
-	}}
+	stateOf := func(id string) *graph.EntityState {
+		return &graph.EntityState{ID: id, Triples: []message.Triple{
+			{Subject: id, Predicate: "code.func.name", Object: "parse"},
+			{Subject: id, Predicate: "code.doc.comment", Object: "decoder"},
+			{Subject: id, Predicate: "code.func.signature", Object: "reader"},
+			{Subject: id, Predicate: "code.func.language", Object: "golang"},
+			{Subject: id, Predicate: "code.func.body", Object: "buffer"},
+			{Subject: id, Predicate: "code.func.lines", Object: 12.0},
+			{Subject: id, Predicate: "code.link.caller", Object: "acme.dep1.src.code.func.main"},
+		}}
+	}
+	id, twin := "acme.dep1.src.code.func.f1", "acme.dep1.src.code.func.f2"
+	state := stateOf(id)
 	for name, suffixes := range map[string][]string{
 		"default":   nil,
 		"semsource": append(entitytext.DefaultSuffixes(), ".signature", ".comment"),
@@ -275,8 +279,10 @@ func TestKeywordTextMatchesLexical(t *testing.T) {
 			}
 
 			m, kv := newTextMaintainer(t, suffixes)
-			if err := m.Upsert(id, 1, state); err != nil {
-				t.Fatalf("Upsert: %v", err)
+			for _, member := range []string{id, twin} {
+				if err := m.Upsert(member, 1, stateOf(member)); err != nil {
+					t.Fatalf("Upsert(%s): %v", member, err)
+				}
 			}
 			const untexted = "acme.dep1.src.code.func.a0"
 			if err := m.Upsert(untexted, 1, &graph.EntityState{ID: untexted, Triples: []message.Triple{
@@ -284,14 +290,26 @@ func TestKeywordTextMatchesLexical(t *testing.T) {
 			}}); err != nil {
 				t.Fatalf("Upsert(%s): %v", untexted, err)
 			}
+			const elsewhere = "acme.dep2.src.code.func.f1"
+			if err := m.Upsert(elsewhere, 1, &graph.EntityState{ID: elsewhere, Triples: []message.Triple{
+				{Subject: elsewhere, Predicate: "code.func.body", Object: "unrelated"},
+				{Subject: elsewhere, Predicate: "code.func.language", Object: "unrelated"},
+			}}); err != nil {
+				t.Fatalf("Upsert(%s): %v", elsewhere, err)
+			}
 			m.BootstrapDone()
 			mustTick(t, m)
-			for key, r := range kv.records(t) {
+			records := kv.records(t)
+			for _, key := range groupKeys(id) {
+				r := records[key]
+				if r == nil {
+					t.Fatalf("no record %s", key)
+				}
 				if !slices.Equal(r.Keywords, want) {
 					t.Fatalf("%s keywords = %q, want the text values %q", key, r.Keywords, want)
 				}
-				if !slices.Equal(r.RepEntities, []string{id}) {
-					t.Fatalf("%s representatives = %q, want [%s]", key, r.RepEntities, id)
+				if !slices.Equal(r.RepEntities, []string{id, twin}) {
+					t.Fatalf("%s representatives = %q, want [%s %s]", key, r.RepEntities, id, twin)
 				}
 			}
 		})

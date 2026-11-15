@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -161,12 +162,15 @@ func storedRecord(t *testing.T, kv jetstream.KeyValue, key string) clustering.Co
 	return record
 }
 
-// recordJSON is the reply's record for record, from the bucket's own bytes.
+// recordJSON is the reply's record for record, from the bucket's own bytes. A record with no
+// keywords has none in the reply.
 func recordJSON(t *testing.T, record clustering.Community) string {
 	t.Helper()
-	encoded, err := json.Marshal(map[string]any{
-		"member_count": record.MemberCount, "community_summary": record.StatisticalSummary, "keywords": record.Keywords,
-	})
+	fields := map[string]any{"member_count": record.MemberCount, "community_summary": record.StatisticalSummary}
+	if len(record.Keywords) > 0 {
+		fields["keywords"] = record.Keywords
+	}
+	encoded, err := json.Marshal(fields)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,13 +414,17 @@ func TestSearchRequestsDecodeStrictly(t *testing.T) {
 func TestLocalSearchIsScopedToTheGroup(t *testing.T) {
 	stack := startCommunityStack(t)
 	stack.write(t, drone1, [2]string{vocabulary.DCTermsTitle, "pump station assembly line"})
-	groupLast := stack.write(t, drone2, [2]string{vocabulary.DCTermsTitle, "valve"})
+	// station, held by both members of the group and not by otherDrone, is its keyword.
+	groupLast := stack.write(t, drone2, [2]string{vocabulary.DCTermsTitle, "valve station"})
 	last := stack.write(t, otherDrone, [2]string{vocabulary.DCTermsTitle, "pump"})
 	tick(t, stack.maintainer)
 	awaitWordIndexed(t, stack.client, last)
 	awaitCommunityView(t, stack.component, systemGroupKey, groupLast)
 	rows := batchRows(t, stack.client, drone1, otherDrone)
 	record := storedRecord(t, stack.records, systemGroupKey)
+	if !slices.Equal(record.Keywords, []string{"station"}) {
+		t.Fatalf("%s keywords = %q, want [station]: the reply's record would carry none", systemGroupKey, record.Keywords)
+	}
 
 	// The premise: unscoped, the entity outside the group is the better match.
 	raw, err := wordSearchDirect(t, stack.client, graph.LexicalSearchRequest{Query: "pump"})

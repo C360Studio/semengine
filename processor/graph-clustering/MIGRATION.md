@@ -59,6 +59,13 @@ Read these. Nothing errors.
   representatives. *Do:* set `text_suffixes` to the list your graph-lexical uses, so keywords and word search read
   the same text. SemSource adds `.signature` and `.comment` to the default list (for graph-embedding); carry those two
   over too, or a function's signature and doc comment stop counting.
+- **Keywords are the words that set a group apart.** SemStreams' keywords were the words a group used most, so most
+  groups shared the same few (`not`, `that`, `graph`). Here each word is scored by how many of the group's members
+  hold it against how many of the whole graph's do, and a word every member with words holds is never a keyword: a
+  graph of one entity, or one whose members all hold the same words, has no keywords. A group is scored when its
+  record is written, so a group nobody touched keeps keywords scored against older counts until a restart.
+  *Do:* do not assert a group's keywords from its own members alone; hold an expectation on the whole graph, or
+  restart before reading.
 - **The readiness key counts what is held, not what is published.** `GRAPH_STATUS` under `graph-clustering` reports a
   revision indexed once the Maintainer has applied it, which is before the next tick writes it. A reader that needs a
   group's published state reads the record's `entity_revision`. *Do:* do not gate a read on `indexed_revision` for

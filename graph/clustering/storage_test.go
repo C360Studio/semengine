@@ -94,6 +94,8 @@ func TestDecodeCommunity(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	id := "acme.dep1.src.docs.note.n1"
 	mustUpsert(t, m, id, 7, "alpha")
+	// Another deployment's entity, so alpha is not held by every member with words.
+	mustUpsert(t, m, "acme.dep2.src.docs.note.n1", 1, "other")
 	m.BootstrapDone()
 	mustTick(t, m)
 

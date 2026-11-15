@@ -10,7 +10,9 @@ bucket current. A *community* here is a *group*: every entity whose ID shares th
 so no external provider and no other index is involved. For each group the component keeps one bounded record
 (counts, keywords, a few sample IDs, never a member list); `graph/clustering` defines the record, and its README
 lists the fields. Keywords are counted from each member's text, the values whose predicates end in one of
-`text_suffixes`, the same rule graph-lexical indexes by.
+`text_suffixes`, the same rule graph-lexical indexes by. They are the words that set a group apart from the rest of
+the graph, scored when the group's record is written; that README says how, and why a group nobody touched can keep
+keywords scored against older counts until a restart.
 
 A *revision* is the number NATS gives each write to a bucket. The component has two parts:
 

@@ -235,8 +235,8 @@ func (m *Maintainer) Tick(ctx context.Context) error {
 		m.mu.Unlock()
 	}
 
-	// A failure requeues every taken group, the written ones too: the next tick finds
-	// their records equal to the published ones and does not write them again.
+	// A failure requeues every taken group, the written and the unchanged ones too: the
+	// next tick builds each again and writes only those whose record differs.
 	writes, removals, taken := m.plan()
 	for _, record := range writes {
 		if err := m.write(ctx, record); err != nil {
@@ -281,11 +281,14 @@ func (m *Maintainer) plan() (writes []*Community, removals []string, taken []gro
 			continue
 		}
 		record := newCommunity(ref.level, ref.id, g.members, g.revision, g.types, g.words, m.words, g.textMembers.first(MaxRepEntities))
+		// A record equal to the one written needs no write, but the group stays taken: if
+		// this tick fails, the next one must build it again against the graph-wide counts
+		// of that moment, which may have moved.
+		taken = append(taken, ref)
 		if reflect.DeepEqual(record, m.published[key]) {
 			continue
 		}
 		writes = append(writes, record)
-		taken = append(taken, ref)
 	}
 	for key := range m.stale {
 		if !m.exists(key) { // a live group's write replaces its listed key

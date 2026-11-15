@@ -1,10 +1,17 @@
 package clustering
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/message"
 )
 
 // TestKeywordsScoredWhenWritten: a group's keywords are its words scored by the share of
@@ -77,6 +84,121 @@ func TestKeywordsScoredWhenWritten(t *testing.T) {
 		wantKeywords(t, kv, "0.acme.dep1.s3.docs", want...)
 		wantKeywords(t, kv, "0.acme.dep1.s4.docs", "zzz")
 	})
+}
+
+// TestFailedTickRebuildsUnchangedGroups: a group a failed tick found unchanged is built again by
+// the next tick, against the graph-wide counts of that moment. Here those counts move between
+// the failed tick and the good one, so s1's keyword alpha, held by every member with words by
+// then, scores ln(4/4) = 0 and is no keyword any more.
+func TestFailedTickRebuildsUnchangedGroups(t *testing.T) {
+	m, kv := newTestMaintainer(t)
+	a0, a1 := "acme.dep1.s1.docs.note.a0", "acme.dep1.s1.docs.note.a1"
+	b0, c0 := "acme.dep1.s2.docs.note.b0", "acme.dep1.s3.docs.note.c0"
+	mustUpsert(t, m, a0, 1, "alpha")
+	mustUpsert(t, m, a1, 1, "alpha")
+	mustUpsert(t, m, b0, 1, "beta")
+	mustUpsert(t, m, c0, 1, "gamma")
+	m.BootstrapDone()
+	mustTick(t, m)
+	s1 := "0.acme.dep1.s1.docs"
+	wantKeywords(t, kv, s1, "alpha") // 2/2*ln(4/2)
+
+	// The same value at a newer revision changes s1's records. The first failing tick writes s1
+	// (the first key) and fails on the next; the second fails on its first write, after finding
+	// s1's record equal to the one written.
+	mustUpsert(t, m, a1, 2, "alpha")
+	for _, allowed := range []int{1, 0} {
+		n := 0
+		kv.set(func(f *fakeKV) {
+			f.beforePut = func(context.Context, string) error {
+				if n++; n > allowed {
+					return errors.New("injected put failure")
+				}
+				return nil
+			}
+		})
+		if err := m.Tick(t.Context()); err == nil {
+			t.Fatalf("Tick failing after %d writes = nil, want an error", allowed)
+		}
+	}
+	kv.set(func(f *fakeKV) { f.beforePut = nil })
+
+	mustUpsert(t, m, b0, 2, "alpha beta")
+	mustUpsert(t, m, c0, 2, "alpha gamma")
+	mustTick(t, m)
+	wantKeywords(t, kv, s1)
+}
+
+// TestTelemetryRevisionKeepsKeywords: revisions that change only a value no text rule reads
+// (a size) change no graph-wide count, so every record a tick publishes equals the record a
+// restart fed the same values would publish, and a group none of whose members changed is
+// never written.
+func TestTelemetryRevisionKeepsKeywords(t *testing.T) {
+	state := func(id, text string, size float64) *graph.EntityState {
+		return &graph.EntityState{ID: id, Triples: []message.Triple{
+			{Subject: id, Predicate: "docs.note.body", Object: text},
+			{Subject: id, Predicate: "docs.note.size", Object: size},
+		}}
+	}
+	type value struct {
+		revision uint64
+		text     string
+		size     float64
+	}
+	values := map[string]*value{
+		"acme.dep1.s1.docs.note.a0": {1, "alpha shared", 1},
+		"acme.dep1.s1.docs.note.a1": {1, "alpha shared", 1},
+		"acme.dep2.s1.docs.note.b0": {1, "beta shared", 1},
+		"acme.dep2.s1.docs.note.b1": {1, "beta shared", 1},
+	}
+	feed := func(m *Maintainer) {
+		for _, id := range slices.Sorted(maps.Keys(values)) {
+			v := values[id]
+			if err := m.Upsert(id, v.revision, state(id, v.text, v.size)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		m.BootstrapDone()
+	}
+	restartRecords := func() map[string]*Community {
+		fresh, kv := newTestMaintainer(t)
+		feed(fresh)
+		mustTick(t, fresh)
+		return kv.records(t)
+	}
+
+	m, kv := newTestMaintainer(t)
+	feed(m)
+	mustTick(t, m)
+	wantKeywords(t, kv, "0.acme.dep1.s1.docs", "alpha") // 2/2*ln(4/2); shared, ln(4/4), is none
+	wantKeywords(t, kv, "0.acme.dep2.s1.docs", "beta")
+	kv.takeOps()
+
+	for i := range 20 {
+		id := []string{"acme.dep1.s1.docs.note.a0", "acme.dep1.s1.docs.note.a1"}[i%2]
+		values[id].revision++
+		values[id].size++
+		v := values[id]
+		if err := m.Upsert(id, v.revision, state(id, v.text, v.size)); err != nil {
+			t.Fatal(err)
+		}
+		mustTick(t, m)
+		for _, op := range kv.takeOps() {
+			if strings.Contains(op, "acme.dep2") {
+				t.Fatalf("revision %d of %s: %s, a group with no changed member was written", v.revision, id, op)
+			}
+		}
+		got, want := kv.records(t), restartRecords()
+		if len(got) != len(want) {
+			t.Fatalf("revision %d of %s: records %q, a restart publishes %q", v.revision, id,
+				slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))
+		}
+		for key, w := range want {
+			if !reflect.DeepEqual(got[key], w) {
+				t.Fatalf("revision %d of %s: record %s = %+v, a restart publishes %+v", v.revision, id, key, got[key], w)
+			}
+		}
+	}
 }
 
 func wantKeywords(t *testing.T, kv *fakeKV, key string, want ...string) {

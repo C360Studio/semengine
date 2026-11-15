@@ -36,6 +36,11 @@
 >   `entity_id_edges`, `semantic_edges`, `allow_ungated_reads`) are refused at boot with guidance. The pin's
 >   anomaly detection, which also ran in graph-clustering, is outside this record and is never ported (owner ruling,
 >   PR #582 comment 6768832111).
+> - Keywords are the words that set a group apart from the whole graph, not its most counted words (owner ruling,
+>   issue #10 comment 6893325675): each is scored when the group's record is written, against graph-wide counts the
+>   `Maintainer` keeps beside the group counts, so a tick still writes only the groups that changed and nothing is
+>   rescanned. Between restarts a group nobody touched keeps keywords scored against older counts; a restart scores
+>   every group again.
 > - Not decided here: how `processor/graph-query` reads these records during a tick. The statement
 >   "zero shipped deployments consume the community index" is the pin's measurement, not this repository's.
 

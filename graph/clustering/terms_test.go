@@ -70,7 +70,9 @@ func TestLongLiteralIsNotAWord(t *testing.T) {
 		reps = append(reps, id)
 	}
 
-	record := newCommunity(0, "acme.dep1.src.docs", 10, 1, typeCounts, wordCounts, reps)
+	// The graph holds ten more members, without these words, so both score alike.
+	graphCounts := graphWords{members: 20, holders: wordCounts}
+	record := newCommunity(0, "acme.dep1.src.docs", 10, 1, typeCounts, wordCounts, graphCounts, reps)
 	if !slices.Equal(record.Keywords, []string{"notes", "release"}) {
 		t.Fatalf("keywords = %q, want [notes release]", record.Keywords)
 	}
@@ -95,8 +97,11 @@ func TestRecordIsBounded(t *testing.T) {
 		typeCounts[strings.Repeat(string(rune('a'+i)), 246)] = math.MaxInt - i
 	}
 	wordCounts := map[string]int{}
+	graphCounts := graphWords{members: math.MaxInt, holders: map[string]int{}}
 	for i := range MaxKeywords + 1 {
-		wordCounts[strings.Repeat(string(rune('a'+i)), MaxWordBytes)] = math.MaxInt - i
+		w := strings.Repeat(string(rune('a'+i)), MaxWordBytes)
+		wordCounts[w] = 1<<40 - i
+		graphCounts.holders[w] = 1 << 41
 	}
 	var reps []string
 	for i := range MaxRepEntities + 1 {
@@ -104,7 +109,7 @@ func TestRecordIsBounded(t *testing.T) {
 		reps = append(reps, id+strings.Repeat("x", 256-len(id))) // a 256-byte entity ID
 	}
 
-	record := newCommunity(0, groupID, math.MaxInt, math.MaxUint64, typeCounts, wordCounts, reps)
+	record := newCommunity(0, groupID, math.MaxInt, math.MaxUint64, typeCounts, wordCounts, graphCounts, reps)
 	if record.EntityRevision != math.MaxUint64 {
 		t.Fatalf("record carries entity revision %d, want %d", record.EntityRevision, uint64(math.MaxUint64))
 	}
@@ -129,7 +134,8 @@ func TestRecordIsBounded(t *testing.T) {
 // TestKeywordsIgnoreIDAndPredicates: every member shares its ID positions and predicate
 // names, and one carries a relationship to another entity; only words in string values
 // count, so the keywords are exactly the words of the members' text, in the record built
-// from the counts and in every record a Maintainer publishes.
+// from the counts and in every record a Maintainer publishes for them. One more entity, in
+// another deployment and without those words, keeps them from being held by the whole graph.
 func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	wordCounts := map[string]int{}
@@ -147,8 +153,11 @@ func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
 			t.Fatalf("Upsert(%s): %v", id, err)
 		}
 	}
+	other := "acme.dep2.src.docs.note.n0"
+	mustUpsert(t, m, other, 1, "unrelated")
 	want := []string{"hovering", "steady"}
-	record := newCommunity(0, "acme.dep1.src.robotics", 3, 1, map[string]int{"drone": 3}, wordCounts, nil)
+	graphCounts := graphWords{members: 4, holders: wordCounts}
+	record := newCommunity(0, "acme.dep1.src.robotics", 3, 1, map[string]int{"drone": 3}, wordCounts, graphCounts, nil)
 	if !slices.Equal(record.Keywords, want) {
 		t.Fatalf("keywords = %q, want %q", record.Keywords, want)
 	}
@@ -158,11 +167,12 @@ func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
 		t.Fatalf("Tick: %v", err)
 	}
 	records := kv.records(t)
-	if len(records) != 3 {
-		t.Fatalf("published %d records, want 3", len(records))
+	if len(records) != 6 {
+		t.Fatalf("published %d records, want 6", len(records))
 	}
-	for key, r := range records {
-		if !slices.Equal(r.Keywords, want) {
+	for _, key := range groupKeys("acme.dep1.src.robotics.drone.d0") {
+		r := records[key]
+		if r == nil || !slices.Equal(r.Keywords, want) {
 			t.Fatalf("published %s keywords = %q, want %q", key, r.Keywords, want)
 		}
 	}
@@ -208,17 +218,18 @@ func TestEntityContributionIsCapped(t *testing.T) {
 // TestSummaryTemplate checks the exact text the summary template gives, with lexical
 // tie-breaks.
 func TestSummaryTemplate(t *testing.T) {
+	// Of ten graph members, robotics scores 3/5*ln(10/3) and the other two tie at 2/5*ln(10/2).
+	words := map[string]int{"robotics": 3, "autonomous": 2, "navigation": 2}
 	record := newCommunity(0, "c360.platform.robotics.system", 5, 1,
-		map[string]int{"drone": 3, "sensor": 2},
-		map[string]int{"robotics": 3, "autonomous": 2, "navigation": 1}, nil)
+		map[string]int{"drone": 3, "sensor": 2}, words, graphWords{members: 10, holders: words}, nil)
 	want := "Community of 5 entities including 3 drones, 2 sensors. Key themes: robotics, autonomous, navigation."
 	if record.StatisticalSummary != want {
 		t.Fatalf("summary = %q, want %q", record.StatisticalSummary, want)
 	}
 
+	tiedWords := map[string]int{"f": 2, "e": 2, "d": 2, "c": 2, "b": 2, "a": 2}
 	tied := newCommunity(1, "c360.platform.robotics", 4, 1,
-		map[string]int{"wheel": 1, "arm": 1, "base": 1, "cam": 1},
-		map[string]int{"f": 1, "e": 1, "d": 1, "c": 1, "b": 1, "a": 1}, nil)
+		map[string]int{"wheel": 1, "arm": 1, "base": 1, "cam": 1}, tiedWords, graphWords{members: 8, holders: tiedWords}, nil)
 	want = "Community of 4 entities including 1 arm, 1 base, 1 cam. Key themes: a, b, c, d, e."
 	if tied.StatisticalSummary != want {
 		t.Fatalf("tied summary = %q, want %q", tied.StatisticalSummary, want)
@@ -227,7 +238,7 @@ func TestSummaryTemplate(t *testing.T) {
 		t.Fatalf("type counts = %v, want %v", tied.TypeCounts, want)
 	}
 
-	bare := newCommunity(2, "c360.platform", 1, 1, nil, nil, nil)
+	bare := newCommunity(2, "c360.platform", 1, 1, nil, nil, graphWords{}, nil)
 	if want := "Community of 1 entities."; bare.StatisticalSummary != want {
 		t.Fatalf("bare summary = %q, want %q", bare.StatisticalSummary, want)
 	}

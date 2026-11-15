@@ -59,6 +59,7 @@ type Maintainer struct {
 	members      map[string]*member
 	refused      map[string]struct{}
 	groups       [levels]map[string]*group
+	words        graphWords            // over every held member, beside the groups' own counts
 	dirty        map[groupRef]struct{} // touched since their last successful publication
 	published    map[string]*Community // by key: the record last written
 	stale        map[string]struct{}   // listed keys whose removal is pending
@@ -108,6 +109,7 @@ func NewMaintainer(storage *NATSCommunityStorage, textSuffixes []string) (*Maint
 		dirty:     map[groupRef]struct{}{},
 		published: map[string]*Community{},
 		stale:     map[string]struct{}{},
+		words:     graphWords{holders: map[string]int{}},
 	}
 	for level := range m.groups {
 		m.groups[level] = map[string]*group{}
@@ -278,7 +280,7 @@ func (m *Maintainer) plan() (writes []*Community, removals []string, taken []gro
 			}
 			continue
 		}
-		record := newCommunity(ref.level, ref.id, g.members, g.revision, g.types, g.words, g.textMembers.first(MaxRepEntities))
+		record := newCommunity(ref.level, ref.id, g.members, g.revision, g.types, g.words, m.words, g.textMembers.first(MaxRepEntities))
 		if reflect.DeepEqual(record, m.published[key]) {
 			continue
 		}
@@ -352,6 +354,12 @@ func (m *Maintainer) add(c *contribution) {
 	if c == nil {
 		return
 	}
+	if len(c.words) > 0 {
+		m.words.members++
+	}
+	for _, w := range c.words {
+		m.words.holders[w]++
+	}
 	for level, id := range c.groups {
 		g := m.groups[level][id]
 		if g == nil {
@@ -373,6 +381,12 @@ func (m *Maintainer) add(c *contribution) {
 func (m *Maintainer) subtract(c *contribution) {
 	if c == nil {
 		return
+	}
+	if len(c.words) > 0 {
+		m.words.members--
+	}
+	for _, w := range c.words {
+		decrement(m.words.holders, w)
 	}
 	for level, id := range c.groups {
 		g := m.groups[level][id]

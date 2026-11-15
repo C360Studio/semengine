@@ -213,7 +213,7 @@ func (c *Component) start(ctx context.Context) error {
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "community storage")
 	}
-	maintainer, err := clustering.NewMaintainer(storage)
+	maintainer, err := clustering.NewMaintainer(storage, c.config.TextSuffixes)
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "community maintainer")
 	}

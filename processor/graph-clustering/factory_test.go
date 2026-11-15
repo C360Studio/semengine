@@ -17,7 +17,7 @@ func TestCreateGraphClusteringRequiresNATSClient(t *testing.T) {
 }
 
 // TestRegisterAddsGraphClustering: Register adds the graph-clustering factory, whose schema lists
-// the four kept keys and no removed one, which asks boot for no model registry (no provider at
+// the five keys it defines and no removed one, which asks boot for no model registry (no provider at
 // tier 0), and whose port declarer reports the ports the factory builds.
 func TestRegisterAddsGraphClustering(t *testing.T) {
 	registry := component.NewRegistry()
@@ -28,7 +28,7 @@ func TestRegisterAddsGraphClustering(t *testing.T) {
 	if !ok {
 		t.Fatal("Register did not add graph-clustering")
 	}
-	kept := []string{"ports", "detection_interval", "startup_attempts", "startup_interval_ms"}
+	kept := []string{"ports", "detection_interval", "text_suffixes", "startup_attempts", "startup_interval_ms"}
 	for _, key := range kept {
 		if _, ok := registration.Schema.Properties[key]; !ok {
 			t.Errorf("schema has no %q property", key)

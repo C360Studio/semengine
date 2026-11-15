@@ -9,7 +9,8 @@ bucket current. A *community* here is a *group*: every entity whose ID shares th
 3 parts (level 1) or first 2 parts (level 2). Groups are derived from IDs, not detected from relationships (ADR-099),
 so no external provider and no other index is involved. For each group the component keeps one bounded record
 (counts, keywords, a few sample IDs, never a member list); `graph/clustering` defines the record, and its README
-lists the fields.
+lists the fields. Keywords are counted from each member's text, the values whose predicates end in one of
+`text_suffixes`, the same rule graph-lexical indexes by.
 
 A *revision* is the number NATS gives each write to a bucket. The component has two parts:
 
@@ -65,6 +66,7 @@ when the key reads `degraded`.
 | --- | --- | --- | --- |
 | `ports` | object | the input above | Inputs only. A `ports` block that is present is used as written; one that is absent takes the default |
 | `detection_interval` | string | `30s` | Time between publications, a Go duration such as `30s` or `5m`. A value that does not parse or is not above zero is refused |
+| `text_suffixes` | array | `.title .content .description .summary .text .name .body .abstract .subject` | Predicate suffixes whose string values keywords are counted from, as graph-lexical's key of the same name; set both to one list |
 | `startup_attempts` | int | 30 | Tries to find `ENTITY_STATES` at startup; negative is refused |
 | `startup_interval_ms` | int | 500 | Pause between those tries; negative is refused |
 

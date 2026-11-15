@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/types"
 )
@@ -48,6 +49,7 @@ func (e *IncompleteError) Error() string {
 // may be called from the watch goroutine and a ticker goroutine at once.
 type Maintainer struct {
 	storage *NATSCommunityStorage
+	text    entitytext.Rule // which of an entity's values its keywords are counted from
 
 	// tickMu makes one Tick run at a time. It is held across storage I/O; mu is not, so
 	// Upsert and Delete never wait on a write.
@@ -91,13 +93,16 @@ type groupRef struct {
 	id    string
 }
 
-// NewMaintainer returns a Maintainer publishing to storage. It refuses a nil storage.
-func NewMaintainer(storage *NATSCommunityStorage) (*Maintainer, error) {
+// NewMaintainer returns a Maintainer publishing to storage. Keywords are counted from an
+// entity's values whose predicates end in one of textSuffixes, as graph-lexical's text_suffixes
+// selects them (entitytext.New); empty means entitytext.DefaultSuffixes. It refuses a nil storage.
+func NewMaintainer(storage *NATSCommunityStorage, textSuffixes []string) (*Maintainer, error) {
 	if storage == nil {
 		return nil, errs.WrapInvalid(errs.ErrMissingConfig, "Maintainer", "NewMaintainer", "storage is nil")
 	}
 	m := &Maintainer{
 		storage:   storage,
+		text:      entitytext.New(textSuffixes, 0),
 		members:   map[string]*member{},
 		refused:   map[string]struct{}{},
 		dirty:     map[groupRef]struct{}{},
@@ -122,7 +127,7 @@ func (m *Maintainer) Upsert(entityID string, revision uint64, state *graph.Entit
 	if revision == 0 {
 		return errRevisionZero(entityID, "Upsert")
 	}
-	next, refusal := newContribution(entityID, state)
+	next, refusal := newContribution(m.text, entityID, state)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -392,8 +397,9 @@ func decrement(counts map[string]int, key string) {
 	}
 }
 
-// newContribution returns what state adds to its groups, or nil and the refusal.
-func newContribution(entityID string, state *graph.EntityState) (*contribution, error) {
+// newContribution returns what state adds to its groups, its words read under text, or nil and
+// the refusal.
+func newContribution(text entitytext.Rule, entityID string, state *graph.EntityState) (*contribution, error) {
 	refuse := func(err error) (*contribution, error) {
 		return nil, errs.WrapInvalid(fmt.Errorf("entity %q: %w", entityID, err), "Maintainer", "Upsert", "refuse entity")
 	}
@@ -411,7 +417,7 @@ func newContribution(entityID string, state *graph.EntityState) (*contribution, 
 		id:     entityID,
 		groups: groupIDs(eid),
 		typ:    eid.Type,
-		words:  entityWords(state),
+		words:  entityWords(text, state),
 	}, nil
 }
 

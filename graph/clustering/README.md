@@ -20,9 +20,9 @@ from the IDs, which is the decision of [ADR-099](../../docs/adr/099-community-pa
 The pin's label propagation is not carried.
 
 The record for a group is a `Community`: its `ID` (the prefix), `Level`, `MemberCount`, `TypeCounts` (members by the
-ID's fifth part, the 10 most common), `Keywords` (the 10 most frequent words in members' string values), a one-line
+ID's fifth part, the 10 most common), `Keywords` (the 10 most frequent words in members' text), a one-line
 `StatisticalSummary` built from those counts, and `RepEntities` (up to 5 member IDs, the lexically smallest among
-members that have words). It never lists the members, so its size does not grow with the group: every field is
+members whose text has words). It never lists the members, so its size does not grow with the group: every field is
 capped, and the encoded record stays under `MaxRecordBytes` (8 KiB). The key is `{level}.{prefix}`, for example
 `1.acme.dep1.gcs1`.
 
@@ -43,9 +43,13 @@ not JSON, a record whose level is not 0, 1 or 2, a record whose level and ID do 
 To read every record at one level, a reader lists the keys that start with `LevelPrefix(level)`, the level and a dot,
 which refuses a level outside 0 to 2.
 
-A *word* is a run of 3 to `MaxWordBytes` (32) ASCII letters and digits in a string value, ignoring case and a short
-list of stop words. A longer run is not a word, and nothing is cut. IDs, predicate names and the objects of
-relationships (other entity IDs) add no words. Each entity adds at most its `MaxEntityTerms` (32) most frequent words
+A member's *text* is the values `graph/entitytext` selects: string values, relationships skipped, whose predicates end
+in one of the suffixes given to `NewMaintainer` (empty means `entitytext.DefaultSuffixes`). That is the rule
+graph-lexical's `text_suffixes` applies, so given the same list, keywords and the word index read the same text. A
+*word* is a run of 3 to `MaxWordBytes` (32) ASCII letters and digits in that text, ignoring case and a short list of
+stop words. A longer run is not a word, and nothing is cut. IDs, predicate names, values under other suffixes and the
+objects of relationships (other entity IDs) add no words; a group whose members have no text has no keywords and no
+representatives. Each entity adds at most its `MaxEntityTerms` (32) most frequent words
 to each of its groups, so a word that is outside the top 32 of every member cannot become a keyword.
 
 ## Basic use
@@ -59,7 +63,8 @@ storage, err := clustering.NewNATSCommunityStorage(client.NewKVStore(kv))
 if err != nil {
     return err
 }
-m, err := clustering.NewMaintainer(storage)
+// textSuffixes: the list your graph-lexical's text_suffixes holds; nil is the default list.
+m, err := clustering.NewMaintainer(storage, textSuffixes)
 if err != nil {
     return err
 }

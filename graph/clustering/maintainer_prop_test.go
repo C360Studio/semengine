@@ -264,7 +264,7 @@ type matchCounts struct {
 func TestMaintainerMatchesModel(t *testing.T) {
 	var c matchCounts
 	rapid.Check(t, func(rt *rapid.T) {
-		m, kv, err := newFakeMaintainer()
+		m, kv, err := newFakeMaintainer(nil)
 		if err != nil {
 			rt.Fatal(err)
 		}
@@ -517,7 +517,7 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 		}
 
 		run := func(label string) (map[string][]byte, string, []string) {
-			m, kv, err := newFakeMaintainer()
+			m, kv, err := newFakeMaintainer(nil)
 			if err != nil {
 				rt.Fatal(err)
 			}

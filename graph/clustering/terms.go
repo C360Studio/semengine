@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
 )
 
 // minWordBytes is the shortest word.
@@ -52,18 +53,14 @@ func isWordByte(b byte) bool {
 
 // entityWords returns what an entity contributes to its groups' keywords: its
 // MaxEntityTerms most frequent words, most frequent first, ties broken lexically. Words
-// come only from string values; the ID's positions, predicate names and the object of a
-// relationship (another entity's ID) add none.
-func entityWords(state *graph.EntityState) []string {
+// come only from the values text selects (entitytext.Rule.Values), so keywords read the
+// same text as the word index; the ID's positions, predicate names, other values and the
+// object of a relationship (another entity's ID) add none.
+func entityWords(text entitytext.Rule, state *graph.EntityState) []string {
 	counts := map[string]int{}
-	for _, triple := range state.Triples {
-		if triple.IsRelationship() {
-			continue
-		}
-		if value, ok := triple.Object.(string); ok {
-			for _, w := range extractWords(value) {
-				counts[w]++
-			}
+	for _, value := range text.Values(state) {
+		for _, w := range extractWords(value) {
+			counts[w]++
 		}
 	}
 	// The words are substrings of the values (strings.ToLower returns lower-case input

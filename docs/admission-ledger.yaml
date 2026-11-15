@@ -4122,8 +4122,10 @@
     its mark with it, so the next tick writes them; with the caller feeding ascending revisions across keys every
     ENTITY_STATES write at or below it is reflected (setup-04a-04-graph-roots-graph-query-communities D1); (3) Community
     is bounded by construction (no member list, no membership hash, MaxKeywords 10 types and keywords, MaxRepEntities 5,
-    MaxEntityTerms 32, MaxWordBytes 32, encoded under MaxRecordBytes 8 KiB); words come only from string values, never
-    from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word; kept
+    MaxEntityTerms 32, MaxWordBytes 32, encoded under MaxRecordBytes 8 KiB); words come only from the values
+    graph/entitytext's Values selects under the suffixes NewMaintainer takes (graph-lexical's text_suffixes rule, empty
+    the default list; setup-04b-04-removal-keywords D9, where the pin read every string value), never from ID positions,
+    predicate names, other values or relationship objects, and a run longer than MaxWordBytes is not a word; kept
     words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
     ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a level outside 0 to 2
     and an ID the canonical parser refuses; LevelPrefix(level) gives the prefix {level}. of every key at a level,
@@ -4139,8 +4141,8 @@
     methods, NewNATSCommunityStorageWithConfig, CommunityStorageConfig (design D3, inventory § 8); the pin's doc.go and
     README.md are rewritten for the package, and TRIPLE_TESTS_SUMMARY.md is not carried
   dependencies_and_side_effects: >-
-    graph, natsclient, pkg/errs, pkg/types (in-set); nats.go/jetstream through natsclient. No goroutine, no
-    Prometheus, no provider module. Writes, removes and lists keys of COMMUNITY_INDEX through the injected KVStore;
+    graph, graph/entitytext, natsclient, pkg/errs, pkg/types (in-set); nats.go/jetstream through natsclient. No
+    goroutine, no Prometheus, no provider module. Writes, removes and lists keys of COMMUNITY_INDEX through the injected KVStore;
     creates no bucket, stream or consumer; holds no ENTITY_STATES handle
   known_risks: >-
     The precondition that each key's deliveries arrive in increasing revision order is change 7's, from one ordered
@@ -4154,7 +4156,8 @@
     #141, #477
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
-    TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go
+    TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate,
+    TestKeywordTextMatchesLexical); storage_test.go
     (TestLevelPrefix, TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
     (TestRecordNamesItsLatestWrite, TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
     TestRevisionZeroRefused, TestTickBeforeBootstrap, TestFailedWriteRetried,
@@ -4852,7 +4855,9 @@
     refused, where the pin fell back to 30 s silently; a negative startup_attempts or startup_interval_ms is refused,
     zero is the default; (3) exactly one input, a kv-watch of every ENTITY_STATES key with no history, and a declared
     output is refused; a configuration with no ports takes the default and a ports block that is present is used as
-    written (ruling K); (4) registration asks boot for no model registry. Behaviour: (5) the lifecycle is
+    written (ruling K); (4) registration asks boot for no model registry; (4a) text_suffixes has graph-lexical's
+    meaning and default and is handed to NewMaintainer, so keywords count only the values graph/entitytext selects
+    (setup-04b-04-removal-keywords D9). Behaviour: (5) the lifecycle is
     component.Lifecycle and the ENTITY_STATES watch, replay, watermark and readiness envelope are graph/follower's
     (ADR-108), with Entry.Value carrying the delivered bytes (spec entity-state-follower); each delivery is applied to
     the graph/clustering Maintainer in delivery order and completed at once, so the graph-clustering key's
@@ -4865,14 +4870,16 @@
     follower's Run and the ticker; (9) the package imports no model package (contract guard) and the tree reaches no
     LLM plumbing (TestTreeImportsNoProviderPlumbing, #32's exit condition)
   dependencies_and_side_effects: >-
-    component, graph, graph/clustering, graph/follower, graph/kvcatalog, graph/readiness, metric, natsclient,
-    pkg/errs (in-set); nats.go/jetstream; the follower's watch on ENTITY_STATES, writes and removals on
+    component, graph, graph/clustering, graph/entitytext, graph/follower, graph/kvcatalog, graph/readiness, metric,
+    natsclient, pkg/errs (in-set); nats.go/jetstream; the follower's watch on ENTITY_STATES, writes and removals on
     COMMUNITY_INDEX through the Maintainer, a ticker, started in Start and joined in Stop; registers
     semengine_graph_clustering_publication_failures_total on the injected metrics registry (metrics.go)
   known_risks: >-
     Config break for consumers: semsource's enable_llm (and entity_id_edges where set) and semboids' batch_size,
     min_community_size and entity_id_edges fail at boot until the lines are deleted, and semboids' declared output
-    ports are refused; semboids' two-community spike sees one group per source prefix (MIGRATION.md). The readiness
+    ports are refused; semboids' two-community spike sees one group per source prefix; keywords stop counting values
+    outside text_suffixes until a consumer sets graph-lexical's list, semsource's .signature and .comment included
+    (MIGRATION.md). The readiness
     key counts what the Maintainer holds, not what is published. A tick already running when the feed is lost
     finishes, so a record published just before the loss was noticed may be stale. The replay of a stored value that
     cannot be decoded latches the follower's reset until restart. Not carried: the four graph.clustering.query.*
@@ -4882,12 +4889,12 @@
   proving_tests: >-
     processor/graph-clustering/config_test.go (TestConfigRefusesRemovedKeys, TestConfigRefusesDataAfterTheObject,
     TestConfigRefusesOutputPorts, TestConfigWithoutPortsTakesDefaultPorts, TestConfigRefusesInputsTheFollowerDoesNotRead,
-    TestConfigStartupWait, TestConfigDetectionInterval, FuzzResolveConfig), factory_test.go
+    TestConfigStartupWait, TestConfigDetectionInterval, TestConfigTextSuffixes, FuzzResolveConfig), factory_test.go
     (TestCreateGraphClusteringRequiresNATSClient, TestRegisterAddsGraphClustering), lifecycle_test.go
     (TestLifecycleBeforeStart), the integration-tagged files (TestRefusedValueReportedNotWithheld, TestStopLeavesNothing,
     TestStopWaitsForDelivery, TestRecordsFollowChanges, TestNothingPublishedBeforeReplay, TestLostFeedStopsPublication,
     TestResetStopsPublication, TestPersistentPublicationFailureIsStuck, TestStopWaitsForTick,
-    TestDetectionIntervalIsRead, TestWatchOrderAcrossKeys); graph/follower (TestEntryCarriesDeliveredValue,
+    TestDetectionIntervalIsRead, TestWatchOrderAcrossKeys, TestTextSuffixesIsRead); graph/follower (TestEntryCarriesDeliveredValue,
     TestFollowerDeclaresLostFeedOnOutOfOrderDelivery, TestStuckNamesReasons);
     internal/harness/contract/embeddingprovider_test.go (TestGraphClusteringImportsNoProviderModule,
     TestTreeImportsNoProviderPlumbing); internal/smoke (TestSmoke_OneConfigAnswers and the restart tests with five

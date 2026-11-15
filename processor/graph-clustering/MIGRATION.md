@@ -27,8 +27,9 @@ the configuration before the first start.
   *Do:* delete the line.
 - **`enable_anomaly_detection` and `anomaly_config` are refused.** Anomaly detection is not ported and will not be.
   *Do:* delete the lines.
-- **Any unknown key is refused**, naming it. The kept keys are `ports`, `detection_interval`, `startup_attempts` and
-  `startup_interval_ms`. A key in the wrong case (`BATCH_SIZE`) is refused as unknown, without the guidance line.
+- **Any unknown key is refused**, naming it. The kept keys are `ports`, `detection_interval`, `text_suffixes`,
+  `startup_attempts` and `startup_interval_ms`. A key in the wrong case (`BATCH_SIZE`) is refused as unknown,
+  without the guidance line.
 - **A bad `detection_interval` is refused.** The pin fell back to 30 seconds silently when it could not parse the
   value. Here `soon`, `30` (no unit), `0s` and `-1s` fail at creation, naming the key. *Do:* write a Go duration
   above zero, such as `30s` or `5m`, or leave the key out for `30s`.
@@ -52,6 +53,12 @@ Read these. Nothing errors.
   and asserts two label-propagation communities (`internal/boidgraph/clustering_spike_integration_test.go`). Under
   prefix grouping the edges do not count: the test sees one group per source prefix, so its expectation changes.
   *Do:* assert on the groups of the IDs you wrote.
+- **Keywords read only text.** SemStreams counted the words of every string value an entity held. Here keywords are
+  counted only from values whose predicates end in one of `text_suffixes`, the rule graph-lexical indexes by; values
+  under other suffixes add nothing, and a group whose members hold no such value has no keywords and no
+  representatives. *Do:* set `text_suffixes` to the list your graph-lexical uses, so keywords and word search read
+  the same text. SemSource adds `.signature` and `.comment` to the default list (for graph-embedding); carry those two
+  over too, or a function's signature and doc comment stop counting.
 - **The readiness key counts what is held, not what is published.** `GRAPH_STATUS` under `graph-clustering` reports a
   revision indexed once the Maintainer has applied it, which is before the next tick writes it. A reader that needs a
   group's published state reads the record's `entity_revision`. *Do:* do not gate a read on `indexed_revision` for

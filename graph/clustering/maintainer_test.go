@@ -167,7 +167,14 @@ func (f *fakeKV) decodeAll() (map[string]*Community, error) {
 // a fakeKV.
 func newTestMaintainer(t *testing.T) (*Maintainer, *fakeKV) {
 	t.Helper()
-	m, kv, err := newFakeMaintainer()
+	return newTextMaintainer(t, nil)
+}
+
+// newTextMaintainer is newTestMaintainer reading text under suffixes, as a product passes its
+// text_suffixes; nil is the default list.
+func newTextMaintainer(t *testing.T, suffixes []string) (*Maintainer, *fakeKV) {
+	t.Helper()
+	m, kv, err := newFakeMaintainer(suffixes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +183,7 @@ func newTestMaintainer(t *testing.T) (*Maintainer, *fakeKV) {
 
 // newFakeMaintainer is newTestMaintainer for a caller without a *testing.T, such as a
 // Rapid check. natsclient.NewClient does not dial.
-func newFakeMaintainer() (*Maintainer, *fakeKV, error) {
+func newFakeMaintainer(suffixes []string) (*Maintainer, *fakeKV, error) {
 	client, err := natsclient.NewClient("")
 	if err != nil {
 		return nil, nil, err
@@ -186,7 +193,7 @@ func newFakeMaintainer() (*Maintainer, *fakeKV, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	m, err := NewMaintainer(storage)
+	m, err := NewMaintainer(storage, suffixes)
 	return m, kv, err
 }
 
@@ -231,9 +238,9 @@ func puts(keys ...string) []string {
 }
 
 func TestNewMaintainerRefusesNil(t *testing.T) {
-	m, err := NewMaintainer(nil)
+	m, err := NewMaintainer(nil, nil)
 	if m != nil || !errs.IsInvalid(err) {
-		t.Fatalf("NewMaintainer(nil) = %v, %v; want nil and an invalid error", m, err)
+		t.Fatalf("NewMaintainer(nil, nil) = %v, %v; want nil and an invalid error", m, err)
 	}
 }
 

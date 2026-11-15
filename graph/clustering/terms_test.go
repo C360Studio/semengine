@@ -10,8 +10,12 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/message"
 )
+
+// defaultText is the text rule a Maintainer given no suffixes reads under.
+var defaultText = entitytext.New(nil, 0)
 
 // TestExtractTerms checks the word definition on each kind of input: separators, stop
 // words, short and long runs, case and repeats.
@@ -55,7 +59,7 @@ func TestLongLiteralIsNotAWord(t *testing.T) {
 			{Subject: id, Predicate: "docs.blob.body", Object: literal},
 			{Subject: id, Predicate: "docs.blob.title", Object: "release notes " + literal},
 		}}
-		words := entityWords(state)
+		words := entityWords(defaultText, state)
 		if !slices.Equal(words, []string{"notes", "release"}) {
 			t.Fatalf("entityWords(%s) = %q, want [notes release]", id, words)
 		}
@@ -133,10 +137,10 @@ func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
 		id := fmt.Sprintf("acme.dep1.src.robotics.drone.d%d", i)
 		state := &graph.EntityState{ID: id, Triples: []message.Triple{
 			{Subject: id, Predicate: "robotics.flight.altitude", Object: 120.5},
-			{Subject: id, Predicate: "robotics.flight.status", Object: "hovering steady"},
+			{Subject: id, Predicate: "robotics.flight.description", Object: "hovering steady"},
 			{Subject: id, Predicate: "robotics.link.parent", Object: "acme.dep1.src.robotics.base.b1"},
 		}}
-		for _, w := range entityWords(state) {
+		for _, w := range entityWords(defaultText, state) {
 			wordCounts[w]++
 		}
 		if err := m.Upsert(id, 1, state); err != nil {
@@ -188,7 +192,7 @@ func TestEntityContributionIsCapped(t *testing.T) {
 	state := &graph.EntityState{ID: id, Triples: []message.Triple{
 		{Subject: id, Predicate: "docs.note.body", Object: strings.Join(text, " ")},
 	}}
-	if got := entityWords(state); !slices.Equal(got, want) {
+	if got := entityWords(defaultText, state); !slices.Equal(got, want) {
 		t.Fatalf("entityWords = %q, want %q", got, want)
 	}
 
@@ -196,7 +200,7 @@ func TestEntityContributionIsCapped(t *testing.T) {
 	tied := &graph.EntityState{ID: id, Triples: []message.Triple{
 		{Subject: id, Predicate: "docs.note.body", Object: "zeta alpha mid"},
 	}}
-	if got, want := entityWords(tied), []string{"alpha", "mid", "zeta"}; !slices.Equal(got, want) {
+	if got, want := entityWords(defaultText, tied), []string{"alpha", "mid", "zeta"}; !slices.Equal(got, want) {
 		t.Fatalf("tied entityWords = %q, want %q", got, want)
 	}
 }
@@ -226,5 +230,59 @@ func TestSummaryTemplate(t *testing.T) {
 	bare := newCommunity(2, "c360.platform", 1, 1, nil, nil, nil)
 	if want := "Community of 1 entities."; bare.StatisticalSummary != want {
 		t.Fatalf("bare summary = %q, want %q", bare.StatisticalSummary, want)
+	}
+}
+
+// TestKeywordTextMatchesLexical: an entity's keywords are counted from the values graph-lexical
+// reads as its text under the same suffixes, and from nothing else. The entity holds values
+// under configured and unconfigured suffixes, a number and a relationship; each text value is
+// one word held once, so the words the maintainer publishes are exactly those values, lexically
+// ordered. A second member, smaller by ID, holds a string only under a suffix no case selects: it
+// adds no keyword and is no representative. The expected values come from entitytext built as
+// graph-lexical builds it.
+func TestKeywordTextMatchesLexical(t *testing.T) {
+	id := "acme.dep1.src.code.func.f1"
+	state := &graph.EntityState{ID: id, Triples: []message.Triple{
+		{Subject: id, Predicate: "code.func.name", Object: "parse"},
+		{Subject: id, Predicate: "code.doc.comment", Object: "decoder"},
+		{Subject: id, Predicate: "code.func.signature", Object: "reader"},
+		{Subject: id, Predicate: "code.func.language", Object: "golang"},
+		{Subject: id, Predicate: "code.func.body", Object: "buffer"},
+		{Subject: id, Predicate: "code.func.lines", Object: 12.0},
+		{Subject: id, Predicate: "code.link.caller", Object: "acme.dep1.src.code.func.main"},
+	}}
+	for name, suffixes := range map[string][]string{
+		"default":   nil,
+		"semsource": append(entitytext.DefaultSuffixes(), ".signature", ".comment"),
+		"custom":    {".language"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			want := entitytext.New(suffixes, 16000).Values(state)
+			slices.Sort(want)
+			if len(want) == 0 {
+				t.Fatal("the rule selects no value; the case proves nothing")
+			}
+
+			m, kv := newTextMaintainer(t, suffixes)
+			if err := m.Upsert(id, 1, state); err != nil {
+				t.Fatalf("Upsert: %v", err)
+			}
+			const untexted = "acme.dep1.src.code.func.a0"
+			if err := m.Upsert(untexted, 1, &graph.EntityState{ID: untexted, Triples: []message.Triple{
+				{Subject: untexted, Predicate: "code.func.status", Object: "deprecated"},
+			}}); err != nil {
+				t.Fatalf("Upsert(%s): %v", untexted, err)
+			}
+			m.BootstrapDone()
+			mustTick(t, m)
+			for key, r := range kv.records(t) {
+				if !slices.Equal(r.Keywords, want) {
+					t.Fatalf("%s keywords = %q, want the text values %q", key, r.Keywords, want)
+				}
+				if !slices.Equal(r.RepEntities, []string{id}) {
+					t.Fatalf("%s representatives = %q, want [%s]", key, r.RepEntities, id)
+				}
+			}
+		})
 	}
 }

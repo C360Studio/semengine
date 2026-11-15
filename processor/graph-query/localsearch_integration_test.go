@@ -53,7 +53,7 @@ func communityRecords(t *testing.T, client *natsclient.Client) (jetstream.KeyVal
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := clustering.NewMaintainer(storage)
+	m, err := clustering.NewMaintainer(storage, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

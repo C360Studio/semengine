@@ -65,7 +65,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   symbol, prefix and unknown-name fusion checks from `noembedder_integration_test.go:134,146,174` unchanged; `git grep
   -n -i "bm25\|semantic\|similar" internal/smoke` finds no check; `noembedder_integration_test.go` is deleted and
   `TestFusionNATSImportsNoEmbedding` passes. PR body: `Closes #628`.
-- [ ] 2.8 PR D. Text through `graph/entitytext` (design D9; #650). Premise: `entityWords` reads every string value
+- [x] 2.8 PR D. Text through `graph/entitytext` (design D9; #650). Premise: `entityWords` reads every string value
   (`graph/clustering/terms.go:57`); graph-clustering has no `text_suffixes` (`processor/graph-clustering/
   config.go:46-53`). Accept: new `TestKeywordTextMatchesLexical`, `TestTextSuffixesIsRead`;
   `TestRepresentativesWithoutScan` and `TestRecordIsBounded` pass; `processor/graph-clustering/MIGRATION.md` says

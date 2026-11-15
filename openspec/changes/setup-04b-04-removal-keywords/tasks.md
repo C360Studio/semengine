@@ -57,7 +57,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
 - [ ] 2.6 PR C. `embedding_enabled` reads false when left out (design D6). Premise: `processor/graph-query/
   component.go:69-70`. Accept: `TestConfigEmbeddingEnabled` (left out reads false; true still forwards),
   `TestNoRespondersIsTransient` with the key set true.
-- [ ] 2.7 PR C. Smoke on tier 0 (design D7; #628). Premise: smoke composes graph-embedding with `bm25`
+- [x] 2.7 PR C. Smoke on tier 0 (design D7; #628). Premise: smoke composes graph-embedding with `bm25`
   (`internal/smoke/stack_integration_test.go:71,90-91,152,182,734`) and asserts it (`smoke_integration_test.go:544`).
   Accept: `TestSmoke_OneConfigAnswers`, `TestSmoke_StackRestartKeepsAnswers`,
   `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`, `TestSmoke_BrokerRestartBetweenRuns` and

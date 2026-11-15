@@ -4827,7 +4827,7 @@
     TestPoisonFallbackFinalSeedCancelled); the integration-tagged client_integration_test.go
     (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex); internal/harness/contract/fusionnats_test.go
     (TestFusionNATSImportsNoEmbedding and its sensitivity case); internal/harness/contract/reservedsubjects_test.go
-    (TestReservedSubjectsDeclaredOnce); internal/smoke/noembedder_integration_test.go (TestSmoke_NoEmbedderAnswers);
+    (TestReservedSubjectsDeclaredOnce); internal/smoke/fusion_integration_test.go (checkFusion, run by TestSmoke_OneConfigAnswers);
     notes/2.1.md-3.1.md of the change record seeds and mutation checks
   owner: setup-04a-05-fusionnats developer
   disposition: adapt

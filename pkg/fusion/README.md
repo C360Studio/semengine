@@ -138,8 +138,8 @@ graph-lexical fails every `nl` question with a transient `internal` error naming
 
 An `nl` answer's `provenance` is `lexical`: its seeds are ranked word matches, neither an exact lookup nor an
 embedding search. `symbol` and `prefix` answers are `deterministic`. `symbol` and `prefix` questions need no
-graph-lexical; `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers all three over a stack of graph-ingest,
-graph-index, graph-lexical and graph-query, with no graph-embedding.
+graph-lexical; `TestSmoke_OneConfigAnswers` (`internal/smoke`) asks all three of a tier 0 stack with no
+graph-embedding.
 
 ## Packages
 

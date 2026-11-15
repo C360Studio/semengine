@@ -39,7 +39,6 @@ import (
 	wsoutput "github.com/c360studio/semengine/output/websocket"
 	"github.com/c360studio/semengine/payloadregistry"
 	graphclustering "github.com/c360studio/semengine/processor/graph-clustering"
-	graphembedding "github.com/c360studio/semengine/processor/graph-embedding"
 	graphindex "github.com/c360studio/semengine/processor/graph-index"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
 	graphlexical "github.com/c360studio/semengine/processor/graph-lexical"
@@ -65,13 +64,13 @@ func run(m *testing.M) int {
 	return code
 }
 
-// stackConfig is the one configuration the eight-component stack boots from, as a product would
-// write it. The child fills the placeholders from its environment: the NATS URL and the three ports
-// the test picked, and graph-ingest's configuration, {} (its defaults) unless the test passes one.
-// Every other component takes its defaults, except that graph-embedding runs BM25 only,
-// graph-clustering publishes the changed groups every second rather than every 30 s, so a community
-// wait lasts about a second, and the websocket output streams applied ENTITY_STATES on the loopback
-// port the test picked.
+// stackConfig is the one configuration the seven-component stack boots from, as a product at tier 0
+// would write it: no graph-embedding, since tier 0 has no embedder, so word questions answer from
+// graph-lexical. The child fills the placeholders from its environment: the NATS URL and the three
+// ports the test picked, and graph-ingest's configuration, {} (its defaults) unless the test passes
+// one. Every other component takes its defaults, except that graph-clustering publishes the changed
+// groups every second rather than every 30 s, so a community wait lasts about a second, and the
+// websocket output streams applied ENTITY_STATES on the loopback port the test picked.
 const stackConfig = `{
   "version": "1.0.0",
   "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
@@ -87,8 +86,6 @@ const stackConfig = `{
   "components": {
     "graph-ingest": {"type": "processor", "name": "graph-ingest", "enabled": true, "config": {{ingest_config}}},
     "graph-index": {"type": "processor", "name": "graph-index", "enabled": true, "config": {}},
-    "graph-embedding": {"type": "processor", "name": "graph-embedding", "enabled": true,
-      "config": {"embedder_type": "bm25"}},
     "graph-clustering": {"type": "processor", "name": "graph-clustering", "enabled": true,
       "config": {"detection_interval": "1s"}},
     "graph-lexical": {"type": "processor", "name": "graph-lexical", "enabled": true, "config": {}},
@@ -101,36 +98,9 @@ const stackConfig = `{
   }
 }`
 
-// graphOnlyConfig is the configuration of a product that runs no embedder: it answers by name,
-// prefix and structure, and by word through graph-lexical (composed-stack, "The graph stack answers
-// fusion without an embedder"). graph-query says so with embedding_enabled false, so it refuses
-// semantic and similar as not enabled rather than asking a verb nothing serves.
-const graphOnlyConfig = `{
-  "version": "1.0.0",
-  "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
-  "nats": {"urls": ["{{nats_url}}"]},
-  "services": {
-    "service-manager": {"enabled": true, "config": {"http_port": {{http_port}}}},
-    "metrics": {"enabled": true, "config": {"path": "/metrics", "port": {{metrics_port}}}}
-  },
-  "streams": {
-    "ENTITY": {"subjects": ["entity.>"], "storage": "file", "max_age": "24h", "max_bytes": 67108864,
-      "discard": "old"}
-  },
-  "components": {
-    "graph-ingest": {"type": "processor", "name": "graph-ingest", "enabled": true, "config": {{ingest_config}}},
-    "graph-index": {"type": "processor", "name": "graph-index", "enabled": true, "config": {}},
-    "graph-lexical": {"type": "processor", "name": "graph-lexical", "enabled": true, "config": {}},
-    "graph-query": {"type": "processor", "name": "graph-query", "enabled": true,
-      "config": {"embedding_enabled": false}}
-  }
-}`
-
 // composition is one stack the child can boot: its configuration, and what the composition root
 // and the test know about it.
 type composition struct {
-	// name selects the composition in the child's environment (envComposition).
-	name   string
 	config string
 	// components are the component instances config declares, sorted by name. The child
 	// registers exactly these factories, and the health reply must list exactly these.
@@ -143,44 +113,22 @@ type composition struct {
 	labels []string
 }
 
-// fullStack is the eight-component stack every test but the no-embedder one boots. graph-clustering's
-// key counts what its maintainer holds, not what it has published (readiness.KeyGraphClustering), so
-// awaitIndexed's wait on it orders no community read: checkCommunities waits on the record's own
-// entity_revision.
-var fullStack = composition{
-	name:   "full",
+// tierZeroStack is the stack every test boots. graph-clustering's key counts what its maintainer
+// holds, not what it has published (readiness.KeyGraphClustering), so awaitIndexed's wait on it
+// orders no community read: checkCommunities waits on the record's own entity_revision. fusion's
+// symbol lens resolves by name, so namePredicate is a display name.
+var tierZeroStack = composition{
 	config: stackConfig,
-	components: []string{"graph-clustering", "graph-embedding", "graph-gateway", "graph-index", "graph-ingest",
-		"graph-lexical", "graph-query", "websocket"},
-	indexKeys: []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering,
-		readiness.KeyGraphLexical},
-}
-
-// graphOnlyStack is the stack with no embedder: graph-embedding neither configured nor registered.
-// Its consumer resolves by name, so namePredicate is a display name.
-var graphOnlyStack = composition{
-	name:       "graph-only",
-	config:     graphOnlyConfig,
-	components: []string{"graph-index", "graph-ingest", "graph-lexical", "graph-query"},
-	indexKeys:  []string{readiness.KeyGraphIndex, readiness.KeyGraphLexical},
-	labels:     []string{namePredicate},
-}
-
-// compositionNamed returns the composition called name; the test always passes one.
-func compositionNamed(name string) (composition, error) {
-	for _, c := range []composition{fullStack, graphOnlyStack} {
-		if c.name == name {
-			return c, nil
-		}
-	}
-	return composition{}, fmt.Errorf("no composition named %q", name)
+	components: []string{"graph-clustering", "graph-gateway", "graph-index", "graph-ingest", "graph-lexical",
+		"graph-query", "websocket"},
+	indexKeys: []string{readiness.KeyGraphIndex, readiness.KeyGraphClustering, readiness.KeyGraphLexical},
+	labels:    []string{namePredicate},
 }
 
 // componentFactories are the factories a composition can name, by component name.
 var componentFactories = map[string]func(*component.Registry) error{
 	"graph-ingest":     graphingest.Register,
 	"graph-index":      graphindex.Register,
-	"graph-embedding":  graphembedding.Register,
 	"graph-clustering": graphclustering.Register,
 	"graph-lexical":    graphlexical.Register,
 	"graph-query":      graphquery.Register,
@@ -195,8 +143,6 @@ const (
 	envMetricsPort = "SMOKE_METRICS_PORT"
 	// envWebsocketPort is the websocket output's port; a composition without one ignores it.
 	envWebsocketPort = "SMOKE_WEBSOCKET_PORT"
-	// envComposition is the name of the composition the child boots.
-	envComposition = "SMOKE_COMPOSITION"
 	// envReady is the file the child creates once StartAll returned.
 	envReady = "SMOKE_READY"
 	// envIngestConfig is graph-ingest's configuration, JSON; unset means its defaults.
@@ -262,7 +208,7 @@ func TestHelperProcess(t *testing.T) {
 }
 
 // runStack is the composition root: what a product's main does, in order. It boots the composition
-// envComposition names from its configuration, creates the ready file, waits for SIGTERM and stops
+// tierZeroStack from its configuration, creates the ready file, waits for SIGTERM and stops
 // everything it started, each stop under its own budget.
 func runStack(ctx context.Context) (result error) {
 	terminated := make(chan os.Signal, 1)
@@ -281,10 +227,7 @@ func runStack(ctx context.Context) (result error) {
 		}
 	}
 
-	stackComposition, err := compositionNamed(os.Getenv(envComposition))
-	if err != nil {
-		return err
-	}
+	stackComposition := tierZeroStack
 	ingestConfig := os.Getenv(envIngestConfig)
 	if ingestConfig == "" {
 		ingestConfig = "{}"
@@ -479,17 +422,11 @@ func freeLoopbackPort(t *testing.T) int {
 	return port
 }
 
-// startStack boots the eight-component stack in a child against url, on three ports it picks, and
+// startStack boots the seven-component stack in a child against url, on three ports it picks, and
 // returns once StartAll has returned in it.
 func startStack(t *testing.T, o observer, url string, env ...string) stack {
 	t.Helper()
-	return startComposition(t, o, url, fullStack, env...)
-}
-
-// startComposition is startStack for the composition c.
-func startComposition(t *testing.T, o observer, url string, c composition, env ...string) stack {
-	t.Helper()
-	return startStackOn(t, o, url, c, ports{http: freePort(t), metrics: freePort(t), websocket: freeLoopbackPort(t)}, env...)
+	return startStackOn(t, o, url, tierZeroStack, ports{http: freePort(t), metrics: freePort(t), websocket: freeLoopbackPort(t)}, env...)
 }
 
 // restartStack boots a new child against url from the configuration previous booted from, its
@@ -517,7 +454,6 @@ func startStackOn(t *testing.T, o observer, url string, c composition, p ports, 
 	// Read before the child exists, so an entry above this revision is the child's own write.
 	before := o.statusRevision(t, readiness.KeyGraphIngest)
 	process, err := prochost.Start(t, stackHelper, append([]string{
-		envComposition + "=" + c.name,
 		envNATSURL + "=" + url,
 		envHTTPPort + "=" + strconv.Itoa(p.http),
 		envMetricsPort + "=" + strconv.Itoa(p.metrics),
@@ -732,8 +668,8 @@ func latched(status graph.IndexStatusResponse) string {
 
 // awaitIndexed is the rest of the wait order, after the acknowledgement or a mutation's reply: the
 // ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one, not
-// degraded; then the envelope of each index the composition runs (graph-index, and graph-embedding,
-// graph-clustering and graph-lexical where they are configured) at or above that revision; then,
+// degraded; then the envelope of each index the composition runs (graph-index,
+// graph-clustering and graph-lexical) at or above that revision; then,
 // where the websocket output is configured, a client it accepts streamed through that revision
 // (awaitStreamed). It returns the revision. A latched state fails at once, naming it.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {

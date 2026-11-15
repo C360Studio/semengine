@@ -29,15 +29,17 @@ websocket client.
   entities whose names share a word with the entity's, as a set, since BM25's scores depend on arrival order
 - **AND** graph-lexical's `search`, once its `indexed_revision` reaches that revision, answers a word only one
   entity's name holds with that entity alone, and a word every base's name holds with exactly the live bases
-- **AND** once the lead's level-0 record's `entity_revision` reaches that revision, `localSearch` on the lead answers
-  from that group, and a text question on a word of the fixed names answers that group
+- **AND** once graph-lexical's `indexed_revision` reaches that revision, `localSearch` on the lead and a global
+  search on a word of the fixed names answer the same entities as graph-lexical's `search` for that word, in its
+  order, the lead's group named in `groups`; once the lead's level-0 record's `entity_revision` reaches it too, that
+  group's `record_state` is `read`
 - **AND** `entity`, `entitiesByPrefix`, `entitiesByPredicate` and `pathSearch` posted to `/graph-gateway/graphql` on
   the process's HTTP port answer HTTP 200 with no `errors` and the fixed entities' IDs and triples
 - **AND** a websocket client connected to the output's port receives a `put` for each fixed entity, whose payload is
   the `ENTITY_STATES` value at that revision, and `synced`
 - **AND** after an edit and a delete the answers and records follow, a deleted entity's word answers nothing from
-  graph-lexical, and the websocket client's folded frames match `ENTITY_STATES` read back after them
-  (`TestSmoke_OneConfigAnswers`)
+  graph-lexical, `localSearch` or global search, and the websocket client's folded frames match `ENTITY_STATES` read
+  back after them (`TestSmoke_OneConfigAnswers`)
 
 ### Requirement: A whole-stack restart keeps the answers
 
@@ -94,11 +96,10 @@ watch lost` included).
 
 - **WHEN** the NATS server restarts while the stack runs, and a second batch, an edit and a delete are published after
 - **THEN** the graph-index, graph-embedding, graph-clustering and graph-lexical keys reach their revision and
-  graph-ingest's reads not degraded, the lead's level-0 record's `entity_revision` reaches it, with answers,
-  `localSearch` and graph-lexical's `search` included, that include them, no envelope reports a lost feed or
-  `reset_required`, and `/components/health` lists graph-ingest, graph-index, graph-embedding, graph-clustering,
-  graph-lexical, graph-query, graph-gateway and websocket, a total of 8, each healthy
-  (`TestSmoke_BrokerRestartUnderRunningStack`)
+  graph-ingest's reads not degraded, with answers, graph-lexical's `search`, `localSearch` and global search included,
+  that include them, no envelope reports a lost feed or `reset_required`, and `/components/health` lists
+  graph-ingest, graph-index, graph-embedding, graph-clustering, graph-lexical, graph-query, graph-gateway and
+  websocket, a total of 8, each healthy (`TestSmoke_BrokerRestartUnderRunningStack`)
 
 ### Requirement: The graph stack answers fusion without an embedder
 

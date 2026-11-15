@@ -82,10 +82,10 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
 
 ## 3. Docs and close-out
 
-- [ ] 3.1 Each PR updates what it changes: `processor/graph-embedding/README.md`, `MIGRATION.md`;
+- [x] 3.1 Each PR updates what it changes: `processor/graph-embedding/README.md`, `MIGRATION.md`;
   `processor/graph-query/README.md`, `MIGRATION.md`; `.agents/skills/query-pattern/SKILL.md:30-35`;
   `docs/repository-map.md:74,76,91`; `docs/contract.md:33`; the ledger rows named in inventory §4; ADR-099's port note
   (PR D); `task docs:check` passes.
-- [ ] 3.2 PR D. Sync the specs (the Purpose lines of graph-embedding, embedding-index, query-classification and
+- [x] 3.2 PR D. Sync the specs (the Purpose lines of graph-embedding, embedding-index, query-classification and
   composed-stack name the hashed embedder) and archive the change as the last content commit; `task spec:check`
   passes.

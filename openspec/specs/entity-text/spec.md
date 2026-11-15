@@ -10,14 +10,19 @@ in an object store under a deadline and tells its failures apart. It imports no 
 ### Requirement: One rule says which values are an entity's text
 
 `graph/entitytext` SHALL offer two views of one rule. `Values` SHALL select an entity's string values whose
-predicate ends in a configured suffix, relationships skipped, in triple order; graph-embedding SHALL read its text
-only through it. Empty `text_suffixes` SHALL mean the default list.
+predicate ends in a configured suffix, relationships skipped, in triple order; graph-embedding and graph-clustering
+SHALL read their text only through it. Empty `text_suffixes` SHALL mean the default list.
 
 #### Scenario: graph-embedding's bytes do not change
 
 - **WHEN** the fixed entities of graph-embedding's tests are read through `Values` and joined as graph-embedding
   joins them
 - **THEN** the text equals what graph-embedding embedded before the rule existed (`TestEmbeddingTextUnchanged`)
+
+#### Scenario: graph-clustering reads the same values
+
+- **WHEN** an entity is read by graph-clustering and through `Values` under the same suffixes
+- **THEN** the values are equal (`TestKeywordTextIsTheRuleValues`)
 
 ### Requirement: Document splits an entity's text into Name and Body
 

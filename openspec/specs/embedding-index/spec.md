@@ -1,7 +1,7 @@
 # embedding-index Specification
 
 ## Purpose
-`graph/embedding` turns entity text into vectors at tier 0 (BM25, no external provider) and keeps them in two NATS
+`graph/embedding` turns entity text into vectors with an embedder the caller supplies and keeps them in two NATS
 KV buckets: EMBEDDING_INDEX, one record per entity, and EMBEDDING_DEDUP, one vector per content key. This spec states
 how `Storage` orders and validates its writes, how the `Worker` and `VectorCache` run and stop, and the per-entity
 order of the Worker's callbacks. The component that wires them into a flow is a later change.
@@ -128,7 +128,6 @@ scored and SHALL NOT withdraw the cache; a later valid write of that key SHALL b
 `Storage` SHALL write every read-modify-write through `natsclient.KVStore.UpdateWithRetryRead`. `SaveGenerated` and
 `SaveFailed` SHALL return `ErrRecordGone` for an absent key and `ErrSupersededRevision` when the stored record has a
 newer source revision, writing nothing; `SaveFailed` SHALL not replace a generated record at the same revision.
-`SavePendingGuarded` SHALL not replace a generated record at the same or a newer revision.
 
 #### Scenario: Any sequence of writes
 
@@ -143,6 +142,23 @@ newer source revision, writing nothing; `SaveFailed` SHALL not replace a generat
 - **THEN** the error matches `natsclient.ErrKVMaxRetriesExceeded`, the record stays pending, and no terminal
   outcome is reported
 - **AND** the test that verifies this is `TestCASExhaustionIsNotTerminal`
+
+### Requirement: Only the running embedder's vectors are used
+
+`SavePendingGuarded` SHALL not replace a generated record at the same or a newer revision made under the running
+embedder's identity (the dedup key's `EmbedderIdentity`: registered type, model, width and text cap, the width
+resolved); any other generated record is replaced, so it is regenerated. The vector cache and `similar` SHALL use only
+vectors made under the running identity, read when the request is answered, and none while its width is unresolved.
+
+#### Scenario: A restart under a different embedder
+
+- **WHEN** graph-embedding restarts on the same state with an embedder of another registered type, model, or width,
+  including a width the embedder reports only after its first response
+- **THEN** every stored vector of an entity in `ENTITY_STATES` is regenerated under the new embedder before readiness,
+  a vector the old embedder made is never a search hit, a `similar` source or a `similar` hit, and a restart with the
+  same embedder keeps every stored vector when its width is known at startup
+- **AND** the tests that verify this are `TestProviderSwitchRestart`, `TestVectorCacheKeepsOnlyItsEmbeddersVectors`
+  and `TestSavePendingGuarded_Decisions`
 
 ### Requirement: One entity's work runs in order through its callbacks
 

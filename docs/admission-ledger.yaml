@@ -3826,13 +3826,13 @@
   disposition: adapt
 
 # Change setup-04a-04-graph-roots-embedding (PR #458, epic #9): graph/embedding, the two-hop embedding pipeline's storage,
-# BM25 embedder, vector cache and Worker; the processor that drives them arrives in change 5 (processor/graph-embedding).
+# vector cache and Worker (its BM25 embedder later deleted, setup-04b-04); the processor that drives them arrives in change 5 (processor/graph-embedding).
 
 - source_path: graph/embedding
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the tier-0 embedding pipeline: the BM25 embedder (no external provider), Storage over EMBEDDING_INDEX and
-    EMBEDDING_DEDUP, the VectorCache that answers similarity search from memory, and the Worker that turns pending
+    the embedding pipeline a product's Embedder drives (the package holds no embedder and imports no provider):
+    Storage over EMBEDDING_INDEX and EMBEDDING_DEDUP, the VectorCache that answers similarity search from memory, and the Worker that turns pending
     records into generated or failed ones (hop 2). processor/graph-embedding (change 5) calls it (pkg/fusion does
     not import it at the pin or here); graph/query
     (item 6) cannot build without it
@@ -3861,7 +3861,8 @@
     a text cap of 0 means 8,000 runes on both lanes; (11) WorkerMetrics gains IncContentUnresolved and loses
     SetPending; (12) an offloaded body is read through graph/entitytext.ReadBody, which ends the read 10 s after it
     begins, and the truncation routine is graph/entitytext.Truncate (setup-04b-02-lexical-processor, #551). Not
-    carried: http_embedder.go (own row), ContentHash, SavePending, SavePendingWithStorageRef,
+    carried: http_embedder.go (own row), bm25_embedder.go and its test (deleted by setup-04b-04-removal-keywords
+    design D5: no in-process embedder, a product supplies one), ContentHash, SavePending, SavePendingWithStorageRef,
     Record.ContentFields, DedupRecord.EntityIDs, euclideanDistance, dotProduct, magnitude, normalize
   dependencies_and_side_effects: >-
     graph/entitytext, internal/dispatch, internal/kvwatch, message, natsclient, pkg/errs, pkg/types, storage (in-set);
@@ -3877,8 +3878,7 @@
     callbacks only (design D6, Codex finding 2 on PR #458 comment 6474241300). An older pending write may replace a
     newer pending or failed record, as at the pin; only a generated record blocks an older write. A callback that
     blocks holds Run, which has no bound of its own. The nats.go behaviours behind the Run shutdown order are probed
-    at v1.54.0 (PR #458 comment 6472856197) and not promised. BM25 is a lexical embedder, not a correct lexical
-    index. Storage.ListGeneratedEntityIDs is removed (processor/graph-embedding withholds the window the scan
+    at v1.54.0 (PR #458 comment 6472856197) and not promised. Storage.ListGeneratedEntityIDs is removed (processor/graph-embedding withholds the window the scan
     covered). FindSimilar sorts the whole view under its lock, about 37 ms a call and 9 ms of lock at 50,000 records
     (openspec/changes/archive/2026-11-08-setup-04a-05-graph-embedding-query/notes/2.2.md);
     graph-clustering plans around it. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays
@@ -3896,7 +3896,7 @@
     (TestVectorCacheSecondRunRefused, TestVectorCacheNotAuthoritative, TestVectorCachePoisonCountedAndHeals,
     TestFindSimilarOrderAndLimit, TestFindSimilarReadsOneMoment, TestVectorCacheRunLeavesNothingBehind); vector_cache_integration_test.go (TestVectorCacheRunLeavesNoWatchDelivery,
     TestVectorCacheRunReportsLostWatch); worker_storeresolver_integration_test.go
-    (TestWorkerResolvesLiveRegistryStatePerFetch); bm25_embedder_test.go; internal/harness/contract
+    (TestWorkerResolvesLiveRegistryStatePerFetch); internal/harness/contract
     (TestEmbeddingImportsNoProviderModule); notes/2.1.md, 2.2.md, 3.3.md and 3.4.md of the change record each changed
     behaviour shown failing against the pin's shape
   owner: setup-04a-04-graph-roots-embedding developer; docs by setup-04a-04-graph-roots-embedding technical writer
@@ -4335,8 +4335,8 @@
     exclude_predicates asks without it and reports indexed_revision 0); and semantic, similar, spatial and temporal
     as forwards to graph.embedding.query.search and similar, graph.spatial.query.bounds and graph.temporal.query.range;
     spatial and temporal are refused transient internal until change 7 brings their responders, and semantic and
-    similar are refused invalid not_enabled, naming the verb and sending nothing, when the embedding_enabled key
-    (true when left out) is false (#579). localSearch and globalSearch
+    similar are refused invalid not_enabled, naming the verb and sending nothing, unless the embedding_enabled key
+    (false when left out) is true (#579). localSearch and globalSearch
     (and searchGraph, its own row served by the same handler, its data equal to globalSearch's for the same request)
     find entities by the words of their text. Each makes one request to graph.lexical.query.search (localSearch
     scoped to the group of entity_id at level 0 to 2, globalSearch over every entity), passing query, limit and
@@ -4547,16 +4547,21 @@
 - source_path: processor/graph-embedding
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the graph's tier-0 embedding records: follows ENTITY_STATES and keeps one BM25 record per entity with text in
-    EMBEDDING_INDEX, with its dedup keys in EMBEDDING_DEDUP, and reports on the graph-embedding readiness key;
-    semsource composes it with coalesce_ms, embedder_type, batch_size and text_suffixes (inventory § 5)
+    the graph's embedding records from tier 1 up: follows ENTITY_STATES and keeps one record per entity with text,
+    embedded by the embedder a product registers, in EMBEDDING_INDEX, with its dedup keys in EMBEDDING_DEDUP, and
+    reports on the graph-embedding readiness key; semsource composes it with coalesce_ms, embedder_type, batch_size
+    and text_suffixes (inventory § 5)
   destination: processor/graph-embedding
   contract: >-
     the write path as at the pin, with these adaptations (spec graph-embedding; design D1-D6). Configuration (D4):
     (1) strict configuration: an unknown key is refused naming it, batch_size (read nowhere at the pin)
-    and cache_ttl among them, which replaces the pin's targeted cache_ttl probe; (2) embedder_type is bm25 only, an
-    empty value means bm25, and any other value, http included, is refused naming the value and tier 0; the
-    registration asks boot for no model registry; (3) max_text_len 0 resolves at construction to BM25's 4,000 and
+    and cache_ttl among them, which replaces the pin's targeted cache_ttl probe; (2) the embedder is the product's,
+    registered with RegisterWithEmbedder under a non-empty name that is the dedup key's type part and search's
+    embedder_type; it is built in Start, never at construction, and closed once in Stop, and a Start failing after
+    the build closes it or, when that close fails, reports both errors and keeps it for Stop; plain Register's
+    factory refuses construction, class invalid, naming RegisterWithEmbedder and tier 1; embedder_type is refused as
+    an unknown key; the registration asks boot for no model registry (change setup-04b-04 design D5, owner question
+    3); (3) max_text_len 0 resolves at construction to 4,000 and
     text_suffixes empty to the pin's nine defaults, so each reader sees one value; workers 0 is 5, negative workers
     or max_text_len and max_text_len past embedding.MaxSourceTextLenCeiling are refused, as at the pin; (4) a
     configuration with no ports takes the default ports and a ports block that is present is used as written (ruling
@@ -4586,7 +4591,8 @@
     content_unresolved_total on the injected metrics registry (metrics.go)
   known_risks: >-
     Config break for consumers: semsource's configuration sets batch_size under graph-embedding and fails at boot
-    until the line is deleted; an embedder_type of http fails at boot; the status card loses first_failure_at;
+    until the line is deleted; embedder_type fails at boot whatever its value, and plain Register refuses
+    construction, so a tier 0 composition leaves graph-embedding out; the status card loses first_failure_at;
     graph.embedding.query.status has no responder; the query verbs refuse unknown keys, limits outside 0 to 100 and
     a min_revision above 0, and drop score-0 hits; the degraded rule is completion-based at 30 s for every plug-in
     (MIGRATION.md). Hop 1 runs serially on the follower's goroutine, so a slow pending write delays delivery
@@ -4595,14 +4601,14 @@
     body's store the Worker's replay and hop 1's re-read count two exclusions in content_unresolved_total. The
     Worker's other metrics are dropped
     until their collectors are ported. Not carried: the http embedder and the model import (#32, #489), BatchSize,
-    the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the pin's bucket-scan query fallback, its
+    the in-process BM25 embedder as the component's own, the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the pin's bucket-scan query fallback, its
     test hook subscribeForRequests, and its nil-storage, nil-embedder and empty-vector branches
   proving_tests: >-
-    processor/graph-embedding/config_test.go (TestConfigRefusesUnknownKey, TestConfigRefusesHTTPEmbedder,
-    TestConfigEmbedderType, TestConfigWorkers, TestConfigMaxTextLen, TestConfigTextSuffixes, TestConfigStartupWait,
+    processor/graph-embedding/config_test.go (TestConfigRefusesUnknownKey, TestConfigWorkers, TestConfigMaxTextLen, TestConfigTextSuffixes, TestConfigStartupWait,
     TestConfigCoalesceMs, TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
     TestConfigRefusesOutputs, TestConfigRefusesInputsTheFollowerDoesNotRead, TestStoreReadInputAdmitsStoreRegistry,
     FuzzResolveConfig), factory_test.go (TestCreateGraphEmbeddingRequiresNATSClient, TestRegisterAddsGraphEmbedding),
+    embedder_test.go (TestRegisterWithoutEmbedderRefuses),
     failed_test.go (TestFailedMapHistoryMatchesModel), the integration-tagged files (TestReadinessWaitsForHopTwo,
     TestRestartCompletesGeneratedRevision, TestCoalescedRevisionsComplete, TestRecreatedRevisionWaitsForWorker,
     TestStorageRefLaneEmbedsIdentityThenBody,
@@ -4613,7 +4619,8 @@
     TestSearchAnswersEnveloped, TestSearchLimitEdges, TestSearchQueryEdges, TestSearchScopeEdges, TestSimilarEdges,
     TestTopKAtTie, TestScopedSearch, TestQueriesWithheldUntilReady, TestWorkerFailureAnswersAndCounts,
     TestHealthNamesLostCacheWatch, TestNoResponderAfterStop,
-    TestGraphEmbeddingLifecycleSuite), internal/harness/contract/embeddingprovider_test.go
+    TestGraphEmbeddingLifecycleSuite, TestEmbedderClosedOnStop, TestProductEmbedderIsUsed),
+    internal/harness/contract/embeddingprovider_test.go
     (TestGraphEmbeddingImportsNoProviderModule)
   owner: setup-04a-05-first-consumer-graph-embedding developer
   disposition: adapt
@@ -4799,8 +4806,8 @@
     the ended context. Filed by this change, status:blocked, linked
     without a closing keyword: #578 (graph-ingest's prefix read refuses a whole page for one poisoned entity, so a
     prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
-    questions outright when the composition offers no embedder; closed by the embedding_enabled key: set it false and
-    a word question is refused invalid not_enabled, left true it is a transient internal refusal naming
+    questions outright when the composition offers no embedder; closed by the embedding_enabled key: left out or false,
+    a word question is refused invalid not_enabled, set true it is a transient internal refusal naming
     graph.embedding.query.search, design D5 Q-B; since setup-04b-04-removal-keywords an nl resolve asks
     graph-lexical and never reaches graph-query's semantic). Issues: #195 adopted here (the
     integration test opens its client with natsfixture.Open) and stays open for other packages; #110 stays open for
@@ -4820,7 +4827,7 @@
     TestPoisonFallbackFinalSeedCancelled); the integration-tagged client_integration_test.go
     (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex); internal/harness/contract/fusionnats_test.go
     (TestFusionNATSImportsNoEmbedding and its sensitivity case); internal/harness/contract/reservedsubjects_test.go
-    (TestReservedSubjectsDeclaredOnce); internal/smoke/noembedder_integration_test.go (TestSmoke_NoEmbedderAnswers);
+    (TestReservedSubjectsDeclaredOnce); internal/smoke/fusion_integration_test.go (checkFusion, run by TestSmoke_OneConfigAnswers);
     notes/2.1.md-3.1.md of the change record seeds and mutation checks
   owner: setup-04a-05-fusionnats developer
   disposition: adapt

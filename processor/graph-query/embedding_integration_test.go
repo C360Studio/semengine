@@ -11,12 +11,54 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	graphembedding "github.com/c360studio/semengine/processor/graph-embedding"
+	"github.com/c360studio/semengine/types"
 )
+
+// fixedEmbedder embeds every text as the same unit vector. These tests ask only whether
+// graph-query forwards to graph-embedding and passes its answer back, not how well it ranks.
+type fixedEmbedder struct{}
+
+func (fixedEmbedder) Generate(_ context.Context, texts []string) ([][]float32, error) {
+	vectors := make([][]float32, len(texts))
+	for i := range texts {
+		vectors[i] = []float32{1, 0, 0, 0}
+	}
+	return vectors, nil
+}
+
+func (e fixedEmbedder) GenerateQuery(ctx context.Context, texts []string) ([][]float32, error) {
+	return e.Generate(ctx, texts)
+}
+
+func (fixedEmbedder) Dimensions() int { return 4 }
+func (fixedEmbedder) Model() string   { return "fixed-v1" }
+func (fixedEmbedder) Close() error    { return nil }
+
+// startGraphEmbedding starts graph-embedding as a product composes it: registered with its own
+// embedder through RegisterWithEmbedder and created through the registry.
+func startGraphEmbedding(t *testing.T, client *natsclient.Client) {
+	t.Helper()
+	registry := component.NewRegistry()
+	if err := graphembedding.RegisterWithEmbedder(registry, "fixed", func() (embedding.Embedder, error) {
+		return fixedEmbedder{}, nil
+	}); err != nil {
+		t.Fatalf("RegisterWithEmbedder: %v", err)
+	}
+	built, err := registry.CreateComponent("graph-embedding", types.ComponentConfig{
+		Type: "processor", Name: "graph-embedding", Enabled: true, Config: json.RawMessage(`{}`),
+	}, component.Dependencies{NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry()}, nil)
+	if err != nil {
+		t.Fatalf("create graph-embedding: %v", err)
+	}
+	startLifecycle(t, "graph-embedding", built)
+}
 
 // TestSemanticForwardsMinRevision: graph-query's semantic verb forwards its request, min_revision
 // included, unchanged to a real graph-embedding, and passes its answer and its refusal back. The
@@ -29,14 +71,8 @@ func TestSemanticForwardsMinRevision(t *testing.T) {
 	if _, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketEntityStates); err != nil {
 		t.Fatalf("ensure %s: %v", graph.BucketEntityStates, err)
 	}
-	built, err := graphembedding.CreateGraphEmbedding(json.RawMessage(`{}`), component.Dependencies{
-		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
-	})
-	if err != nil {
-		t.Fatalf("CreateGraphEmbedding: %v", err)
-	}
-	startLifecycle(t, "graph-embedding", built)
-	startComponent(t, client, `{}`)
+	startGraphEmbedding(t, client)
+	startComponent(t, client, tierOneConfig)
 	semantic := verbRow(t, graph.ResponderGraphQuery, "semantic").Subject
 
 	// Answered once graph-embedding's cache has applied its first snapshot; until then it refuses
@@ -84,13 +120,7 @@ func TestNotEnabledRefusesBeforeForwarding(t *testing.T) {
 	if _, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketEntityStates); err != nil {
 		t.Fatalf("ensure %s: %v", graph.BucketEntityStates, err)
 	}
-	built, err := graphembedding.CreateGraphEmbedding(json.RawMessage(`{}`), component.Dependencies{
-		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
-	})
-	if err != nil {
-		t.Fatalf("CreateGraphEmbedding: %v", err)
-	}
-	startLifecycle(t, "graph-embedding", built)
+	startGraphEmbedding(t, client)
 
 	// graph-embedding answers its own search once its cache has applied its first snapshot; until
 	// then it refuses index_not_ready. That answer is the event that shows it is serving.

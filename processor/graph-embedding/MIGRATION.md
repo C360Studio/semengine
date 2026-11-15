@@ -5,7 +5,7 @@ your cutover and what you can leave alone. The port breaks old shapes where that
 (owner, 2026-11-02). Cites to sister repositories are at SemSource `e4febc0d`. Nothing here was run against
 your code: it comes from reading it.
 
-This file covers the write path (the component that follows `ENTITY_STATES` and keeps one BM25 embedding record per
+This file covers the write path (the component that follows `ENTITY_STATES` and keeps one embedding record per
 entity with text) and the query verbs (`graph.embedding.query.search` and `.similar`). `pkg/fusion` has its own
 `MIGRATION.md`.
 
@@ -17,11 +17,19 @@ start.
 - **`batch_size` is refused.** In SemStreams nothing read it. SemSource's composition sets it under
   graph-embedding. *Do:* delete the line.
 - **Any unknown key is refused**, `cache_ttl` included (SemStreams refused that one by name; the rest it dropped
-  silently). *Do:* delete the key. The kept keys are `ports`, `embedder_type`, `workers`, `max_text_len`,
-  `text_suffixes`, `startup_attempts`, `startup_interval_ms` and `coalesce_ms`.
-- **`embedder_type: "http"` is refused** at tier 0, with an error naming the value and the tier. Only `bm25` works
-  (an empty value means `bm25`). The HTTP embedder and the model registry it needed are not ported; they belong
-  to tier 1. *Do:* use `bm25` or leave the key out. The registration no longer asks boot for a model registry.
+  silently). *Do:* delete the key. The kept keys are `ports`, `workers`, `max_text_len`, `text_suffixes`,
+  `startup_attempts`, `startup_interval_ms` and `coalesce_ms`.
+- **`embedder_type` is refused**, whatever its value, naming the key. SemStreams chose the embedder by this key
+  (`bm25` in process, or `http`); SemEngine has no embedder of its own. *Do:* delete the key, and see the next item.
+- **`graphembedding.Register` refuses construction**, class invalid, naming `RegisterWithEmbedder` and tier 1.
+  SemStreams' graph-embedding ran its in-process BM25 embedder with no provider; there is no tier 0 embedder now.
+  SemSource's tier 0 composition registers plain `Register` (`cmd/semsource/run.go:317` at SemSource `4ca2072c`).
+  *Do:* at tier 0, leave graph-embedding out of the composition (graph-lexical answers word questions); from tier 1,
+  register it with `graphembedding.RegisterWithEmbedder(registry, name, newEmbedder)`, where `newEmbedder` builds
+  your `embedding.Embedder` (for example a client for semembed). The registration asks boot for no model registry.
+- **`graphembedding.CreateGraphEmbedding` is gone.** SemStreams exported the factory, so a caller could build the
+  component without a registry. *Do:* register with `RegisterWithEmbedder` and create the component through the
+  component manager.
 - **Ports are checked.** An input other than a `kv-watch` of every `ENTITY_STATES` key with no history, or a
   `store-read`, is refused naming the port, and one such watch is required. Any declared output is refused: the
   component writes `EMBEDDING_INDEX` and `EMBEDDING_DEDUP` itself. A `ports` block that is present is used as
@@ -77,7 +85,8 @@ Applies to `graph.embedding.query.search` and `.similar`, and so to graph-query'
 forward the bytes unchanged. Each change below fails or alters an answer without a boot error.
 
 - **The reply is enveloped.** The pin sent a bare object. Now `data.results` holds the hits inside a
-  `graph.QueryResponse`; `search` also sends `data.embedder_type`. *Do:* read `data.results`.
+  `graph.QueryResponse`; `search` also sends `data.embedder_type`, the name the embedder was registered under.
+  *Do:* read `data.results`.
 - **`similar`'s hit list is renamed.** `similar` (the field holding the hits) is now `results`, and the echoed
   `entity_id` and the `duration` are gone.
 - **Limits are refused, not clamped.** In SemStreams a `limit` of 0 or below meant 10 and one above 100 was cut to 100.
@@ -105,7 +114,8 @@ forward the bytes unchanged. Each change below fails or alters an answer without
 
 ## Not carried
 
-- The HTTP embedder and the vector providers behind it.
+- The HTTP embedder, the in-process BM25 embedder and the vector providers behind them. A product supplies its
+  embedder through `RegisterWithEmbedder`.
 - The indexing-profile check: in SemStreams every path returned true, and the ADR behind it (ADR-054) is not ported.
 - The pin's own watch, reset latch, status bucket, heartbeat and `readiness.go`: `graph/follower` does these for
   graph-index and graph-embedding alike.

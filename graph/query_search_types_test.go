@@ -155,8 +155,8 @@ func TestRequestsDecodeStrictly(t *testing.T) {
 	}{
 		{
 			"search reply",
-			SemanticData{Results: []SimilarityHit{}, EmbedderType: "bm25"},
-			`{"results":[],"embedder_type":"bm25","unreadable_records":0,"failed_records":0}`,
+			SemanticData{Results: []SimilarityHit{}, EmbedderType: "word-count"},
+			`{"results":[],"embedder_type":"word-count","unreadable_records":0,"failed_records":0}`,
 		},
 		{
 			"similar reply",

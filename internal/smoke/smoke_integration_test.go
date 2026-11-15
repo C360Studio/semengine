@@ -21,7 +21,6 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
@@ -34,7 +33,7 @@ import (
 // The fixed inputs. Expected answers are written from these, never from a reply.
 const (
 	producerSource = "smoke-producer"
-	namePredicate  = "fleet.identity.name" // ends in .name, so graph-embedding embeds it
+	namePredicate  = "fleet.identity.name" // ends in .name, so graph-lexical indexes its words
 	nextPredicate  = "fleet.link.next"
 	homePredicate  = "fleet.link.home"
 
@@ -250,7 +249,6 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision
 	t.Helper()
 	lead := f.id(drone1)
 	ids := slices.Sorted(maps.Keys(w))
-	revisions := map[string]uint64{}
 
 	// entity: each live entity with each statement once; a deleted one not found.
 	for _, id := range ids {
@@ -262,7 +260,6 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision
 		if err := json.Unmarshal(reply, &exact); err != nil || exact.Entity == nil {
 			t.Fatalf("entity %s: decode %s: %v", id, reply, err)
 		}
-		revisions[id] = exact.KVRevision
 		if got, wantStatements := statementsOf(exact.Entity), w[id].statementStrings(); !slices.Equal(got, wantStatements) {
 			t.Errorf("entity %s holds %v, want %v", id, got, wantStatements)
 		}
@@ -314,11 +311,9 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision
 	}
 
 	checkCommunities(t, o, s, f, w, revision, deleted)
-	checkEmbeddingRecords(t, o, revisions)
 	if t.Failed() {
 		t.FailNow()
 	}
-	checkSearch(t, o, s, f, w, deleted)
 	return checkLexical(t, o, s, f, w, revision, deleted)
 }
 
@@ -371,44 +366,7 @@ func checkSummary(t *testing.T, summary graph.SummaryData, w want) {
 	}
 }
 
-// checkEmbeddingRecords reads EMBEDDING_INDEX, a declared read beside the public paths:
-// one generated record per live entity, made from the entity's current revision as the entity verb
-// read it (revisions), and no other record.
-func checkEmbeddingRecords(t *testing.T, o observer, revisions map[string]uint64) {
-	t.Helper()
-	kv, err := o.js.KeyValue(t.Context(), graph.BucketEmbeddingIndex)
-	if err != nil {
-		t.Fatalf("open %s: %v", graph.BucketEmbeddingIndex, err)
-	}
-	keys, err := kv.Keys(t.Context())
-	if err != nil {
-		t.Fatalf("keys of %s: %v", graph.BucketEmbeddingIndex, err)
-	}
-	slices.Sort(keys)
-	if wantKeys := slices.Sorted(maps.Keys(revisions)); !slices.Equal(keys, wantKeys) {
-		t.Errorf("%s holds records for %v, want %v", graph.BucketEmbeddingIndex, keys, wantKeys)
-	}
-	for _, key := range keys {
-		revision, live := revisions[key]
-		if !live {
-			continue
-		}
-		entry, err := kv.Get(t.Context(), key)
-		if err != nil {
-			t.Fatalf("get %s/%s: %v", graph.BucketEmbeddingIndex, key, err)
-		}
-		var record embedding.Record
-		if err := json.Unmarshal(entry.Value(), &record); err != nil {
-			t.Fatalf("decode %s/%s: %v", graph.BucketEmbeddingIndex, key, err)
-		}
-		if record.Status != embedding.StatusGenerated || record.EntityID != key || record.SourceRevision != revision {
-			t.Errorf("%s/%s = status %s, entity %s, source revision %d; want generated, %s, %d",
-				graph.BucketEmbeddingIndex, key, record.Status, record.EntityID, record.SourceRevision, key, revision)
-		}
-	}
-}
-
-// name is e's name, the one statement graph-embedding embeds (namePredicate ends in .name).
+// name is e's name, the one statement graph-lexical indexes (namePredicate ends in .name).
 func (e entityInput) name() string {
 	for _, s := range e.statements {
 		if s.predicate == namePredicate {
@@ -418,9 +376,9 @@ func (e entityInput) name() string {
 	return ""
 }
 
-// words is e's name as graph-embedding's BM25 embedder and graph-lexical's word index tokenize these
-// names: lowercased, split on spaces. No fixture name holds a stopword, a word under two letters, a
-// suffix the embedder's stemmer strips, or a plural the word index folds.
+// words is e's name as graph-lexical's word index tokenizes these names: lowercased, split on
+// spaces. No fixture name holds a stopword, a word under two letters, or a plural the word index
+// folds.
 func (e entityInput) words() []string { return strings.Fields(strings.ToLower(e.name())) }
 
 // fixedInput is the fixed entity id.
@@ -435,10 +393,10 @@ func (f fixture) fixedInput(t *testing.T, id string) entityInput {
 	return entityInput{}
 }
 
-// keywords gives each input the last word of its name that no other input's name holds. A search
-// for it scores only that entity above 0: the fixture's words hash to distinct dimensions of the
-// embedder's vector (notes/3.2.md). The last word, because the edit appends one: "Osprey Two"
-// gives "two", which only drone3's current record holds, so a hit on it is never the record from
+// keywords gives each input the last word of its name that no other input's name holds, so a word
+// search for it matches that entity alone. The last word, because the edit appends one: "Osprey
+// Two" gives "two", which only drone3's current record holds, so a hit on it is never the record
+// from before the edit.
 // before the edit.
 func keywords(t *testing.T, inputs []entityInput) map[string]string {
 	t.Helper()
@@ -459,124 +417,6 @@ func keywords(t *testing.T, inputs []entityInput) map[string]string {
 		}
 	}
 	return out
-}
-
-// sharing is similar's answer for id, written from w: the other live entities whose name shares a
-// word with id's, sorted.
-func (w want) sharing(id string) []string {
-	out := []string{}
-	for other, e := range w {
-		if other == id {
-			continue
-		}
-		for _, word := range e.words() {
-			if slices.Contains(w[id].words(), word) {
-				out = append(out, other)
-				break
-			}
-		}
-	}
-	slices.Sort(out)
-	return out
-}
-
-// searched is one semantic reply, or the refusal.
-type searched struct {
-	data graph.SemanticData
-	raw  []byte
-	err  error
-}
-
-// semantic asks graph-query's semantic verb for query, at most limit hits (0 for the default).
-func (o observer) semantic(t *testing.T, query string, limit int) searched {
-	t.Helper()
-	raw, err := o.ask(t, "semantic", graph.SemanticRequest{Query: query, Limit: limit})
-	if err != nil {
-		return searched{raw: raw, err: err}
-	}
-	var envelope graph.QueryResponse[graph.SemanticData]
-	return searched{data: envelope.Data, raw: raw, err: json.Unmarshal(raw, &envelope)}
-}
-
-// hitIDs is the hits' entity IDs, in the order the reply gave them.
-func hitIDs(hits []graph.SimilarityHit) []string {
-	out := make([]string, len(hits))
-	for i, hit := range hits {
-		out[i] = hit.EntityID
-	}
-	return out
-}
-
-// checkSearch checks graph-embedding's verbs through graph-query, semantic and similar. The BM25
-// embedder's statistics live in memory and depend on the order documents arrive, so a restart
-// changes scores (graph/embedding/bm25_embedder.go:119-123). No check reads a score, a vector or
-// the order of two hits with positive scores: what holds through a restart is which entities score
-// above 0, those whose name shares a word with the query, and the reply drops a 0.
-func checkSearch(t *testing.T, o observer, s stack, f fixture, w want, deleted []string) {
-	t.Helper()
-	inputs := slices.Collect(maps.Values(w))
-	for _, id := range deleted {
-		inputs = append(inputs, f.fixedInput(t, id))
-	}
-	keyword := keywords(t, inputs)
-	live := slices.Sorted(maps.Keys(w))
-
-	// The verbs answer from graph-embedding's vector cache, which applies an EMBEDDING_INDEX write
-	// after it lands in the bucket and claims no revision (indexed_revision 0), so the waits before
-	// checkAnswers do not order a read of it. Its one ordering event is its answer: wait for one
-	// search on every keyword, live and deleted, to answer exactly the live entities. Each keyword
-	// is held only by its entity's current record, so that reply is read after the cache applied
-	// every record checkEmbeddingRecords read and every delete. index_not_ready before the cache's
-	// first snapshot is asked again; a lost cache watch, latched until restart, fails at once.
-	query := strings.Join(slices.Sorted(maps.Values(keyword)), " ")
-	got := await(t, s, fmt.Sprintf("semantic %q to answer %v", query, live), func(context.Context) (searched, error) {
-		return o.semantic(t, query, graph.MaxSimilarityLimit), nil
-	}, func(r searched) bool {
-		var refusal *errs.ClassifiedError
-		if errors.As(r.err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady {
-			return strings.Contains(refusal.Error(), "restart the process")
-		}
-		return r.err != nil || slices.Equal(slices.Sorted(slices.Values(hitIDs(r.data.Results))), live)
-	})
-	if got.err != nil {
-		t.Fatalf("semantic %q: %s: %v", query, got.raw, got.err)
-	}
-	if got.data.EmbedderType != "bm25" || got.data.UnreadableRecords != 0 || got.data.FailedRecords != 0 {
-		t.Errorf("semantic %q: embedder %q, %d unreadable, %d failed; want bm25, 0, 0",
-			query, got.data.EmbedderType, got.data.UnreadableRecords, got.data.FailedRecords)
-	}
-
-	// semantic on one keyword: its entity, the only hit and so the top one; a deleted one, none.
-	for _, e := range inputs {
-		wantHits := []string{}
-		if _, isLive := w[e.id]; isLive {
-			wantHits = []string{e.id}
-		}
-		r := o.semantic(t, keyword[e.id], 0)
-		if r.err != nil {
-			t.Fatalf("semantic %q: %s: %v", keyword[e.id], r.raw, r.err)
-		}
-		if hits := hitIDs(r.data.Results); !slices.Equal(hits, wantHits) {
-			t.Errorf("semantic %q = %v, want %v", keyword[e.id], hits, wantHits)
-		}
-	}
-
-	// similar: the other live entities sharing a word with the entity's name, in any order (their
-	// scores depend on the statistics each record was embedded under); a deleted one has no record.
-	for _, id := range live {
-		var similar graph.SimilarData
-		o.askData(t, "similar", graph.SimilarRequest{EntityID: id}, &similar)
-		if hits, wantHits := slices.Sorted(slices.Values(hitIDs(similar.Results))), w.sharing(id); !slices.Equal(hits, wantHits) {
-			t.Errorf("similar %s = %v, want %v", id, hits, wantHits)
-		}
-	}
-	for _, id := range deleted {
-		reply, err := o.ask(t, "similar", graph.SimilarRequest{EntityID: id})
-		requireRefusal(t, "similar "+id, reply, err, graph.ErrorCodeEmbeddingUnavailable, id)
-	}
-	if t.Failed() {
-		t.FailNow()
-	}
 }
 
 // lexicalReplies are graph-lexical's search replies, by the word asked.
@@ -895,14 +735,15 @@ func checkWordSearches(t *testing.T, o observer, s stack, lead, group string, me
 }
 
 // TestSmoke_OneConfigAnswers holds composed-stack, "Answers from one configuration": the stack boots
-// from one configuration, answers the fixed questions over NATS and over graph-gateway's GraphQL
-// route, streams ENTITY_STATES to a websocket client, and follows an edit and a delete.
+// from one configuration with no graph-embedding, answers the fixed questions over NATS, through
+// fusion and over graph-gateway's GraphQL route, streams ENTITY_STATES to a websocket client, and
+// follows an edit and a delete.
 func TestSmoke_OneConfigAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
 	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
-	// StartAll has returned, so the composition is fixed: the eight components are listed.
+	// StartAll has returned, so the composition is fixed: the seven components are listed.
 	requireComponentsListed(t, s)
 
 	inputs := f.fixedEntities()
@@ -913,7 +754,15 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	o.awaitAcknowledged(t, s, last)
 	revision := o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
+	// awaitIndexed read graph-ingest's, graph-index's, graph-clustering's and graph-lexical's
+	// entries, written by this child on a server the reset emptied, so the listing is complete for
+	// the four; no component runs that writes another, graph-embedding's least of all.
+	if keys, want := o.graphStatusKeys(t), []string{readiness.KeyGraphClustering, readiness.KeyGraphIndex,
+		readiness.KeyGraphIngest, readiness.KeyGraphLexical}; !slices.Equal(keys, want) {
+		t.Fatalf("%s holds keys %v, want %v (no %s)", graph.BucketGraphStatus, keys, want, readiness.KeyGraphEmbedding)
+	}
 	checkAnswers(t, o, s, f, wantOf(inputs...), revision)
+	checkFusion(t, o, f)
 	checkGateway(t, s, f, wantOf(inputs...))
 	// The client connects after the writes, so its snapshot holds a put for each fixed entity and
 	// synced, and any put the view had not yet applied follows as a change.
@@ -965,8 +814,8 @@ func (o observer) deleteEntity(t *testing.T, id string) {
 // checkWritesAfterRestart publishes one new entity and one edit to a restarted stack, waits on the
 // ordered waits after them, and checks the answers: before plus the two writes. It returns what the
 // stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
-// graph-index, graph-embedding, graph-clustering and graph-lexical envelopes and the community
-// record an earlier process left, at a lower revision, cannot pass them; the new entity's record
+// graph-index, graph-clustering and graph-lexical envelopes and the community record an earlier
+// process left, at a lower revision, cannot pass them; the new entity's record
 // and the edit's record at its new revision are ones no earlier process can have written.
 func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, before want) want {
 	t.Helper()
@@ -1076,7 +925,7 @@ func (o observer) appliedRecord(t *testing.T, id string) bool {
 // process holds graph-ingest on one input, after its entity write and before its applied-sequence
 // record and acknowledgement, and is killed there; a new process boots from the same configuration.
 // Every input the ENTITY stream acknowledged then answers with each statement once, the held input
-// among them, and the index and embedding records catch up, including the writes published after
+// among them, and the index, word-index and community records catch up, including the writes published after
 // the new process booted.
 func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 	url := shared.Reset(t)
@@ -1253,7 +1102,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 // TestSmoke_BrokerRestartUnderRunningStack holds composed-stack, "Restart the broker under the
 // running stack": the NATS server restarts on the same URL with its file storage while the stack
 // keeps running, and the same process, never restarted, applies a new entity, an edit and a delete
-// published after it, answers what it did before plus those writes, and lists its eight components
+// published after it, answers what it did before plus those writes, and lists its seven components
 // healthy, with no envelope reporting a lost feed or reset_required.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.

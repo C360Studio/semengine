@@ -168,7 +168,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 		}
 	}
 
-	saved, err := c.storage.SavePendingGuarded(ctx, record)
+	saved, err := c.storage.SavePendingGuarded(ctx, record, c.identity())
 	if err != nil {
 		// No durable record was written, so the revision is not done: it stays pending
 		// until the repair lane or a later write of the entity writes one.
@@ -178,8 +178,10 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 		return
 	}
 	if !saved {
-		// A generated record at this revision or a newer one already stands: nothing is
-		// left to do for this revision.
+		// A record made under the running embedder's identity at this revision or a newer
+		// one already stands: nothing is left to do for this revision. One made under
+		// another identity, or found while the width is unresolved, was replaced by this
+		// pending record, so the Worker regenerates it.
 		c.failed.ended(key, revision)
 		c.complete(key, revision)
 		return

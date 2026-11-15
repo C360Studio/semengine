@@ -100,7 +100,7 @@ const (
 	ErrorCodeEmbeddingUnavailable = "embedding_unavailable"
 
 	// ErrorCodeNotEnabled indicates the composition turned the verb off: graph-query
-	// was configured with embedding_enabled false, so it answers no semantic or
+	// was not configured with embedding_enabled true, so it answers no semantic or
 	// similar request. Every request is refused alike, unlike embedding_unavailable,
 	// which is one source entity with no vector, and index_not_ready, which is an
 	// index still catching up. Retrying does not help. Class is ErrorInvalid; the

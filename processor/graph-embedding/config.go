@@ -11,31 +11,26 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// embedderBM25 is the one embedder at tier 0: in-process, no provider.
-const embedderBM25 = "bm25"
-
 // defaultWorkers matches embedding.NewWorker's own default, so an unset workers behaves as
 // the Worker intends.
 const defaultWorkers = 5
 
-// maxSourceTextLenBM25 is the text cap for BM25 when max_text_len is unset. The Worker's own
-// default, 8,000, is the cap for other embedders, so the component always passes this value
-// instead.
-const maxSourceTextLenBM25 = 4000
+// defaultMaxTextLen is the text cap when max_text_len is unset. The component always passes
+// a cap to the Worker, so the Worker's own default, 8,000, is never used.
+const defaultMaxTextLen = 4000
 
 // Config holds configuration for graph-embedding component. Decoding is strict: a key it
-// does not define, batch_size among them, is refused.
+// does not define, batch_size and embedder_type among them, is refused. The embedder is not
+// configured here: the product supplies it through RegisterWithEmbedder.
 type Config struct {
 	Ports *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
-	// EmbedderType is the embedder; at tier 0 only bm25 is accepted, and empty means bm25.
-	EmbedderType string `json:"embedder_type" schema:"type:string,description:Embedder type (bm25 only at tier 0),category:basic"`
 
 	// Workers is the number of concurrent embedding worker goroutines; 0 means 5.
 	Workers int `json:"workers,omitempty" schema:"type:int,description:Number of concurrent embedding worker goroutines (0 = default 5),category:advanced"`
 
 	// MaxTextLen is the source-text cap, in characters, applied before embedding; text past it
 	// is truncated at a word boundary. It is part of the dedup key, so changing it re-embeds
-	// the entities it affects. 0 means BM25's 4,000.
+	// the entities it affects. 0 means 4,000.
 	MaxTextLen int `json:"max_text_len,omitempty" schema:"type:int,description:Max characters of source text embedded per entity; text beyond is truncated at a word boundary. 0 uses the default (4000),min:0,max:1000000,category:advanced"`
 
 	// TextSuffixes are the predicate suffixes whose string values are embedded; empty means
@@ -66,10 +61,6 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if c.EmbedderType != embedderBM25 {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
-			fmt.Sprintf("embedder_type %q is not available at tier 0; the only embedder is %q", c.EmbedderType, embedderBM25))
-	}
 	if c.Workers < 0 {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "workers cannot be negative")
 	}
@@ -118,14 +109,11 @@ func validateInputs(definitions []component.PortDefinition) error {
 // ApplyDefaults sets default values for configuration, resolving each zero value to the
 // value its reader uses. Validate only checks.
 func (c *Config) ApplyDefaults() {
-	if c.EmbedderType == "" {
-		c.EmbedderType = embedderBM25
-	}
 	if c.Workers == 0 {
 		c.Workers = defaultWorkers
 	}
 	if c.MaxTextLen == 0 {
-		c.MaxTextLen = maxSourceTextLenBM25
+		c.MaxTextLen = defaultMaxTextLen
 	}
 	if len(c.TextSuffixes) == 0 {
 		c.TextSuffixes = entitytext.DefaultSuffixes()
@@ -152,8 +140,7 @@ func DefaultConfig() Config {
 				{Name: "content_store", Config: component.StoreReadPort{Bucket: "MESSAGES"}},
 			},
 		},
-		EmbedderType: embedderBM25,
-		Workers:      defaultWorkers,
+		Workers: defaultWorkers,
 	}
 }
 

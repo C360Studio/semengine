@@ -6,9 +6,10 @@ The embedding component of the graph subsystem.
 
 `graph-embedding` follows the `ENTITY_STATES` bucket, which graph-ingest writes, and keeps one *embedding record* per
 entity that has text in the `EMBEDDING_INDEX` bucket. An embedding is a vector of numbers computed from the entity's
-text so that similar texts get similar vectors. At tier 0 (no external provider) the only embedder is BM25, which runs
-in this process; nothing is sent to a model service. `EMBEDDING_DEDUP` holds content-addressed
-embeddings, keyed by the text and the embedder, so identical text is embedded once.
+text so that similar texts get similar vectors. graph-embedding has no embedder of its own: the product supplies one
+(see "Registering an embedder" below), so the component runs from tier 1 up and a tier 0 composition leaves it out.
+`EMBEDDING_DEDUP` holds content-addressed embeddings, keyed by the text and the embedder, so identical text is
+embedded once.
 
 A *revision* is the number NATS gives each write to a bucket. The component has two hops, and a revision counts as
 applied only after both:
@@ -48,6 +49,25 @@ body is offloaded to an object store (a `StorageRef`) is embedded from its ident
 Worker reads through the store registry. If no store is registered for the body's storage instance, only the inline
 text is embedded and `content_unresolved_total` counts the exclusion.
 
+## Registering an embedder
+
+A product registers graph-embedding with its embedder, an `embedding.Embedder`:
+
+```go
+err := graphembedding.RegisterWithEmbedder(registry, "semembed", func() (embedding.Embedder, error) {
+    return newSemembedClient(endpoint) // the product's own embedder
+})
+```
+
+The name (`"semembed"` here) must not be empty. It is the type part of the dedup key, so two embedders never share a
+stored vector, and `search` replies it as `embedder_type`. The constructor is called once in each `Start`, never when
+the component is created, and `Stop` closes the embedder it returned. If `Start` fails after building the embedder, it
+closes the embedder; if that close fails too, `Start` returns both errors and the next `Stop` closes it again.
+
+The factory plain `Register` adds refuses construction, class invalid, naming `RegisterWithEmbedder` and tier 1. A
+composition that lists graph-embedding without an embedder therefore fails when the component is created, rather than
+running without one.
+
 ## Configuration
 
 ```json
@@ -62,7 +82,6 @@ text is embedded and `content_unresolved_total` counts the exclusion.
         {"name": "content_store", "config": {"kind": "store-read", "bucket": "MESSAGES"}}
       ]
     },
-    "embedder_type": "bm25",
     "workers": 5,
     "coalesce_ms": 0
   }
@@ -72,19 +91,19 @@ text is embedded and `content_unresolved_total` counts the exclusion.
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `ports` | object | the ports above | Inputs only. A `ports` block that is present is used as written; one that is absent takes the defaults |
-| `embedder_type` | string | `bm25` | The only value accepted at tier 0; any other, `http` included, is refused |
 | `workers` | int | 5 | Concurrent Worker goroutines; negative is refused |
-| `max_text_len` | int | 4000 | Characters of text embedded per entity, 0 to 1,000,000. A change applies to records generated after it; a record already generated keeps its text until the entity has a new revision, such as a re-ingest |
+| `max_text_len` | int | 4000 | Characters of text embedded per entity, 0 to 1,000,000. A change takes effect at the restart that applies it: every stored vector is embedded again from the new text (see "Changing the embedder") |
 | `text_suffixes` | array | `.title .content .description .summary .text .name .body .abstract .subject` | Predicate suffixes whose string values are embedded |
 | `startup_attempts` | int | 30 | Tries to find `ENTITY_STATES` at startup |
 | `startup_interval_ms` | int | 500 | Pause between those tries |
 | `coalesce_ms` | int | 0 | Window in milliseconds for merging updates to one entity; 0 applies each at once |
 
 The configuration is decoded strictly: a key not listed here is refused at construction, naming it. This includes
-`batch_size` and `cache_ttl`. The inputs must be a `kv-watch` of every `ENTITY_STATES` key with no history (at least
-one is required) and, optionally, `store-read` inputs; the store registry is used only when a `store-read` input is
-declared. The component declares no outputs and refuses a configuration that does. Registering the factory asks boot
-for no model registry. `MIGRATION.md` lists what a SemStreams configuration changes.
+`batch_size`, `cache_ttl` and `embedder_type` (the embedder is named when it is registered). The inputs must be a
+`kv-watch` of every `ENTITY_STATES` key with no history (at least one is required) and, optionally, `store-read`
+inputs; the store registry is used only when a `store-read` input is declared. The component declares no outputs and
+refuses a configuration that does. Registering the factory asks boot for no model registry: the product owns its
+embedder and whatever the embedder connects to. `MIGRATION.md` lists what a SemStreams configuration changes.
 
 ## Ports
 
@@ -131,7 +150,8 @@ revision of the entity or a restart.
 Both verbs answer a `graph.QueryResponse` with producer `graph-embedding`, from `Start` until `Stop` returns. Each
 reply's `data` holds `results` (a JSON array, `[]` when empty; each hit is an `entity_id` and a `similarity`),
 `unreadable_records` (records in `EMBEDDING_INDEX` that could not be decoded) and `failed_records` (entities whose
-latest embedding failed, so they cannot be hits). `search` also sends `embedder_type`, always `bm25`. A 0 in both
+latest embedding failed, so they cannot be hits). `search` also sends `embedder_type`, the name the embedder was
+registered under, and embeds its query with the embedder's `GenerateQuery`. A 0 in both
 counts does not prove every entity is searchable: an entity whose embedding is still pending is left out and counted
 in neither.
 
@@ -149,9 +169,17 @@ in neither.
   `invalid_request`, naming what was refused.
 - **No revision claim.** The verbs do not say how current the cache is. `indexed_revision` is always 0, and a
   `min_revision` above 0 is refused `invalid_request` rather than answered.
-- **`similar` needs a vector.** An entity with no record, a record that is not generated, or a generated record with no
-  vector is refused class invalid, code `embedding_unavailable`; a record that cannot be decoded is refused class
-  invalid with no code.
+- **`similar` needs a vector.** An entity with no record, a record that is not generated, a generated record with no
+  vector, or one made under another embedder identity is refused class invalid, code `embedding_unavailable`; a record that
+  cannot be decoded is refused class invalid with no code.
+- **Changing the embedder.** Each generated record stores the identity it was made under: the registered type, the
+  embedder's model and width, and `max_text_len`. A restart against the same NATS state with any of those changed
+  regenerates every vector the previous embedder left: hop 1 replaces such a record with a pending one, and the Worker
+  embeds it again. Until it has, the verbs score only vectors made under the running identity, so an entity whose
+  vector is not regenerated yet is not a hit and is refused as a `similar` source, rather than compared across two
+  vector spaces. A restart with the same embedder keeps every stored vector, provided the embedder reports its width
+  from the start: one that reports 0 until its first response cannot vouch for a stored vector, so the entities hop 1
+  replays before that response are embedded again.
 
 ### When a call is withheld
 
@@ -185,8 +213,8 @@ under the same prefix.
 
 ## Dependencies
 
-- Upstream: graph-ingest writes `ENTITY_STATES`, which this component follows.
-- Reads: `graph/follower` (watch, watermark, readiness), `graph/embedding` (BM25 embedder, Worker, storage),
-  `graph/entitytext` (which values are text, the offloaded-body read), `graph/kvcatalog`, `storage/storeregistry`
+- Upstream: graph-ingest writes `ENTITY_STATES`, which this component follows. The product supplies the embedder.
+- Reads: `graph/follower` (watch, watermark, readiness), `graph/embedding` (the `Embedder` interface, Worker,
+  storage), `graph/entitytext` (which values are text, the offloaded-body read), `graph/kvcatalog`, `storage/storeregistry`
   (offloaded bodies).
 - Writes: `EMBEDDING_INDEX` and `EMBEDDING_DEDUP`, which this component owns.

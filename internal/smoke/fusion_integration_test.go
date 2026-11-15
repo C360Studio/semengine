@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/fusion"
 	"github.com/c360studio/semengine/pkg/fusion/fusionnats"
@@ -86,34 +85,13 @@ func (o observer) graphStatusKeys(t *testing.T) []string {
 	return keys
 }
 
-// TestSmoke_NoEmbedderAnswers holds composed-stack, "The graph stack answers fusion without an
-// embedder": graph-ingest, graph-index, graph-lexical and graph-query boot from one configuration
-// with no graph-embedding, and fusion over fusionnats answers symbol and prefix questions from
-// them, misses an unknown name, and answers a word question from graph-lexical's word index with
-// provenance lexical.
-func TestSmoke_NoEmbedderAnswers(t *testing.T) {
-	url := shared.Reset(t)
-	o := newObserver(t, url)
-	s := startComposition(t, o, url, graphOnlyStack)
-	f := fixture{platform: s.platform}
-	// StartAll has returned, so the composition is fixed: the four components are listed.
-	requireComponentsListed(t, s)
-
-	var last uint64
-	for _, e := range f.fixedEntities() {
-		last = o.publish(t, e)
-	}
-	o.awaitAcknowledged(t, s, last)
-	revision := o.awaitIndexed(t, s)
-	requireComponentsHealthy(t, s)
-	// awaitIndexed read graph-ingest's, graph-index's and graph-lexical's entries, written by this
-	// child on a server the reset emptied, so the listing is complete for the three; nothing runs to
-	// write a fourth.
-	if keys, want := o.graphStatusKeys(t), []string{readiness.KeyGraphIndex, readiness.KeyGraphIngest,
-		readiness.KeyGraphLexical}; !slices.Equal(keys, want) {
-		t.Fatalf("%s holds keys %v, want %v (no %s)", graph.BucketGraphStatus, keys, want, readiness.KeyGraphEmbedding)
-	}
-
+// checkFusion asks pkg/fusion, over pkg/fusion/fusionnats, the symbol and prefix questions about
+// the fixed batch, and an unknown name, as a consumer does (composed-stack, "Answers from one
+// configuration"). They answer from graph-ingest and graph-index alone. f's fixed entities must be
+// the stack's whole graph, unedited: the prefix answer lists every drone. The word question is
+// checkLexical's.
+func checkFusion(t *testing.T, o observer, f fixture) {
+	t.Helper()
 	engine := o.fusionEngine(t)
 	wants := []fusion.Want{fusion.WantRelations, fusion.WantPaths}
 	ref := func(name string) []fusion.Ref { return []fusion.Ref{{Name: name}} }
@@ -124,7 +102,7 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 		return fusion.Path{Names: names, Truncated: truncated}
 	}
 
-	// Every expectation below is written from fixedEntities, never from a reply. The waits above
+	// Every expectation below is written from fixedEntities, never from a reply. The caller's waits
 	// order these reads after the batch: graph-ingest acknowledged every input, and graph-index's
 	// envelope reached the ENTITY_STATES revision read after that.
 
@@ -176,19 +154,4 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 		Misses:          []fusion.Miss{{Query: "Condor"}},
 		ContractVersion: fusion.ContractVersion,
 	})
-
-	// A word question goes to graph-lexical's word search. fusion's request names no revision, so
-	// the word index is first asked directly until its reply reflects the batch; nothing is written
-	// after, so fusion's request reads the same index. Only drone1's name holds the word.
-	o.lexicalSearch(t, s, "falcon", revision)
-	resp, err = engine.Fuse(t.Context(), fusion.Request{Query: "falcon", Want: wants}, fleetLens{fusion.ResolveModeNL})
-	requireFused(t, "NL falcon", resp, err, fusion.Response{
-		Provenance:      fusion.ProvenanceLexical,
-		Nodes:           []fusion.Node{node(drone1, "Falcon", "drone", map[string][]fusion.Ref{"next": ref("Kestrel")})},
-		Paths:           []fusion.Path{path(true, "Falcon", "Kestrel", "Osprey", "Harrier", "North Field")},
-		ContractVersion: fusion.ContractVersion,
-	})
-	requireComponentsHealthy(t, s)
-
-	stopStack(t, s)
 }

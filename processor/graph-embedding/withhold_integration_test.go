@@ -64,11 +64,12 @@ func startAfter(t *testing.T, client *natsclient.Client, stores *storeregistry.R
 			return slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})
 		}
 	}
-	built, err := CreateGraphEmbedding(json.RawMessage(`{}`), component.Dependencies{
+	h.source = &embedderSource{}
+	built, err := productFactory(t, h.source)(json.RawMessage(`{}`), component.Dependencies{
 		NATSClient: client, MetricsRegistry: h.metrics, StoreRegistry: stores, Logger: slog.New(logger(h.logs)),
 	})
 	if err != nil {
-		t.Fatalf("CreateGraphEmbedding: %v", err)
+		t.Fatalf("build graph-embedding: %v", err)
 	}
 	h.c = built.(*Component)
 	if err := h.c.Initialize(); err != nil {

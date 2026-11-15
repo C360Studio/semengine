@@ -22,25 +22,37 @@ const inProcessKeySchema = "semstreams/embedding/singleflight/v1"
 // vectors in different, incomparable vector spaces.
 //
 // It exists because EMBEDDING_DEDUP is durable, untimed, and never cleared: an
-// operator who switches embedder_type from bm25 to another embedder against the
+// operator who switches from one embedder to another against the
 // same NATS state would otherwise get every already-embedded entity's OLD vector back, stamped
 // with the NEW model's name. When both spaces happen to share a dimension count
-// (384 is the default for both BM25 here and TEI's all-MiniLM-L6-v2), cosine
+// (two 384-dimension models, such as all-MiniLM-L6-v2 and another small model), cosine
 // similarity returns a plausible-looking score across unrelated spaces and no
 // health signal fires. Folding identity into the key makes that impossible:
 // stale keys simply never match again and age out.
 type EmbedderIdentity struct {
-	// Type is the configured embedder kind ("bm25", or a product embedder's name).
+	// Type is the name the product registered its embedder under.
 	Type string
 	// Model is the embedder's model identifier.
 	Model string
 	// Dimensions is the vector width the embedder produces.
 	Dimensions int
 	// MaxTextLen is the source-text truncation cap applied before generation.
-	// It belongs in the key because the cap is derived from the embedder type
-	// (4000 for bm25, 8000 otherwise): flipping type changes the TEXT that gets
-	// embedded, not only the model that embeds it.
+	// It belongs in the key because the cap is configured apart from the
+	// embedder: changing it changes the TEXT that gets embedded, not only the
+	// model that embeds it.
 	MaxTextLen int
+}
+
+// IdentityOf is the identity of embedder registered as embedderType with the text cap
+// maxTextLen: Model and Dimensions are read now, so a remote embedder's width is 0 until it
+// has resolved it.
+func IdentityOf(embedderType string, embedder Embedder, maxTextLen int) EmbedderIdentity {
+	return EmbedderIdentity{
+		Type:       embedderType,
+		Model:      embedder.Model(),
+		Dimensions: embedder.Dimensions(),
+		MaxTextLen: maxTextLen,
+	}
 }
 
 // DedupKey derives the EMBEDDING_DEDUP key for text under a given embedder

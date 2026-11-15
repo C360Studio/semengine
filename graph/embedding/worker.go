@@ -211,8 +211,8 @@ func (w *Worker) WithMaxSourceTextLen(n int) *Worker {
 	return w
 }
 
-// WithEmbedderType sets the Type axis of the dedup key identity ("bm25", or a remote
-// embedder's type). The Worker folds it, with the embedder's live Model and Dimensions and the
+// WithEmbedderType sets the Type axis of the dedup key identity: the name the product
+// registered its embedder under. The Worker folds it, with the embedder's live Model and Dimensions and the
 // text cap, into the dedup key, so changing the embedder type cannot serve a vector from the
 // previous vector space.
 func (w *Worker) WithEmbedderType(t string) *Worker {
@@ -455,15 +455,10 @@ func (w *Worker) handleKVEntry(
 // each call, because a remote embedder may resolve its width from its first response
 // (Embedder.Dimensions is safe to read concurrently).
 func (w *Worker) embedderIdentity() EmbedderIdentity {
-	id := EmbedderIdentity{
-		Type:       w.embedderType,
-		MaxTextLen: w.maxSourceTextLen,
+	if w.embedder == nil {
+		return EmbedderIdentity{Type: w.embedderType, MaxTextLen: w.maxSourceTextLen}
 	}
-	if w.embedder != nil {
-		id.Model = w.embedder.Model()
-		id.Dimensions = w.embedder.Dimensions()
-	}
-	return id
+	return IdentityOf(w.embedderType, w.embedder, w.maxSourceTextLen)
 }
 
 // getOrGenerateEmbedding returns a vector from the dedup bucket or generates one.
@@ -580,9 +575,10 @@ func (w *Worker) dedupRecordUsable(entityID, contentHash string, r *DedupRecord)
 // The dedup hit and the offloaded-identity pair are counted here, after the save succeeded, so
 // they count stored vectors, not attempts.
 func (w *Worker) saveAndNotify(ctx context.Context, entityID string, record *Record, vector []float32, contentHash string, sourceRevision uint64, wasDedupHit bool) (terminal bool, outcome TerminalOutcome, reason string) {
-	dimensions := len(vector)
-	model := w.embedder.Model()
-	if err := w.storage.SaveGenerated(ctx, entityID, vector, model, dimensions, contentHash, sourceRevision); err != nil {
+	// The stored width is the vector's own, whatever the embedder reported before it resolved.
+	id := w.embedderIdentity()
+	id.Dimensions = len(vector)
+	if err := w.storage.SaveGenerated(ctx, entityID, vector, id, contentHash, sourceRevision); err != nil {
 		switch {
 		case errors.Is(err, ErrRecordGone):
 			// The entity was removed during generation: nothing to mark failed, and firing
@@ -608,7 +604,7 @@ func (w *Worker) saveAndNotify(ctx context.Context, entityID string, record *Rec
 		return markTerminal, markOutcome, markReason
 	}
 
-	w.logger.Debug("Embedding generated successfully", "entity_id", entityID, "dimensions", dimensions)
+	w.logger.Debug("Embedding generated successfully", "entity_id", entityID, "dimensions", id.Dimensions)
 
 	if wasDedupHit && w.metrics != nil {
 		w.metrics.IncDedupHits()

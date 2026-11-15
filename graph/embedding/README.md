@@ -1,7 +1,7 @@
 # graph/embedding
 
 Embeds the text of graph entities as vectors, stores them in NATS KV, and finds the entities
-nearest to a query vector. It runs without any external embedding provider.
+nearest to a query vector. It has no embedder of its own: a product supplies one.
 
 ## How embedding runs
 
@@ -22,9 +22,8 @@ tell older work from newer work.
 | Name | What it does |
 | --- | --- |
 | `Embedder` | Interface: `Generate` for documents, `GenerateQuery` for search queries |
-| `BM25Embedder` | The tier-0 embedder. Hashes terms into `Dimensions` slots (default 384) and weights them with BM25. It matches shared words, not meaning |
 | `Storage` | Reads and writes `EMBEDDING_INDEX` (one record per entity) and `EMBEDDING_DEDUP` (one vector per content key) |
-| `VectorCache` | In-memory copy of the generated vectors, kept current by watching `EMBEDDING_INDEX`; `FindSimilar` ranks by cosine similarity |
+| `VectorCache` | In-memory copy of the generated vectors, kept current by watching `EMBEDDING_INDEX`; `FindSimilar` ranks those made under the running embedder's identity by cosine similarity |
 | `Worker` | Hop 2: turns pending records into generated or failed ones, and calls `GeneratedCallback` and `TerminalCallback` |
 | `DedupKey`, `EmbedderIdentity` | The content key under which a vector is shared, which includes the embedder's type, model, width and text cap |
 
@@ -38,9 +37,13 @@ pending and reports no terminal outcome.
 
 Saves are ordered by source revision:
 
-- `SavePendingGuarded` writes unless the stored record is generated at the same or a newer
-  revision. It then writes nothing and returns `saved == false`. An older pending write may
-  replace a newer pending or failed record; only a generated record blocks it.
+- `SavePendingGuarded` writes unless the stored record was generated under the running embedder's
+  identity (the `EmbedderIdentity` the caller passes: registered type, model, width and text cap, the
+  same identity the dedup key folds in; `Record.GeneratedBy`) at the same or a newer revision. It
+  then writes nothing and returns `saved == false`. An older pending write may replace a newer
+  pending or failed record, and any write replaces a record made under another identity, or met
+  while the running width is unresolved, so it is regenerated; only a generated record of the
+  running identity blocks it.
 - `SaveGenerated` and `SaveFailed` return `ErrRecordGone` if the key is absent and
   `ErrSupersededRevision` if the stored record is for a newer revision. `SaveFailed` also returns
   `ErrSupersededRevision` over a generated record at the same revision. Neither error is a
@@ -57,7 +60,8 @@ its own goroutine and waits for both to return:
 
 ```go
 worker := embedding.NewWorker(storage, embedder, logger).WithWorkers(5)
-cache := embedding.NewVectorCache(storage)
+identity := func() embedding.EmbedderIdentity { return embedding.IdentityOf("my-embedder", embedder, 0) }
+cache := embedding.NewVectorCache(storage, identity) // scores only vectors made under identity()
 
 errc := make(chan error, 2)
 go func() { errc <- worker.Run(ctx) }()

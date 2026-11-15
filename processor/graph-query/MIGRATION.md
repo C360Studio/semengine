@@ -130,9 +130,9 @@ backend (`cmd/cs-graph-backend/main.go:127`).
 - Delete `request_timeout`, `max_traversal_depth`, `max_traversal_nodes` from `deploy/semstreams.json` and
   `conformance/compose.semstreams.config.json`. The old version ignored them; unknown keys now refuse boot, naming the
   key. `query_timeout_ms` is the deadline on each downstream reply (default 15000).
-- If the composition runs no graph-embedding, add `"embedding_enabled": false` to the `graph-query` config. The key
-  is new and reads true when left out. With it false, `semantic` and `similar` are refused invalid `not_enabled`,
-  naming the verb, instead of the transient `internal` refusal a caller would retry without success.
+- If the composition runs graph-embedding, add `"embedding_enabled": true` to the `graph-query` config. The key is
+  new and reads false when left out, which is the tier 0 answer: `semantic` and `similar` are refused invalid
+  `not_enabled`, naming the verb, instead of the transient `internal` refusal a caller would retry without success.
 - Keep the `graph-query` port block in `deploy/semstreams.json`: by reading, not run, it is accepted as written
   (`outputs: []` counts as none). Only the three keys above must go.
 - Your 5 s default (`gateway/cs-api/config.go:157`) is under ingest's 10 s budget, so a 5 to 10 s `batch` still times
@@ -169,7 +169,7 @@ change the following.
 | `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query. `prefix` gains `total`, always present: the length of the key listing, before the cursor and any limit, true as listed, not a snapshot. The key is additive |
 | `predicate` | New, additive: forwards to `graph.index.query.predicate`, bytes unchanged, so `min_revision` reaches graph-index. Request `graph.PredicateRequest` (`predicate`, optional `value` and `limit`); reply enveloped by graph-index, `data` a `graph.PredicateData` |
 | `semantic` | Forwards to `graph.embedding.query.search`; reply enveloped by the responder, `data` holding `results` and `embedder_type`. See "Verb details". |
-| `similar` | Forwards to `graph.embedding.query.similar`, bytes unchanged. Reply enveloped by the responder. `data.similar` is now `data.results`; the echoed `entity_id` and `duration` are gone. Changes of the responder are in `processor/graph-embedding/MIGRATION.md`. Refused transient `internal`, naming the subject, if nothing responds; refused invalid `not_enabled`, naming `similar`, without a request when `embedding_enabled` is false |
+| `similar` | Forwards to `graph.embedding.query.similar`, bytes unchanged. Reply enveloped by the responder. `data.similar` is now `data.results`; the echoed `entity_id` and `duration` are gone. Changes of the responder are in `processor/graph-embedding/MIGRATION.md`. Refused transient `internal`, naming the subject, if nothing responds; refused invalid `not_enabled`, naming `similar`, without a request unless `embedding_enabled` is true |
 | `spatial` | Forwards to `graph.spatial.query.bounds`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`, with `lat`, `lon`, `alt`; `type` is gone. Refused transient `internal` until its responder is in the tree |
 | `temporal` | Forwards to `graph.temporal.query.range`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`; `type` is gone. Request keys become `start_time` and `end_time`, were `startTime` and `endTime`, with the responder; until then it is refused transient `internal` |
 | `localSearch` | Reply enveloped, was bare; matches come from the word index, scoped to the group, and the group's record is attached beside them; keys and fields change. See "Verb details". |
@@ -228,7 +228,7 @@ enveloped by the responder, `data` holding `results` and `embedder_type`; `query
 responder, graph-embedding, is in the tree: its changes are in `processor/graph-embedding/MIGRATION.md`, among them
 `min_revision` above 0 refused, a limit outside 0 to 100 refused, and unknown keys refused. Refused transient
 `internal`, naming that subject, if nothing responds; refused invalid `not_enabled`, naming `semantic`, without a
-request when `embedding_enabled` is false. Fusion reads this.
+request unless `embedding_enabled` is true. Fusion reads this.
 
 ### `localSearch`
 

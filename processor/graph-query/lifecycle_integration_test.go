@@ -62,11 +62,11 @@ func openClient(ctx context.Context, url string) (*natsclient.Client, func(conte
 	return client, client.Close, nil
 }
 
-// newComponent builds graph-query through its factory with the default configuration and
-// initializes it.
+// newComponent builds graph-query through its factory with embedding_enabled true, the tier 1
+// configuration under which every forward is served, and initializes it.
 func newComponent(t *testing.T, client *natsclient.Client) *Component {
 	t.Helper()
-	return newConfigured(t, client, `{}`)
+	return newConfigured(t, client, tierOneConfig)
 }
 
 func newConfigured(t *testing.T, client *natsclient.Client, config string) *Component {

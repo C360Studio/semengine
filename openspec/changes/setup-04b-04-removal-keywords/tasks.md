@@ -42,7 +42,7 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   no-embedder stack composes graph-lexical and answers it; a mutant mapping `nl` to `embedding` is shown to fail.
   `pkg/fusion/MIGRATION.md`, ADR-062's and ADR-071's port notes and the `pkg/fusion`, fusionnats ledger rows
   (`:4668`, `:4782-4863`) say what changed.
-- [ ] 2.4 PR C. graph-embedding takes a product's embedder (design D5; owner question 3). Premise: the component
+- [x] 2.4 PR C. graph-embedding takes a product's embedder (design D5; owner question 3). Premise: the component
   builds the hashed embedder itself (`processor/graph-embedding/component.go:87,325`) and accepts only `embedder_type:
   bm25` (`config.go:15,69-71,121-122`). Accept: new `TestRegisterWithoutEmbedderRefuses`, `TestProductEmbedderIsUsed`
   (the registered name is the dedup type and `search`'s `embedder_type`), `TestEmbedderClosedOnStop` (built and never
@@ -50,14 +50,14 @@ and `notes/probes/`. Each code task names its pull request (design D10): A, B, C
   kept and closed by `Stop`); `TestConfigRefusesUnknownKey` refuses `embedder_type`; the lifecycle suite and the 33
   integration tests pass on a test embedder registered through `RegisterWithEmbedder`; `TestEmbeddingTextUnchanged`
   unchanged.
-- [ ] 2.5 PR C. The hashed embedder is deleted (plan item 4). Premise: its only callers are graph-embedding and the
+- [x] 2.5 PR C. The hashed embedder is deleted (plan item 4). Premise: its only callers are graph-embedding and the
   example classifier (inventory §4), gone after 2.1 and 2.4. Accept: `bm25_embedder.go` and its test are deleted;
   `TestEmbeddingImportsNoProviderModule` and the `graph/embedding merged` floor (`scripts/cover-check.sh:54`) pass;
   `doc.go`, `embedder.go`, `dedup.go:25-41` and `README.md:25` name no BM25 embedder.
-- [ ] 2.6 PR C. `embedding_enabled` reads false when left out (design D6). Premise: `processor/graph-query/
+- [x] 2.6 PR C. `embedding_enabled` reads false when left out (design D6). Premise: `processor/graph-query/
   component.go:69-70`. Accept: `TestConfigEmbeddingEnabled` (left out reads false; true still forwards),
   `TestNoRespondersIsTransient` with the key set true.
-- [ ] 2.7 PR C. Smoke on tier 0 (design D7; #628). Premise: smoke composes graph-embedding with `bm25`
+- [x] 2.7 PR C. Smoke on tier 0 (design D7; #628). Premise: smoke composes graph-embedding with `bm25`
   (`internal/smoke/stack_integration_test.go:71,90-91,152,182,734`) and asserts it (`smoke_integration_test.go:544`).
   Accept: `TestSmoke_OneConfigAnswers`, `TestSmoke_StackRestartKeepsAnswers`,
   `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`, `TestSmoke_BrokerRestartBetweenRuns` and

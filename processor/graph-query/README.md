@@ -13,10 +13,10 @@ holds a record per group of entities and which the search verbs attach to their 
 declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
 left alone, so a consumer can serve its own verb there.
 
-The table below is what graph-query serves. The semantic
-search (`semantic`, `similar`) is answered by graph-embedding (or refused `not_enabled` when the `embedding_enabled`
-option is false), and the time-range and area searches wait for their
-responders, which are not in the tree. `MIGRATION.md` lists what a consumer changes at its cutover.
+The table below is what graph-query serves. The semantic search (`semantic`, `similar`) is answered by
+graph-embedding when the `embedding_enabled` option is true, and refused `not_enabled` otherwise, which is what a
+tier 0 composition gets. The time-range and area searches wait for their responders, which are not in the tree.
+`MIGRATION.md` lists what a consumer changes at its cutover.
 
 ## Verbs
 
@@ -41,9 +41,10 @@ authority read on `entity`, `batch` and `prefix` ignores it. The embedding respo
 the spatial and temporal ones are not in the tree. Until a responder exists, the verb forwarding to it is refused
 transient `internal`, naming the subject.
 
-`semantic` and `similar` forward only when `embedding_enabled` is true, which it is when the key is left out. Set it to
-`false` on a composition that does not run graph-embedding: each request is then refused invalid with code
-`not_enabled` and a message naming the verb, before anything is sent. The refusal is the same for every request and
+`semantic` and `similar` forward only when `embedding_enabled` is true, which it is not when the key is left out: a
+tier 0 composition runs no graph-embedding and needs no setting. A tier 1 product that runs graph-embedding sets it to
+`true`. Until it does, each request is refused invalid with code `not_enabled` and a message naming the verb, before
+anything is sent. The refusal is the same for every request and
 retrying does not help. It counts as one input, not an error, because it describes the composition rather than a
 failure of `graph-query`.
 
@@ -292,7 +293,7 @@ An empty configuration is enough. This is the same configuration written out:
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `ports` | object | the port above | A `ports` block that is present is used as written; one that is absent takes the default |
-| `embedding_enabled` | bool | true | Whether the composition runs graph-embedding. Left out or `null` reads true. When `false`, `semantic` and `similar` are refused invalid `not_enabled`, naming the verb, without a request being sent |
+| `embedding_enabled` | bool | false | Whether the composition runs graph-embedding. Left out or `null` reads false. Unless `true`, `semantic` and `similar` are refused invalid `not_enabled`, naming the verb, without a request being sent |
 | `query_timeout_ms` | int | 15000 | How long `graph-query` waits for the reply to each request it makes to graph-ingest or graph-index, in milliseconds. `0` means the default. Negative is refused, and so is anything above 9223372036854, which does not fit a Go duration. |
 
 The default is above graph-ingest's 10 second budget on `batch` and `prefix`, so the slowest of those can finish. A

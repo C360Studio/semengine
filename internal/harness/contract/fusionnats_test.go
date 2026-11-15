@@ -18,14 +18,14 @@ var fusionNATSForbidden = []string{"graph/embedding", "processor/graph-embedding
 // with no embedder: neither it nor any package it imports, directly or transitively, is
 // graph/embedding, processor/graph-embedding or graph/readiness, or a package under one of them.
 //
-// Requirement: composed-stack/The graph stack answers fusion without an embedder
+// Requirement: composed-stack/fusionnats imports no embedding code
 func TestFusionNATSImportsNoEmbedding(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "pkg/fusion/fusionnats embedding imports", fusionNATSEmbeddingPaths(
 		modulePath(t, root), goList(t, root, "./pkg/fusion/fusionnats", "-deps", "{{.ImportPath}}")))
 }
 
-// Requirement: composed-stack/The graph stack answers fusion without an embedder
+// Requirement: composed-stack/fusionnats imports no embedding code
 func TestFusionNATSImportsNoEmbeddingSensitivity(t *testing.T) {
 	const module = "example.com/fixture"
 	// The transitive edge, through go list over a real tree: fusionnats imports graph, and graph

@@ -62,9 +62,13 @@ type Record struct {
 	// AHEAD of the fetched body, identity-first, in one vector so the text suffixes take
 	// effect on offloaded entities too. Empty on the inline lane, and empty on an
 	// offloaded record with no inline identity text (body-only).
-	IdentityText string    `json:"identity_text,omitempty"`
+	IdentityText string `json:"identity_text,omitempty"`
+	// EmbedderType, Model, Dimensions and MaxTextLen are the EmbedderIdentity a generated
+	// record was made under (Record.GeneratedBy).
+	EmbedderType string    `json:"embedder_type,omitempty"`
 	Model        string    `json:"model,omitempty"`
 	Dimensions   int       `json:"dimensions,omitempty"`
+	MaxTextLen   int       `json:"max_text_len,omitempty"`
 	GeneratedAt  time.Time `json:"generated_at,omitempty"`
 	Status       Status    `json:"status"`
 	ErrorMsg     string    `json:"error_msg,omitempty"` // If status=failed
@@ -87,6 +91,27 @@ type Record struct {
 	// StorageRef, when set, points at the entity's body in a content store; the
 	// Worker fetches the text from there.
 	StorageRef *StorageRef `json:"storage_ref,omitempty"`
+}
+
+// GeneratedBy reports whether r is a generated record made under exactly id, the identity the
+// dedup key folds in (EmbedderIdentity), so its vector lies in that embedder's vector space and
+// was embedded from the same text. A vector made under another identity cannot be compared with
+// that embedder's: cosine similarity across unrelated spaces returns plausible-looking scores.
+// An identity whose width is not resolved yet (Dimensions of 0 or less) matches no record, as it
+// gets no dedup key: an embedder that cannot state its width cannot vouch for a stored vector.
+func (r *Record) GeneratedBy(id EmbedderIdentity) bool {
+	return r.Status == StatusGenerated && sameSpace(r.identity(), id)
+}
+
+// sameSpace is GeneratedBy's identity rule: stored, a record's identity, is running, and
+// running's width is resolved.
+func sameSpace(stored, running EmbedderIdentity) bool {
+	return running.Dimensions > 0 && stored == running
+}
+
+// identity is the EmbedderIdentity r records.
+func (r *Record) identity() EmbedderIdentity {
+	return EmbedderIdentity{Type: r.EmbedderType, Model: r.Model, Dimensions: r.Dimensions, MaxTextLen: r.MaxTextLen}
 }
 
 // StorageRef is a simplified reference for embedding storage.
@@ -208,18 +233,22 @@ func saveError(err error, method, action string) error {
 // pending lanes (inline and storage-ref — the caller shapes the record; Status is
 // forced to StatusPending here).
 //
-// The guard: when the stored record is a GENERATED vector at a same-or-newer
-// source revision, nothing is written and saved is false. An unconditional write
-// here would let a stale repair re-drive downgrade a fresh generated record to
-// pending, and the guard makes a restart's re-delivery of an already-generated
-// revision a cheap skip. Any other stored record, pending or failed at any
-// revision, or generated at an OLDER revision, is overwritten, so an older pending
-// record replaces a newer pending one. An absent key, a delete or purge marker
-// included, is created.
+// The guard: when the stored record is a GENERATED vector made under id, the
+// running embedder's identity (Record.GeneratedBy), at a same-or-newer source
+// revision, nothing is written and
+// saved is false. An unconditional write here would let a stale repair re-drive
+// downgrade a fresh generated record to pending, and the guard makes a restart's
+// re-delivery of an already-generated revision a cheap skip. Any other stored
+// record, pending or failed at any revision, generated at an OLDER revision, or
+// generated under another identity or while id's width is unresolved, is
+// overwritten, so an older pending record replaces a newer pending one and a
+// restart under a different embedder regenerates every vector the previous one
+// left. An absent key, a delete or purge
+// marker included, is created.
 //
 // The decision and the write are one compare-and-set (UpdateWithRetryRead), so a
 // concurrent hop-2 commit cannot bypass the guard.
-func (s *Storage) SavePendingGuarded(ctx context.Context, record *Record) (saved bool, err error) {
+func (s *Storage) SavePendingGuarded(ctx context.Context, record *Record, id EmbedderIdentity) (saved bool, err error) {
 	if record == nil {
 		return false, errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "SavePendingGuarded", "record is nil")
 	}
@@ -237,8 +266,8 @@ func (s *Storage) SavePendingGuarded(ctx context.Context, record *Record) (saved
 		if err != nil {
 			return nil, err
 		}
-		if existing != nil && existing.Status == StatusGenerated && existing.SourceRevision >= record.SourceRevision {
-			saved = false // a same-or-newer generated vector stands; do not downgrade
+		if existing != nil && existing.GeneratedBy(id) && existing.SourceRevision >= record.SourceRevision {
+			saved = false // a same-or-newer vector from this embedder stands; do not downgrade
 			return nil, natsclient.ErrKVSkipWrite
 		}
 		saved = true
@@ -254,7 +283,8 @@ func (s *Storage) SavePendingGuarded(ctx context.Context, record *Record) (saved
 //
 // contentHash is the hop-2 dedup key of the exact bytes embedded; it is stored as
 // the record's content hash rather than copied from the pending record.
-// sourceRevision is the ENTITY_STATES revision this generation is completing.
+// sourceRevision is the ENTITY_STATES revision this generation is completing, and
+// id the identity the vector was made under (its Dimensions the vector's width).
 // ContentHash and Vector are both taken from the arguments, never from the stored
 // record, so they cannot desync across revisions.
 //
@@ -266,8 +296,7 @@ func (s *Storage) SaveGenerated(
 	ctx context.Context,
 	entityID string,
 	vector []float32,
-	model string,
-	dimensions int,
+	id EmbedderIdentity,
 	contentHash string,
 	sourceRevision uint64,
 ) error {
@@ -292,8 +321,10 @@ func (s *Storage) SaveGenerated(
 			EntityID:       entityID,
 			Vector:         vector,
 			ContentHash:    contentHash,
-			Model:          model,
-			Dimensions:     dimensions,
+			EmbedderType:   id.Type,
+			Model:          id.Model,
+			Dimensions:     id.Dimensions,
+			MaxTextLen:     id.MaxTextLen,
 			GeneratedAt:    time.Now(),
 			Status:         StatusGenerated,
 			SourceRevision: sourceRevision,

@@ -4,8 +4,8 @@ import "context"
 
 // Embedder generates vector embeddings for text.
 //
-// Implementations can use different providers (BM25 here, or a product's own) while
-// maintaining a consistent interface. Every implementation takes a batch of texts.
+// A product supplies the implementation, backed by whatever provider it uses; this package has
+// none of its own. Every implementation takes a batch of texts.
 type Embedder interface {
 	// Generate creates embeddings for the given texts (the DOCUMENT side — what is
 	// embedded at ingest).
@@ -19,8 +19,8 @@ type Embedder interface {
 	// as opposed to Generate which embeds documents at ingest. Asymmetric retrieval
 	// models (Snowflake arctic-embed, BGE, E5) are trained to embed a query with an
 	// instruction prefix while documents are embedded raw; omitting the query prefix
-	// costs retrieval quality sharply, not by a rounding error. Symmetric
-	// embedders (BM25) implement this identically to Generate.
+	// costs retrieval quality sharply, not by a rounding error. A symmetric
+	// embedder implements this identically to Generate.
 	GenerateQuery(ctx context.Context, texts []string) ([][]float32, error)
 
 	// Dimensions returns the dimensionality of embeddings produced by this embedder,

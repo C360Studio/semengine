@@ -26,8 +26,8 @@
 // whether the rest is a later page. summary also asks graph-index's predicateList verb unless
 // exclude_predicates is set. semantic, similar, spatial and temporal forward to the embedding, spatial
 // and temporal verbs. The spatial and temporal responders are not in the tree; until they are, those two
-// are refused transient internal, naming the subject. The embedding_enabled key (true when left out) says
-// whether graph-embedding runs: when it is false, semantic and similar refuse every request invalid with
+// are refused transient internal, naming the subject. The embedding_enabled key (false when left out) says
+// whether graph-embedding runs: unless it is true, semantic and similar refuse every request invalid with
 // code not_enabled, naming the verb, before anything is sent, and the refusal counts as an input, not an
 // error.
 //

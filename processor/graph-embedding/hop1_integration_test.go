@@ -88,10 +88,12 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// harness is a running graph-embedding built from JSON through CreateGraphEmbedding, with the
-// ENTITY_STATES write handle the test uses in graph-ingest's place.
+// harness is a running graph-embedding built from JSON through the factory RegisterWithEmbedder
+// adds, as a product builds it, with the ENTITY_STATES write handle the test uses in graph-ingest's
+// place. source builds the component's embedders.
 type harness struct {
 	c       *Component
+	source  *embedderSource
 	f       *follower.Follower
 	states  jetstream.KeyValue
 	client  *natsclient.Client
@@ -112,20 +114,27 @@ func ensureEntityStates(t *testing.T, client *natsclient.Client) jetstream.KeyVa
 // its own, logging to the returned buffer. stores is the store registry, nil for none.
 func newEmbedding(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry) *harness {
 	t.Helper()
+	return newEmbeddingFrom(t, client, raw, stores, &embedderSource{})
+}
+
+// newEmbeddingFrom is newEmbedding with the embedders source builds.
+func newEmbeddingFrom(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry,
+	source *embedderSource) *harness {
+	t.Helper()
 	logs := &logBuffer{}
 	metrics := metric.NewMetricsRegistry()
-	built, err := CreateGraphEmbedding(json.RawMessage(raw), component.Dependencies{
+	built, err := productFactory(t, source)(json.RawMessage(raw), component.Dependencies{
 		NATSClient: client, MetricsRegistry: metrics, StoreRegistry: stores,
 		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	if err != nil {
-		t.Fatalf("CreateGraphEmbedding: %v", err)
+		t.Fatalf("build graph-embedding: %v", err)
 	}
 	c := built.(*Component)
 	if err := c.Initialize(); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	return &harness{c: c, client: client, logs: logs, metrics: metrics}
+	return &harness{c: c, source: source, client: client, logs: logs, metrics: metrics}
 }
 
 // startEmbedding ensures ENTITY_STATES, builds graph-embedding from raw and starts it; the test's
@@ -469,6 +478,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if o.c.worked != nil {
 		held = append(held, "worker")
 	}
+	if o.c.embedder != nil {
+		held = append(held, "embedder")
+	}
 	return lifecycletest.Observation{Unresolved: held}
 }
 
@@ -501,7 +513,7 @@ func TestGraphEmbeddingLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"run cancel", "coalescer", "feeds", "repair lane", "worker"}
+		want := []string{"run cancel", "coalescer", "feeds", "repair lane", "worker", "embedder"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}

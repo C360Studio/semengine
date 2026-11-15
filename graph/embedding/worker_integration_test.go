@@ -242,7 +242,7 @@ func TestNoTextDeleteKeepsNewerGenerated(t *testing.T) {
 		if err := pendingText(ctx, s, id, "", "text M", 2); err != nil {
 			return err
 		}
-		return s.SaveGenerated(ctx, id, vectorM, "other-worker", 3, "hash-m", 2)
+		return s.SaveGenerated(ctx, id, vectorM, EmbedderIdentity{Model: "other-worker", Dimensions: 3}, "hash-m", 2)
 	}, generatedAtM)
 	if got.outcome != OutcomeDeleted {
 		t.Fatalf("N's outcome = %v; want OutcomeDeleted", got.outcome)

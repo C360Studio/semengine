@@ -26,11 +26,11 @@ type Config struct {
 	// the default, 15000. It does not end a wait to write to a broker that has stopped reading
 	// (ADR-112, "Time").
 	QueryTimeoutMs int `json:"query_timeout_ms,omitempty" schema:"type:int,description:Deadline on the reply to each downstream request in milliseconds; a blocked write can outlast it (ADR-112),default:15000,category:basic"`
-	// EmbeddingEnabled says the composition runs graph-embedding. When false, semantic and similar
-	// refuse every request not_enabled without sending it. A configuration that leaves the key out,
-	// or sets it null, reads true: resolveConfig decodes into a Config that already holds true. A
-	// Config built in Go starts false.
-	EmbeddingEnabled bool `json:"embedding_enabled" schema:"type:bool,description:Whether graph-embedding runs; when false semantic and similar are refused not_enabled,default:true,category:basic"`
+	// EmbeddingEnabled says the composition runs graph-embedding. When false, which is what a
+	// configuration that leaves the key out or sets it null reads, semantic and similar refuse every
+	// request not_enabled without sending it: tier 0 runs no graph-embedding, and a tier 1 product
+	// sets the key true.
+	EmbeddingEnabled bool `json:"embedding_enabled" schema:"type:bool,description:Whether graph-embedding runs; when false semantic and similar are refused not_enabled,default:false,category:basic"`
 }
 
 // queriesPort is the one input graph-query serves.
@@ -102,9 +102,8 @@ func (c *Config) ApplyDefaults() {
 // DefaultConfig returns a valid default configuration.
 func DefaultConfig() Config {
 	return Config{
-		Ports:            &component.PortConfig{Inputs: []component.PortDefinition{queriesPort()}},
-		QueryTimeoutMs:   defaultQueryTimeoutMs,
-		EmbeddingEnabled: true,
+		Ports:          &component.PortConfig{Inputs: []component.PortDefinition{queriesPort()}},
+		QueryTimeoutMs: defaultQueryTimeoutMs,
 	}
 }
 

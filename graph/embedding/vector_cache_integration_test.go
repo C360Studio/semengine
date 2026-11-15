@@ -37,7 +37,7 @@ func putRecords(t *testing.T, bucket jetstream.KeyValue, n int) {
 	t.Helper()
 	for i := 1; i <= n; i++ {
 		id := fmt.Sprintf("acme.ops.robotics.gcs.drone.c%d", i)
-		data, err := json.Marshal(&Record{EntityID: id, Vector: []float32{1, float32(i)}, Status: StatusGenerated})
+		data, err := json.Marshal(&Record{EntityID: id, Vector: []float32{1, float32(i)}, EmbedderType: testIdentity.Type, Model: testIdentity.Model, Dimensions: testIdentity.Dimensions, Status: StatusGenerated})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +54,7 @@ func newCache(t *testing.T, n int) (*VectorCache, *natsclient.Client) {
 	client := fixtureClient(t)
 	bucket := createBucket(t, client, cacheBucket)
 	putRecords(t, bucket, n)
-	return NewVectorCache(NewStorage(client.NewKVStore(bucket), nil)), client
+	return NewVectorCache(NewStorage(client.NewKVStore(bucket), nil), cacheIdentity), client
 }
 
 // startWarm starts cache.Run on its own goroutine under a context it returns the cancel of, and
@@ -122,7 +122,7 @@ func TestVectorCacheRunLeavesNoWatchDelivery(t *testing.T) {
 	index := createBucket(t, client, cacheBucket)
 	putRecords(t, index, 600)
 	bucket := &backloggedBucket{KeyValue: index, blocked: make(chan error, 1)}
-	cache := NewVectorCache(NewStorage(client.NewKVStore(bucket), nil))
+	cache := NewVectorCache(NewStorage(client.NewKVStore(bucket), nil), cacheIdentity)
 	if err := cache.Run(nil); err == nil {
 		t.Fatal("Run(nil) = nil; want a refusal")
 	}

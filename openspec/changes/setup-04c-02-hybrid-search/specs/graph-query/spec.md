@@ -18,7 +18,8 @@ limit.
 
 #### Scenario: A smaller limit is a prefix
 
-- **WHEN** the same question is asked with limit 10 and with limit 100
+- **WHEN** the same question is asked with limit 10 and with limit 100, no hit is missing, and both replies fit
+  `max_payload`
 - **THEN** the first ten matches are the same, in the same order (`TestSearchGraphLimitIsAPrefix`)
 
 ### Requirement: A merged match says which lists held it
@@ -47,8 +48,8 @@ wait is not added to the word wait.
 
 `task scorecard:tier1` SHALL boot graph-ingest, graph-index, graph-lexical, graph-embedding over the named provider
 (section bodies only) and graph-query, and ask the frozen scorecard's 500 questions through `globalSearch`, the
-`semantic` verb and `searchGraph`. It SHALL print R@1, R@10 and MRR for each beside the model the provider names,
-dimensions, query prefix, commits and timings. It SHALL NOT run in `task verify`.
+`semantic` verb and `searchGraph`. It SHALL print R@1, R@10 and MRR for each, with the model the provider's reply
+names, dimensions, query prefix, commits and timings. It SHALL NOT run in `task verify`.
 
 #### Scenario: A run names its model
 
@@ -58,12 +59,13 @@ dimensions, query prefix, commits and timings. It SHALL NOT run in `task verify`
 
 ### Requirement: The tier 1 scorecard holds a floor
 
-`task scorecard:tier1` SHALL exit non-zero when the merged row is below the floor recorded for the run's model or
-below either single row.
+Tier 1 has one floor, held by every model, kept as constants in the scorecard program, each citing the probe note it
+was measured from. `task scorecard:tier1` SHALL exit 1 when the merged row is below that floor or below either single
+row, and 2 on any other failure.
 
 #### Scenario: Below the floor
 
-- **WHEN** the merged row's R@10 or MRR is below the floor recorded for the run's model
+- **WHEN** the merged row's R@10 or MRR is below tier 1's floor
 - **THEN** the program prints the three rows and exits 1 (`notes/probes/scorecard-*.md`, task 3.4)
 
 ## MODIFIED Requirements
@@ -163,8 +165,8 @@ lowest-ranked matches SHALL be left out until it fits. A batch refusal SHALL rea
 ### Requirement: Search answers in a fixed template
 
 `answer` SHALL be `Found {matched} matching entities in {groups} groups.` for global search and `Found {matched}
-matching entities in {community_id}.` for local search. In a searchGraph merged list whose embedding list added
-entities the word hits did not hold, `, and {extra} more by meaning` comes before the full stop. Then a space and
+matching entities in {community_id}.` for local search. In a searchGraph merged list, when some matches sent have no
+`word_rank`, `, and {extra} more by meaning` comes before the full stop, `extra` being their number. Then a space and
 `Showing the first {n}.` when `truncated` is true, and, for local search with a record read, a space and the record's
 summary.
 
@@ -175,8 +177,8 @@ summary.
 
 #### Scenario: A merged answer
 
-- **WHEN** 3 entities match by words and the embedding list adds 2 more
-- **THEN** the answer is `Found 3 matching entities in 2 groups, and 2 more by meaning.` (`TestSearchAnswer`)
+- **WHEN** 3 entities match by words, all 3 are sent, and 2 more are sent with no `word_rank`
+- **THEN** the answer begins `Found 3 matching entities in 2 groups, and 2 more by meaning.` (`TestSearchAnswer`)
 
 ### Requirement: Losing the embedding provider keeps word search
 
@@ -191,6 +193,39 @@ than answer empty, and graph-embedding's readiness SHALL read `degraded`, naming
 - **THEN** globalSearch and searchGraph find it by its words, searchGraph's `merge` is not honoured with its code set,
   `semantic` is refused, and graph-embedding reads `degraded` with `connection_refused` counted
   (`TestLosingTheProviderKeepsWordSearch`)
+
+### Requirement: A search reply declares what it left out
+
+A local or global search reply SHALL carry `matched`, the word index's count before the limit; `excluded`, its
+excluded words; `bodies_not_indexed`, its count; and `truncated`, true exactly when `matched` is above the hits
+returned, a hit is missing, or matches were left out to fit `max_payload`. In a searchGraph merged list, `truncated`
+SHALL be true exactly when the two lists together held more entities than the limit, `matched` is above the word
+hits read, a hit is missing, or matches were left out to fit.
+
+#### Scenario: A limited answer
+
+- **WHEN** 40 entities match, the limit is 10 and the query is `pump -test`
+- **THEN** `matched` is 40, `truncated` is true and `excluded` is `["test"]` (`TestSearchDeclaresWhatItLeftOut`)
+
+#### Scenario: A limited merged answer
+
+- **WHEN** at tier 1 the word search returns 3 hits, the embedding list holds 12 entities, 2 of them among those 3,
+  and the limit is 10
+- **THEN** `matched` is 3 and `truncated` is true, since 13 entities were found and 10 sent
+  (`TestSearchGraphMergedTruncation`)
+
+### Requirement: The word search comes before any hint
+
+Global search SHALL send its word search before reading any hint. A refusal of the word search, a query the word
+index's rules refuse among them, SHALL be the reply, and no hint SHALL be read: a one-token question the word index
+refuses is not looked up as an entity. searchGraph's embedding search is not a hint: it is sent with the word search,
+and on any word refusal other than `index_not_ready` it is cancelled and its reply is not awaited.
+
+#### Scenario: A question the word index refuses
+
+- **WHEN** the question is `the of and`, or the one token `pump*`
+- **THEN** the reply is the word index's `invalid_request`, and no alias, entity or path request is made
+  (`TestWordIndexRefusalComesFirst`, `TestSearchGraphOtherRefusalIsReturned`)
 
 ## REMOVED Requirements
 

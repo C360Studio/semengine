@@ -10,9 +10,12 @@ No package is carried from the SemStreams pin; categories 6, the shape sweep and
   search is asked only when words match nothing.
 - `processor/graph-query/textsearch.go:44` — `if subjects.semantic != "" && isIndexNotReady(err) {`: or when the word
   index is not ready.
-- Searches that came up empty on tracked Go and Markdown outside archived changes: `git grep -n -i
-  "reciprocal\|rrf\|rank fusion"` hits only `graph/lexical/scorecard_test.go:95` — `reciprocal             float64`
-  (an MRR sum, not a merge). `pkg/fusion` is the lens-driven answer engine (`pkg/fusion/doc.go:1`), not a rank merge.
+- Searches that came up empty, on tracked Go and Markdown outside archived changes and this change: `git grep -n -i
+  -w -e reciprocal -e rrf -e "rank fusion" -- '*.go' '*.md'` hits only mean-reciprocal-rank arithmetic and prose:
+  `graph/lexical/scorecard_test.go:95` — `reciprocal             float64`, `:100`, `:112`;
+  `processor/graph-query/scorecard_integration_test.go:187`, `:195`, `:204`; `processor/graph-query/README.md:280`;
+  `processor/graph-query/MIGRATION.md:322`. None merges lists. `pkg/fusion` is the lens-driven answer engine
+  (`pkg/fusion/doc.go:1`), not a rank merge.
 - The only merge that exists is the throwaway probe's `rrf` (archived
   `2026-11-16-setup-04c-01-http-embedder/notes/probes/scorecard-semembed-7ceb5281.md`, "Source"), deleted after
   the run.
@@ -46,8 +49,16 @@ No package is carried from the SemStreams pin; categories 6, the shape sweep and
   #487 (tier 2 synthesis reads searchGraph's list); #602 (generation beside `indexed_revision`); #670 (graph-query
   README Health text); #678 (a graph-query test bug). Names the word, not the package: #486, #657, #656, #535, #484,
   #477, #111, #630, #536, #621, #68, #564, #659, #10, #109, #300, #9, #195, #108, #155, #196, #11, #350.
-- Open PRs (`gh pr list --state open`): #684 (draft, this claim, no files yet); #597, #598 (Dependabot, `go.mod`,
-  `go.sum` only). No overlap with OpenSpec capabilities.
+- Open PRs (`gh pr list --state open`): #684 (draft, this claim; its files are this change's OpenSpec files);
+  #597, #598 (Dependabot, `go.mod`, `go.sum` only). No overlap with OpenSpec capabilities. PR B opens its own draft
+  claim when its work starts.
+- alpha.5 behaviour: `git show v0.1.0-alpha.5:processor/graph-query/query.go` lines 67-70 — `// searchGraph answers
+  as globalSearch, ... with no semantic fallback.`: the released searchGraph answers as globalSearch at every tier.
+- `openspec/specs/nats-fixture/spec.md:14-26` (New "SHALL give one test its own NATS server"; cleanup "reported as a
+  test error"); `docs/test-infrastructure.md:216-221` (when harness code is written); `Taskfile.yml:87-95`
+  (`pindiff`, `mutcheck`: harness programs run by Task, not by tests).
+- Docs that describe searchGraph as globalSearch under another name: `.agents/skills/query-pattern/SKILL.md:84`,
+  `docs/repository-map.md:91`.
 
 ## 4. Who the new surface is for
 

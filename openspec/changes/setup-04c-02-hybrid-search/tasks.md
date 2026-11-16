@@ -12,21 +12,28 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 ## 2. PR A: the merge
 
 - [ ] 2.1 Tests first: `TestMergeRanks` (table plus generated check against a reference model), D1's three integration
-  tests, D3's table, and `TestSearchGraphAsksBothAtOnce` (D4), shown failing on main (`notes/2.1.md`).
+  tests, D3's table, `TestSearchGraphAsksBothAtOnce` (D4) and `TestSearchGraphMergedTruncation`, shown failing on
+  main (`notes/2.1.md`).
 - [ ] 2.2 `graph.GlobalSearchData.Merge` (was `Fallback`), `graph.TextSearchMatch.WordRank` / `.VectorRank`, and
   their doc comments; the merge in searchGraph (design D1-D4); `TestLosingTheProviderKeepsWordSearch` updated.
-- [ ] 2.3 Docs: graph-query README ("searchGraph's search by meaning"), `doc.go:67-73`, MIGRATION.md
-  (`:30-36`, `:181`, `:329-335`).
+- [ ] 2.3 Docs: `processor/graph-query/README.md` ("searchGraph's search by meaning"),
+  `processor/graph-query/doc.go:67-73`, `processor/graph-query/MIGRATION.md` (`:30-36`, `:181`, `:329-335`, plus
+  the alpha.5 tier 1 line, design Migration Plan), `.agents/skills/query-pattern/SKILL.md:84`,
+  `docs/repository-map.md:91`.
 
 ## 3. PR B: the tier 1 scorecard
 
-- [ ] 3.1 `natsfixture.New` takes a four-method interface; every existing caller unchanged; `task verify`.
+- [ ] 3.0 Open PR B's own draft claim (its own branch and worktree) after PR A merges.
+- [ ] 3.1 `natsfixture.New` takes `natsfixture.T` (design D6, nats-fixture delta); every existing caller unchanged;
+  `task verify`.
 - [ ] 3.2 Tests first for the tool's flag refusals and tally arithmetic (hand-computed ranks), shown failing; the tool
   joins the tool packages in `scripts/test-pkgs.sh`.
-- [ ] 3.3 `internal/harness/scorecard` and `task scorecard:tier1` (design D6, D7); nothing is added to `task verify`.
+- [ ] 3.3 `internal/harness/scorecard` and `task scorecard:tier1` (design D6, D7); nothing is added to `task verify`;
+  `docs/test-infrastructure.md` "When we write harness code" names harness programs run by Task (`pindiff`,
+  `mutcheck`, `scorecard`).
 - [ ] 3.4 First run against semembed (`Snowflake/snowflake-arctic-embed-s`); output, command and commits in
-  `notes/probes/scorecard-<model>-<semembed commit>.md`. Set the floor from it (design D8) and rerun to show the verdict
-  passes, and that a floor one point above the measured row fails.
+  `notes/probes/scorecard-<model>-<commit>.md`. Set tier 1's floor from it (design D8), citing that note, and rerun
+  to show the verdict passes, and that a floor one point above the measured row exits 1.
 
 ## 4. Close-out
 

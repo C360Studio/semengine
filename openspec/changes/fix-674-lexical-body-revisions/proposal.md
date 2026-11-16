@@ -1,6 +1,6 @@
 # Proposal: fix-674-lexical-body-revisions
 
-Approved-by:
+Approved-by: cglusky (2026-11-16) <https://github.com/C360Studio/semengine/issues/674#issuecomment-6907759494> sha256:962bc6cef831
 
 Track: `quick`. Capability modified: `graph-lexical` (two existing requirements; no requirement added).
 

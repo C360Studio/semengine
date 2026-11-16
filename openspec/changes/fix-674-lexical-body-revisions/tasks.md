@@ -5,9 +5,9 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md`. Single
 
 ## 1. Proposal
 
-- [ ] 1.1 Architect proposal and spec delta (`proposal.md`, `specs/graph-lexical/spec.md`): a revision with the same
+- [x] 1.1 Architect proposal and spec delta (`proposal.md`, `specs/graph-lexical/spec.md`): a revision with the same
   reference and inline text re-indexes nothing and reads nothing; a body read serves its reference, not its
-  revision. `task spec:check` and `task docs:check` pass. Hold: OPEN-Q proposal awaits owner approval
+  revision. `task spec:check` and `task docs:check` pass. Approved 2026-11-16 (#674).
 
 ## 2. Code
 

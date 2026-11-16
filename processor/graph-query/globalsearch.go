@@ -25,6 +25,13 @@ const (
 	hintSimilarity     = "similarity"
 	hintRanking        = "ranking"
 	hintClassification = "classification"
+	hintSemantic       = "semantic"
+)
+
+// What started searchGraph's semantic fallback, in its hint's Detail.
+const (
+	fallbackNoMatches     = "no_matches"
+	fallbackIndexNotReady = graph.ErrorCodeIndexNotReady
 )
 
 // Why a hint global search never honours is not honoured. Each is said in the reply, so a caller
@@ -49,8 +56,9 @@ const (
 
 // globalSearchSubjects are the verbs global search reads: the word search and batch verbs for its
 // matches, the alias and entity verbs through the resolver, and the index's edge verbs for a walk.
+// semantic is the embedding search searchGraph falls back to, "" when there is no fallback.
 type globalSearchSubjects struct {
-	lexical, batch, alias, entity, outgoing, incoming string
+	lexical, batch, alias, entity, outgoing, incoming, semantic string
 }
 
 // globalSearch answers every question that decodes with a word search (globalText), and lists what
@@ -96,10 +104,7 @@ func (c *Component) verify(ctx context.Context, subjects globalSearchSubjects, r
 	}
 	hint := graph.GlobalSearchHint{Hint: route.strategy, Detail: route.reference}
 	notHonoured := func(err error) (verifiedHint, bool) {
-		refusal := &errs.ClassifiedError{Code: graph.ErrorCodeInternal}
-		errors.As(err, &refusal)
-		hint.Reason, hint.Code = err.Error(), refusal.Code
-		return verifiedHint{hint: hint}, true
+		return verifiedHint{hint: notHonouredBy(hint, err)}, true
 	}
 	id, err := c.resolveGlobal(ctx, subjects, route.reference, minRevision)
 	if err != nil {
@@ -133,6 +138,38 @@ func (c *Component) verify(ctx context.Context, subjects globalSearchSubjects, r
 	}
 	hint.Honoured = true
 	return verifiedHint{hint: hint, path: &found}, true
+}
+
+// notHonouredBy is hint not honoured because of err: err's message is the reason, and its code
+// the refusal's, internal when err is not a classified refusal.
+func notHonouredBy(hint graph.GlobalSearchHint, err error) graph.GlobalSearchHint {
+	refusal := &errs.ClassifiedError{Code: graph.ErrorCodeInternal}
+	errors.As(err, &refusal)
+	hint.Honoured, hint.Reason, hint.Code = false, err.Error(), refusal.Code
+	return hint
+}
+
+// semanticFallback asks the embedding search once with the question and the request's limit, and
+// no min_revision, which the embedding verbs refuse above 0. The hint is "semantic" with detail,
+// honoured with the reply's data as its bytes came, or not honoured naming the refusal, the
+// timeout (ask's internal refusal, after query_timeout_ms) or the broken reply. It never refuses
+// the request: the caller decides what a failed fallback answers.
+func (c *Component) semanticFallback(ctx context.Context, subject string, request graph.GlobalSearchRequest, detail string) (graph.GlobalSearchHint, json.RawMessage) {
+	hint := graph.GlobalSearchHint{Hint: hintSemantic, Detail: detail}
+	body, err := json.Marshal(graph.SemanticRequest{Query: request.Query, Limit: request.Limit})
+	if err != nil {
+		return notHonouredBy(hint, internalError(err)), nil
+	}
+	raw, err := c.ask(ctx, subject, body)
+	if err != nil {
+		return notHonouredBy(hint, err), nil
+	}
+	reply, err := decodeIndexReply[json.RawMessage](c, subject, raw)
+	if err != nil {
+		return notHonouredBy(hint, err), nil
+	}
+	hint.Honoured = true
+	return hint, reply.Data
 }
 
 // resolveGlobal reads a reference through the shared resolver, asking the alias verb with

@@ -28,9 +28,9 @@ pull request (design D8): A, then B.
 
 ## 3. PR B: fallback and degrade test
 
-- [ ] 3.1 Tests first: design D6's four tests, D6a's `TestSearchGraphFallbackTimeoutKeepsWordAnswer` and D7's
+- [x] 3.1 Tests first: design D6's four tests, D6a's `TestSearchGraphFallbackTimeoutKeepsWordAnswer` and D7's
   `TestLosingTheProviderKeepsWordSearch`, shown failing on main (`notes/3.1.md`).
-- [ ] 3.2 `graph.GlobalSearchData.Semantic` and `.Fallback` (a `GlobalSearchHint`), `Text`'s doc comment, and
+- [x] 3.2 `graph.GlobalSearchData.Semantic` and `.Fallback` (a `GlobalSearchHint`), `Text`'s doc comment, and
   `GlobalSearchHint`'s doc comment (the `semantic` kind; `Detail` naming the fallback's trigger), and searchGraph's
   fallback (design D6, D6a); graph-query README and MIGRATION.md (SemSource's `disclosure.go:31`, null `text`).
 

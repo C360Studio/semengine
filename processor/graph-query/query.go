@@ -64,9 +64,12 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 			subjects := globalSearchSubjects{
 				lexical: lexical, batch: batch, alias: alias, entity: entity, outgoing: outgoing, incoming: incoming,
 			}
-			// searchGraph answers as globalSearch, counted and logged under its own name, with no
-			// semantic fallback.
 			handlers["globalSearch"] = c.globalSearch("globalSearch", subjects)
+			// searchGraph answers as globalSearch, counted and logged under its own name; when the
+			// composition runs graph-embedding it also falls back to the embedding search.
+			if c.config.EmbeddingEnabled {
+				subjects.semantic = subjectOf(graph.ResponderGraphEmbedding, "search")
+			}
 			handlers["searchGraph"] = c.globalSearch("searchGraph", subjects)
 		}
 	}

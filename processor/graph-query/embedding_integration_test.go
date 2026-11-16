@@ -45,10 +45,15 @@ func (fixedEmbedder) Close() error    { return nil }
 // embedder through RegisterWithEmbedder and created through the registry.
 func startGraphEmbedding(t *testing.T, client *natsclient.Client) {
 	t.Helper()
+	startGraphEmbeddingWith(t, client, "fixed", func() (embedding.Embedder, error) { return fixedEmbedder{}, nil })
+}
+
+// startGraphEmbeddingWith is startGraphEmbedding with the embedder newEmbedder builds, registered
+// under name.
+func startGraphEmbeddingWith(t *testing.T, client *natsclient.Client, name string, newEmbedder func() (embedding.Embedder, error)) {
+	t.Helper()
 	registry := component.NewRegistry()
-	if err := graphembedding.RegisterWithEmbedder(registry, "fixed", func() (embedding.Embedder, error) {
-		return fixedEmbedder{}, nil
-	}); err != nil {
+	if err := graphembedding.RegisterWithEmbedder(registry, name, newEmbedder); err != nil {
 		t.Fatalf("RegisterWithEmbedder: %v", err)
 	}
 	built, err := registry.CreateComponent("graph-embedding", types.ComponentConfig{

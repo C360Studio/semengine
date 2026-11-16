@@ -23,8 +23,8 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md`. Single
   again; the reference stays and the inline text changes while the read is out: the late read is indexed joined to
   R+1's inline text, R+1's inline words are found beside the body word, and R+1 completes (shown to kill a mutant
   that joins the body to the inline text saved when the read was queued, in `notes/2.1.md`); a revision equal but
-  for the reference's `Size` or `ContentType` asks for a read. `TestStaleBodyReadDropped` gives R+1 its own `bodyKey`. `notes/2.1.md` records the witnesses and the
-  generated run failing on today's code, with seed. Generated checks: the history is order-dependent, so the
+  for the reference's `Size` or `ContentType` asks for a read. `TestStaleBodyReadDropped` gives R+1 its own
+  `bodyKey`. `notes/2.1.md` records the witnesses and the generated run failing on today's code, with seed. Generated checks: the history is order-dependent, so the
   property model is the check; the witnesses name the cases it must reach.
 - [ ] 2.2 Implement in `processor/graph-lexical/apply.go`: keep each offloaded entity's inline document and reference
   after its read; `deliver` skips the put and the read when both are equal; `wanted` and `bodyDone` match on the

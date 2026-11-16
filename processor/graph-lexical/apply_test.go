@@ -25,11 +25,14 @@ type failer interface {
 
 // text is what one delivered entity says: its name, the inline text that is not its name, and
 // whether its body is offloaded to a store. An offloaded body is under instance, "objectstore"
-// when empty, at bodyKey, the entity's key and "/body" when empty.
+// when empty, at bodyKey, the entity's key and "/body" when empty, and its reference carries
+// contentType and size.
 type text struct {
 	name, inline      string
 	offloaded         bool
 	instance, bodyKey string
+	contentType       string
+	size              int64
 }
 
 // stateEntry is the follower entry for key at revision, carrying an entity state that says t:
@@ -47,7 +50,7 @@ func stateEntry(f failer, key string, revision uint64, t text) follower.Entry {
 	}
 	if t.offloaded {
 		state.StorageRef = &message.StorageReference{StorageInstance: cmp.Or(t.instance, "objectstore"),
-			Key: cmp.Or(t.bodyKey, key+"/body")}
+			Key: cmp.Or(t.bodyKey, key+"/body"), ContentType: t.contentType, Size: t.size}
 	}
 	value, err := json.Marshal(state)
 	if err != nil {

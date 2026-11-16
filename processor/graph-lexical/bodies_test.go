@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -329,7 +330,7 @@ func TestMissingAndUnresolvedBodies(t *testing.T) {
 		<-time.After(repairInterval)
 		synctest.Wait() // the repair pass the interval started has ended
 		if n := store.opens("gone"); n != 1 {
-			t.Errorf("the missing body was read %d times; want once, not retried until the entity changes", n)
+			t.Errorf("the missing body was read %d times; want once, not retried until its reference or inline text changes", n)
 		}
 		if n := stores.lookups("elsewhere"); n != 2 {
 			t.Errorf("the unregistered instance was looked up %d times; want 2, again at the repair pass", n)
@@ -382,9 +383,12 @@ func TestBodyCutAtCap(t *testing.T) {
 }
 
 // TestDeliveriesAndBodyReadsConcurrent: deliveries arrive on one goroutine while the body path
-// reads on another and a third reads the failure count, as the follower's heartbeat does. Once
-// the floor reaches the last revision, every key holds its last revision's name and body and no
-// earlier revision's words. Run under -race. Each read, and each delivery, gives way to the other
+// reads on another and a third reads the failure count, as the follower's heartbeat does. The
+// deliveries mix revisions that change only values that are not text (same text, same
+// reference), text changes under a kept reference, reference changes and revisions with no
+// offloaded body. Once the floor reaches the last revision, every key holds its
+// last revision's name and the body of its last reference, and no other revision's name or
+// reference's body. Run under -race. Each read, and each delivery, gives way to the other
 // goroutines, as a read or a watch waiting on the network does, so deliveries land while reads
 // are out, even on one CPU.
 func TestDeliveriesAndBodyReadsConcurrent(t *testing.T) {
@@ -408,14 +412,37 @@ func TestDeliveriesAndBodyReadsConcurrent(t *testing.T) {
 			}
 		}
 	}()
-	// Every fifth revision has no offloaded body, the last of each key among the rest.
+	// Every fifth revision has no offloaded body, the last of each key among the rest. Each key
+	// changes its name and its reference at its own pace: the first changes both every round, the
+	// second its name every third round and its reference every seventh, so most of its revisions
+	// change only values that are not text, and the third its name every other round under a
+	// reference it never changes. A body holds its reference's key as its one word.
+	newName := []func(round int) bool{
+		func(int) bool { return true },
+		func(round int) bool { return round%3 == 0 },
+		func(round int) bool { return round%2 == 0 },
+	}
+	newRef := []func(round int) bool{
+		func(int) bool { return true },
+		func(round int) bool { return round%7 == 1 },
+		func(int) bool { return false },
+	}
 	revision := uint64(0)
+	names, refs := make([]string, len(keys)), make([]string, len(keys))
 	want := map[string][]string{}
+	var allNames, allRefs []string
 	for round := range rounds {
 		for k, key := range keys {
 			revision++
-			tx := text{name: fmt.Sprintf("k%dr%dn", k, revision), offloaded: round%5 != 0,
-				bodyKey: fmt.Sprintf("k%dr%db", k, revision)}
+			if newName[k](round) || names[k] == "" {
+				names[k] = fmt.Sprintf("k%dr%dn", k, revision)
+				allNames = append(allNames, names[k])
+			}
+			if newRef[k](round) || refs[k] == "" {
+				refs[k] = fmt.Sprintf("k%dr%db", k, revision)
+				allRefs = append(allRefs, refs[k])
+			}
+			tx := text{name: names[k], offloaded: round%5 != 0, bodyKey: refs[k]}
 			want[key] = []string{tx.name}
 			if tx.offloaded {
 				want[key] = append(want[key], tx.bodyKey)
@@ -428,12 +455,16 @@ func TestDeliveriesAndBodyReadsConcurrent(t *testing.T) {
 	close(stop)
 	<-heartbeat
 
-	for k, key := range keys {
+	for _, key := range keys {
 		requireHeld(t, r.apply.index, []string{key}, want[key]...)
-		for rev := uint64(1); rev <= revision; rev++ {
-			if name := fmt.Sprintf("k%dr%dn", k, rev); name != want[key][0] {
-				requireHeld(t, r.apply.index, nil, name, fmt.Sprintf("k%dr%db", k, rev))
-			}
+	}
+	for _, word := range slices.Concat(allNames, allRefs) {
+		held := false
+		for _, words := range want {
+			held = held || slices.Contains(words, word)
+		}
+		if !held {
+			requireHeld(t, r.apply.index, nil, word)
 		}
 	}
 	r.requireBodies(map[string]int{})

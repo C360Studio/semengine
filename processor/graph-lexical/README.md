@@ -63,14 +63,27 @@ values of predicates ending in one of `text_suffixes`. Words in the name count t
 
 An entity's body can be *offloaded*: stored in an object store, with the entity holding only a reference to it. Such
 an entity is indexed by its inline text at once and by its body once a single goroutine has read the body from the
-store. Until then, a body not in the index is in one of four states, counted on the gauge
+store.
+
+A body is read once at start, and again only when the entity's reference or its inline text changes. A revision that
+changes neither, such as one that only updates telemetry values, leaves the entity's words as they are and reads
+nothing, so an entity updated many times a second keeps its body's words. Two references are the same only when every
+field is: storage instance, key, content type and size. A reference therefore names fixed content: a producer that
+stores new content must give it a new reference, as the object store's `StoreContent` does with a new key on every
+call. Content replaced behind an unchanged reference is not read again until the reference or the inline text
+changes, or graph-lexical restarts. When the inline text changes under the same reference, the new inline words are
+found at once and the body's words again once its read returns; a read already queued or in flight for that reference
+serves the newer revision, joined to its inline text, so updates arriving faster than reads still end with the body
+indexed.
+
+Until it is read, a body not in the index is in one of four states, counted on the gauge
 `semengine_graph_lexical_bodies_not_indexed{state}`:
 
 | State | Meaning | What happens next |
 | --- | --- | --- |
 | `queued` | Not read yet | It is read in turn |
 | `unread` | A read failed, or the store was skipped after another read on it failed | Retried every 30 seconds. It is the only failure: the readiness record reads degraded with the reason `body_unread`, and `Health` names it |
-| `missing` | The store has no such object | Not asked for again until the entity changes |
+| `missing` | The store has no such object | Not asked for again until the entity's reference or inline text changes, or graph-lexical restarts |
 | `no_store` | No store is registered for the body's storage instance | Looked up again every 30 seconds |
 
 A read that fails for any reason other than a missing object skips that store until the next 30-second pass, so a

@@ -13,8 +13,8 @@ import (
 	"github.com/c360studio/semengine/storage"
 )
 
-// bodyRead is an offloaded body to read: the entity's key, the revision whose state names the
-// body, and where the body is.
+// bodyRead is an offloaded body to read: the entity's key, the revision that asked for the read,
+// and where the body is.
 type bodyRead struct {
 	key      string
 	revision uint64
@@ -60,12 +60,14 @@ func readState(err error) bodyState {
 }
 
 // applier keeps the word index in step with ENTITY_STATES. Two paths write one key: deliver, on
-// the follower's goroutine, applies each delivered value, and bodyDone applies a body read for a
-// revision once the read returns. The order rule between them is the revision: a delivery at or
-// below the revision held for its key is ignored, and a body read for revision R is indexed only
-// if the key is still at R. Every delivered revision is completed through complete once its
-// outcome is in, after the index holds it, so the follower's floor never passes text the index
-// does not hold.
+// the follower's goroutine, applies each delivered value, and bodyDone applies a body read once
+// it returns. A delivery at or below the revision held for its key is ignored. A body read serves
+// its reference, not the revision that asked for it: it is indexed if the key's latest revision
+// still names that reference and its body still awaits a read (queued, unread or no store),
+// joined to that revision's inline text. So an entity whose other values change often while its reference stays, such as
+// one carrying telemetry, keeps its body's words and costs no read per update. Every delivered
+// revision is completed through complete once its outcome is in, after the index holds it, so
+// the follower's floor never passes text the index does not hold.
 type applier struct {
 	rule     entitytext.Rule
 	maxLen   int // the rule's cap, named when a body is first cut
@@ -90,14 +92,15 @@ type held struct {
 	words    int
 	cut      bool
 	body     bodyState
-	// waiting is what the offloaded body still to be read for revision is joined to; nil when no
-	// read is wanted.
-	waiting *pending
+	// offloaded is the latest revision's inline text and reference when it names an offloaded
+	// body, whatever body says of it, and nil when it names none. It stays after the body is read,
+	// so a later revision with the same text and reference can be told apart from a change.
+	offloaded *pending
 }
 
-// pending is what an offloaded body still to be read needs, and no more of the entity's state:
-// the document of the entity's inline text, which Rule.WithBody joins the body to, and where the
-// body is.
+// pending is what is kept of an entity whose body is offloaded, and no more of its state: the
+// document of its inline text, which Rule.WithBody joins the body to, and where the body is. The
+// body itself is not kept: the index holds its words.
 type pending struct {
 	inline entitytext.Document
 	ref    message.StorageReference
@@ -121,10 +124,19 @@ func newApplier(rule entitytext.Rule, maxLen int, complete func(key string, revi
 }
 
 // deliver applies one delivered entry. A delivery at or below the key's held revision changes
-// nothing and is completed. A delete removes the entity and is completed. A write puts the
-// entity's inline text and is completed, unless its state names an offloaded body: then the body
-// is queued, deliver returns the read to make, and the revision completes when bodyDone takes the
-// read's outcome.
+// nothing and is completed. A delete removes the entity and is completed. A write with no
+// offloaded body puts the entity's inline text and is completed.
+//
+// A write that names an offloaded body is compared with what is held, the reference as a whole
+// value. The same inline text and reference change nothing in the index and ask for no read: the
+// key moves to the new revision, which completes at once unless the body is queued, that is a
+// read deliver asked for is still queued or out, whose outcome then completes it. A changed
+// inline text under the same reference, while the body is queued, puts the new inline text and
+// waits on that read. A repair pass's read is not counted: while the body is unread or has no
+// store, a changed inline text asks for a read of its own. Anything else puts the inline text,
+// queues the body, returns the read to make, and completes when bodyDone takes the read's
+// outcome. A reference names fixed content, so content replaced behind an unchanged
+// reference is read again only when the inline text or reference changes, or at start.
 //
 // A value that is not a canonical entity state is refused with the *graph.StateContractError
 // the decoder returned, nothing is applied, and the revision is not completed: state the index
@@ -148,6 +160,17 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 		return bodyRead{}, false, err
 	}
 	inline := a.rule.Document(&state, "")
+	prev := a.held[e.Key]
+	sameRef := prev != nil && prev.offloaded != nil && state.StorageRef != nil &&
+		prev.offloaded.ref == *state.StorageRef
+	if sameRef && prev.offloaded.inline == inline {
+		prev.revision = e.Revision
+		if prev.body != bodyQueued {
+			a.complete(e.Key, e.Revision)
+		}
+		return bodyRead{}, false, nil
+	}
+	readOut := sameRef && prev.body == bodyQueued
 	h, err := a.put(e.Key, e.Revision, inline)
 	if err != nil {
 		return bodyRead{}, false, err
@@ -158,16 +181,30 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 		return bodyRead{}, false, nil
 	}
 	a.setBody(h, bodyQueued, &pending{inline: inline, ref: *state.StorageRef})
+	if readOut {
+		return bodyRead{}, false, nil
+	}
 	return bodyRead{key: e.Key, revision: e.Revision, ref: *state.StorageRef}, true, nil
 }
 
-// wanted reports whether read is still to be made: its key is still at read's revision and its
-// body still waits to be read. A read no longer wanted has its revision completed, as a dropped
-// read's is.
+// serves returns what is held for read's key and whether the key still waits on read: its latest
+// revision names read's reference and that body still awaits a read (queued, unread or no store).
+// The caller holds mu.
+func (a *applier) serves(read bodyRead) (*held, bool) {
+	h, ok := a.held[read.key]
+	if !ok || h.offloaded == nil || h.offloaded.ref != read.ref {
+		return nil, false
+	}
+	return h, h.body == bodyQueued || h.body == bodyUnread || h.body == bodyNoStore
+}
+
+// wanted reports whether read is still to be made: its key's latest revision still names read's
+// reference and that body still awaits a read (queued, unread or no store). A read no longer wanted has the revision that
+// asked for it completed, as a dropped read's is.
 func (a *applier) wanted(read bodyRead) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if h, ok := a.held[read.key]; ok && h.revision == read.revision && h.waiting != nil {
+	if _, ok := a.serves(read); ok {
 		return true
 	}
 	a.complete(read.key, read.revision)
@@ -175,33 +212,37 @@ func (a *applier) wanted(read bodyRead) bool {
 }
 
 // bodyDone takes the outcome of read: the body, or the error that kept it from being read. The
-// outcome applies only if the key is still at read's revision; a key that moved on or was
-// deleted drops it. A body read joins its state's text; a failed read leaves the inline text and
-// puts the body in the state readState names, keeping what a retry needs unless the body is
-// missing. The read's revision completes either way.
+// outcome applies only if the key's latest revision still names read's reference and that body
+// still awaits a read (queued, unread or no store), whichever revision asked for the read; then it completes that latest
+// revision, and with it every earlier one waiting on the read. Otherwise the read is dropped and
+// completes the revision that asked for it. A body read is joined to the latest inline text; a
+// failed read leaves the inline text and puts the body in the state readState names.
 func (a *applier) bodyDone(read bodyRead, body string, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if h, ok := a.held[read.key]; ok && h.revision == read.revision && h.waiting != nil {
-		switch s := readState(err); s {
-		case bodyNone:
-			// put refuses only an ID that is not canonical, and this key's was accepted when its
-			// inline text was put.
-			_, _ = a.put(read.key, read.revision, a.rule.WithBody(h.waiting.inline, body))
-			a.setBody(h, bodyNone, nil)
-		case bodyMissing:
-			a.setBody(h, s, nil)
-			a.logFirst(&a.logged.missing, "offloaded body missing from its store; the entity is indexed without it",
-				read, err)
-		case bodyNoStore:
-			a.setBody(h, s, h.waiting)
-			a.logFirst(&a.logged.noStore, "no store registered for an offloaded body; looked up again each repair pass",
-				read, err)
-		default:
-			a.setBody(h, s, h.waiting)
-		}
+	h, ok := a.serves(read)
+	if !ok {
+		a.complete(read.key, read.revision)
+		return
 	}
-	a.complete(read.key, read.revision)
+	switch s := readState(err); s {
+	case bodyNone:
+		// put refuses only an ID that is not canonical, and this key's was accepted when its
+		// inline text was put.
+		_, _ = a.put(read.key, h.revision, a.rule.WithBody(h.offloaded.inline, body))
+		a.setBody(h, bodyNone, h.offloaded)
+	case bodyMissing:
+		a.setBody(h, s, h.offloaded)
+		a.logFirst(&a.logged.missing, "offloaded body missing from its store; the entity is indexed without it",
+			read, err)
+	case bodyNoStore:
+		a.setBody(h, s, h.offloaded)
+		a.logFirst(&a.logged.noStore, "no store registered for an offloaded body; looked up again each repair pass",
+			read, err)
+	default:
+		a.setBody(h, s, h.offloaded)
+	}
+	a.complete(read.key, h.revision)
 }
 
 // retries returns a read, at the held revision, of every body left unread or with no store.
@@ -214,7 +255,7 @@ func (a *applier) retries() []bodyRead {
 	var reads []bodyRead
 	for key, h := range a.held {
 		if h.body == bodyUnread || h.body == bodyNoStore {
-			reads = append(reads, bodyRead{key: key, revision: h.revision, ref: h.waiting.ref})
+			reads = append(reads, bodyRead{key: key, revision: h.revision, ref: h.offloaded.ref})
 		}
 	}
 	return reads
@@ -273,15 +314,16 @@ func (a *applier) put(key string, revision uint64, doc entitytext.Document) (*he
 	return h, nil
 }
 
-// setBody puts h's body in state s, waiting on waiting, and reports it.
-func (a *applier) setBody(h *held, s bodyState, waiting *pending) {
+// setBody puts h's body in state s, with offloaded the latest revision's inline text and
+// reference, and reports it.
+func (a *applier) setBody(h *held, s bodyState, offloaded *pending) {
 	if h.body != bodyNone {
 		a.bodies[h.body]--
 	}
 	if s != bodyNone {
 		a.bodies[s]++
 	}
-	h.body, h.waiting = s, waiting
+	h.body, h.offloaded = s, offloaded
 	a.report()
 }
 

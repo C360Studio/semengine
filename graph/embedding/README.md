@@ -80,6 +80,10 @@ it or run again, but do not drop it.
 Each `Run` of the Worker retries failed records once, because a failed record is processed when
 it arrives in the watch's initial contents but not when it is written later.
 
+Each call to the embedder gets a context that ends 30 seconds after the call begins. A call that
+fails once that context has ended fails the record `timeout`, whatever error the embedder returned,
+and the lane goes on to its next record. An embedder that ignores its context is not bounded.
+
 The cache is a `graphview.View` of `EMBEDDING_INDEX`, rebuilt by each `Run`. `FindSimilar` returns
 an error matching `graphview.ErrNotReady` before the view has read the bucket's initial contents,
 after the watch was lost, and after `Run` returned; there is no fallback read of the bucket. A record
@@ -111,7 +115,9 @@ order this package relies on is shown at the module's nats.go version by `TestWo
 
 ## Not here
 
-- No HTTP embedder, and no import of an embedding provider; a product supplies its own `Embedder`.
+- No embedder in this package, and no import of an embedding provider; a product supplies the `Embedder`. For a
+  provider that serves the OpenAI-shaped embeddings request over HTTP, such as semembed, use
+  [`httpembedder`](httpembedder/httpembedder.go), a package of its own.
 - No metrics library. `WorkerMetrics` is an interface; the component registers the collectors.
 - The package creates neither bucket.
 

@@ -26,7 +26,13 @@ start.
   SemSource's tier 0 composition registers plain `Register` (`cmd/semsource/run.go:317` at SemSource `4ca2072c`).
   *Do:* at tier 0, leave graph-embedding out of the composition (graph-lexical answers word questions); from tier 1,
   register it with `graphembedding.RegisterWithEmbedder(registry, name, newEmbedder)`, where `newEmbedder` builds
-  your `embedding.Embedder` (for example a client for semembed). The registration asks boot for no model registry.
+  your `embedding.Embedder`. The registration asks boot for no model registry. For a provider such as semembed, build
+  the client with `graph/embedding/httpembedder`. In SemSource's constructor, take the endpoint from
+  `model.ResolveEndpointWithConfig(reg, model.CapabilityEmbedding)` and pass its URL, Model, APIKey and QueryPrefix as
+  `httpembedder.Config{BaseURL, Model, APIKey, QueryPrefix}`. Three things differ from the SemStreams client:
+  `BaseURL` must end in `/v1` (the client adds `/embeddings`), `QueryPrefix` is applied only to queries and nothing
+  checks it is the right one for the model, and a reply naming a model other than `Model` is refused, so with a
+  provider that echoes its own model id (TEI, for example) set `Model` to that id.
 - **`graphembedding.CreateGraphEmbedding` is gone.** SemStreams exported the factory, so a caller could build the
   component without a registry. *Do:* register with `RegisterWithEmbedder` and create the component through the
   component manager.
@@ -114,8 +120,8 @@ forward the bytes unchanged. Each change below fails or alters an answer without
 
 ## Not carried
 
-- The HTTP embedder, the in-process BM25 embedder and the vector providers behind them. A product supplies its
-  embedder through `RegisterWithEmbedder`.
+- The in-process BM25 embedder and the vector providers behind it. A product supplies its embedder through
+  `RegisterWithEmbedder`; the HTTP client is `graph/embedding/httpembedder`, a package of its own.
 - The indexing-profile check: in SemStreams every path returned true, and the ADR behind it (ADR-054) is not ported.
 - The pin's own watch, reset latch, status bucket, heartbeat and `readiness.go`: `graph/follower` does these for
   graph-index and graph-embedding alike.

@@ -206,8 +206,8 @@ func (k *manualWatchKV) Update(ctx context.Context, key string, value []byte, re
 type workerContextKey struct{}
 
 // TestWorkerPassesExactRunContextThroughWatcherIOEmbedderAndCallbacks: the context Run is
-// given reaches the embedder and both callbacks unchanged, and the bucket reads and writes
-// under a descendant of it; the watch is opened under a context derived from it, which has
+// given reaches both callbacks unchanged, and the embedder call and the bucket reads and writes
+// run under descendants of it; the watch is opened under a context derived from it, which has
 // ended when Run returns.
 func TestWorkerPassesExactRunContextThroughWatcherIOEmbedderAndCallbacks(t *testing.T) {
 	parent, cancel := context.WithCancel(context.WithValue(t.Context(), workerContextKey{}, "generation-1"))
@@ -239,7 +239,11 @@ func TestWorkerPassesExactRunContextThroughWatcherIOEmbedderAndCallbacks(t *test
 	watchCtx := <-kv.watchCtx
 	kv.updates <- entry
 
-	require.Same(t, parent, <-embedCtx)
+	// Each embedder call runs under a descendant of Run's context with a deadline of its own.
+	gotEmbedCtx := <-embedCtx
+	require.Equal(t, "generation-1", gotEmbedCtx.Value(workerContextKey{}))
+	_, hasDeadline := gotEmbedCtx.Deadline()
+	require.True(t, hasDeadline, "the embedder call has no deadline")
 	require.Same(t, parent, <-generatedCtx)
 	require.Same(t, parent, <-terminalCtx)
 	// natsclient.KVStore bounds each bucket call with a context derived from the one it is

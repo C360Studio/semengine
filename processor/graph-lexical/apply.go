@@ -63,8 +63,8 @@ func readState(err error) bodyState {
 // the follower's goroutine, applies each delivered value, and bodyDone applies a body read once
 // it returns. A delivery at or below the revision held for its key is ignored. A body read serves
 // its reference, not the revision that asked for it: it is indexed if the key's latest revision
-// still names that reference and its body is not yet in the index, joined to that revision's
-// inline text. So an entity whose other values change often while its reference stays, such as
+// still names that reference and its body still awaits a read (queued, unread or no store),
+// joined to that revision's inline text. So an entity whose other values change often while its reference stays, such as
 // one carrying telemetry, keeps its body's words and costs no read per update. Every delivered
 // revision is completed through complete once its outcome is in, after the index holds it, so
 // the follower's floor never passes text the index does not hold.
@@ -129,11 +129,13 @@ func newApplier(rule entitytext.Rule, maxLen int, complete func(key string, revi
 //
 // A write that names an offloaded body is compared with what is held, the reference as a whole
 // value. The same inline text and reference change nothing in the index and ask for no read: the
-// key moves to the new revision, which completes at once unless a read of that reference is
-// queued or out, whose outcome then completes it. A changed inline text under the same reference, while a read
-// of it is queued or out, puts the new inline text and waits on that read. Anything else puts the
-// inline text, queues the body, returns the read to make, and completes when bodyDone takes the
-// read's outcome. A reference names fixed content, so content replaced behind an unchanged
+// key moves to the new revision, which completes at once unless the body is queued, that is a
+// read deliver asked for is still queued or out, whose outcome then completes it. A changed
+// inline text under the same reference, while the body is queued, puts the new inline text and
+// waits on that read. A repair pass's read is not counted: while the body is unread or has no
+// store, a changed inline text asks for a read of its own. Anything else puts the inline text,
+// queues the body, returns the read to make, and completes when bodyDone takes the read's
+// outcome. A reference names fixed content, so content replaced behind an unchanged
 // reference is read again only when the inline text or reference changes, or at start.
 //
 // A value that is not a canonical entity state is refused with the *graph.StateContractError
@@ -186,7 +188,8 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 }
 
 // serves returns what is held for read's key and whether the key still waits on read: its latest
-// revision names read's reference and that body is not in the index. The caller holds mu.
+// revision names read's reference and that body still awaits a read (queued, unread or no store).
+// The caller holds mu.
 func (a *applier) serves(read bodyRead) (*held, bool) {
 	h, ok := a.held[read.key]
 	if !ok || h.offloaded == nil || h.offloaded.ref != read.ref {
@@ -196,7 +199,7 @@ func (a *applier) serves(read bodyRead) (*held, bool) {
 }
 
 // wanted reports whether read is still to be made: its key's latest revision still names read's
-// reference and that body is not in the index. A read no longer wanted has the revision that
+// reference and that body still awaits a read (queued, unread or no store). A read no longer wanted has the revision that
 // asked for it completed, as a dropped read's is.
 func (a *applier) wanted(read bodyRead) bool {
 	a.mu.Lock()
@@ -210,7 +213,7 @@ func (a *applier) wanted(read bodyRead) bool {
 
 // bodyDone takes the outcome of read: the body, or the error that kept it from being read. The
 // outcome applies only if the key's latest revision still names read's reference and that body
-// is not in the index, whichever revision asked for the read; then it completes that latest
+// still awaits a read (queued, unread or no store), whichever revision asked for the read; then it completes that latest
 // revision, and with it every earlier one waiting on the read. Otherwise the read is dropped and
 // completes the revision that asked for it. A body read is joined to the latest inline text; a
 // failed read leaves the inline text and puts the body in the state readState names.

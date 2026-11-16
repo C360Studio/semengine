@@ -70,8 +70,8 @@ func (b *bodyPath) run(ctx context.Context) {
 }
 
 // read makes every read queued now, in order. A read whose reference the key's latest revision
-// no longer names, or whose body is already in the index, is not made; a read on a skipped store
-// is not made and leaves the body unread.
+// no longer names, or whose body no longer awaits a read (queued, unread or no store), is not
+// made; a read on a skipped store is not made and leaves the body unread.
 func (b *bodyPath) read(ctx context.Context, skipped map[string]error) {
 	b.mu.Lock()
 	batch := b.queue

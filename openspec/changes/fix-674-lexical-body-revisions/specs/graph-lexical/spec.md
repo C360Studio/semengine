@@ -6,14 +6,15 @@
 
 graph-lexical SHALL report a revision complete only after the index holds it and, for an entity with an offloaded
 body, after that body is indexed or has reached a state below. A body read SHALL be indexed only if, when it
-returns, the key's latest revision still names the reference it read and that body is not yet indexed; it SHALL be
-joined to that revision's inline text. Otherwise it SHALL be dropped, and the revision it was read for SHALL be
-complete. A revision whose `StorageRef` and inline text equal those the index holds for the key SHALL leave the index
-unchanged and ask for no body read, and a revision that keeps a reference whose read is queued or in flight SHALL ask
-for no read of its own: a body is read again only when its reference or the entity's inline text changes, or at
-start. References are equal only as a whole `StorageReference` (instance, key, content type and size). A reference
-SHALL name fixed content: a producer that puts new content SHALL give it a new reference, since content replaced
-behind an unchanged reference is not read again until one of those changes.
+returns, the key's latest revision still names the reference it read and that body still awaits a read (queued,
+unread or no store); it SHALL be joined to that revision's inline text. Otherwise it SHALL be dropped, and the
+revision it was read for SHALL be complete. A revision whose `StorageRef` and inline text equal those the index
+holds for the key SHALL leave the index unchanged and ask for no body read, and a revision that keeps a reference
+whose read a delivery asked for is still queued or in flight SHALL ask for no read of its own (a repair pass's read
+is not counted): a body is read again only when its reference or the entity's inline text changes, or at start.
+References are equal only as a whole `StorageReference` (instance, key, content type and size). A reference SHALL
+name fixed content: a producer that puts new content SHALL give it a new reference, since content replaced behind an
+unchanged reference is not read again until one of those changes.
 
 #### Scenario: A body read that returns after a newer delivery
 

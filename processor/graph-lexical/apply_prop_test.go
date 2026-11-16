@@ -84,6 +84,7 @@ const (
 	refKeep                     // the last reference the key named, whole; a new key if it named none
 	refNewSize                  // the last reference but for its size
 	refNewType                  // the last reference but for its content type
+	refOther                    // the last reference key refFrom named; a new key if it named none
 )
 
 // outcomeErrs are the errors a failed read returns, by the state it leaves the body in.
@@ -104,6 +105,7 @@ type step struct {
 	keepText  bool      // stepDeliver: the text is the key's latest write's, while the key is live
 	offloaded bool      // stepDeliver, stepOlder: the entity's body is offloaded
 	ref       refChange // stepDeliver with offloaded: which reference it names
+	refFrom   int       // stepDeliver with ref refOther: the key whose reference it names
 	older     uint64    // stepOlder: the revision delivered, at or below the key's
 	read      int       // stepReturn: which outstanding read returns, by position
 	outcome   bodyState // stepReturn: bodyNone for a body read, else the state its failure leaves
@@ -202,12 +204,14 @@ func (h *history) due(key string, revision uint64) {
 }
 
 // nextRef is the reference an offloaded delivery of key s.key names under s.ref; a reference
-// not named before gets a body word of its own.
+// not named before gets a body word of its own, which every key naming it carries.
 func (h *history) nextRef(s step, m *keyModel) message.StorageReference {
 	fresh := message.StorageReference{StorageInstance: "objectstore", Key: fmt.Sprintf("k%dr%dref", s.key, h.revision)}
 	var ref message.StorageReference
-	switch {
-	case m.lastRef == nil || s.ref == refNewKey:
+	switch other := h.keys[propKeys[s.refFrom]].lastRef; {
+	case s.ref == refOther && other != nil:
+		ref = *other
+	case m.lastRef == nil || s.ref == refNewKey || s.ref == refOther:
 		ref = fresh
 	case s.ref == refNewSize:
 		ref = *m.lastRef
@@ -218,10 +222,13 @@ func (h *history) nextRef(s step, m *keyModel) message.StorageReference {
 	default:
 		ref = *m.lastRef
 	}
-	if _, ok := h.bodyWords[ref]; !ok {
-		w := fmt.Sprintf("k%dr%db", s.key, h.revision)
-		m.words = append(m.words, w)
+	w, ok := h.bodyWords[ref]
+	if !ok {
+		w = fmt.Sprintf("k%dr%db", s.key, h.revision)
 		h.bodyWords[ref] = w
+	}
+	if !slices.Contains(m.words, w) {
+		m.words = append(m.words, w)
 	}
 	return ref
 }
@@ -345,16 +352,17 @@ func (h *history) deliver(s step, key string, m *keyModel, word func(string) str
 	}
 }
 
-// checkKey requires every word key ever carried to be found on key exactly when the model
-// expects it.
+// checkKey requires every word key ever carried to be found exactly on the keys the model
+// expects it on: a body word is shared by every key naming its reference.
 func (h *history) checkKey(key, when string) {
 	h.f.Helper()
 	m := h.keys[key]
-	expected := h.expected(m)
 	for _, w := range m.words {
 		var want []string
-		if slices.Contains(expected, w) {
-			want = []string{key}
+		for _, k := range propKeys {
+			if slices.Contains(h.expected(h.keys[k]), w) {
+				want = append(want, k)
+			}
 		}
 		if got := holders(h.f, h.a.index, w); !slices.Equal(got, want) {
 			h.f.Fatalf("%s: search %q found %v; want %v (model %+v)", when, w, got, want, *m)
@@ -443,8 +451,11 @@ func (h *history) drawStep(t *rapid.T) step {
 		s.keepText = rapid.Bool().Draw(t, "keepText")
 		s.offloaded = rapid.Bool().Draw(t, "offloaded")
 		if s.offloaded {
-			s.ref = rapid.SampledFrom([]refChange{refKeep, refKeep, refKeep, refNewKey, refNewSize, refNewType}).
-				Draw(t, "ref")
+			s.ref = rapid.SampledFrom([]refChange{refKeep, refKeep, refKeep, refNewKey, refNewSize, refNewType,
+				refOther}).Draw(t, "ref")
+			if s.ref == refOther {
+				s.refFrom = rapid.IntRange(0, len(propKeys)-1).Draw(t, "refFrom")
+			}
 		}
 	}
 	return s
@@ -555,6 +566,13 @@ func TestPropApplyMatchesModel(t *testing.T) {
 			deliverOffloaded(0), sameAgain,
 			{kind: stepDeliver, name: true, inline: true, keepText: true, offloaded: true, ref: refNewKey},
 			{kind: stepReturn, read: 0}, {kind: stepReturn, read: 0},
+		}},
+		{"two keys share a reference: telemetry on one, a reference change on the other", []step{
+			deliverOffloaded(0),
+			{kind: stepDeliver, key: 1, name: true, inline: true, offloaded: true, ref: refOther, refFrom: 0},
+			{kind: stepReturn, read: 1}, sameAgain, {kind: stepReturn, read: 0}, sameAgain,
+			{kind: stepDeliver, key: 1, name: true, inline: true, keepText: true, offloaded: true, ref: refNewKey},
+			sameAgain, {kind: stepReturn, read: 0},
 		}},
 		{"a reference named again after a delete is served by the read still out", []step{
 			deliverOffloaded(0), {kind: stepDelete, key: 0},

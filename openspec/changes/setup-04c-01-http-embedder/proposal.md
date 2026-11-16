@@ -15,33 +15,40 @@ refuse (inventory, shape sweep S1-S4). Losing the provider must also degrade to 
 
 ## What Changes
 
-- **PR A, the client.** An `embedding.Embedder` over plain `net/http` that speaks the OpenAI embeddings API as
-  semembed serves it. Config: base URL, model, optional API key, optional query prefix. It refuses a reply it cannot
-  trust (wrong count, index or width, an empty vector, another model), learns the width from the first reply, and
-  is bounded only by its caller's context. The Worker bounds each embed at 30 s (the pin client's default), so a
-  hung provider frees its lane. A provider test runs against a semembed-shaped fake in `task verify`, and against a
-  real provider through `task test:provider`.
-- **PR B, the fallback.** With `embedding_enabled` true, a searchGraph with no word matches, or one refused
-  `index_not_ready`, asks the embedding search and labels the reply `fallback`. A failed fallback is named in the
-  reply, never hidden. Tier 0 is unchanged. An integration test closes the provider mid-run and shows word search
-  answering, the embedding search refusing rather than answering empty, and graph-embedding reading `degraded`.
+- **PR A, the client** (`graph/embedding/httpembedder`). An `embedding.Embedder` over plain `net/http` that speaks
+  the OpenAI embeddings API as semembed serves it.
+  - Config: base URL, model, optional API key, optional query prefix.
+  - It refuses a reply it cannot trust (wrong count, index or width, an empty vector, another model), learns the
+    width from the first reply, and is bounded only by its caller's context.
+  - The Worker bounds each embed at 30 s (the pin client's default), so a hung provider frees its lane.
+  - `task verify` tests it against a fake shaped like semembed. One recorded probe against semembed 7ceb5281 is the
+    real-provider evidence.
+- **PR B, the fallback.** With `embedding_enabled` true, a searchGraph that finds no word matches, or one refused
+  `index_not_ready`, asks the embedding search.
+  - The reply adds `semantic` and a `fallback` entry. A failed or timed-out fallback is named there, never hidden,
+    and the word answer stays.
+  - Tier 0 is unchanged.
+  - An integration test closes the provider mid-run. It shows word search still answering, the embedding search
+    refusing rather than answering empty, and graph-embedding reading `degraded`.
 
 ## Non-goals
 
 Merging word and vector results (#668); long-text splitting (#667); retrying the Worker's failed entities after
-recovery; reading `model`'s endpoint registry (the product does that); go-openai or `model/wire`.
+recovery; reading `model`'s endpoint registry (the product does that); go-openai or `model/wire`; a real provider in
+`task verify`.
 
 ## Impact
 
-New exported surface: the client package and `graph.GlobalSearchData.Fallback`. Ledger row
-`graph/embedding/http_embedder.go` moves from `defer-exclude` to `adapt`. Docs: graph/embedding and graph-embedding
-READMEs, graph-embedding and graph-query `MIGRATION.md`. No new module.
+New exported surface: the client package; `graph.GlobalSearchData.Semantic` and `.Fallback` (the existing
+`GlobalSearchHint` type), and `Text` may be null. Ledger row `graph/embedding/http_embedder.go` moves from
+`defer-exclude` to `adapt`. Docs: graph/embedding and graph-embedding READMEs, graph-embedding and graph-query
+`MIGRATION.md`. No new module.
 
 ## Retires, and in which pull request
 
-PR B: `Closes #489`, `Closes #563`. PR A: `Addresses #489`. #11 addressed.
+PR B: `Closes #489`, `Closes #563` (#563 moves to milestone v0.1.0-alpha.6). PR A: `Addresses #489`. #11 addressed.
 
 ## Rulings needed
 
-Placement, the model check, the hang bound, where the real-provider test runs, ADR-037's changed decision, and the
-fallback reply shape (design, Open Questions).
+The model check, which lane runs the committed real-provider test, and (non-blocking) the semembed query prefix
+(design, Open Questions). For the owner's information: pin ADR-037's means are not ported (design D1).

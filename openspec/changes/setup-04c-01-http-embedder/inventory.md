@@ -70,6 +70,8 @@ The fact: "how a product's text becomes a vector through an outside provider".
   degrade test in 04C`.
 - Open PRs (`gh pr list --state open --json number,title,changedFiles,files`): #676 (this claim, 0 files); #597 and #598
   (Dependabot, `go.mod`, `go.sum`). No capability delta overlaps. This change adds no module, so it does not touch go.mod.
+  Open issue overlapping PR B's files: #670 (slice-04b, docs) edits the Health section of
+  `processor/graph-query/README.md`, which PR B also edits; whichever lands second merges `origin/main`.
 - Owner rulings: #11 comment 2026-11-14 (no in-process model; tier 1 through `embedding.Embedder`; a product's model
   is held to the same scorecard); #666 comment 2026-11-14 (the run takes any `Embedder`; a floor names its model);
   #563 comments 2026-11-14 (drop the fallback at tier 0; keep it labelled at tier 1; build it with #489);
@@ -178,6 +180,7 @@ GenerateQuery, classifyEmbedErr, "tier 1", searchGraph.
 | #658 | processor/graph-embedding | stays: damaged-record rule (#657) |
 | #554 | processor/graph-embedding tests | stays |
 | #666, #668, #11 | words only (tier 1) | #666 follows PR A; #668 out (owner); #11 addressed |
+| #670 | `processor/graph-query/README.md` (Health wording) | stays: docs-only, slice-04b; overlaps PR B's README edit (see §3) |
 
 Names the word, not the package: #9, #10, #24, #109, #111, #134, #484, #485, #487, #574, #630, #641, #665.
 
@@ -204,4 +207,5 @@ Collision table: not triggered. The client adds no durable, communication or coo
    quality loss, and only #666's scorecard sees it.
 3. **Where they find out:** a boot error (`Start`), the readiness status (`failed_reasons`), nowhere (the prefix).
 4. **Should know:** the URL and the model. The gap is the prefix. It is a fact the provider holds and semembed does
-   not serve (`main.rs:246`); closing it is a semembed question for the owner.
+   not serve (`main.rs:246`); closing it is a change to semembed, a sister repository (design,
+   owner question 3).

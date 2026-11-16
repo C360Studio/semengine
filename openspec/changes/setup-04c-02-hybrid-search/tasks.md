@@ -5,9 +5,8 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`): INVENTORY PASS, then pre-owner design review
-  passes; the owner fills `Approved-by:` and rules on design questions 1 to 3.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`): INVENTORY PASS, then pre-owner design review
+  passes; the owner fills `Approved-by:` and rules on design questions 1 to 3 (#668, all three as recommended).
 
 ## 2. PR A: the merge
 

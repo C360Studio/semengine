@@ -1,6 +1,6 @@
 # Proposal: setup-04c-02-hybrid-search
 
-Approved-by:
+Approved-by: owner (Coby Leuschke) (2026-11-16), in Enjoy; recorded on #668 (comment 6921682966) sha256:69bceccc1c94
 
 Track: `design`. Capabilities: `graph-query` (modified, added), `nats-fixture` (modified).
 

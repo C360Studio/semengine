@@ -4,7 +4,7 @@
 
 ### Requirement: An embedder that hangs frees the Worker's lane
 
-The Worker SHALL give each embedder call a deadline 30 seconds after it begins. A call that ends after that deadline
+The Worker SHALL give each embedder call a deadline 30 seconds after it begins. A call that fails after that deadline
 SHALL fail the record `timeout`, whether or not the embedder's error wraps the deadline, and the lane SHALL go on to
 its next record.
 

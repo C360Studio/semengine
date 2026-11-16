@@ -10,12 +10,12 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 
 ## 2. PR A: the merge
 
-- [ ] 2.1 Tests first: `TestMergeRanks` (table plus generated check against a reference model), D1's three integration
+- [x] 2.1 Tests first: `TestMergeRanks` (table plus generated check against a reference model), D1's three integration
   tests, D3's table, `TestSearchGraphAsksBothAtOnce` (D4) and `TestSearchGraphMergedTruncation`, shown failing on
   main (`notes/2.1.md`).
-- [ ] 2.2 `graph.GlobalSearchData.Merge` (was `Fallback`), `graph.TextSearchMatch.WordRank` / `.VectorRank`, and
+- [x] 2.2 `graph.GlobalSearchData.Merge` (was `Fallback`), `graph.TextSearchMatch.WordRank` / `.VectorRank`, and
   their doc comments; the merge in searchGraph (design D1-D4); `TestLosingTheProviderKeepsWordSearch` updated.
-- [ ] 2.3 Docs: `processor/graph-query/README.md` ("searchGraph's search by meaning"),
+- [x] 2.3 Docs: `processor/graph-query/README.md` ("searchGraph's search by meaning"),
   `processor/graph-query/doc.go:67-73`, `processor/graph-query/MIGRATION.md` (`:30-36`, `:181`, `:329-335`, plus
   the alpha.5 tier 1 line, design Migration Plan), `.agents/skills/query-pattern/SKILL.md:84`,
   `docs/repository-map.md:91`.

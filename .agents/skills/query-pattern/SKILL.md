@@ -81,7 +81,8 @@ serves now), so a verb not in the table has no responder yet.
   first with the entity as stored. `localSearch` takes `entity_id` (a full ID that names the group, at `level` 0 to 2,
   default 0), `query` and optionally `limit` (1 to 100, default 10), and searches that group only. `globalSearch`
   takes a free-text `query`, `level` and `limit`, searches every entity and lists the groups holding the matches.
-  `searchGraph` is the same handler under a second name, with the same request and `data`.
+  `searchGraph` is the same handler under a second name, with the same request; with `embedding_enabled` true it also asks
+  the embedding search and answers one merged list, each match with `word_rank` and `vector_rank`.
   - Word search helps only entities that have text. Metric-heavy entities, such as sensor or drone telemetry, have no
     words to match and gain nothing from it; reach them by prefix, predicate, name, alias or relationship.
   - A group's `COMMUNITY_INDEX` record is attached when there is one, and never decides the answer: `record_state` is

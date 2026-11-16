@@ -31,7 +31,7 @@ tier 0 composition gets. The time-range and area searches wait for their respond
 | `summary` | `graph.index.query.predicateList`, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.SummaryData` |
 | `localSearch` | `graph.lexical.query.search` scoped to one group, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the group's record | enveloped by `graph-query`, `data` a `graph.LocalSearchData` |
 | `globalSearch` | `graph.lexical.query.search` over every entity, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the groups' records; the alias, entity and edge verbs to verify an `entity` or `path` hint | enveloped by `graph-query`, `data` a `graph.GlobalSearchData` |
-| `searchGraph` | the same handler as `globalSearch`; when `embedding_enabled` is true and the words find nothing, also `graph.embedding.query.search` | the same, `data` equal to `globalSearch`'s when the words find something or `embedding_enabled` is false |
+| `searchGraph` | the same handler as `globalSearch`; when `embedding_enabled` is true, also `graph.embedding.query.search`, sent with the word search | the same, `data` equal to `globalSearch`'s when `embedding_enabled` is false; when true, one list merging words and meaning |
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
@@ -201,7 +201,7 @@ group; a word index behind it is refused transient `revision_not_reached`.
 
 Searches every entity for the words of a question, and lists the groups that hold the matches. `searchGraph` is the same
 handler under a second name, the verb SemSource calls. Its `data` equals `globalSearch`'s for the same request, except
-for the search by meaning it adds when `embedding_enabled` is true (below).
+for the search by meaning it merges in when `embedding_enabled` is true (below).
 
 The request is `{"query": "...", "level": 0, "limit": 10, "min_revision": ...}`. `query` is required and not blank.
 `level` (0 to 2, absent means 0) picks the group size the matches are grouped at. An unknown key is refused by name,
@@ -219,7 +219,7 @@ including SemStreams' `max_communities`, `summarize_threshold`, `include_summari
 - `entity`: the entity verb's reply data as it came, present only beside an honoured `entity` hint.
 - `path`: a `graph.PathSearchData`, present only beside an honoured `path` hint.
 - `hints`: what the question asked for beyond its words (empty when nothing).
-- `semantic` and `fallback`: only in a `searchGraph` reply, when `embedding_enabled` is true (below).
+- `semantic` and `merge`: only in a `searchGraph` reply, when `embedding_enabled` is true (below).
 
 Every question is answered by its words. Nothing is refused for what it asks beyond them. The question is read once with
 the keyword classifier (no language model), and each thing it seems to ask for is a *hint* in `hints`:
@@ -253,25 +253,45 @@ answer. The classifier takes the first start of "from A to B" and ignores B. To 
 
 #### `searchGraph`'s search by meaning
 
-With `embedding_enabled` false, `searchGraph` makes no request to graph-embedding. With it true, the word search runs
-first, and:
+With `embedding_enabled` false, `searchGraph` makes no request to graph-embedding. With it true, it sends the word
+search and `graph.embedding.query.search` together, each for 100 entities whatever the request's `limit` (no
+`min_revision` on the embedding request: the embedding verbs claim no entity revision), and answers one list. The
+embedding wait is not added to the word wait.
 
-- **The words match.** The reply is `globalSearch`'s, with no `fallback`.
-- **The words match nothing.** `searchGraph` asks `graph.embedding.query.search` once, with the question and the
-  request's `limit` (no `min_revision`: the embedding verbs claim no entity revision). The reply keeps the empty `text`
-  and adds `fallback`, a hint entry with `hint` `semantic` and `detail` `no_matches`:
-  - answered: `honoured` true, and `semantic` holds the embedding search's `data` as it came (`results`,
-    `embedder_type`, `unreadable_records`, `failed_records`);
-  - refused, or no answer within `query_timeout_ms`: `honoured` false, `reason` the refusal's message and `code` its
-    code (`internal` for a timeout), and no `semantic`. The empty word answer still stands; a failed fallback is always
-    named, never an unlabelled empty answer.
-- **The word search is refused `index_not_ready`.** The same request, with `detail` `index_not_ready`. When it is
-  answered, `text` is `null` (the word index was not read, so an empty `text` would wrongly say nothing matched),
-  `semantic` holds the answer, and `indexed_revision` is 0. When it fails too, the `index_not_ready` refusal is returned.
-- **Any other refusal** is returned as it arrived, with no request to graph-embedding.
+Each entity scores the sum of 1 / (60 + place) over the lists holding it, place counting from 1. The list is ordered by
+score, highest first, entity ID ascending on ties, and cut to `limit`. Because both lists are always read 100 deep, the
+first ten matches of a limit-100 reply are the matches of a limit-10 reply, unless a hit was missing or the reply was
+cut to fit `max_payload`.
 
-`globalSearch` never asks graph-embedding. Losing the embedding provider leaves the word searches answering, and the
-fallback names the provider's refusal (`TestLosingTheProviderKeepsWordSearch`).
+In the reply:
+
+- each match carries `word_rank` and `vector_rank`, its place in each list, left out when it is not in that list.
+  `score` is the merged score, at most 2/61; compare matches by `word_rank` or `vector_rank`, not by `score`, when you
+  need a word-index value.
+- `merge` is a hint entry with `hint` `semantic` and `detail` `merged`; `honoured` says whether vectors were used,
+  and `reason` and `code` say why not. `semantic` holds the embedding search's `data` as it came (`results`,
+  `embedder_type`, `unreadable_records`, `failed_records`).
+- `matched` stays the word index's count. `answer` adds `, and N more by meaning` for the N matches with no `word_rank`.
+- `truncated` is true when either list held more entities than `limit`, `matched` is above the word hits read, a hit
+  was missing, or matches were left out to fit. The embedding list has no score threshold, so at a small `limit` this
+  is nearly always true.
+- `indexed_revision` is the word index's.
+
+When one side fails:
+
+- **The embedding search is refused, broken, or silent past `query_timeout_ms`.** The word list answers in word order,
+  each match with `word_rank` only and the word index's `score`. `merge` is not honoured, with the refusal's `code`
+  (`internal` for a timeout) and message as `reason`, and no `semantic`. A failed merge is always named, never an
+  unlabelled word-only answer.
+- **The words match nothing.** `text.matches` is the embedding list, each match with `vector_rank` only.
+- **The word search is refused `index_not_ready`, and the embedding search answers.** `text` is `null` (the word index
+  was not read, so an empty `text` would wrongly say nothing matched), `semantic` holds the answer, `merge` has `detail`
+  `index_not_ready`, and `indexed_revision` is 0. When both fail, the `index_not_ready` refusal is returned.
+- **Any other word refusal** is returned as it arrived. The embedding request is cancelled and the call waits for it
+  to end, not for its reply.
+
+`globalSearch` never asks graph-embedding. Losing the embedding provider leaves the word searches answering, and
+`merge` names the provider's refusal (`TestLosingTheProviderKeepsWordSearch`).
 
 #### Quality bar
 

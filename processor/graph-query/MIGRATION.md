@@ -30,11 +30,12 @@ Read these first. Nothing errors.
   from the embedding index when global search was empty or refused `index_not_ready`: strategy `semantic_fallback`, up
   to 8 entities, marked degraded, which `deriveDisclosure` read as `strategy` and
   `degraded_reason == "global_search_empty_semantic_fallback"` (`disclosure.go:31`). Neither key is sent now. With
-  `embedding_enabled` true, a question whose words match nothing, or a word index not ready, is asked of the embedding
-  search once, and `data.fallback` says so: `hint` `semantic`, `detail` `no_matches` or `index_not_ready`, `honoured`,
-  and `reason` and `code` when it failed. The entities it found are in `data.semantic.results` (the request's `limit`,
-  10 by default, not 8). Read `fallback` and `semantic` instead of `strategy` and `degraded_reason`, and read a `null`
-  `data.text` as "the word index was not read", never as "no word matches". Search no longer waits for graph-clustering,
+  `embedding_enabled` true, every question is also asked of the embedding search, and `data.text.matches` is the merge
+  of both lists (each match has `word_rank` and `vector_rank`). `data.merge` says whether vectors were used: `hint`
+  `semantic`, `detail` `merged` or `index_not_ready`, `honoured`, and `reason` and `code` when it failed. The
+  embedding search's own reply is in `data.semantic` (`results`, up to 100). Read `merge` and `semantic` instead of
+  `strategy` and `degraded_reason`, and read a `null` `data.text` as "the word index was not read", never as "no word
+  matches". Search no longer waits for graph-clustering,
   so a deployment without clustering gets matches with `record_state` `not_ready`, not a refusal.
 - **SemSource `searchGraph` for a time range, an area or a count.** The old version answered "what changed in the last
   2 hours" and "what is within 5km" from the time and place verbs, and refused a count. Every question is now answered
@@ -178,7 +179,7 @@ change the following.
 | `temporal` | Forwards to `graph.temporal.query.range`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`; `type` is gone. Request keys become `start_time` and `end_time`, were `startTime` and `endTime`, with the responder; until then it is refused transient `internal` |
 | `localSearch` | Reply enveloped, was bare; matches come from the word index, scoped to the group, and the group's record is attached beside them; keys and fields change. See "Verb details". |
 | `globalSearch` | Reply enveloped, was bare; every question is searched for its words, strategies are gone, and `hints` lists what else the question asked for. See "Verb details". |
-| `searchGraph` | New on this table: `globalSearch` under its own name, with the same request and refusals; with `embedding_enabled` true it adds `fallback` and `semantic` when the words find nothing. See "Verb details". |
+| `searchGraph` | New on this table: `globalSearch` under its own name, with the same request and refusals; with `embedding_enabled` true it merges the word and embedding lists and adds `merge` and `semantic`; each match gains `word_rank` and `vector_rank`. In alpha.5 it answered as `globalSearch`; now its order and `score` come from the merge. See "Verb details". |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
 ## Verb details
@@ -328,13 +329,19 @@ refusal (see `globalSearch` above), so `summarize_threshold`, `max_communities` 
 `invalid_request`, naming the key. The old version, when `globalSearch` answered empty or refused `index_not_ready`,
 asked the semantic search for 8 entities and answered with strategy `semantic_fallback`, marked degraded.
 
-SemEngine keeps the fallback and labels it. With `embedding_enabled` true, when the words match nothing or the word index
-is not ready, `searchGraph` asks the embedding search once with the request's `limit`, and `data.fallback` names the
-step (`hint` `semantic`, `detail` `no_matches` or `index_not_ready`, `honoured`, `reason`, `code`); `data.semantic`
-holds the embedding search's `data` when it answered. A failed fallback leaves the word answer standing with `fallback`
-not honoured; on `index_not_ready` it returns the `index_not_ready` refusal. A word index that was not ready sends
-`data.text` as `null`. `strategy` and `degraded_reason` are gone. A truncated answer counts under `searchGraph`, not
-`globalSearch`. The graph-query README, "`searchGraph`'s search by meaning", has the cases.
+SemEngine merges the two searches and labels the result. In alpha.5, `searchGraph` with `embedding_enabled` true
+answered as `globalSearch` (word order, the word index's `score`); now its order and `score` come from the merge. With
+`embedding_enabled` true, `searchGraph` asks the word search and the embedding search together, each for 100
+entities, and scores each entity the sum of 1 / (60 + place) over the lists holding it. `data.text.matches` is ordered
+by that score (entity ID ascending on ties) and cut to `limit`. `score` is the merged score, at most 2/61, so a caller
+sorting by `score` keeps the right order, and a caller comparing it with a BM25 value must read `word_rank` instead.
+Each match carries `word_rank` and `vector_rank`, left out when the entity is not in that list. `data.merge` names the
+step (`hint` `semantic`, `detail` `merged` or `index_not_ready`, `honoured`, `reason`, `code`); `data.semantic` holds
+the embedding search's `data` when it answered. A failed embedding search leaves the word list in word order with
+`merge` not honoured; when the word index is not ready and the embedding search fails too, it returns the
+`index_not_ready` refusal. A word index that was not ready sends `data.text` as `null`. `strategy` and
+`degraded_reason` are gone. A truncated answer counts under `searchGraph`, not `globalSearch`. The graph-query README,
+"`searchGraph`'s search by meaning", has the cases.
 
 A stream capturing a declared `graph.query.*` subject refuses boot, and so does a declared NATS-request input
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:

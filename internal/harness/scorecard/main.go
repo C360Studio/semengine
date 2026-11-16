@@ -2,7 +2,7 @@
 // embedding provider. There is no other committed way to: task verify must reach no provider,
 // and a test may not skip when none is there.
 //
-//	task scorecard:tier1 -- -url http://127.0.0.1:18081/v1 -model Snowflake/snowflake-arctic-embed-s \
+//	task -x scorecard:tier1 -- -url http://127.0.0.1:18081/v1 -model Snowflake/snowflake-arctic-embed-s \
 //	  -query-prefix 'Represent this sentence for searching relevant passages: ' -provider 'semembed <commit>'
 //
 // It starts NATS from the one image pin, composes graph-ingest, graph-index, graph-lexical,
@@ -10,7 +10,9 @@
 // word scorecard's 2,000 sections, and asks its 500 questions through globalSearch, the semantic
 // verb and searchGraph. It prints R@1, R@10 and MRR for each, with the model, prefix, commit and
 // timings, then the verdict against tier 1's floor (floor.go). It exits 0 when the merged row holds
-// the floor, 1 when it does not, and 2 on any other failure.
+// the floor, 1 when it does not, and 2 on any other failure. Task runs it built, not through go run,
+// which reports every failing status as 1; Task's -x passes the status on, and without -x Task
+// reports any failure as 201.
 package main
 
 import (

@@ -5,7 +5,9 @@ import "fmt"
 // Tier 1's floor, held by every model: of the 500 questions, searchGraph's merged list has the
 // answer in its first ten at least floorRecallAt10 of the time, with an MRR of at least floorMRR,
 // and in its first ten no less often than globalSearch's words or the semantic verb's vectors.
-// These are the values the owner approved before the first run; that run measures them.
+// Measured from the setup-04c-02-hybrid-search change's
+// notes/probes/scorecard-snowflake-arctic-embed-s-6f69a4e2.md: Snowflake/snowflake-arctic-embed-s through semembed
+// merged R@10 61.6% and MRR 0.410, against words 56.0% and vectors 52.0%.
 const (
 	floorRecallAt10 = 0.60
 	floorMRR        = 0.40

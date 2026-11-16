@@ -11,7 +11,7 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md`. Single
 
 ## 2. Code
 
-- [ ] 2.1 Tests first (`processor/graph-lexical/apply_prop_test.go`). Premises: every revision puts the inline text
+- [x] 2.1 Tests first (`processor/graph-lexical/apply_prop_test.go`). Premises: every revision puts the inline text
   alone and queues a read (`apply.go:150-160`); a read is indexed only at its own revision (`apply.go:170`, `:185`); the
   test helper gives every revision of a key the same reference (`apply_test.go:48-50`). Accept: the model keys body
   words by reference; deliveries draw "keep the reference" or "new reference" (via `text.bodyKey`) and "keep the inline
@@ -26,7 +26,7 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md`. Single
   `TestStaleBodyReadDropped` gives R+1 its own `bodyKey`. `notes/2.1.md` records the witnesses and the generated run
   failing on today's code, with seed. Generated checks: the history is order-dependent, so the property model is the
   check; the witnesses name the cases it must reach.
-- [ ] 2.2 Implement in `processor/graph-lexical/apply.go`: keep each offloaded entity's inline document and reference
+- [x] 2.2 Implement in `processor/graph-lexical/apply.go`: keep each offloaded entity's inline document and reference
   after its read; `deliver` skips the put and the read when both are equal; `wanted` and `bodyDone` match on the
   reference while the key waits on it, join the body to the latest inline text, and complete the key's latest revision.
   The no-op path still advances the held revision, so an older delivery stays ignored; a revision that removes the

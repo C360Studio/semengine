@@ -66,7 +66,7 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 			}
 			handlers["globalSearch"] = c.globalSearch("globalSearch", subjects)
 			// searchGraph answers as globalSearch, counted and logged under its own name; when the
-			// composition runs graph-embedding it also falls back to the embedding search.
+			// composition runs graph-embedding it merges the word list with the embedding search's.
 			if c.config.EmbeddingEnabled {
 				subjects.semantic = subjectOf(graph.ResponderGraphEmbedding, "search")
 			}
@@ -168,17 +168,27 @@ func (c *Component) notEnabled(verb string) queryHandler {
 // connection's write lock, so a broker that has stopped reading can hold the call past both
 // (ADR-112, "Time", measured at nats.go v1.54.0 and v1.55.0).
 func (c *Component) ask(ctx context.Context, subject string, data []byte) ([]byte, error) {
-	timeout := time.Duration(c.config.QueryTimeoutMs) * time.Millisecond
-	reply, err := c.natsClient.RequestClassified(ctx, subject, data, timeout)
-	if err == nil {
-		return reply, nil
+	reply, err := c.natsClient.RequestClassified(ctx, subject, data, c.queryTimeout())
+	if err != nil {
+		return nil, c.requestFailed(subject, err)
 	}
+	return reply, nil
+}
+
+// queryTimeout is the deadline on the reply to each downstream request, query_timeout_ms.
+func (c *Component) queryTimeout() time.Duration {
+	return time.Duration(c.config.QueryTimeoutMs) * time.Millisecond
+}
+
+// requestFailed is a failed request to subject as ask returns it: a responder's refusal as it
+// arrived, or else, counted as an error, a transient internal refusal naming the subject.
+func (c *Component) requestFailed(subject string, err error) error {
 	var refusal *errs.ClassifiedError
 	if errors.As(err, &refusal) {
-		return nil, err
+		return err
 	}
 	c.lifecycle.CountError()
-	return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, fmt.Errorf("request to %s: %w", subject, err))
+	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, fmt.Errorf("request to %s: %w", subject, err))
 }
 
 // entityByAlias resolves the alias, sending the request's bytes unchanged to the alias verb, then

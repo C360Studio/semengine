@@ -113,6 +113,22 @@ func TestSearchAnswer(t *testing.T) {
 	if got, want := textSearchAnswer(graph.TextSearchData{Groups: []graph.TextSearchGroup{}}), "Found 0 matching entities in 0 groups."; got != want {
 		t.Errorf("no global match = %q, want %q", got, want)
 	}
+	// A searchGraph merged list: three matches by words, all sent, and two more with no word_rank
+	// (spec, "A merged answer").
+	merged := graph.TextSearchData{
+		Groups: groups[:2],
+		Matches: []graph.TextSearchMatch{
+			{WordRank: 1, VectorRank: 2}, {VectorRank: 1}, {WordRank: 2}, {VectorRank: 3}, {WordRank: 3},
+		},
+		Matched: 3,
+	}
+	if got, want := textSearchAnswer(merged), "Found 3 matching entities in 2 groups, and 2 more by meaning."; got != want {
+		t.Errorf("merged answer = %q, want %q", got, want)
+	}
+	merged.Truncated = true
+	if got, want := textSearchAnswer(merged), "Found 3 matching entities in 2 groups, and 2 more by meaning. Showing the first 5."; got != want {
+		t.Errorf("a cut merged answer = %q, want %q", got, want)
+	}
 
 	const summary = "Community of 7000 entities including 7000 notes. Key themes: alpha, beta."
 	match := graph.TextSearchMatch{ID: "acme.ops.src.docs.note.a", Score: 2, Entity: json.RawMessage(`{}`)}

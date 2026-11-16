@@ -198,9 +198,10 @@ than answer empty, and graph-embedding's readiness SHALL read `degraded`, naming
 
 A local or global search reply SHALL carry `matched`, the word index's count before the limit; `excluded`, its
 excluded words; `bodies_not_indexed`, its count; and `truncated`, true exactly when `matched` is above the hits
-returned, a hit is missing, or matches were left out to fit `max_payload`. In a searchGraph merged list, `truncated`
-SHALL be true exactly when the two lists together held more entities than the limit, `matched` is above the word
-hits read, a hit is missing, or matches were left out to fit.
+returned, a hit is missing, or matches were left out to fit `max_payload`. In every searchGraph reply with
+`embedding_enabled` true, merged or not, `truncated` SHALL be true exactly when the lists read (both, or the word list
+alone when the embedding search failed) held more entities than the limit, `matched` is above the word hits read, a
+hit is missing, or matches were left out to fit.
 
 #### Scenario: A limited answer
 
@@ -219,7 +220,8 @@ hits read, a hit is missing, or matches were left out to fit.
 Global search SHALL send its word search before reading any hint. A refusal of the word search, a query the word
 index's rules refuse among them, SHALL be the reply, and no hint SHALL be read: a one-token question the word index
 refuses is not looked up as an entity. searchGraph's embedding search is not a hint: it is sent with the word search,
-and on any word refusal other than `index_not_ready` it is cancelled and its reply is not awaited.
+and on any word refusal other than `index_not_ready` it is cancelled: the call waits for that request to end, never
+for its reply, and leaves nothing running after it returns.
 
 #### Scenario: A question the word index refuses
 

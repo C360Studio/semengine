@@ -5,7 +5,7 @@
 ### Requirement: Own server per test
 
 `natsfixture.New(t, opts...)` SHALL give its caller its own NATS server: Start starts it, Restart and Stop act on it,
-and `URL()` and `JetStream()` reach it. `t` is a `natsfixture.T` (`Helper`, `Errorf`, `Logf`, `Cleanup`): a test
+and `URL()` and `JetStream()` reach it. `t` is a `natsfixture.TB` (`Helper`, `Errorf`, `Logf`, `Cleanup`): a test
 passes its `*testing.T`, and a harness program run by Task passes its own. New SHALL make no Docker call. A second
 Start SHALL return `ErrAlreadyUsed`. The fixture's methods are called from the caller's own goroutine. The fixture
 SHALL retain no `context.Context`.

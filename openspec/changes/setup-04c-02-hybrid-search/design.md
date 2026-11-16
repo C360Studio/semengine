@@ -51,8 +51,10 @@ recorded), `TestSearchGraphMergesWordsAndMeaning`, `TestSearchGraphLimitIsAPrefi
 - `matched` stays the word index's count.
 - The answer adds `, and {extra} more by meaning` before the full stop, where `extra` is the number of matches sent
   with no `word_rank`.
-- `truncated` is true exactly when the two lists together held more entities than `limit`, `matched` is above the
-  word hits read, a hit was missing, or matches were left out to fit. At limits under 100 that is nearly always:
+- `truncated`, in every tier 1 searchGraph reply, merged or not, is true exactly when the lists read (both, or the
+  word list alone when the embedding search failed) held more entities than `limit`, `matched` is above the word hits
+  read, a hit was missing, or matches were left out to fit. `TestSearchGraphNamesAFailedMerge` covers the failed
+  case. At limits under 100 that is nearly always:
   the embedding list has no score threshold (`graph/query_search_types.go:33-38`), so there is nearly always more.
 - `indexed_revision` stays the word index's.
 
@@ -65,7 +67,7 @@ recorded), `TestSearchGraphMergesWordsAndMeaning`, `TestSearchGraphLimitIsAPrefi
 | Embedding search silent past `query_timeout_ms` | Same, `code` `internal` | `TestSearchGraphMergeTimeoutKeepsWordAnswer` |
 | Word search refused `index_not_ready`, embedding answers | `text` null, `semantic`, `merge` honoured, detail `index_not_ready`, revision 0 (`textsearch.go:120-128`) | `TestSearchGraphIndexNotReadyLeavesTextOut` |
 | Both fail | The `index_not_ready` refusal as it arrived | same |
-| Any other word refusal | Returned at once; the embedding request is cancelled, its reply not awaited | `TestSearchGraphOtherRefusalIsReturned` |
+| Any other word refusal | Returned; the embedding request is cancelled and the call waits for it to end, never for its reply, leaving nothing running | `TestSearchGraphOtherRefusalIsReturned` |
 | Provider closed | Found by words; `merge` not honoured, `code` set | `TestLosingTheProviderKeepsWordSearch` |
 
 **D4. The embedding wait is not added to the word wait** (PR A). Both searches are sent before either reply is
@@ -81,8 +83,8 @@ comes before any hint" gains that line.
 `mutcheck` (`Taskfile.yml:87-95`), it is a harness program Task runs, not a test. Its doc comment names its reason:
 no committed way to measure tier 1 search on a real provider (#666). It:
 
-- starts NATS with `natsfixture` from the one image pin. `New` takes `natsfixture.T` (`Helper`, `Errorf`, `Logf`,
-  `Cleanup`, the four it uses); the program's `T` runs cleanups on exit and turns an `Errorf` into exit 2;
+- starts NATS with `natsfixture` from the one image pin. `New` takes `natsfixture.TB` (`Helper`, `Errorf`, `Logf`,
+  `Cleanup`, the four it uses); the program's `TB` runs cleanups on exit and turns an `Errorf` into exit 2;
 - composes graph-ingest, graph-index, graph-lexical (defaults), graph-embedding (`RegisterWithEmbedder` over
   `httpembedder.New`, `text_suffixes: [".content"]`) and graph-query (`embedding_enabled: true`);
 - writes the 2,000 sections with `TestSearchScorecard`'s predicates. It waits for words by `min_revision`. It waits

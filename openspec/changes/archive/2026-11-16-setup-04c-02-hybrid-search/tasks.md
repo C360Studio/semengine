@@ -36,4 +36,4 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 
 ## 4. Close-out
 
-- [ ] 4.1 Spec sync and archive as the last content commit; PR B body carries `Closes #668` and `Closes #666`.
+- [x] 4.1 Spec sync and archive as the last content commit; PR B body carries `Closes #668` and `Closes #666`.

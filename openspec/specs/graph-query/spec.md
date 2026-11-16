@@ -528,8 +528,8 @@ in `Health` and log one Warn naming the verb, the level, the count and why answe
 ### Requirement: searchGraph answers as global search
 
 When `embedding_enabled` is false, `graph.query.searchGraph` SHALL decode and answer every request as `globalSearch`
-does, with the same `data`, and SHALL make no semantic request. When it is true, searchGraph SHALL answer as
-`globalSearch` when that answer's `text` has matches. Any other refusal SHALL be returned with no semantic request.
+does, with the same `data`, and SHALL make no semantic request. When it is true, a word-search refusal other than
+`index_not_ready` SHALL be returned as it arrived.
 
 #### Scenario: The same question
 
@@ -537,46 +537,35 @@ does, with the same `data`, and SHALL make no semantic request. When it is true,
 - **THEN** both replies' `data` are equal and no semantic request is made (`TestSearchGraphAnswersAsGlobalSearch`,
   `TestSearchGraphTierZeroAsksNoEmbedding`)
 
-### Requirement: searchGraph labels its semantic fallback
-
-When `embedding_enabled` is true and the word search matches nothing, searchGraph SHALL ask the embedding `search`
-verb once, waiting no longer than `query_timeout_ms`, and answer the global reply with `fallback`, a hint entry with
-`hint` `semantic` and `detail` `no_matches`. On success `honoured` is true and `semantic` holds the embedding reply's
-data as it came. An empty `text` means the word index was read and matched nothing.
-
-#### Scenario: No word matches at tier 1
-
-- **WHEN** `embedding_enabled` is true and the word search matches nothing
-- **THEN** the reply holds the empty `text`, `semantic` with the embedding search's data, and `fallback` honoured
-  with detail `no_matches` (`TestSearchGraphFallsBackWhenNoMatches`)
-
 ### Requirement: A failed semantic fallback is named
 
-When the embedding search is refused or does not answer in time, searchGraph SHALL answer with `fallback` `honoured`
-false, the refusal's `code` and its message as `reason`, and SHALL keep the word answer.
+When the embedding search is refused, broken, or does not answer within `query_timeout_ms`, searchGraph SHALL answer
+the word list in its own order, each match with `word_rank` only, with `merge` `honoured` false, the refusal's `code`
+and its message as `reason`. It SHALL never refuse the request for it.
 
 #### Scenario: The fallback fails
 
-- **WHEN** the word search matches nothing and the embedding search is refused
-- **THEN** the reply holds the empty `text` and `fallback` not honoured, with the refusal's code and message, never an
-  unlabelled empty answer (`TestSearchGraphNamesAFailedFallback`)
+- **WHEN** the embedding search is refused
+- **THEN** the reply holds the word answer and `merge` not honoured with the refusal's code and message
+  (`TestSearchGraphNamesAFailedMerge`)
 
 #### Scenario: The fallback runs out of time
 
-- **WHEN** the word search matches nothing and the embedding search does not answer within `query_timeout_ms`
-- **THEN** the reply holds the word answer and `fallback` not honoured, with code `internal`
-  (`TestSearchGraphFallbackTimeoutKeepsWordAnswer`)
+- **WHEN** the embedding search does not answer within `query_timeout_ms`
+- **THEN** the reply holds the word answer and `merge` not honoured, with code `internal`
+  (`TestSearchGraphMergeTimeoutKeepsWordAnswer`)
 
 ### Requirement: searchGraph falls back when the word index is not ready
 
-When `embedding_enabled` is true and `globalSearch` is refused `index_not_ready`, searchGraph SHALL answer as the
-labelled fallback does, with `detail` `index_not_ready`, and SHALL leave `text` out (null), since the word index was
-not read. If the embedding search also fails it SHALL return the `index_not_ready` refusal.
+When `embedding_enabled` is true and the word search is refused `index_not_ready`, searchGraph SHALL answer with
+`merge` honoured, `detail` `index_not_ready`, `semantic` holding the embedding search's data, and `text` left out
+(null), since the word index was not read. If the embedding search also fails it SHALL return the `index_not_ready`
+refusal.
 
 #### Scenario: The word index is not ready
 
-- **WHEN** `embedding_enabled` is true, `globalSearch` is refused `index_not_ready`, and the embedding search answers
-- **THEN** the reply leaves `text` out (null), holds `semantic`, and `fallback` honoured with detail `index_not_ready`;
+- **WHEN** `embedding_enabled` is true, the word search is refused `index_not_ready`, and the embedding search answers
+- **THEN** the reply leaves `text` out (null), holds `semantic`, and `merge` honoured with detail `index_not_ready`;
   had the embedding search failed, the `index_not_ready` refusal is returned
   (`TestSearchGraphIndexNotReadyLeavesTextOut`)
 
@@ -584,8 +573,7 @@ not read. If the embedding search also fails it SHALL return the `index_not_read
 
 When `embedding_enabled` is `false`, which it is when the key is left out, `semantic` and `similar` SHALL refuse every
 request with class `invalid` and code `not_enabled`, the message naming the verb, without sending any request. Every
-other verb SHALL be unchanged by the key, except `searchGraph`, whose semantic fallback runs only when the key is
-true.
+other verb SHALL be unchanged by the key, except `searchGraph`, whose merge runs only when the key is true.
 
 #### Scenario: Not the same as a missing responder
 
@@ -684,9 +672,9 @@ could not be read.
 
 Both verbs SHALL read their hits with one `graph.ingest.query.batch` request and answer `matches` in the word index's
 order, each `id`, `label`, `score` (the word index's) and `entity`, the bytes the batch sent for it, which graph-query
-does not re-encode. A hit the batch names missing SHALL be left out and counted in `missing`. When the reply would
-exceed `max_payload`, the lowest-ranked matches SHALL be left out until it fits. A batch refusal SHALL reach the
-caller as it arrived.
+does not re-encode. In a searchGraph merged list the order is the merged order and `score` is the merged score. A hit
+the batch names missing SHALL be left out and counted in `missing`. A batch refusal SHALL reach the caller as it
+arrived.
 
 #### Scenario: Order and missing hits
 
@@ -698,6 +686,10 @@ caller as it arrived.
 
 - **WHEN** the batch sends a matching entity holding a value graph-query does not read, such as an integer above 2^53
 - **THEN** that entity reaches the caller as the batch sent it (`TestLocalSearchEntitiesPassUnchanged`)
+
+### Requirement: A reply over the payload limit loses its lowest matches
+
+When a search reply would exceed `max_payload`, the lowest-ranked matches SHALL be left out until it fits.
 
 #### Scenario: A reply over the payload limit
 
@@ -714,6 +706,19 @@ returned, a hit is missing, or matches were left out to fit `max_payload`.
 
 - **WHEN** 40 entities match, the limit is 10 and the query is `pump -test`
 - **THEN** `matched` is 40, `truncated` is true and `excluded` is `["test"]` (`TestSearchDeclaresWhatItLeftOut`)
+
+### Requirement: A merged search reply declares what it left out
+
+In every searchGraph reply with `embedding_enabled` true, merged or not, `truncated` SHALL be true exactly when the
+lists read (both, or the word list alone when the embedding search failed) held more entities than the limit,
+`matched` is above the word hits read, a hit is missing, or matches were left out to fit.
+
+#### Scenario: A limited merged answer
+
+- **WHEN** at tier 1 the word search returns 3 hits, the embedding list holds 12 entities, 2 of them among those 3,
+  and the limit is 10
+- **THEN** `matched` is 3 and `truncated` is true, since 13 entities were found and 10 sent
+  (`TestSearchGraphMergedTruncation`)
 
 ### Requirement: Every question gets a word search
 
@@ -740,7 +745,18 @@ refuses is not looked up as an entity.
 
 - **WHEN** the question is `the of and`, or the one token `pump*`
 - **THEN** the reply is the word index's `invalid_request`, and no alias, entity or path request is made
-  (`TestWordIndexRefusalComesFirst`)
+  (`TestWordIndexRefusalComesFirst`, `TestSearchGraphOtherRefusalIsReturned`)
+
+### Requirement: A refused word search cancels the embedding search
+
+searchGraph's embedding search is not a hint: it is sent with the word search, and on any word refusal other than
+`index_not_ready` it SHALL be cancelled. The call waits for that request to end, never for its reply, and leaves
+nothing running after it returns.
+
+#### Scenario: Another word refusal
+
+- **WHEN** the word search is refused with a code other than `index_not_ready`
+- **THEN** that refusal is the reply and the embedding request is cancelled (`TestSearchGraphOtherRefusalIsReturned`)
 
 ### Requirement: A hint applies only when it is verified
 
@@ -778,13 +794,20 @@ A local or global search reply's `indexed_revision` SHALL be the word search rep
 ### Requirement: Search answers in a fixed template
 
 `answer` SHALL be `Found {matched} matching entities in {groups} groups.` for global search and `Found {matched}
-matching entities in {community_id}.` for local search, followed by a space and `Showing the first {n}.` when
-`truncated` is true, and, for local search with a record read, a space and the record's summary.
+matching entities in {community_id}.` for local search. In a searchGraph merged list, when some matches sent have no
+`word_rank`, `, and {extra} more by meaning` comes before the full stop, `extra` being their number. Then a space and
+`Showing the first {n}.` when `truncated` is true, and, for local search with a record read, a space and the record's
+summary.
 
 #### Scenario: A cut answer
 
 - **WHEN** 40 entities match and the limit is 10
 - **THEN** the answer is `Found 40 matching entities in 3 groups. Showing the first 10.` (`TestSearchAnswer`)
+
+#### Scenario: A merged answer
+
+- **WHEN** 3 entities match by words, all 3 are sent, and 2 more are sent with no `word_rank`
+- **THEN** the answer begins `Found 3 matching entities in 2 groups, and 2 more by meaning.` (`TestSearchAnswer`)
 
 ### Requirement: Search quality holds against a plain reference
 
@@ -802,11 +825,79 @@ questions.
 ### Requirement: Losing the embedding provider keeps word search
 
 With graph-embedding running on an outside provider, losing the provider SHALL leave the word searches answering as
-before. The embedding verbs SHALL refuse rather than answer empty, and graph-embedding's readiness SHALL read
-`degraded`, naming the provider failure among `failed_reasons`.
+before. searchGraph SHALL answer the word list with `merge` not honoured. The embedding verbs SHALL refuse rather
+than answer empty, and graph-embedding's readiness SHALL read `degraded`, naming the provider failure among
+`failed_reasons`.
 
 #### Scenario: The provider goes away
 
 - **WHEN** the provider is closed and an entity is then written
-- **THEN** globalSearch and searchGraph find it by its words, `semantic` is refused, and graph-embedding reads
-  `degraded` with `connection_refused` counted (`TestLosingTheProviderKeepsWordSearch`)
+- **THEN** globalSearch and searchGraph find it by its words, searchGraph's `merge` is not honoured with its code set,
+  `semantic` is refused, and graph-embedding reads `degraded` with `connection_refused` counted
+  (`TestLosingTheProviderKeepsWordSearch`)
+
+### Requirement: searchGraph merges words and meaning
+
+When `embedding_enabled` is true and the word search answers, searchGraph SHALL ask the word search and the
+embedding `search` verb, each for `graph.MaxSimilarityLimit` entities whatever the request's limit, and SHALL answer
+`text.matches` as one list. Each entity in either list scores the sum, over the lists holding it, of 1 / (60 + its
+1-based place). The list is ordered by score, highest first, entity ID ascending on ties, and cut to the request's
+limit.
+
+#### Scenario: Both lists hold matches
+
+- **WHEN** the word list is [A, B] and the embedding list is [C, A]
+- **THEN** the matches are A, C, B, each entity once, A with `word_rank` 1 and `vector_rank` 2
+  (`TestMergeRanks`, `TestSearchGraphMergesWordsAndMeaning`)
+
+#### Scenario: A smaller limit is a prefix
+
+- **WHEN** the same question is asked with limit 10 and with limit 100, no hit is missing, and both replies fit
+  `max_payload`
+- **THEN** the first ten matches are the same, in the same order (`TestSearchGraphLimitIsAPrefix`)
+
+### Requirement: A merged match says which lists held it
+
+In a searchGraph merged list each match SHALL carry `word_rank` and `vector_rank`, its place in each list, omitted
+when it is not in that list, and its `score` is the merged score. The reply SHALL carry `merge`, a hint entry with
+`hint` `semantic`, `detail` `merged` and `honoured` true, and `semantic` with the embedding search's data as it came.
+
+#### Scenario: Words match nothing
+
+- **WHEN** the word search matches nothing and the embedding search answers
+- **THEN** the matches are the embedding list's, each with `vector_rank` only, and `merge` is honoured
+  (`TestSearchGraphMeaningAloneWhenWordsMatchNothing`)
+
+### Requirement: searchGraph asks both searches at once
+
+searchGraph SHALL send the word search and the embedding search before waiting on either reply, so the embedding
+wait is not added to the word wait.
+
+#### Scenario: Both searches are in flight together
+
+- **WHEN** each search answers only after the other has been asked
+- **THEN** searchGraph answers (`TestSearchGraphAsksBothAtOnce`)
+
+### Requirement: Tier 1 search quality is measured before each tier 1 release
+
+`task scorecard:tier1` SHALL boot graph-ingest, graph-index, graph-lexical, graph-embedding over the named provider
+(section bodies only) and graph-query, and ask the frozen scorecard's 500 questions through `globalSearch`, the
+`semantic` verb and `searchGraph`. It SHALL print R@1, R@10 and MRR for each, with the model the provider's reply
+names, dimensions, query prefix, commits and timings. It SHALL NOT run in `task verify`.
+
+#### Scenario: A run names its model
+
+- **WHEN** the scorecard runs against a provider
+- **THEN** its output names the model the provider's reply reports beside the three rows
+  (`notes/probes/scorecard-*.md`, task 3.4)
+
+### Requirement: The tier 1 scorecard holds a floor
+
+Tier 1 has one floor, held by every model, kept as constants in the scorecard program, each citing the probe note it
+was measured from. `task scorecard:tier1` SHALL exit 1 when the merged row's R@10 or MRR is below that floor or its R@10
+is below either single row's, and 2 on any other failure.
+
+#### Scenario: Below the floor
+
+- **WHEN** the merged row's R@10 or MRR is below tier 1's floor
+- **THEN** the program prints the three rows and exits 1 (`notes/probes/scorecard-*.md`, task 3.4)

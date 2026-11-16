@@ -23,7 +23,7 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 ## 3. PR B: the tier 1 scorecard
 
 - [x] 3.0 Open PR B's own draft claim (its own branch and worktree) after PR A merges.
-- [ ] 3.1 `natsfixture.New` takes `natsfixture.TB` (design D6, nats-fixture delta); every existing caller unchanged;
+- [x] 3.1 `natsfixture.New` takes `natsfixture.TB` (design D6, nats-fixture delta); every existing caller unchanged;
   `task verify`.
 - [ ] 3.2 Tests first for the tool's flag refusals and tally arithmetic (hand-computed ranks), shown failing; the tool
   joins the tool packages in `scripts/test-pkgs.sh`.

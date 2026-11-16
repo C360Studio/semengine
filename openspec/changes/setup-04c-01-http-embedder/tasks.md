@@ -6,9 +6,9 @@ pull request (design D8): A, then B.
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/pin-http-embedder.md`). INVENTORY
-  PASS, then pre-owner design review passes; the owner fills `Approved-by:` and rules on design questions 1 to 3.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/pin-http-embedder.md`). INVENTORY
+  PASS, then pre-owner design review passes; the owner fills `Approved-by:` and rules on design questions 1 to 3
+  (#489 comment 6911306016; question 3 is non-blocking and still open).
 
 ## 2. PR A: the client
 

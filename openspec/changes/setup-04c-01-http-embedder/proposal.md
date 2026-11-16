@@ -1,6 +1,6 @@
 # Proposal: setup-04c-01-http-embedder
 
-Approved-by:
+Approved-by: owner (Coby Leuschke) (2026-11-16), in Enjoy; recorded on #489 (comment 6911306016) sha256:cdaa2d943940
 
 Track: `design`. Capabilities: `embedding-index` (added), `graph-embedding` (added), `graph-query` (modified, added).
 

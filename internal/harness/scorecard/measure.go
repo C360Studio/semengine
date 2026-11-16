@@ -24,7 +24,6 @@ import (
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
-	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
@@ -395,7 +394,8 @@ func (s stack) request(ctx context.Context, responder, verb string, request, dat
 }
 
 // awaitWords waits until graph-index and the word index have applied revision: until then each
-// refuses a request naming it as its min_revision, and the first answer is the event.
+// refuses a request naming it as its min_revision, and the first answer is the event. Any other
+// refusal ends the run.
 func (s stack) awaitWords(ctx context.Context, revision uint64) error {
 	waits := []struct {
 		responder, verb string
@@ -407,7 +407,7 @@ func (s stack) awaitWords(ctx context.Context, revision uint64) error {
 		}},
 	}
 	for _, w := range waits {
-		if _, err := probe.Await(ctx, func(ctx context.Context) (bool, error) {
+		if _, err := awaitAnswer(ctx, readyBudget, func(ctx context.Context) (bool, error) {
 			err := s.request(ctx, w.responder, w.verb, w.request, nil)
 			return err == nil, err
 		}, func(answered bool) bool { return answered }); err != nil {
@@ -480,7 +480,9 @@ func (s stack) awaitVectors(ctx context.Context, corpus []section) (int, error) 
 // copy of EMBEDDING_INDEX, kept by a watch of its own, which can trail the one awaitVectors read. A
 // hundred sections at a time are asked for by one plain question scoped to their IDs; the verb
 // leaves out a vector scoring 0 or less, so a section missing from that answer is then asked for
-// by its own body, scoped to it alone, until an answer holds it. It returns how many were.
+// by its own body, scoped to it alone, until an answer holds it. It returns how many were. Only an
+// index_not_ready refusal or an answer still missing the section is asked again (awaitAnswer); a
+// failure of the provider embedding the question ends the run.
 func (s stack) awaitSemanticCopy(ctx context.Context, corpus []section) (int, error) {
 	byBody := 0
 	for first := 0; first < len(corpus); first += depth {
@@ -491,7 +493,7 @@ func (s stack) awaitSemanticCopy(ctx context.Context, corpus []section) (int, er
 		}
 		// Until graph-embedding is ready the verb refuses; its first answer is the event.
 		request := graph.SemanticRequest{Query: "section", Limit: len(scope), Scope: scope}
-		data, err := probe.Await(ctx, func(ctx context.Context) (graph.SemanticData, error) {
+		data, err := awaitAnswer(ctx, readyBudget, func(ctx context.Context) (graph.SemanticData, error) {
 			var data graph.SemanticData
 			return data, s.request(ctx, graph.ResponderGraphQuery, "semantic", request, &data)
 		}, func(graph.SemanticData) bool { return true })
@@ -508,7 +510,7 @@ func (s stack) awaitSemanticCopy(ctx context.Context, corpus []section) (int, er
 			}
 			byBody++
 			request := graph.SemanticRequest{Query: sec.Body, Limit: 1, Scope: []string{sec.ID}}
-			if _, err := probe.Await(ctx, func(ctx context.Context) (int, error) {
+			if _, err := awaitAnswer(ctx, readyBudget, func(ctx context.Context) (int, error) {
 				var one graph.SemanticData
 				err := s.request(ctx, graph.ResponderGraphQuery, "semantic", request, &one)
 				return len(one.Results), err

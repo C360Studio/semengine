@@ -894,10 +894,23 @@ names, dimensions, query prefix, commits and timings. It SHALL NOT run in `task 
 ### Requirement: The tier 1 scorecard holds a floor
 
 Tier 1 has one floor, held by every model, kept as constants in the scorecard program, each citing the probe note it
-was measured from. `task scorecard:tier1` SHALL exit 1 when the merged row's R@10 or MRR is below that floor or its R@10
-is below either single row's, and 2 on any other failure.
+was measured from. The scorecard program SHALL exit 1 when the merged row's R@10 or MRR is below that floor or its R@10
+is below either single row's, and 2 on any other failure. `task -x scorecard:tier1` SHALL exit with the program's
+status; without `-x`, Task reports any failure as 201.
 
 #### Scenario: Below the floor
 
 - **WHEN** the merged row's R@10 or MRR is below tier 1's floor
-- **THEN** the program prints the three rows and exits 1 (`notes/probes/scorecard-*.md`, task 3.4)
+- **THEN** the program prints the three rows and exits 1 (`notes/probes/scorecard-*.md`, task 3.4;
+  `TestFloorMissExitsOne`)
+
+#### Scenario: The provider fails after the vectors are generated
+
+- **WHEN** every question the provider is asked to embed fails
+- **THEN** the program stops what it started and exits 2 without asking again; only an index's refusal that it has
+  not caught up is asked again, for a bounded time (`TestProviderLossAfterGenerationExitsTwo`, `await_test.go`)
+
+#### Scenario: Task passes the status through
+
+- **WHEN** `task -x scorecard:tier1` refuses its flags
+- **THEN** it exits 2 (`TestTaskPassesTheStatusThrough`)

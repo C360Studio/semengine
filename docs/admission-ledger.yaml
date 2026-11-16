@@ -3882,7 +3882,7 @@
     covered). FindSimilar sorts the whole view under its lock, about 37 ms a call and 9 ms of lock at 50,000 records
     (openspec/changes/archive/2026-11-08-setup-04a-05-graph-embedding-query/notes/2.2.md);
     graph-clustering plans around it. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays
-    open), #195 (advanced; stays open); #35 retired (http_embedder.go excluded)
+    open), #195 (advanced; stays open); #35 retired (http_embedder.go has its own row)
   proving_tests: >-
     graph/embedding: storage_test.go, storage_integration_test.go (TestRevisionGuardHistoryMatchesModel,
     TestSaveDedupKeepsSameSpaceReplacesOther); worker_test.go (TestWorkerRunRefusesNilContext,
@@ -3905,21 +3905,47 @@
 - source_path: graph/embedding/http_embedder.go
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the pin's HTTP embedder, which calls an external embedding provider (a tier-1 capability). No tier-0 consumer needs
-    it, and tier 0 needs no external provider
-  destination: none
+    the tier 1 embedder: calls a provider that serves the OpenAI-shaped embeddings request over HTTP, such as
+    semembed, so a product that runs one can pass it to graph-embedding. Tier 0 needs no provider and does not use it
+  destination: graph/embedding/httpembedder/httpembedder.go
   contract: >-
-    not ported; graph/embedding carries no HTTP embedder, no HTTP* types and no provider import
-    (TestEmbeddingImportsNoProviderModule holds that). A product supplies its own Embedder
-  dependencies_and_side_effects: none; excluded
+    A new package, so graph/embedding still holds no embedder and imports no provider
+    (TestEmbeddingImportsNoProviderModule). New(Config{BaseURL, Model, APIKey, QueryPrefix}) returns an *Embedder
+    that implements embedding.Embedder with plain net/http: no SDK, no model package. BaseURL is the provider's API
+    root and must end in /v1 for semembed; New refuses an empty base URL or model and a base URL that is not http or
+    https, and makes no request. Generate posts one POST <BaseURL>/embeddings {"model","input"}, sends Authorization:
+    Bearer only when an API key is set, and returns vectors in input order placed by index; no texts sends no
+    request. GenerateQuery prepends QueryPrefix to each text; Generate never does. A reply is trusted only whole: a
+    non-2xx status (the error names it and the provider's error.message), a vector count other than the text count, an
+    index out of range or repeated, an empty vector, a width other than the first accepted reply's (the error says
+    "dimension", so the Worker files dimension_mismatch), and a non-empty reply model other than the configured one
+    are all refused with no vectors. Dimensions() is 0 until the first accepted reply, then fixed, and safe to read
+    while Generate runs. The caller's context ends the request and the error matches ctx.Err(); the client sets no
+    timeout of its own, so the Worker bounds each embedder call at 30 s (graph/embedding/worker.go) and a call that
+    hits it fails the entity as timeout. Close returns nil. Not carried from the pin: Timeout, Logger and the three
+    connection settings (nothing here reads them), and the model package's own HTTP client
+  dependencies_and_side_effects: >-
+    graph/embedding; net/http and the standard library; one HTTP request per Generate or GenerateQuery call through
+    http.DefaultClient; no Prometheus, no provider module
   known_risks: >-
-    issue #489 owns the tier-1 HTTP embedding provider and its tier-0 fallback test; issue #35 (the file's port refactor) is
-    retired by excluding it, owner ruling item 1 on PR #458 comment 6473224284. The pin's http_embedder_test.go and
-    http_embedder_dimensions_test.go are excluded with it
+    the client cannot check the query prefix: a product must set QueryPrefix to the model's own query instruction, and
+    only a search-quality run shows a wrong one. A provider that echoes a model name other than the one it serves
+    passes the model check; a provider such as TEI that echoes its own id needs that id as Model. After an outage,
+    entities whose embedding failed wait for a new revision or a restart. The pin's http_embedder_test.go and
+    http_embedder_dimensions_test.go carry over as the GenerateQuery and Dimensions tests named below. Real-provider
+    run against semembed 7ceb5281 (count and order, served model, width before and after the first reply, query
+    versus document vectors, cancel and deadline, recovery across a restart) is recorded in
+    openspec/changes/setup-04c-01-http-embedder/notes/probes/semembed-7ceb5281.md and runs outside task verify
   proving_tests: >-
-    internal/harness/contract (TestEmbeddingImportsNoProviderModule); the fallback test is #489's
-  owner: setup-04a-04-graph-roots-embedding developer
-  disposition: defer-exclude
+    graph/embedding/httpembedder: httpembedder_test.go (TestRequestShape, TestVectorsPlacedByIndex,
+    TestEmptyInputSendsNothing, TestHTTPEmbedder_GenerateQuery_PrependsPrefix,
+    TestHTTPEmbedder_GenerateQuery_NoPrefixConfigured, TestRefusesUntrustedReply, TestContextEndsRequest,
+    TestNilContextRefused, TestNewRefusesConfig); dimensions_test.go (TestHTTPEmbedder_DimensionsIsRaceFree,
+    TestHTTPEmbedder_DimensionsUnresolvedUntilFirstResponse, TestHTTPEmbedder_DimensionsResolveOnceAndStick);
+    fuzz_test.go (FuzzReplyIsWholeOrRefused); graph/embedding: worker_hungembedder_test.go
+    (TestHungEmbedderFreesWorkerLane); internal/harness/contract (TestEmbeddingImportsNoProviderModule)
+  owner: setup-04c-01-http-embedder developer
+  disposition: adapt
 
 - source_path: graph/query
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -4613,7 +4639,7 @@
     Worker lane for one deadline, then the record fails content_error (#551). Open: after a restart without the
     body's store the Worker's replay and hop 1's re-read count two exclusions in content_unresolved_total. The
     Worker's other metrics are dropped
-    until their collectors are ported. Not carried: the http embedder and the model import (#32, #489), BatchSize,
+    until their collectors are ported. Not carried: the http embedder in this package and the model import (#32; the client is graph/embedding/httpembedder), BatchSize,
     the in-process BM25 embedder as the component's own, the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the pin's bucket-scan query fallback, its
     test hook subscribeForRequests, and its nil-storage, nil-embedder and empty-vector branches
   proving_tests: >-

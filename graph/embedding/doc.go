@@ -1,6 +1,7 @@
 // Package embedding turns the text of graph entities into vectors, stores them, and finds the
 // nearest ones. It holds no embedder of its own: a product supplies one, so it imports no
-// embedding provider.
+// embedding provider. The HTTP client for a provider such as semembed is the separate package
+// graph/embedding/httpembedder.
 //
 // Embedding is two hops. Hop 1 is a component outside this package that writes one pending
 // record per entity revision to the EMBEDDING_INDEX bucket (Storage.SavePendingGuarded). Hop 2 is

@@ -115,7 +115,9 @@ order this package relies on is shown at the module's nats.go version by `TestWo
 
 ## Not here
 
-- No HTTP embedder, and no import of an embedding provider; a product supplies its own `Embedder`.
+- No embedder in this package, and no import of an embedding provider; a product supplies the `Embedder`. For a
+  provider that serves the OpenAI-shaped embeddings request over HTTP, such as semembed, use
+  [`httpembedder`](httpembedder/httpembedder.go), a package of its own.
 - No metrics library. `WorkerMetrics` is an interface; the component registers the collectors.
 - The package creates neither bucket.
 

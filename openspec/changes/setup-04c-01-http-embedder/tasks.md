@@ -22,7 +22,7 @@ pull request (design D8): A, then B.
   command, image build, model and output in `notes/probes/semembed-7ceb5281.md`. Nothing is added to `task verify`.
 - [x] 2.4 `TestHungEmbedderFreesWorkerLane` first, then the Worker's 30 s embed bound with the deadline wrapped
   (design D4); graph-embedding README "Known limits" updated.
-- [ ] 2.5 Ledger row `graph/embedding/http_embedder.go` → `adapt` (destination, contract, proving tests);
+- [x] 2.5 Ledger row `graph/embedding/http_embedder.go` → `adapt` (destination, contract, proving tests);
   `task ledger:diff`. Docs: `graph/embedding/README.md:114`, `doc.go:2-3`, `docs/repository-map.md:74`,
   `processor/graph-embedding/README.md:58` (the example uses the client), MIGRATION.md (SemSource's constructor).
 

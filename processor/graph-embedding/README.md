@@ -51,11 +51,17 @@ text is embedded and `content_unresolved_total` counts the exclusion.
 
 ## Registering an embedder
 
-A product registers graph-embedding with its embedder, an `embedding.Embedder`:
+A product registers graph-embedding with its embedder, an `embedding.Embedder`. For a provider that serves the
+OpenAI-shaped embeddings request over HTTP, such as semembed, build it with `graph/embedding/httpembedder`; any other
+`embedding.Embedder` works the same way:
 
 ```go
 err := graphembedding.RegisterWithEmbedder(registry, "semembed", func() (embedding.Embedder, error) {
-    return newSemembedClient(endpoint) // the product's own embedder
+    return httpembedder.New(httpembedder.Config{
+        BaseURL:     "http://127.0.0.1:8081/v1", // must end in /v1 for semembed
+        Model:       "Snowflake/snowflake-arctic-embed-s",
+        QueryPrefix: "Represent this sentence for searching relevant passages: ",
+    })
 })
 ```
 

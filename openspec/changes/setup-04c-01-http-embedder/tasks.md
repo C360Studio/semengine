@@ -20,7 +20,7 @@ pull request (design D8): A, then B.
 - [x] 2.3 Real-provider probe (design D5): a throwaway program against semembed 7ceb5281 at
   `http://127.0.0.1:18081/v1` covering each D5 check, recovery across a container restart included; source,
   command, image build, model and output in `notes/probes/semembed-7ceb5281.md`. Nothing is added to `task verify`.
-- [ ] 2.4 `TestHungEmbedderFreesWorkerLane` first, then the Worker's 30 s embed bound with the deadline wrapped
+- [x] 2.4 `TestHungEmbedderFreesWorkerLane` first, then the Worker's 30 s embed bound with the deadline wrapped
   (design D4); graph-embedding README "Known limits" updated.
 - [ ] 2.5 Ledger row `graph/embedding/http_embedder.go` → `adapt` (destination, contract, proving tests);
   `task ledger:diff`. Docs: `graph/embedding/README.md:114`, `doc.go:2-3`, `docs/repository-map.md:74`,

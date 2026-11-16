@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"golang.org/x/sync/singleflight"
@@ -47,6 +48,10 @@ const MaxSourceTextLenCeiling = 1_000_000
 // accepted entries as the watch's update channel buffers (256 at nats.go v1.55.0,
 // jetstream/kv.go WatchFiltered, not promised).
 const workerQueueCapacity = 256
+
+// embedTimeout bounds one embedder call, so an embedder that never answers holds its lane for
+// this long only.
+const embedTimeout = 30 * time.Second
 
 // GeneratedCallback is called when an embedding has been stored. It receives the context Run
 // was given, the entity ID and the stored vector, and must return promptly once that context
@@ -531,10 +536,20 @@ func (w *Worker) generateShared(ctx context.Context, key, sourceText string) ([]
 	return v.([]float32), nil
 }
 
-// generateOne is the single embedder call; an empty result is errNoEmbeddingReturned.
+// generateOne is the single embedder call; an empty result is errNoEmbeddingReturned. The call
+// runs under a context derived from ctx that ends 30 seconds after it begins. When the embedder
+// fails and that context has ended by then, the error wraps the context's error,
+// context.DeadlineExceeded for the deadline, whatever the embedder's error was: an embedder may
+// answer its deadline with an error of its own that wraps no context error. An embedder that
+// ignores its context is not bounded by the deadline.
 func (w *Worker) generateOne(ctx context.Context, sourceText string) ([]float32, error) {
-	vectors, err := w.embedder.Generate(ctx, []string{sourceText})
+	callCtx, cancel := context.WithTimeout(ctx, embedTimeout)
+	defer cancel()
+	vectors, err := w.embedder.Generate(callCtx, []string{sourceText})
 	if err != nil {
+		if ctxErr := callCtx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("%w (embedder: %v)", ctxErr, err)
+		}
 		return nil, err
 	}
 	if len(vectors) == 0 {

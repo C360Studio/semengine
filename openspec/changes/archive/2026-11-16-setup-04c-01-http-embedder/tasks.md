@@ -36,4 +36,4 @@ pull request (design D8): A, then B.
 
 ## 4. Close-out
 
-- [ ] 4.1 Spec sync and archive as the last content commit; PR B body carries `Closes #489` and `Closes #563`.
+- [x] 4.1 Spec sync and archive as the last content commit; PR B body carries `Closes #489` and `Closes #563`.

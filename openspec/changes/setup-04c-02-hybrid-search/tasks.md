@@ -30,7 +30,7 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 - [x] 3.3 `internal/harness/scorecard` and `task scorecard:tier1` (design D6, D7); nothing is added to `task verify`;
   `docs/test-infrastructure.md` "When we write harness code" names harness programs run by Task (`pindiff`,
   `mutcheck`, `scorecard`).
-- [ ] 3.4 First run against semembed (`Snowflake/snowflake-arctic-embed-s`); output, command and commits in
+- [x] 3.4 First run against semembed (`Snowflake/snowflake-arctic-embed-s`); output, command and commits in
   `notes/probes/scorecard-<model>-<commit>.md`. Set tier 1's floor from it (design D8), citing that note, and rerun
   to show the verdict passes, and that a floor one point above the measured row exits 1.
 

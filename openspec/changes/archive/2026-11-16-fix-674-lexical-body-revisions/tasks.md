@@ -36,5 +36,5 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md`. Single
   (whole-value equality); content replaced behind an unchanged reference is read again only when the reference or inline
   text changes, or at start. Accept: 2.1's tests pass; `TestDeliveriesAndBodyReadsConcurrent` passes under `-race`; full
   `task verify` passes on a clean tree.
-- [ ] 2.3 Archive: `openspec archive fix-674-lexical-body-revisions --yes` promotes the delta; `task spec:check` and
+- [x] 2.3 Archive: `openspec archive fix-674-lexical-body-revisions --yes` promotes the delta; `task spec:check` and
   `task docs:check` pass.

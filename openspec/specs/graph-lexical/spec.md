@@ -35,22 +35,41 @@ whatever was written or deleted before.
 ### Requirement: A revision completes only once its text is in the index
 
 graph-lexical SHALL report a revision complete only after the index holds it and, for an entity with an offloaded
-body, after that body is indexed or has reached a state below. A body read for a revision SHALL be indexed only if
-the index still holds that revision for the key when the read returns; otherwise it SHALL be dropped, and the
+body, after that body is indexed or has reached a state below. A body read SHALL be indexed only if, when it
+returns, the key's latest revision still names the reference it read and that body still awaits a read (queued,
+unread or no store); it SHALL be joined to that revision's inline text. Otherwise it SHALL be dropped, and the
 revision it was read for SHALL be complete.
 
 #### Scenario: A body read that returns after a newer delivery
 
-- **WHEN** a body read for revision R is in flight and a delivery of the same key at R+1 is applied before it returns
+- **WHEN** a body read for revision R is in flight and a delivery of the same key at R+1, naming a different
+  reference, is applied before it returns
 - **THEN** the index holds R+1's text and never R's body, and the follower's floor passes R
   (`TestStaleBodyReadDropped`)
 
 #### Scenario: Any history of deliveries, deletes and body reads
 
-- **WHEN** a generated history interleaves deliveries, deletes, body outcomes and late read returns over a few keys
-- **THEN** after each step every live key holds its latest revision's inline text, plus that revision's body only
-  if that read succeeded, as a reference model says, and every delivered revision has completed once its outcome
+- **WHEN** a generated history interleaves deliveries that keep or change a key's reference, deletes, body outcomes
+  and late read returns over a few keys
+- **THEN** after each step every live key holds its latest revision's inline text, plus the body of that
+  revision's reference only if a read of that reference succeeded since the key last named another reference or
+  changed its inline text, as a reference model says, and every delivered revision has completed once its outcome
   is in (`TestPropApplyMatchesModel`, seed and checks recorded)
+
+### Requirement: A body is read again only when its reference or inline text changes
+
+A revision with the `StorageRef` and inline text the index holds SHALL change nothing and ask for no read; one keeping
+a reference whose read a delivery asked for is still out SHALL ask for none of its own (a repair pass's read is not
+counted). References are equal only as a whole `StorageReference` (instance, key, content type, size). A reference
+SHALL name fixed content: content replaced behind one is read again only when the reference or inline text
+changes, or at start.
+
+#### Scenario: Non-text values change and the reference stays
+
+- **WHEN** an entity's offloaded body is indexed and revisions follow that change only values that are not text,
+  keeping the same reference, some arriving while the first read is still out
+- **THEN** a search for a body-only word finds the entity after each of them once the first read has returned, no
+  further body read is asked for, and each revision completes (`TestPropApplyMatchesModel`)
 
 ### Requirement: The search verb answers only once the index has caught up
 
@@ -121,11 +140,10 @@ by state, none withholding the verb.
 ### Requirement: Each body state is retried and reported by its cause
 
 `queued` SHALL mean not yet read. `unread` (any read failure but a missing object, or its store stalled) SHALL be
-retried by every repair pass and reported as the failure `body_unread`, so the readiness key reads degraded and
-`Health` names it.
-`missing` (the store answers `storage.ErrObjectNotFound`) SHALL not be retried until the entity changes and is not a
-failure. `no store` (no store registered under the instance) SHALL be looked up again on every repair pass and is not
-a failure.
+retried by every repair pass and reported as the failure `body_unread` (readiness degraded, named in `Health`).
+`missing` (`storage.ErrObjectNotFound`) SHALL be retried only when the reference or inline text changes, or at
+restart, and is not a failure. `no store` (no store registered under the
+instance) SHALL be looked up again on every repair pass and is not a failure.
 
 #### Scenario: A store that fails, then recovers
 

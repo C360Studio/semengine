@@ -569,13 +569,13 @@ false, the refusal's `code` and its message as `reason`, and SHALL keep the word
 
 ### Requirement: searchGraph falls back when the word index is not ready
 
-When `globalSearch` is refused `index_not_ready`, searchGraph SHALL answer as the labelled fallback does, with `detail`
-`index_not_ready`, and SHALL leave `text` out (null), since the word index was not read. If the embedding search also
-fails it SHALL return the `index_not_ready` refusal.
+When `embedding_enabled` is true and `globalSearch` is refused `index_not_ready`, searchGraph SHALL answer as the
+labelled fallback does, with `detail` `index_not_ready`, and SHALL leave `text` out (null), since the word index was
+not read. If the embedding search also fails it SHALL return the `index_not_ready` refusal.
 
 #### Scenario: The word index is not ready
 
-- **WHEN** `globalSearch` is refused `index_not_ready` and the embedding search answers
+- **WHEN** `embedding_enabled` is true, `globalSearch` is refused `index_not_ready`, and the embedding search answers
 - **THEN** the reply leaves `text` out (null), holds `semantic`, and `fallback` honoured with detail `index_not_ready`;
   had the embedding search failed, the `index_not_ready` refusal is returned
   (`TestSearchGraphIndexNotReadyLeavesTextOut`)
@@ -584,7 +584,8 @@ fails it SHALL return the `index_not_ready` refusal.
 
 When `embedding_enabled` is `false`, which it is when the key is left out, `semantic` and `similar` SHALL refuse every
 request with class `invalid` and code `not_enabled`, the message naming the verb, without sending any request. Every
-other verb SHALL be unchanged by the key.
+other verb SHALL be unchanged by the key, except `searchGraph`, whose semantic fallback runs only when the key is
+true.
 
 #### Scenario: Not the same as a missing responder
 

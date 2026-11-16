@@ -8,10 +8,17 @@ nothing in verify reaches an outside service.
 - **Provider:** semembed at commit `7ceb5281`, in local Docker as container `semengine-semembed`, image
   `semengine-semembed:7ceb5281` (image ID `sha256:a7fe8a48c7ebe1413eb96b39d1e935fa404b320fb36a009676b3359ba999bf4a`,
   created 2026-11-16T07:53:02Z).
-- **Image build:** the image was built from `git archive 7ceb5281` of a local semembed checkout, with semembed's own
-  Dockerfile. The build was done before this probe and its exact command line was not captured here. The image
-  history shows semembed's Dockerfile steps, including `ENV SEMEMBED_MODEL=Snowflake/snowflake-arctic-embed-s` and
-  `EXPOSE [8081/tcp]`.
+- **Image build and run:** from a local semembed checkout, with semembed's own Dockerfile:
+
+  ```bash
+  mkdir -p /tmp/semembed-7ceb5281
+  git -C <semembed checkout> archive 7ceb5281 | tar -x -C /tmp/semembed-7ceb5281
+  docker build -t semengine-semembed:7ceb5281 /tmp/semembed-7ceb5281
+  docker run -d --name semengine-semembed -p 127.0.0.1:18081:8081 semengine-semembed:7ceb5281
+  ```
+
+  The image history shows semembed's Dockerfile steps, including `ENV SEMEMBED_MODEL=Snowflake/snowflake-arctic-embed-s`
+  and `EXPOSE [8081/tcp]`. The model downloads on the container's first start.
 - **Container:** port 8081 published on `127.0.0.1:18081` (from `docker inspect`), so the probe uses
   `http://127.0.0.1:18081/v1`.
 - **Model:** `Snowflake/snowflake-arctic-embed-s`, 384 dimensions. Query prefix:

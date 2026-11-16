@@ -25,9 +25,9 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 - [x] 3.0 Open PR B's own draft claim (its own branch and worktree) after PR A merges.
 - [x] 3.1 `natsfixture.New` takes `natsfixture.TB` (design D6, nats-fixture delta); every existing caller unchanged;
   `task verify`.
-- [ ] 3.2 Tests first for the tool's flag refusals and tally arithmetic (hand-computed ranks), shown failing; the tool
+- [x] 3.2 Tests first for the tool's flag refusals and tally arithmetic (hand-computed ranks), shown failing; the tool
   joins the tool packages in `scripts/test-pkgs.sh`.
-- [ ] 3.3 `internal/harness/scorecard` and `task scorecard:tier1` (design D6, D7); nothing is added to `task verify`;
+- [x] 3.3 `internal/harness/scorecard` and `task scorecard:tier1` (design D6, D7); nothing is added to `task verify`;
   `docs/test-infrastructure.md` "When we write harness code" names harness programs run by Task (`pindiff`,
   `mutcheck`, `scorecard`).
 - [ ] 3.4 First run against semembed (`Snowflake/snowflake-arctic-embed-s`); output, command and commits in

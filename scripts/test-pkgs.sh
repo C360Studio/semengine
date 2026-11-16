@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-readonly tools=(./internal/harness/mutcheck ./internal/harness/pindiff ./internal/harness/toolcheck)
+readonly tools=(./internal/harness/mutcheck ./internal/harness/pindiff ./internal/harness/scorecard ./internal/harness/toolcheck)
 # The repository guards read the tree, not timing, so one run per verify is enough (owner, PR #419).
 readonly guards=./internal/harness/contract
 

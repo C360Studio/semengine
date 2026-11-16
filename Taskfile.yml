@@ -94,6 +94,16 @@ tasks:
     cmds:
       - 'go run ./internal/harness/mutcheck {{.CLI_ARGS}}'
 
+  scorecard:tier1:
+    desc: Run by hand before each tier 1 release, never by verify or CI. Measure tier 1 search on a real embedding provider (-- -url <base> -model <name> [-query-prefix <s>] [-api-key-env <VAR>] [-provider <note>]); exits 1 when searchGraph's merged row is below tier 1's floor, 2 on any other failure
+    vars:
+      COMMIT:
+        sh: git rev-parse HEAD
+      TREE:
+        sh: if [ -z "$(git status --porcelain)" ]; then echo clean; else echo dirty; fi
+    cmds:
+      - 'go run ./internal/harness/scorecard -commit {{.COMMIT}} -tree {{.TREE}} {{.CLI_ARGS}}'
+
   vuln:
     desc: Run the pinned govulncheck over all packages
     cmds:

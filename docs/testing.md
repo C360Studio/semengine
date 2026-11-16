@@ -38,7 +38,7 @@ being protected.
 
 | Level | Command | What it can show |
 |---|---|---|
-| Unit | `task test:unit` | One function or in-process behavior. Runs every package except the three tool packages (below) with `-race`; no Docker, no network. |
+| Unit | `task test:unit` | One function or in-process behavior. Runs every package except the four tool packages (below) with `-race`; no Docker, no network. |
 | Unit, repeated | `task test:repeat` | A test that depends on run order, on state left by another test, or on timing. Runs the unit tests five times at one CPU in shuffled order, without `-race`, except the repository guards in `internal/harness/contract`, which read files rather than timing and run once, in `task test:unit`. |
 | Integration | `task test:integration` | Behavior that depends on a real NATS server: JetStream delivery, key-value buckets, consumers. |
 | Tool tests | `task test:tools`, or `task test:tools:changed` | The repository's own tools: the tests of the scripts, `Taskfile.yml` and the CI workflow (`internal/harness/toolcheck/`), `mutate:check` (`internal/harness/mutcheck/`) and the ledger program (`internal/harness/pindiff/`). `task verify` runs them through `test:tools:changed`, which skips them when no file they read has changed; `task test:repeat` never runs them. |
@@ -146,7 +146,7 @@ from SemStreams). Four more guards are shell scripts: `task cleanup-roots:check`
 `task verify` does not, because it reads GitHub state that changes from one run to the next.
 
 The tests that run those scripts, and that pin `Taskfile.yml` and the CI workflow, are not in `contract`. They are in
-`internal/harness/toolcheck/`, one of three tool packages with `mutcheck` and `pindiff`. A test belongs in `toolcheck`
+`internal/harness/toolcheck/`, one of four tool packages with `mutcheck`, `pindiff` and `scorecard`. A test belongs in `toolcheck`
 when every file of the real tree it reads is one of: `scripts/`, `internal/harness/`, `.github/`, `Taskfile.yml`,
 `go.mod`, `go.sum`, `docs/admission-ledger.yaml`, `service/base.go`, `service/service_manager.go`,
 `service/component_manager.go`, `.agents/`, `.claude/`, `.codex/`, `.gemini/` or `.mcp.json`; anything else it

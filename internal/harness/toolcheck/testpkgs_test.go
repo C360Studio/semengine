@@ -73,11 +73,12 @@ func TestTestPkgsLists(t *testing.T) {
 		"d/testdata/d_test.go": integrationLine + "package d\n",
 		// An ignored tagged file.
 		"ignored/i_test.go": integrationLine + "package i\n",
-		// The repository guards stay unit but are not repeated; the three tool packages are neither.
+		// The repository guards stay unit but are not repeated; the four tool packages are neither.
 		"internal/harness/contract/c_test.go": "package contract\n",
 		"internal/harness/toolcheck/doc.go":   "package toolcheck\n",
 		"internal/harness/mutcheck/m.go":      "package mutcheck\n",
 		"internal/harness/pindiff/p.go":       "package pindiff\n",
+		"internal/harness/scorecard/s.go":     "package main\n",
 	})
 	gitIn(t, root, "init", "-q")
 	gitIn(t, root, "add", ".")
@@ -94,7 +95,7 @@ func TestTestPkgsLists(t *testing.T) {
 		{"unit", "./a ./d ./e ./internal/harness/contract\n"},
 		// The repository guards run once, in the unit run, never in the repeat run.
 		{"repeat", "./a ./d ./e\n"},
-		{"tools", "./internal/harness/mutcheck ./internal/harness/pindiff ./internal/harness/toolcheck\n"},
+		{"tools", "./internal/harness/mutcheck ./internal/harness/pindiff ./internal/harness/scorecard ./internal/harness/toolcheck\n"},
 	} {
 		out, status := runIn(t, root, env, "test-pkgs.sh", tc.list)
 		if status != 0 || out != tc.want {

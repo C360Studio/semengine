@@ -64,12 +64,14 @@
 // stay its own: "from A to B" reads a start at A, and the refusal of a second place can be wrong for
 // a hyphenated word such as "real-time".
 //
-// When embedding_enabled is true, searchGraph also falls back to graph-embedding's search, once,
-// when the word search matches nothing or is refused index_not_ready. The reply's fallback names
-// that step, honoured with the embedding reply's data in semantic, or not honoured with the
-// refusal's code and message; a failed fallback is never hidden. A word index that was not ready
-// leaves text null; if the fallback fails too, the index_not_ready refusal is returned.
-// globalSearch never falls back.
+// When embedding_enabled is true, searchGraph sends the word search and graph-embedding's search
+// together, each 100 deep, and merges the two lists: each entity scores the sum of 1 / (60 + place)
+// over the lists holding it, and each match carries word_rank and vector_rank. The reply's merge
+// says whether vectors were used, honoured with the embedding reply's data in semantic, or not
+// honoured with the refusal's code and message, leaving the word list; a failed merge is never
+// hidden: it also logs one Warn and adds one to semengine_graph_query_search_merge_failed_total. An
+// embedding reply with no results list is broken, not empty. A word index that was not ready leaves text null; if the embedding search fails too, the
+// index_not_ready refusal is returned. globalSearch never asks graph-embedding.
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

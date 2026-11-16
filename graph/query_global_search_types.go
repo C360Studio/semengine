@@ -16,31 +16,33 @@ type GlobalSearchRequest struct {
 
 // GlobalSearchData is the reply to a global search. Text is the word search's matches; an empty
 // Text means the word index was read and matched nothing. Text is null only in a searchGraph reply
-// whose word index was not ready, which then holds Fallback. Entity, the entity verb's reply data as
-// its bytes came, is there only beside an honoured "entity" hint, and Path, the path search from the
+// whose word index was not ready, which then holds Merge. Entity, the entity verb's reply data as its
+// bytes came, is there only beside an honoured "entity" hint, and Path, the path search from the
 // question's start, only beside an honoured "path" hint. Hints lists what the question asked for
 // beyond its words, honoured or not, empty when nothing.
 //
-// Semantic and Fallback are searchGraph's, when graph-query's embedding_enabled is true. When the
-// word search matched nothing, or was refused index_not_ready, searchGraph asks the embedding
-// search once: Fallback is that step, a "semantic" hint, and Semantic, the embedding search's reply
-// data as its bytes came, is there only when Fallback is honoured.
+// Semantic and Merge are searchGraph's, in every reply when graph-query's embedding_enabled is true.
+// searchGraph asks the word search and the embedding search together and merges the two lists in
+// Text: Merge is that step, a "semantic" hint, honoured when the embedding list was read, and not
+// honoured, naming why, when the embedding search was refused, broken or silent, when Text holds the
+// word list alone. Semantic, the embedding search's reply data as its bytes came, is there only when
+// Merge is honoured.
 type GlobalSearchData struct {
 	Text     *TextSearchData    `json:"text"`
 	Entity   json.RawMessage    `json:"entity,omitempty"`
 	Path     *PathSearchData    `json:"path,omitempty"`
 	Semantic json.RawMessage    `json:"semantic,omitempty"`
-	Fallback *GlobalSearchHint  `json:"fallback,omitempty"`
+	Merge    *GlobalSearchHint  `json:"merge,omitempty"`
 	Hints    []GlobalSearchHint `json:"hints"`
 }
 
 // GlobalSearchHint is one thing a question asked for beyond its words, or searchGraph's search by
 // meaning. Hint is its kind: "entity" (a one-word question, read as a reference), "path" (a walk
 // from a start), "time_range", "area", "aggregation", "similarity", "ranking", "classification"
-// (the question classifier refused the question), or "semantic" (searchGraph's fallback to the
+// (the question classifier refused the question), or "semantic" (searchGraph's merge with the
 // embedding search). Detail is what the question named for it, such as the reference, the start or
-// the operation, omitted when it named nothing; for "semantic" it is what started the fallback,
-// "no_matches" or "index_not_ready". Honoured is true only when the reply holds its answer. Reason
+// the operation, omitted when it named nothing; for "semantic" it is "merged", or "index_not_ready"
+// when the word index was not ready and the reply holds the embedding search's data alone. Honoured is true only when the reply holds its answer. Reason
 // says why it was not honoured, and Code is the refusal's code when a refusal caused it.
 type GlobalSearchHint struct {
 	Hint     string `json:"hint"`
@@ -61,6 +63,12 @@ type GlobalSearchHint struct {
 // Matched is above the hits returned, a hit was missing, or matches were left out for the reply to
 // fit the connection's max_payload. UnreadableGroups is the number of Groups whose record could not
 // be read. Answer is a plain text built from these fields.
+//
+// In a searchGraph reply when graph-query's embedding_enabled is true, Matches is the merge of the
+// word list and the embedding list, best first by merged score, or the word list alone when the
+// embedding search failed (GlobalSearchData.Merge says which). Matched stays the word index's count,
+// and Truncated is true exactly when the lists read held more entities than the limit, Matched is
+// above the word hits read, a hit was missing, or matches were left out to fit.
 type TextSearchData struct {
 	Level            int               `json:"level"`
 	Groups           []TextSearchGroup `json:"groups"`
@@ -86,11 +94,19 @@ type TextSearchGroup struct {
 
 // TextSearchMatch is one matching entity, in a global or a local search: its ID; its label, the
 // first non-empty string value of its most salient label predicate
-// (vocabulary.DiscoverLabelPredicates), omitted when it has none; the word index's score for the
-// question; and the entity as it was read, its bytes unchanged.
+// (vocabulary.DiscoverLabelPredicates), omitted when it has none; its score for the question; and the
+// entity as it was read, its bytes unchanged.
+//
+// Score is the word index's score, except in a searchGraph list merged with the embedding search,
+// where it is the merged score: the sum, over the lists holding the match, of 1 / (60 + its place).
+// WordRank and VectorRank are set only in a searchGraph reply when graph-query's embedding_enabled is
+// true: the match's 1-based place in the word list and in the embedding list, omitted when it is not
+// in that list.
 type TextSearchMatch struct {
-	ID     string          `json:"id"`
-	Label  string          `json:"label,omitempty"`
-	Score  float64         `json:"score"`
-	Entity json.RawMessage `json:"entity"`
+	ID         string          `json:"id"`
+	Label      string          `json:"label,omitempty"`
+	Score      float64         `json:"score"`
+	WordRank   int             `json:"word_rank,omitempty"`
+	VectorRank int             `json:"vector_rank,omitempty"`
+	Entity     json.RawMessage `json:"entity"`
 }

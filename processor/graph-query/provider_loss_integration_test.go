@@ -83,7 +83,7 @@ func embeddingStatus(ctx context.Context, client *natsclient.Client) (graph.Inde
 // with the HTTP client against a fake provider, and graph-query at tier 1. Entity A is written and
 // both indexes are seen to hold it; the provider is closed and entity B written. Then the word
 // searches find B, the semantic verb refuses rather than answering empty, searchGraph answers B by
-// its words with no fallback and names its failed fallback for a question nothing matches, and
+// its words and, for B and for a question nothing matches, names its failed merge, and
 // graph-embedding's readiness reads degraded with B's provider failure counted.
 func TestLosingTheProviderKeepsWordSearch(t *testing.T) {
 	stack := startIngestAndIndex(t)
@@ -151,27 +151,25 @@ func TestLosingTheProviderKeepsWordSearch(t *testing.T) {
 		refusalOf(t, err)
 	}
 
-	raw, err = ask("searchGraph", `{"query":"bravo gadget"}`)
-	if err != nil {
-		t.Fatalf("searchGraph for B: %v", err)
-	}
-	envelope, reply := decodeFallback(t, raw)
-	if reply.Text == nil || !slices.Equal(matchIDs(reply.Text.Matches), []string{drone2}) {
-		t.Errorf("searchGraph for B = %s, want the match %s", envelope.Data, drone2)
-	}
-	if _, ok := reply.keys["fallback"]; ok {
-		t.Errorf("searchGraph for B = %s, want no fallback", envelope.Data)
-	}
-
-	raw, err = ask("searchGraph", `{"query":"zzz qqq"}`)
-	if err != nil {
-		t.Fatalf("searchGraph for nothing: %v; want the empty text with the failed fallback named", err)
-	}
-	envelope, reply = decodeFallback(t, raw)
-	if reply.Text == nil || len(reply.Text.Matches) != 0 {
-		t.Errorf("searchGraph for nothing = %s, want the empty text", envelope.Data)
-	}
-	if reply.Fallback == nil || reply.Fallback.Honoured || reply.Fallback.Code == "" {
-		t.Errorf("searchGraph for nothing: fallback = %+v, want not honoured with a code", reply.Fallback)
+	// The provider is gone, so the embedding search refuses and searchGraph answers the word list,
+	// naming the failed merge.
+	for _, question := range []struct {
+		request string
+		rows    []string
+	}{
+		{`{"query":"bravo gadget"}`, []string{"002 w1 v-"}},
+		{`{"query":"zzz qqq"}`, []string{}},
+	} {
+		raw, err = ask("searchGraph", question.request)
+		if err != nil {
+			t.Fatalf("searchGraph %s: %v; want the word answer with the failed merge named", question.request, err)
+		}
+		envelope, reply := decodeSearchGraph(t, raw)
+		if got := shortRows(reply.ranked(t)); !slices.Equal(got, question.rows) {
+			t.Errorf("searchGraph %s = %s, want the matches %q", question.request, envelope.Data, question.rows)
+		}
+		if reply.Merge == nil || reply.Merge.Honoured || reply.Merge.Code == "" {
+			t.Errorf("searchGraph %s: merge = %+v, want not honoured with a code", question.request, reply.Merge)
+		}
 	}
 }

@@ -59,7 +59,7 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 	}{
 		{"an entity", `{"query":"held-1"}`, "entity", 0, ""},
 		{"a path", `{"query":"what is connected to held-1"}`, "path", 0, ""},
-		// At tier 0 no semantic fallback follows this answer; it is the answer.
+		// At tier 0 no embedding search is merged into this answer; it is the answer.
 		{"text that matches nothing", `{"query":"zzz qqq"}`, "", 0, ""},
 		{"text that matches", `{"query":"alpha drone"}`, "", 0, ""},
 		{"a named start naming no entity", `{"query":"what is connected to nobody-here"}`, "", 0, ""},

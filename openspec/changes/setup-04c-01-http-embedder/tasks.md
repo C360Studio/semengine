@@ -12,10 +12,10 @@ pull request (design D8): A, then B.
 
 ## 2. PR A: the client
 
-- [ ] 2.1 Tests first: design D3's table, against a fake shaped like semembed at 7ceb5281 (`main.rs:18-60`); the S1-S4
+- [x] 2.1 Tests first: design D3's table, against a fake shaped like semembed at 7ceb5281 (`main.rs:18-60`); the S1-S4
   cases are shown failing against the pin's behaviour (`notes/2.1.md`). The two prefix tests and three `Dimensions`
   tests are carried, adapted.
-- [ ] 2.2 The client in `graph/embedding/httpembedder` (design D1-D3): plain `net/http`;
+- [x] 2.2 The client in `graph/embedding/httpembedder` (design D1-D3): plain `net/http`;
   `TestEmbeddingImportsNoProviderModule` and `TestTreeImportsNoProviderPlumbing` pass unchanged; `go.mod` unchanged.
 - [ ] 2.3 Real-provider probe (design D5): a throwaway program against semembed 7ceb5281 at
   `http://127.0.0.1:18081/v1` covering each D5 check, recovery across a container restart included; source,

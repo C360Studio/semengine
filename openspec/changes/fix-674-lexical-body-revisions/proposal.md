@@ -8,7 +8,7 @@ Track: `quick`. Capability modified: `graph-lexical` (two existing requirements;
 
 An entity whose body is kept in an object store and whose other values change often (telemetry) drops out of
 searches for its body's words (issue #674). graph-ingest keeps the entity's `StorageRef` when other triples merge in
-(`processor/graph-ingest/entity_writes.go:244-247`), but graph-lexical treats every revision as new text: it puts the
+(`processor/graph-ingest/entity_writes.go:245-247`), but graph-lexical treats every revision as new text: it puts the
 inline text alone (`processor/graph-lexical/apply.go:150-151`), which replaces the whole document
 (`graph/lexical/index.go:138`), queues a body read (`apply.go:160`), and drops any read whose revision a newer one
 overtook (`apply.go:170`, `:185`). While updates arrive faster than a read returns, the body is never indexed, and
@@ -16,14 +16,14 @@ each update costs a store read. `bodies_not_indexed` counts it as `queued`.
 
 ## What Changes
 
-- **Unchanged text, unchanged reference: nothing to re-index.** A revision whose `StorageRef` equals the one held
-  for the key and whose inline text equals the held inline text leaves the index as it is, asks for no body read,
-  and completes as soon as no read for that reference is out. To compare, the applier keeps each offloaded entity's
-  inline document and reference after the read (today `pending` holds them only while a read waits, `apply.go:96-99`,
-  and drops them at `:191`). Memory: the inline text of each entity with an offloaded body; the body is not kept.
+- **Unchanged text, unchanged reference: nothing to re-index.** A revision whose `StorageRef` equals the held one as
+  a whole value (instance, key, content type, size) and whose inline text equals the held inline text leaves the
+  index as it is, asks for no read, and completes once no read for that reference is out. The applier keeps each
+  offloaded entity's inline document and reference after the read (`pending`, `apply.go:98-104`, holds them only
+  while a read waits and is dropped at `:191`): the inline text per offloaded entity; the body is not kept.
 - **A read serves its reference, not its revision.** A body read is indexed while the key's latest revision still
-  names the same reference and its body is not yet indexed, joined to that latest revision's inline text. A newer
-  revision that keeps a reference whose read is queued or out asks for no read of its own.
+  names its reference and the body is not yet indexed, joined to that revision's inline text. A newer revision that
+  keeps a reference whose read is queued or out asks for no read of its own.
 
 | Case | What a search sees | Store reads |
 | --- | --- | --- |
@@ -34,10 +34,11 @@ each update costs a store read. `bodies_not_indexed` counts it as `queued`.
 | A read fails | As today, by cause; a same-text revision changes nothing; repair passes retry `unread`, `no store` | Per pass |
 | Restart | Every offloaded body read once at start (owner ruling on #10) | One per body |
 
-A body whose store content changes behind an unchanged reference is read again only when the inline text or the
-reference changes, or at start; today any revision re-reads it. SemEngine's object store writes a new key on every
-store (`storage/objectstore/content.go:115-118`), so a new body comes with a new reference. A `missing` body is
-likewise read again only then, not on every revision.
+**Producer contract:** a reference names fixed content; new content needs a new reference. `StoreContent` keeps it
+(a new key per store, `storage/objectstore/content.go:115-118`); `objectstore.Store.Put` replaces at a key
+(`storage/objectstore/store.go:96-99`), and `message/storable.go:24` gives a reused key as its example. Content
+replaced behind an unchanged reference, or a `missing` body, is read again only when the inline text or reference
+changes, or at start; today any revision re-reads it.
 
 ## Options not chosen
 
@@ -47,14 +48,11 @@ likewise read again only then, not on every revision.
   text while a read is out, against the requirement that it holds the latest inline text, and still starves while
   each read is dropped by the next revision.
 
-## Tests
+Residual: inline text from `text_suffixes` values (`.summary`, `.text`, `.description`) can itself be telemetry; if
+it changes on every update, the body's words drop out until each re-read returns. Keeping the body's words avoids it.
 
-Failing first, recorded in `notes/2.1.md`: `TestPropApplyMatchesModel` gains a "keeps its reference" choice on
-deliveries (body words per reference, not per revision) and witnesses: a non-text revision after the read keeps
-the body's word and asks for no read; a run of same-reference revisions while the read is out ends with the body
-indexed after one read; a reference change drops the old body's word. `TestStaleBodyReadDropped` gives R+1 a new
-reference, so its case stays a read the key no longer names.
+## Tests and impact
 
-## Impact
-
-No exported surface changes. PR #675 carries it (`Closes #674`); no other open PR touches `processor/graph-lexical`.
+Failing first, in `notes/2.1.md`: `TestPropApplyMatchesModel` keys body words by reference and gains the witnesses
+task 2.1 lists; `TestStaleBodyReadDropped` gives R+1 a new reference. No exported surface changes. PR #675 carries
+it (`Closes #674`); no other open PR touches `processor/graph-lexical`.

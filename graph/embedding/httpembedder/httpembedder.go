@@ -56,8 +56,9 @@ type Embedder struct {
 }
 
 // New returns an Embedder for cfg. It refuses an empty base URL or model, and a base URL that is
-// not an absolute http or https URL. It makes no request: the width is learned from the first
-// reply, so a provider that is down at start degrades graph-embedding rather than failing it.
+// not an absolute http or https URL with a host. It makes no request: the width is learned from
+// the first reply, so a provider that is down at start degrades graph-embedding rather than
+// failing it.
 func New(cfg Config) (*Embedder, error) {
 	if cfg.BaseURL == "" {
 		return nil, errors.New("httpembedder: base URL is required")
@@ -71,6 +72,9 @@ func New(cfg Config) (*Embedder, error) {
 	}
 	if base.Scheme != "http" && base.Scheme != "https" {
 		return nil, fmt.Errorf("httpembedder: base URL %q is not an http or https URL", cfg.BaseURL)
+	}
+	if base.Hostname() == "" {
+		return nil, fmt.Errorf("httpembedder: base URL %q has no host", cfg.BaseURL)
 	}
 	return &Embedder{
 		endpoint:    base.JoinPath("embeddings").String(),
@@ -119,10 +123,12 @@ type request struct {
 	Input []string `json:"input"`
 }
 
+// reply's index and coordinates are pointers so that a null or absent value is seen, not read as
+// zero.
 type reply struct {
 	Data []struct {
-		Embedding []float32 `json:"embedding"`
-		Index     int       `json:"index"`
+		Embedding []*float32 `json:"embedding"`
+		Index     *int       `json:"index"`
 	} `json:"data"`
 	Model string `json:"model"`
 }
@@ -160,8 +166,12 @@ func (e *Embedder) embed(ctx context.Context, texts []string) ([][]float32, erro
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var refusal errorReply
-		if json.NewDecoder(resp.Body).Decode(&refusal) == nil && refusal.Error.Message != "" {
+		err := json.NewDecoder(resp.Body).Decode(&refusal)
+		switch {
+		case err == nil && refusal.Error.Message != "":
 			return nil, fmt.Errorf("httpembedder: provider answered %s: %s", resp.Status, refusal.Error.Message)
+		case err != nil && ctx.Err() != nil:
+			return nil, fmt.Errorf("httpembedder: provider answered %s, reading its body: %w", resp.Status, ctx.Err())
 		}
 		return nil, fmt.Errorf("httpembedder: provider answered %s", resp.Status)
 	}
@@ -184,18 +194,29 @@ func (e *Embedder) accept(r reply, n int) ([][]float32, error) {
 	vectors := make([][]float32, n)
 	width := 0
 	for _, d := range r.Data {
+		if d.Index == nil {
+			return nil, errors.New("httpembedder: reply has a vector with no index")
+		}
+		i := *d.Index
 		switch {
-		case d.Index < 0 || d.Index >= n:
-			return nil, fmt.Errorf("httpembedder: reply index %d is outside 0..%d", d.Index, n-1)
-		case vectors[d.Index] != nil:
-			return nil, fmt.Errorf("httpembedder: reply repeats index %d", d.Index)
+		case i < 0 || i >= n:
+			return nil, fmt.Errorf("httpembedder: reply index %d is outside 0..%d", i, n-1)
+		case vectors[i] != nil:
+			return nil, fmt.Errorf("httpembedder: reply repeats index %d", i)
 		case len(d.Embedding) == 0:
-			return nil, fmt.Errorf("httpembedder: reply has an empty vector at index %d", d.Index)
+			return nil, fmt.Errorf("httpembedder: reply has an empty vector at index %d", i)
 		case width != 0 && len(d.Embedding) != width:
 			return nil, fmt.Errorf("httpembedder: reply mixes vector dimension %d and %d", width, len(d.Embedding))
 		}
-		width = len(d.Embedding)
-		vectors[d.Index] = d.Embedding
+		vector := make([]float32, len(d.Embedding))
+		for j, c := range d.Embedding {
+			if c == nil {
+				return nil, fmt.Errorf("httpembedder: reply has a null coordinate at index %d", i)
+			}
+			vector[j] = *c
+		}
+		width = len(vector)
+		vectors[i] = vector
 	}
 	if !e.dimensions.CompareAndSwap(0, int64(width)) {
 		if learned := int(e.dimensions.Load()); learned != width {

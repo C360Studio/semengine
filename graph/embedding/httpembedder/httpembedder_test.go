@@ -183,6 +183,12 @@ func TestRefusesUntrustedReply(t *testing.T) {
 		{name: "other_model", reply: fixed(http.StatusOK, reply("served-other", vec(0, 1, 1), vec(1, 2, 2))),
 			wantErr: []string{"served-other"}},
 		{name: "not_json", reply: fixed(http.StatusOK, "not json")},
+		{name: "null_coordinate", reply: fixed(http.StatusOK,
+			`{"data":[{"index":0,"embedding":[null,1]},{"index":1,"embedding":[2,2]}]}`)},
+		{name: "absent_index", reply: fixed(http.StatusOK,
+			`{"data":[{"embedding":[1,1]},{"index":1,"embedding":[2,2]}]}`)},
+		{name: "null_index", reply: fixed(http.StatusOK,
+			`{"data":[{"index":null,"embedding":[1,1]},{"index":1,"embedding":[2,2]}]}`)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -259,6 +265,100 @@ func TestContextEndsRequest(t *testing.T) {
 	}
 }
 
+// readSignal is a test transport that closes entered the first time the client reads a
+// response body, so a test can end the context while that read is under way.
+type readSignal struct {
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (s *readSignal) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err == nil {
+		resp.Body = &signalBody{ReadCloser: resp.Body, s: s}
+	}
+	return resp, err
+}
+
+type signalBody struct {
+	io.ReadCloser
+	s *readSignal
+}
+
+func (b *signalBody) Read(p []byte) (int, error) {
+	b.s.once.Do(func() { close(b.s.entered) })
+	return b.ReadCloser.Read(p)
+}
+
+// expiredCtx reports DeadlineExceeded once its parent is cancelled, so a test chooses the moment
+// a deadline passes without waiting on a clock.
+type expiredCtx struct{ context.Context }
+
+func (c expiredCtx) Err() error {
+	if c.Context.Err() != nil {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func TestContextEndsErrorBodyRead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wrap func(context.Context) context.Context
+	}{
+		{name: "cancel", wrap: func(ctx context.Context) context.Context { return ctx }},
+		{name: "deadline", wrap: func(ctx context.Context) context.Context { return expiredCtx{ctx} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The embedder sends through http.DefaultClient; this test swaps it to see the
+			// moment the error body read begins. The package's parallel tests start only after
+			// its sequential tests, this one included, have ended.
+			signal := &readSignal{entered: make(chan struct{})}
+			saved := http.DefaultClient
+			http.DefaultClient = &http.Client{Transport: signal}
+			t.Cleanup(func() { http.DefaultClient = saved })
+
+			release := make(chan struct{})
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.(http.Flusher).Flush()
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+			}))
+			t.Cleanup(srv.Close)
+			t.Cleanup(func() { close(release) })
+			e := newEmbedder(t, httpembedder.Config{BaseURL: srv.URL + "/v1", Model: testModel})
+
+			parent, cancel := context.WithCancel(t.Context())
+			ctx := tc.wrap(parent)
+			type result struct {
+				vectors [][]float32
+				err     error
+			}
+			done := make(chan result, 1)
+			go func() {
+				v, err := e.Generate(ctx, []string{"a"})
+				done <- result{v, err}
+			}()
+			<-signal.entered
+			cancel()
+			res := <-done
+			if res.err == nil || res.vectors != nil {
+				t.Fatalf("Generate = %v, %v; want an error and no vectors", res.vectors, res.err)
+			}
+			if !errors.Is(res.err, ctx.Err()) {
+				t.Fatalf("error %v does not match the caller's context error %v", res.err, ctx.Err())
+			}
+			if !strings.Contains(res.err.Error(), "503") {
+				t.Fatalf("error %q does not name the provider's status 503", res.err)
+			}
+		})
+	}
+}
+
 func TestNilContextRefused(t *testing.T) {
 	p := newProvider(t, semembed(2))
 	e := newEmbedder(t, httpembedder.Config{BaseURL: p.BaseURL(), Model: testModel})
@@ -284,9 +384,11 @@ func TestNewRefusesConfig(t *testing.T) {
 		"unparsable":      {BaseURL: "http://[::1", Model: testModel},
 		"websocket":       {BaseURL: "ws://127.0.0.1:18081/v1", Model: testModel},
 		"whitespace only": {BaseURL: " ", Model: testModel},
+		"scheme only":     {BaseURL: "http:", Model: testModel},
+		"no host":         {BaseURL: "http:///v1", Model: testModel},
 	} {
 		if e, err := httpembedder.New(cfg); err == nil {
-			t.Fatalf("%s: New(%+v) = %v, nil; want an error", name, cfg, e)
+			t.Errorf("%s: New(%+v) = %v, nil; want an error", name, cfg, e)
 		}
 	}
 	for _, base := range []string{"http://127.0.0.1:18081/v1", "https://api.example.com/v1/"} {

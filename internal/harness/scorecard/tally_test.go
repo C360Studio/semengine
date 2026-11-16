@@ -69,7 +69,7 @@ func TestVerdict(t *testing.T) {
 		want                   string // "" when the floor holds
 	}{
 		{"at the floor", rowsOf("m", 500, 300), rowsOf("w", 500, 280), rowsOf("v", 500, 260), floorMRR, ""},
-		{"one answer under R@10", rowsOf("m", 500, 299), rowsOf("w", 500, 280), rowsOf("v", 500, 260), floorMRR, "R@10 299 of 500, below 60%"},
+		{"one answer under R@10", rowsOf("m", 500, 299), rowsOf("w", 500, 280), rowsOf("v", 500, 260), floorMRR, "R@10 299 of 500, below 60.0%"},
 		// 300 of 500 at rank 1 is MRR 0.600; a floor of 0.601 is above it.
 		{"under MRR", rowsOf("m", 500, 300), rowsOf("w", 500, 280), rowsOf("v", 500, 260), 0.601, "MRR 0.6000, below 0.601"},
 		{"below words", rowsOf("m", 500, 310), rowsOf("w", 500, 311), rowsOf("v", 500, 260), floorMRR, "below words' 311"},

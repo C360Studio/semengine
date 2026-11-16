@@ -19,7 +19,7 @@ func verdict(r rows, recallFloor, mrrFloor float64) []string {
 	var short []string
 	m := r.merged
 	if float64(m.top10) < recallFloor*float64(m.questions) {
-		short = append(short, fmt.Sprintf("merged R@10 %d of %d, below %.0f%%", m.top10, m.questions, 100*recallFloor))
+		short = append(short, fmt.Sprintf("merged R@10 %d of %d, below %.1f%%", m.top10, m.questions, 100*recallFloor))
 	}
 	if m.mrr() < mrrFloor {
 		short = append(short, fmt.Sprintf("merged MRR %.4f, below %.3f", m.mrr(), mrrFloor))

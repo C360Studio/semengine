@@ -58,7 +58,7 @@ func report(r rows, out io.Writer) int {
 	for _, row := range []*tally{r.words, r.vectors, r.merged} {
 		fmt.Fprintln(out, row)
 	}
-	fmt.Fprintf(out, "floor: merged R@10 at least %.0f%%, MRR at least %.3f, R@10 not below either single row\n",
+	fmt.Fprintf(out, "floor: merged R@10 at least %.1f%%, MRR at least %.3f, R@10 not below either single row\n",
 		100*floorRecallAt10, floorMRR)
 	short := verdict(r, floorRecallAt10, floorMRR)
 	if len(short) == 0 {

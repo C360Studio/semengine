@@ -33,7 +33,7 @@ func TestRollbackFailedStartRejectsNilParentBeforeCallback(t *testing.T) {
 }
 
 // A nil rollback is refused: returning nil would tell the caller its rollback succeeded when none
-// ran, and it would then clear its cleanup-pending record (design D7.2 of setup-04a-02).
+// ran, and it would then clear its cleanup-pending record.
 //
 // Requirement: lifecycle-suite/Failed-start rollback helper; Scenario: Nil rollback
 func TestRollbackFailedStartNilRollback(t *testing.T) {

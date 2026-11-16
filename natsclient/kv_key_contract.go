@@ -9,15 +9,15 @@ import (
 )
 
 const (
-	// MaxKVLiteralTokenBytes is the SemStreams byte budget for one literal KV token.
+	// MaxKVLiteralTokenBytes is the byte budget for one literal KV token.
 	MaxKVLiteralTokenBytes = 512
-	// MaxKVLiteralKeyBytes is the SemStreams byte budget for one complete literal KV key.
+	// MaxKVLiteralKeyBytes is the byte budget for one complete literal KV key.
 	MaxKVLiteralKeyBytes = 1024
-	// MaxKVLiteralKeyTokens is the SemStreams arity budget for one complete literal KV key.
+	// MaxKVLiteralKeyTokens is the arity budget for one complete literal KV key.
 	MaxKVLiteralKeyTokens = 64
-	// MaxKVWildcardFilterBytes is the SemStreams byte budget for one complete KV filter.
+	// MaxKVWildcardFilterBytes is the byte budget for one complete KV filter.
 	MaxKVWildcardFilterBytes = 1024
-	// MaxKVWildcardFilterTokens is the SemStreams arity budget for one complete KV filter.
+	// MaxKVWildcardFilterTokens is the arity budget for one complete KV filter.
 	MaxKVWildcardFilterTokens = 64
 	// MaxKVOpaqueTokenInputBytes is the largest byte string accepted by the v1 opaque codec.
 	MaxKVOpaqueTokenInputBytes = 254

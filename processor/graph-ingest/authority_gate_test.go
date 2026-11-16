@@ -12,10 +12,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// Review HIGH-3: the migration note promises three LOUD paths. Deleting all
-// three refusals in one compiling mutant left six suites green, which made the
-// promise artifact-free. These pin two of them; the third
-// (inference.NewHierarchyInference) lives beside its own code in graph/inference.
+// The migration note promises three LOUD paths. These pin two of them; the
+// third (inference.NewHierarchyInference) lives beside its own code in
+// graph/inference.
 //
 // A refusal that nothing asserts is a comment.
 
@@ -67,7 +66,7 @@ func TestCreateGraphIngestAcceptsAConcreteDeploymentAuthority(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, comp)
 
-	// The authority is one types.PlatformMeta (design D9); the pin held two strings.
+	// The authority is one types.PlatformMeta.
 	c := comp.(*Component)
 	assert.Equal(t, types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform}, c.platform)
 }

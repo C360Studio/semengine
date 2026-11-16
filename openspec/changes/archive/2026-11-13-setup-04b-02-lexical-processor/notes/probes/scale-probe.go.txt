@@ -1,0 +1,124 @@
+package lexical
+
+// The index's memory, build time and search times at scale. Copy into
+// graph/lexical as scale_test.go and run:
+//
+//	SCALE_COPIES=25 go test -run '^TestScale$' -count=1 -v ./graph/lexical/
+//	SCALE_COPIES=16 SCALE_BODY_BYTES=800 go test -run '^TestScale$' -count=1 -v ./graph/lexical/
+//
+// The corpus is the scorecard's 2,000 sections written SCALE_COPIES times under
+// different entity IDs. SCALE_BODY_BYTES, when set, cuts each body at the last
+// space before that many bytes. It reads only the package's exported surface,
+// so the same file measures any layout.
+
+import (
+	"bufio"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestScale(t *testing.T) {
+	copies := envInt(t, "SCALE_COPIES", 25)
+	bodyBytes := envInt(t, "SCALE_BODY_BYTES", 0)
+
+	f, err := os.Open("testdata/scorecard/corpus.jsonl.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	z, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := bufio.NewScanner(z)
+	sc.Buffer(make([]byte, 1<<20), 1<<24)
+	type row struct{ ID, Path, Name, Body string }
+	var rows []row
+	for sc.Scan() {
+		var r row
+		if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
+			t.Fatal(err)
+		}
+		if bodyBytes > 0 && len(r.Body) > bodyBytes {
+			cut := strings.LastIndexAny(r.Body[:bodyBytes], " \t\n")
+			if cut < 0 {
+				cut = 0
+			}
+			r.Body = r.Body[:cut]
+		}
+		rows = append(rows, r)
+	}
+	nameBytes, bodyBytesHeld, held := 0, 0, 0
+	distinct := make(map[string]bool)
+	for _, r := range rows {
+		nameBytes += len(r.Name)
+		bodyBytesHeld += len(r.Body)
+		for _, w := range append(Tokens(r.Name), Tokens(r.Body)...) {
+			held++
+			distinct[w] = true
+		}
+	}
+
+	heap := func() uint64 {
+		runtime.GC()
+		runtime.GC()
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		return m.HeapAlloc
+	}
+	before := heap()
+	ix := NewIndex()
+	start := time.Now()
+	for c := 0; c < copies; c++ {
+		for i, r := range rows {
+			id := fmt.Sprintf("c360.semengine.copy%d.markdown.section.s%d", c, i)
+			if err := ix.Put(id, Document{Name: r.Name, Body: r.Body}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	build := time.Since(start)
+	used := int(heap() - before)
+	n := ix.Len()
+	t.Logf("go=%s entities=%d name B/entity=%d body B/entity=%d held words/entity=%d distinct words=%d",
+		runtime.Version(), n, nameBytes/len(rows), bodyBytesHeld/len(rows), held/len(rows), len(distinct))
+	t.Logf("heap=%.1f MB index B/entity=%d B/held word=%.1f build=%v (%.0f entities/s)",
+		float64(used)/1e6, used/n, float64(used)/float64(held*copies), build.Round(time.Millisecond),
+		float64(n)/build.Seconds())
+	for _, qs := range []string{"retry", "graph query status", "how does the test harness start nats",
+		"entity index lifecycle component service test"} {
+		q, err := ParseQuery(qs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const runs = 20
+		start = time.Now()
+		var res Result
+		for i := 0; i < runs; i++ {
+			if res, err = ix.Search(q, Options{Limit: 10}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Logf("%q matched=%d %v/query", qs, res.Matched, (time.Since(start) / runs).Round(10*time.Microsecond))
+	}
+	runtime.KeepAlive(ix)
+}
+
+func envInt(t *testing.T, name string, fallback int) int {
+	s := os.Getenv(name)
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	return v
+}

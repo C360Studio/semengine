@@ -12,11 +12,11 @@ import (
 
 // Every test whose outcome depends on the Watcher's timers runs inside a synctest bubble, where
 // those timers use a fake clock: time advances only when every goroutine in the bubble is blocked,
-// so no test paces itself on the real clock (design D8, R1a).
+// so no test paces itself on the real clock.
 
 func TestWatcher_WaitForStartup_ImmediateSuccess(t *testing.T) {
 	// Inside the bubble the 5 s deadline is on the fake clock, so it cannot end a correct run on a
-	// slow host (design D8, R1a; the pin ran it on the real clock).
+	// slow host.
 	synctest.Test(t, func(t *testing.T) {
 		// Resource available immediately
 		checkFn := func(_ context.Context) error {
@@ -245,8 +245,8 @@ func TestWatcher_BackgroundCheck_ResourceLost(t *testing.T) {
 	})
 }
 
-// TestWatcher_Run_SecondRunRefused replaces the pin's TestWatcher_BackgroundCheck_Idempotent:
-// a second Run while one is in progress returns an error without starting a second loop.
+// TestWatcher_Run_SecondRunRefused: a second Run while one is in progress returns an error
+// without starting a second loop.
 func TestWatcher_Run_SecondRunRefused(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var checks atomic.Int32
@@ -462,7 +462,7 @@ func TestWatcher_Run_NilContextRefused(t *testing.T) {
 }
 
 // TestWatcher_WaitForStartup_NilContextRefused: WaitForStartup(nil) returns false and calls no
-// check, mirroring Run's nil refusal (owner answer Q3 on #221).
+// check, mirroring Run's nil refusal.
 func TestWatcher_WaitForStartup_NilContextRefused(t *testing.T) {
 	var checks atomic.Int32
 	w := NewWatcher("nil", func(context.Context) error {

@@ -12,16 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// optionStep is T9's write timeout and ping interval, the values P24 measured,
-// so that no test waits on nats.go's one-minute write timeout or natsclient's
-// 30 s ping.
+// optionStep is the write timeout and ping interval of
+// TestWriteTimeoutAndPingIntervalOptions, the values ADR-112's measurement
+// used, so that no test waits on nats.go's one-minute write timeout or
+// natsclient's 30 s ping.
 const optionStep = 300 * time.Millisecond
 
-// T9, design "Tests that replace the probes" and D4. WithWriteTimeout ends a
-// publish the server is not reading. At nats.go v1.55.0 the write it ends
-// partway closes the socket and nats.go reconnects, so the echo arrives after a
-// reconnect (P24r, PR #492 comment 6545759092). The ping interval is set too, as
-// P24 measured; at v1.54.0 it was what found the connection stale (P22, P24).
+// WithWriteTimeout ends a publish the server is not reading. At nats.go v1.55.0
+// the write it ends partway closes the socket and nats.go reconnects, so the
+// echo arrives after a reconnect (this test, and the measurement recorded in
+// ADR-112). The ping interval is set too, as in that measurement; at nats.go
+// v1.54.0 it was what found the connection stale (ADR-112).
 func TestWriteTimeoutAndPingIntervalOptions(t *testing.T) {
 	t.Run("a held write fails, then the connection carries an echo", func(t *testing.T) {
 		client, proxy := newHeldClient(t, WithWriteTimeout(optionStep), WithPingInterval(optionStep))

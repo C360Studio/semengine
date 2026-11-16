@@ -9,8 +9,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// TestCreateGraphIndexRequiresNATSClient: a missing NATS client is a construction error
-// (pin component_test.go:816).
+// TestCreateGraphIndexRequiresNATSClient: a missing NATS client is a construction error.
 func TestCreateGraphIndexRequiresNATSClient(t *testing.T) {
 	built, err := CreateGraphIndex(json.RawMessage(`{}`), component.Dependencies{})
 	if err == nil {
@@ -20,7 +19,7 @@ func TestCreateGraphIndexRequiresNATSClient(t *testing.T) {
 
 // TestRegisterAddsGraphIndex: Register adds the graph-index factory, whose schema lists
 // the five keys and not batch_size, and whose port declarer reports the ports the factory
-// builds (pin component_test.go:579, :866).
+// builds.
 func TestRegisterAddsGraphIndex(t *testing.T) {
 	registry := component.NewRegistry()
 	if err := Register(registry); err != nil {
@@ -53,8 +52,8 @@ func TestRegisterAddsGraphIndex(t *testing.T) {
 }
 
 // TestComponentPortsAreTheConfiguredPorts: the component reports one kv-watch input on
-// ENTITY_STATES and the four index outputs, before Initialize (pin component_test.go:530,
-// :554), and a caller cannot change them through the returned slice.
+// ENTITY_STATES and the four index outputs, before Initialize, and a caller cannot change
+// them through the returned slice.
 func TestComponentPortsAreTheConfiguredPorts(t *testing.T) {
 	c, err := createFromJSON(t, `{}`)
 	if err != nil {

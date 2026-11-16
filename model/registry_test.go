@@ -411,10 +411,10 @@ func TestGetMaxTokens(t *testing.T) {
 		{"qwen", 131072},
 		{"qwen-fast", 32768},
 		{"nonexistent", 0},
-		// Capability names resolve to their preferred endpoint's window
-		// (#594): previously these MISSED and returned 0, which made
-		// agentic-loop's resolveModelLimit fall to DefaultContextLimit and
-		// WARN. "planning" prefers claude-sonnet (200000); "coding" is
+		// Capability names resolve to their preferred endpoint's window; a
+		// miss would return 0, which makes agentic-loop's resolveModelLimit
+		// (not in SemEngine yet) fall to DefaultContextLimit and WARN.
+		// "planning" prefers claude-sonnet (200000); "coding" is
 		// RequiresTools and its first tool-capable endpoint is claude-sonnet;
 		// "fast" prefers qwen-fast (32768).
 		{"planning", 200000},
@@ -432,11 +432,10 @@ func TestGetMaxTokens(t *testing.T) {
 	}
 }
 
-// TestResolveEndpointName is the shared accounting/limit/aux-path resolution
-// primitive behind the #584/#594 fix class: capabilities must resolve to their
-// preferred endpoint before a name-keyed lookup, while real endpoint names pass
-// through unchanged so priced/limited lookups are a strict superset of the raw
-// lookup they replace.
+// TestResolveEndpointName tests the shared accounting/limit/aux-path resolution
+// primitive: capabilities must resolve to their preferred endpoint before a
+// name-keyed lookup, while real endpoint names pass through unchanged so
+// priced/limited lookups are a strict superset of the raw lookup they replace.
 func TestResolveEndpointName(t *testing.T) {
 	r := testRegistry()
 
@@ -1096,9 +1095,8 @@ func TestCapabilityConstants_Values(t *testing.T) {
 // plumbing contract: an EndpointConfig with DisableKeepAlives /
 // IdleConnTimeout / ResponseHeaderTimeout set must survive
 // ResolveEndpointWithConfig and reach the LLM client builder unchanged.
-// The historical bug (semspec smoke-#10) had the fields silently stripped
-// on the way through ResolveEndpoint; this guards the regression class
-// at the framework level.
+// ResolveEndpoint strips these fields; this guards that they are not
+// stripped on the way through ResolveEndpointWithConfig.
 func TestResolveEndpointWithConfig_KeepalivePlumbing(t *testing.T) {
 	reg := &Registry{
 		Endpoints: map[string]*EndpointConfig{
@@ -1145,8 +1143,8 @@ func TestResolveEndpointWithConfig_KeepalivePlumbing(t *testing.T) {
 	if ep.ResponseHeaderTimeout != "30s" {
 		t.Errorf("ResponseHeaderTimeout = %q, want 30s", ep.ResponseHeaderTimeout)
 	}
-	// query_prefix rides the identical resolve seam (gh#438); guard it against the
-	// same silent-strip regression class the keepalive fields hit (smoke-#10).
+	// query_prefix rides the identical resolve seam; guard it against the same
+	// silent strip.
 	if ep.QueryPrefix != "Represent this sentence for searching relevant passages: " {
 		t.Errorf("QueryPrefix = %q, want the arctic query prefix (gh#438 plumbing)", ep.QueryPrefix)
 	}

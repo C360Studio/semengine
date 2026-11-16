@@ -58,9 +58,8 @@ import (
 //
 // Reclamation lists the bucket's keys through natsclient.FilteredKeys, which
 // reads WatchFiltered and leaves no watch delivery running when the listing
-// ends early (TestPublishStoppedMidReclaimLeavesNoDelivery). Migration: a
-// custom store implements WatchFiltered in place of the ListKeys it
-// implemented before (#496).
+// ends early (TestPublishStoppedMidReclaimLeavesNoDelivery). A custom store
+// implements WatchFiltered; ListKeys is not used.
 //
 // History rather than Get: the seed read has to be able to walk PAST an
 // observation too close to the current one to measure (several processes may
@@ -75,14 +74,13 @@ type ReportStore interface {
 
 // ThresholdSource yields the pressure thresholds for ONE evaluation.
 //
-// It is a FUNCTION, and that is the whole point. SemStreams is flow-based and
-// its components are runtime-reconfigurable — watchConfigUpdates is launched
-// after the boot barrier specifically so post-boot component edits reach
-// running components. A threshold captured into a value at composition-root
-// construction would apply the stale number successfully and silently after an
-// operator edit: nothing errors, the report just answers the wrong question.
-// Resolving at the seam, from live configuration, is the same discipline the
-// bucket catalog applied at the acquisition seam.
+// It is a FUNCTION, and that is the whole point. Configuration can change after
+// boot — config.Manager keeps watching it, so a post-boot edit reaches running
+// code. A threshold captured into a value at composition-root construction
+// would apply the stale number successfully and silently after an operator
+// edit: nothing errors, the report just answers the wrong question. Resolving
+// at the seam, from live configuration, is the same discipline the bucket
+// catalog applied at the acquisition seam.
 type ThresholdSource func() StoragePressureThresholds
 
 // ResourceReport is one published row: what the collector saw about one

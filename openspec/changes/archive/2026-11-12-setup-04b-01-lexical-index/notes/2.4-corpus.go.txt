@@ -1,0 +1,170 @@
+// Command scorecardgen writes the lexical scorecard's frozen corpus and
+// known-item questions from a tree of Markdown files.
+//
+// Usage: scorecardgen <tree root> <output dir>
+package main
+
+import (
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/c360studio/semengine/graph/lexical"
+)
+
+type section struct {
+	path, name, heading, body string
+}
+
+// loadSections cuts every Markdown file into sections the way the retrieval
+// probe does: a heading line opens a section, fenced code is body, a body under
+// 30 words or seen before is skipped, and a body is cut at 4,000 bytes on a
+// space. Name is the file's first heading.
+func loadSections(root string) ([]section, error) {
+	var out []section
+	seenBody := map[string]bool{}
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "node_modules" || n == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		var name, heading string
+		var body strings.Builder
+		flush := func() {
+			b := strings.TrimSpace(body.String())
+			body.Reset()
+			if heading == "" || len(strings.Fields(b)) < 30 || seenBody[b] {
+				return
+			}
+			if len(b) > 4000 {
+				b = b[:4000]
+				if i := strings.LastIndexByte(b, ' '); i > 0 {
+					b = b[:i]
+				}
+			}
+			seenBody[b] = true
+			out = append(out, section{path: rel, name: name, heading: heading, body: b})
+		}
+		fence := false
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				fence = !fence
+			}
+			if !fence && strings.HasPrefix(line, "#") {
+				h := strings.TrimLeft(line, "#")
+				if strings.HasPrefix(h, " ") {
+					flush()
+					heading = strings.TrimSpace(h)
+					if name == "" {
+						name = heading
+					}
+					continue
+				}
+			}
+			body.WriteString(line)
+			body.WriteByte('\n')
+		}
+		flush()
+		return nil
+	})
+	return out, err
+}
+
+// family is the ID's third segment: the section's top directory, or "root".
+func family(path string) string {
+	top, _, found := strings.Cut(filepath.ToSlash(path), "/")
+	if !found {
+		return "root"
+	}
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return -1
+	}, strings.ToLower(top))
+}
+
+func main() {
+	if err := run(os.Args[1], os.Args[2]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(root, outDir string) error {
+	secs, err := loadSections(root)
+	if err != nil {
+		return err
+	}
+	rng := rand.New(rand.NewSource(1))
+	rng.Shuffle(len(secs), func(i, j int) { secs[i], secs[j] = secs[j], secs[i] })
+	secs = secs[:2000]
+
+	f, err := os.Create(filepath.Join(outDir, "corpus.jsonl.gz"))
+	if err != nil {
+		return err
+	}
+	zw, err := gzip.NewWriterLevel(f, gzip.BestCompression)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(zw)
+	ids := make([]string, len(secs))
+	headingCount := map[string]int{}
+	for i, s := range secs {
+		ids[i] = fmt.Sprintf("c360.semengine.%s.markdown.section.s%04d", family(s.path), i)
+		headingCount[strings.ToLower(s.heading)]++
+		if err := enc.Encode(map[string]string{"id": ids[i], "path": s.path, "name": s.name, "body": s.body}); err != nil {
+			return err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	// A known-item question is a section heading unique in the corpus, with at
+	// least three distinct words, that is not its file's first heading (Name).
+	type question struct {
+		Query string `json:"query"`
+		ID    string `json:"id"`
+	}
+	var qs []question
+	for i, s := range secs {
+		distinct := map[string]bool{}
+		for _, w := range lexical.Tokens(s.heading) {
+			distinct[w] = true
+		}
+		if headingCount[strings.ToLower(s.heading)] == 1 && len(distinct) >= 3 && !strings.EqualFold(s.heading, s.name) {
+			qs = append(qs, question{Query: s.heading, ID: ids[i]})
+		}
+	}
+	fmt.Fprintf(os.Stderr, "%d sections, %d eligible questions\n", len(secs), len(qs))
+	if len(qs) > 500 {
+		qs = qs[:500]
+	}
+	data, err := json.MarshalIndent(qs, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(outDir, "known.json"), append(data, '\n'), 0o644)
+}

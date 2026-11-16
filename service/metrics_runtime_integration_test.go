@@ -12,10 +12,7 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// The pin ran these as MetricsRuntimeSuite on its ServiceSuite, whose NATS client no test here
-// used, beside three KVTestHelper tests that exercised only that helper; PR 1 carried neither
-// ServiceSuite nor KVTestHelper (archived design setup-04a-03-boot-service-base, D6). The two
-// tests of NewMetrics are carried as plain tests.
+// The NewMetrics tests need no NATS client, so they run as plain tests.
 
 func TestMetrics_DefaultConfiguration(t *testing.T) {
 	// Test that metrics uses proper defaults when config is empty

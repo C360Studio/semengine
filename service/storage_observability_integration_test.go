@@ -23,15 +23,15 @@ import (
 	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
-// The storage observability service against the package's shared NATS server (design D7, U-f;
-// pin storage_observability_integration_test.go:33-316). Every wait reads what an operator reads,
+// The storage observability service against the package's shared NATS server. Every
+// wait reads what an operator reads,
 // GET /storage-observability/report and the metrics registry, and is bounded by
-// storageReportWait: the 1 s collection interval is a real-clock window (design § Harness rules).
+// storageReportWait: the 1 s collection interval is a real-clock window.
 
 // storageReportWait bounds every wait in this file for a collection to reach the route.
 const storageReportWait = 30 * time.Second
 
-// routedStorageReport is GET <prefix>/report decoded by the wire names design D5 lists, not by
+// routedStorageReport is GET <prefix>/report decoded by the documented wire names, not by
 // the service's own response type, so a renamed or dropped field fails here.
 type routedStorageReport struct {
 	ReportOnly bool       `json:"report_only"`
@@ -122,7 +122,7 @@ func startStorageObservability(t *testing.T, ctx context.Context, s *StorageObse
 // against a real server: the account listing, the report bucket acquired through the catalog,
 // the publication, the watch that feeds the route, health and the metrics. The streams exist
 // before the service and are never touched through it, so the inventory is the account's, not
-// a view of the service's own handles (pin :33-316).
+// a view of the service's own handles.
 func TestStorageObservabilityCollectsPublishesAndServes(t *testing.T) {
 	client := fixtureClient(t)
 	js, err := client.JetStream()
@@ -268,7 +268,7 @@ func TestStorageObservabilityCollectsPublishesAndServes(t *testing.T) {
 
 // TestStorageObservabilityKeepsCollectingAfterStartContextEnds: ending the context Start was
 // given, after Start returned, stops nothing. The stream is created only after that context
-// ended, so only a collection made after it can put the stream's row on the route (design D2).
+// ended, so only a collection made after it can put the stream's row on the route.
 //
 // spec: service-lifecycle / Storage observability's Start bounds Start; Stop is the only stop
 func TestStorageObservabilityKeepsCollectingAfterStartContextEnds(t *testing.T) {
@@ -300,8 +300,8 @@ func TestStorageObservabilityKeepsCollectingAfterStartContextEnds(t *testing.T) 
 // TestStorageObservabilityCriticalPressureKeepsReadiness: critical pressure is report-only. A
 // manager composes the service over the shared server with thresholds that make a bounded stream
 // holding a little data critical; once the route serves the critical row, /readyz still answers
-// READY and /health 200, with the count in the service's message (design D5; pin
-// storage_observability_test.go:284-344, here on the production path).
+// READY and /health 200, with the count in the service's message, on
+// the production path.
 func TestStorageObservabilityCriticalPressureKeepsReadiness(t *testing.T) {
 	client := fixtureClient(t)
 	js, err := client.JetStream()

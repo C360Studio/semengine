@@ -13,13 +13,9 @@ import (
 	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
-// The storage observability service's shared test helpers (design D7, U-a). Every service is
-// built the one production way, NewStorageObservabilityService, so a test sees only what the
-// constructor composes. The row builders are carried from the pin
-// (storage_observability_test.go:24-73, storage_observability_tier_metrics_test.go:21-59,
-// storage_observability_http_test.go:87-97) with the report types now in storagereport and the
-// pin's unexported constructors spelled as the values they returned (design D7, "Unexported
-// names").
+// The storage observability service's shared test helpers. Every service is built the one
+// production way, NewStorageObservabilityService, so a test sees only what the constructor
+// composes. The row builders build storagereport values directly.
 
 // newTestStorageObservability builds a storage observability service through
 // NewStorageObservabilityService from config, a JSON StorageObservabilityConfig, over client and

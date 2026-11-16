@@ -1,0 +1,29 @@
+go test ./processor/graph-query -run TestReviewRoutes -v -count=1   (commit 2853486d)
+
+"what is the difference between real-time and batch ingest"    path real-time
+"how are entities related to their sources"                    text  not honoured: path
+"which sensors are linked to the gateway"                      text  not honoured: path
+"storage area is flooded"                                      path area-is
+"what is the area of responsibility for the ops team"          path area-of
+"time zone settings for the scheduler"                         path zone-settings
+"what does the dashboard look like"                            text  not honoured: similarity
+"I would like the pump manual"                                 text  not honoured: similarity
+"compare pump-7 and pump-9"                                    text  not honoured: similarity
+"what is the max temperature of pump-7"                        REFUSED: invalid request: the question asks for an aggregation (max of temperature), which global search does not compute; ask without it
+"total cost of the outage"                                     REFUSED: invalid request: the question asks for an aggregation (sum of cost), which global search does not compute; ask without it
+"how many sensors are offline"                                 REFUSED: invalid request: the question asks for an aggregation (count), which global search does not compute; ask without it
+"count of open work orders"                                    REFUSED: invalid request: the question asks for an aggregation (count), which global search does not compute; ask without it
+"mean time between failures"                                   REFUSED: invalid request: the question asks for an aggregation (avg of time), which global search does not compute; ask without it
+"what failed pumps were reported last week"                    temporal
+"what happened today"                                          temporal
+"pump failures today"                                          temporal
+"the most recent firmware update"                              text  not honoured: ranking
+"top 5 alerts"                                                 text  not honoured: ranking
+"minimum viable configuration"                                 REFUSED: invalid request: the question asks for an aggregation (min of viable), which global search does not compute; ask without it
+"sum-check errors on the bus"                                  REFUSED: invalid request: the question asks for an aggregation (sum), which global search does not compute; ask without it
+"relational database schema"                                   text  not honoured: path
+"pathology report for patient"                                 text  not honoured: path
+"connection pool exhausted"                                    text  not honoured: path
+"pump failure vibration"                                       text
+"status of pump-7"                                             text
+"find documents similar to the maintenance guide"              text  not honoured: similarity

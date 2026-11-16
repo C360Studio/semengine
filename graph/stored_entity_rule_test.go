@@ -107,7 +107,7 @@ func storedEntityBytes(id string, statements ...[4]string) []byte {
 // bytes decode, the canonical contract, the key, then statement metadata. One row per reason,
 // plus the two adjacent-precedence rows; every refusal is one classified layer naming the key.
 // Generated checks are not used: four checks with a fixed precedence make the per-reason rows and
-// the adjacent pairs the whole input space (design D1).
+// the adjacent pairs the whole input space.
 func TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses(t *testing.T) {
 	const (
 		key   = "acme.ops.test.system.widget.001"
@@ -150,9 +150,8 @@ func TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses(t *testing.T) {
 }
 
 // The aggregate validators apply the stored-value rule's steps that need no key, statement
-// metadata included, so a batch or prefix reply is checked like a read of the bucket (design D1;
-// owner question 1). The refusal names the candidate's index and has the rule's one shape, with
-// no entity ID.
+// metadata included, so a batch or prefix reply is checked like a read of the bucket. The refusal
+// names the candidate's index and has the rule's one shape, with no entity ID.
 func TestValidateDecodedEntityStatesRefuseStatementWithoutMetadata(t *testing.T) {
 	const id = "acme.ops.test.system.widget.001"
 	stamped := message.Triple{Subject: id, Predicate: "test.state.value", Object: 1, Source: "test-producer",

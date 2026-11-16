@@ -21,7 +21,6 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
@@ -31,10 +30,10 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// The fixed inputs (design D5). Expected answers are written from these, never from a reply.
+// The fixed inputs. Expected answers are written from these, never from a reply.
 const (
 	producerSource = "smoke-producer"
-	namePredicate  = "fleet.identity.name" // ends in .name, so graph-embedding embeds it
+	namePredicate  = "fleet.identity.name" // ends in .name, so graph-lexical indexes its words
 	nextPredicate  = "fleet.link.next"
 	homePredicate  = "fleet.link.home"
 
@@ -147,14 +146,21 @@ func wantOf(inputs ...entityInput) want {
 // ask sends request to graph-query's verb and returns the reply bytes or the classified refusal.
 func (o observer) ask(t *testing.T, verb string, request any) ([]byte, error) {
 	t.Helper()
+	return o.askResponder(t, graph.ResponderGraphQuery, verb, request)
+}
+
+// askResponder sends request to responder's verb, its subject read from graph's verb table, and
+// returns the reply bytes or the classified refusal.
+func (o observer) askResponder(t *testing.T, responder, verb string, request any) ([]byte, error) {
+	t.Helper()
 	subject := ""
 	for _, v := range graph.QueryVerbs() {
-		if v.Responder == graph.ResponderGraphQuery && v.Name == verb {
+		if v.Responder == responder && v.Name == verb {
 			subject = v.Subject
 		}
 	}
 	if subject == "" {
-		t.Fatalf("graph-query has no verb %s", verb)
+		t.Fatalf("%s has no verb %s", responder, verb)
 	}
 	data, err := json.Marshal(request)
 	if err != nil {
@@ -234,15 +240,15 @@ func requireRefusal(t *testing.T, what string, reply []byte, err error, code, te
 	}
 }
 
-// checkAnswers is the one oracle (design D5): every answer the stack gives about w, read after the
-// ordered waits. revision is the ENTITY_STATES revision awaitIndexed read after the last write, which
-// the community checks wait on. deleted are IDs the stack must no longer hold. s is the running
-// stack, which the search and community checks' waits watch.
-func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted ...string) {
+// checkAnswers is the one oracle: every answer the stack gives about w, read after the ordered
+// waits. revision is the ENTITY_STATES revision awaitIndexed read after the last write, which the
+// community and word search checks wait on. deleted are IDs the stack must no longer hold. s is the
+// running stack, which the search and community checks' waits watch. It returns graph-lexical's
+// replies by word (checkLexical), which a restart test compares with the restarted stack's.
+func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted ...string) lexicalReplies {
 	t.Helper()
 	lead := f.id(drone1)
 	ids := slices.Sorted(maps.Keys(w))
-	revisions := map[string]uint64{}
 
 	// entity: each live entity with each statement once; a deleted one not found.
 	for _, id := range ids {
@@ -254,7 +260,6 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision
 		if err := json.Unmarshal(reply, &exact); err != nil || exact.Entity == nil {
 			t.Fatalf("entity %s: decode %s: %v", id, reply, err)
 		}
-		revisions[id] = exact.KVRevision
 		if got, wantStatements := statementsOf(exact.Entity), w[id].statementStrings(); !slices.Equal(got, wantStatements) {
 			t.Errorf("entity %s holds %v, want %v", id, got, wantStatements)
 		}
@@ -305,12 +310,11 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision
 		t.Errorf("entityByAlias %s holds %v, want %v", leadAlias, got, w[lead].statementStrings())
 	}
 
-	checkCommunities(t, o, s, f, w, revision)
-	checkEmbeddingRecords(t, o, revisions)
+	checkCommunities(t, o, s, f, w, revision, deleted)
 	if t.Failed() {
 		t.FailNow()
 	}
-	checkSearch(t, o, s, f, w, deleted)
+	return checkLexical(t, o, s, f, w, revision, deleted)
 }
 
 // checkSummary compares the summary with the counts written from w.
@@ -362,44 +366,7 @@ func checkSummary(t *testing.T, summary graph.SummaryData, w want) {
 	}
 }
 
-// checkEmbeddingRecords reads EMBEDDING_INDEX, a declared read beside the public paths (design D5):
-// one generated record per live entity, made from the entity's current revision as the entity verb
-// read it (revisions), and no other record.
-func checkEmbeddingRecords(t *testing.T, o observer, revisions map[string]uint64) {
-	t.Helper()
-	kv, err := o.js.KeyValue(t.Context(), graph.BucketEmbeddingIndex)
-	if err != nil {
-		t.Fatalf("open %s: %v", graph.BucketEmbeddingIndex, err)
-	}
-	keys, err := kv.Keys(t.Context())
-	if err != nil {
-		t.Fatalf("keys of %s: %v", graph.BucketEmbeddingIndex, err)
-	}
-	slices.Sort(keys)
-	if wantKeys := slices.Sorted(maps.Keys(revisions)); !slices.Equal(keys, wantKeys) {
-		t.Errorf("%s holds records for %v, want %v", graph.BucketEmbeddingIndex, keys, wantKeys)
-	}
-	for _, key := range keys {
-		revision, live := revisions[key]
-		if !live {
-			continue
-		}
-		entry, err := kv.Get(t.Context(), key)
-		if err != nil {
-			t.Fatalf("get %s/%s: %v", graph.BucketEmbeddingIndex, key, err)
-		}
-		var record embedding.Record
-		if err := json.Unmarshal(entry.Value(), &record); err != nil {
-			t.Fatalf("decode %s/%s: %v", graph.BucketEmbeddingIndex, key, err)
-		}
-		if record.Status != embedding.StatusGenerated || record.EntityID != key || record.SourceRevision != revision {
-			t.Errorf("%s/%s = status %s, entity %s, source revision %d; want generated, %s, %d",
-				graph.BucketEmbeddingIndex, key, record.Status, record.EntityID, record.SourceRevision, key, revision)
-		}
-	}
-}
-
-// name is e's name, the one statement graph-embedding embeds (namePredicate ends in .name).
+// name is e's name, the one statement graph-lexical indexes (namePredicate ends in .name).
 func (e entityInput) name() string {
 	for _, s := range e.statements {
 		if s.predicate == namePredicate {
@@ -409,9 +376,9 @@ func (e entityInput) name() string {
 	return ""
 }
 
-// words is e's name as graph-embedding's BM25 embedder tokenizes these names: lowercased, split
-// on spaces. No fixture name holds a stopword, a word under two letters, or a suffix the
-// embedder's stemmer strips.
+// words is e's name as graph-lexical's word index tokenizes these names: lowercased, split on
+// spaces. No fixture name holds a stopword, a word under two letters, or a plural the word index
+// folds.
 func (e entityInput) words() []string { return strings.Fields(strings.ToLower(e.name())) }
 
 // fixedInput is the fixed entity id.
@@ -426,10 +393,10 @@ func (f fixture) fixedInput(t *testing.T, id string) entityInput {
 	return entityInput{}
 }
 
-// keywords gives each input the last word of its name that no other input's name holds. A search
-// for it scores only that entity above 0: the fixture's words hash to distinct dimensions of the
-// embedder's vector (notes/3.2.md). The last word, because the edit appends one: "Osprey Two"
-// gives "two", which only drone3's current record holds, so a hit on it is never the record from
+// keywords gives each input the last word of its name that no other input's name holds, so a word
+// search for it matches that entity alone. The last word, because the edit appends one: "Osprey
+// Two" gives "two", which only drone3's current record holds, so a hit on it is never the record
+// from before the edit.
 // before the edit.
 func keywords(t *testing.T, inputs []entityInput) map[string]string {
 	t.Helper()
@@ -452,45 +419,50 @@ func keywords(t *testing.T, inputs []entityInput) map[string]string {
 	return out
 }
 
-// sharing is similar's answer for id, written from w: the other live entities whose name shares a
-// word with id's, sorted.
-func (w want) sharing(id string) []string {
-	out := []string{}
-	for other, e := range w {
-		if other == id {
-			continue
-		}
-		for _, word := range e.words() {
-			if slices.Contains(w[id].words(), word) {
-				out = append(out, other)
-				break
-			}
-		}
-	}
-	slices.Sort(out)
-	return out
+// lexicalReplies are graph-lexical's search replies, by the word asked.
+type lexicalReplies map[string]graph.LexicalSearchData
+
+// lexicalAnswer is one graph-lexical search reply, or the refusal.
+type lexicalAnswer struct {
+	reply graph.QueryResponse[graph.LexicalSearchData]
+	raw   []byte
+	err   error
 }
 
-// searched is one semantic reply, or the refusal.
-type searched struct {
-	data graph.SemanticData
-	raw  []byte
-	err  error
-}
-
-// semantic asks graph-query's semantic verb for query, at most limit hits (0 for the default).
-func (o observer) semantic(t *testing.T, query string, limit int) searched {
+// lexicalSearch asks graph-lexical's search verb for word until the reply's indexed_revision reaches
+// revision. The word index applies ENTITY_STATES in its own process, so the reply's
+// indexed_revision is the one event that orders the read after the writes up to revision.
+// index_not_ready before the first build is asked again; a lost feed, which holds until the process
+// restarts, and every other refusal end the wait and fail.
+func (o observer) lexicalSearch(t *testing.T, s stack, word string, revision uint64) graph.QueryResponse[graph.LexicalSearchData] {
 	t.Helper()
-	raw, err := o.ask(t, "semantic", graph.SemanticRequest{Query: query, Limit: limit})
-	if err != nil {
-		return searched{raw: raw, err: err}
+	request := graph.LexicalSearchRequest{Query: word}
+	what := fmt.Sprintf("graph-lexical search %q at indexed_revision %d or above", word, revision)
+	got := await(t, s, what, func(context.Context) (lexicalAnswer, error) {
+		var a lexicalAnswer
+		a.raw, a.err = o.askResponder(t, graph.ResponderGraphLexical, "search", request)
+		if a.err == nil {
+			a.err = json.Unmarshal(a.raw, &a.reply)
+		}
+		return a, nil
+	}, func(a lexicalAnswer) bool {
+		var refusal *errs.ClassifiedError
+		if errors.As(a.err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady {
+			return strings.Contains(refusal.Error(), "feed is lost")
+		}
+		return a.err != nil || a.reply.IndexedRevision >= revision
+	})
+	if got.err != nil {
+		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
 	}
-	var envelope graph.QueryResponse[graph.SemanticData]
-	return searched{data: envelope.Data, raw: raw, err: json.Unmarshal(raw, &envelope)}
+	if got.reply.Producer != graph.ResponderGraphLexical {
+		t.Fatalf("%s: producer %q, want %q", what, got.reply.Producer, graph.ResponderGraphLexical)
+	}
+	return got.reply
 }
 
-// hitIDs is the hits' entity IDs, in the order the reply gave them.
-func hitIDs(hits []graph.SimilarityHit) []string {
+// lexicalIDs is the hits' entity IDs, in the order the reply gave them.
+func lexicalIDs(hits []graph.LexicalHit) []string {
 	out := make([]string, len(hits))
 	for i, hit := range hits {
 		out[i] = hit.EntityID
@@ -498,123 +470,104 @@ func hitIDs(hits []graph.SimilarityHit) []string {
 	return out
 }
 
-// checkSearch checks graph-embedding's verbs through graph-query, semantic and similar (design
-// D9). The BM25 embedder's statistics live in memory and depend on the order documents arrive,
-// so a restart changes scores (graph/embedding/bm25_embedder.go:119-123). No check reads a score,
-// a vector or the order of two hits with positive scores: what holds through a restart is which
-// entities score above 0, those whose name shares a word with the query, and the reply drops a 0.
-func checkSearch(t *testing.T, o observer, s stack, f fixture, w want, deleted []string) {
+// wordHits is every word search's expected answer, written from the fixed names: each entity's
+// keyword (keywords), held by its name alone, answers that entity alone while it is live and
+// nothing once it is deleted; and "field", which every base's name holds, answers exactly the live
+// bases. Every base's name is two words, one of them "field", and holds no other text, so each base
+// scores the same and the ties order by entity ID. deleted are IDs the stack must no longer hold.
+func wordHits(t *testing.T, f fixture, w want, deleted []string) map[string][]string {
 	t.Helper()
 	inputs := slices.Collect(maps.Values(w))
 	for _, id := range deleted {
 		inputs = append(inputs, f.fixedInput(t, id))
 	}
+	out := map[string][]string{}
 	keyword := keywords(t, inputs)
-	live := slices.Sorted(maps.Keys(w))
-
-	// The verbs answer from graph-embedding's vector cache, which applies an EMBEDDING_INDEX write
-	// after it lands in the bucket and claims no revision (indexed_revision 0), so the waits before
-	// checkAnswers do not order a read of it. Its one ordering event is its answer: wait for one
-	// search on every keyword, live and deleted, to answer exactly the live entities. Each keyword
-	// is held only by its entity's current record, so that reply is read after the cache applied
-	// every record checkEmbeddingRecords read and every delete. index_not_ready before the cache's
-	// first snapshot is asked again; a lost cache watch, latched until restart, fails at once.
-	query := strings.Join(slices.Sorted(maps.Values(keyword)), " ")
-	got := await(t, s, fmt.Sprintf("semantic %q to answer %v", query, live), func(context.Context) (searched, error) {
-		return o.semantic(t, query, graph.MaxSimilarityLimit), nil
-	}, func(r searched) bool {
-		var refusal *errs.ClassifiedError
-		if errors.As(r.err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady {
-			return strings.Contains(refusal.Error(), "restart the process")
-		}
-		return r.err != nil || slices.Equal(slices.Sorted(slices.Values(hitIDs(r.data.Results))), live)
-	})
-	if got.err != nil {
-		t.Fatalf("semantic %q: %s: %v", query, got.raw, got.err)
-	}
-	if got.data.EmbedderType != "bm25" || got.data.UnreadableRecords != 0 || got.data.FailedRecords != 0 {
-		t.Errorf("semantic %q: embedder %q, %d unreadable, %d failed; want bm25, 0, 0",
-			query, got.data.EmbedderType, got.data.UnreadableRecords, got.data.FailedRecords)
-	}
-
-	// fusion's word question, read after the same answer: a word lens resolves through
-	// graph.query.semantic, and its nodes are the live entities whose name holds the word, written
-	// from w. Only the entity set is checked: node order follows the scores, and relations are
-	// checked through graph-query's own verbs above.
-	const fieldWord = "field"
-	holders := []string{}
-	for _, id := range live {
-		if slices.Contains(w[id].words(), fieldWord) {
-			holders = append(holders, id)
+	for _, e := range inputs {
+		out[keyword[e.id]] = []string{}
+		if _, live := w[e.id]; live {
+			out[keyword[e.id]] = []string{e.id}
 		}
 	}
-	if len(holders) == 0 {
-		t.Fatalf("no live entity's name holds %q, so the word question would prove nothing", fieldWord)
+
+	bases := []string{}
+	for _, id := range slices.Sorted(maps.Keys(w)) {
+		if slices.Contains(w[id].words(), baseWord) {
+			bases = append(bases, id)
+		}
 	}
-	resp, err := o.fusionEngine(t).Fuse(t.Context(), fusion.Request{Query: fieldWord}, fleetLens{fusion.ResolveModeNL})
+	if len(bases) == 0 {
+		t.Fatalf("no live entity's name holds %q, so the search would prove nothing", baseWord)
+	}
+	out[baseWord] = bases
+	return out
+}
+
+// baseWord is the word every base's name holds.
+const baseWord = "field"
+
+// checkLexical checks graph-lexical's search verb against wordHits (composed-stack, "Answers from
+// one configuration"), each reply read once it reflects revision. The fixture has no offloaded
+// bodies, so none is counted as not indexed. It returns the replies by word.
+func checkLexical(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) lexicalReplies {
+	t.Helper()
+	replies := lexicalReplies{}
+	expected := wordHits(t, f, w, deleted)
+	for _, word := range slices.Sorted(maps.Keys(expected)) {
+		wantHits := expected[word]
+		data := o.lexicalSearch(t, s, word, revision).Data
+		replies[word] = data
+		hits := lexicalIDs(data.Results)
+		if !slices.Equal(hits, wantHits) || data.Matched != len(wantHits) || data.BodiesNotIndexed != 0 {
+			t.Errorf("graph-lexical search %q answered %v (matched %d, %d bodies not indexed), want %v (matched %d, 0)",
+				word, hits, data.Matched, data.BodiesNotIndexed, wantHits, len(wantHits))
+		}
+		for _, hit := range data.Results {
+			if hit.Score <= 0 || hit.Score != data.Results[0].Score {
+				t.Errorf("graph-lexical search %q scored %+v, want every hit the same score above 0", word, data.Results)
+				break
+			}
+		}
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	// fusion's word question: a word lens resolves through graph-lexical's word search, and its
+	// nodes are the live entities whose name holds the word, with provenance lexical. fusion's
+	// request names no revision; the search for the same word above reflected revision, and nothing
+	// is written in between, so this one reads the same index. Only the entity set is checked:
+	// relations are checked through graph-query's own verbs.
+	resp, err := o.fusionEngine(t).Fuse(t.Context(), fusion.Request{Query: baseWord}, fleetLens{fusion.ResolveModeNL})
 	if err != nil {
-		t.Fatalf("NL %q: Fuse: %v", fieldWord, err)
+		t.Fatalf("NL %q: Fuse: %v", baseWord, err)
 	}
 	handles := []string{}
 	for _, n := range resp.Nodes {
 		handles = append(handles, n.Handle)
 	}
 	slices.Sort(handles)
-	if resp.Provenance != fusion.ProvenanceEmbedding || resp.Deferred || len(resp.Misses) > 0 || !slices.Equal(handles, holders) {
-		t.Fatalf("NL %q answered %+v (nodes %v), want embedding provenance and nodes %v", fieldWord, resp, handles, holders)
+	if resp.Provenance != fusion.ProvenanceLexical || resp.Deferred || len(resp.Misses) > 0 || !slices.Equal(handles, expected[baseWord]) {
+		t.Fatalf("NL %q answered %+v (nodes %v), want lexical provenance and nodes %v", baseWord, resp, handles,
+			expected[baseWord])
 	}
+	return replies
+}
 
-	// semantic on one keyword: its entity, the only hit and so the top one; a deleted one, none.
-	for _, e := range inputs {
-		wantHits := []string{}
-		if _, isLive := w[e.id]; isLive {
-			wantHits = []string{e.id}
+// requireLexicalKept fails unless graph-lexical answers each word in before as it did then, hits,
+// order and scores, once its reply reflects revision. A restarted process rebuilds its word index
+// from ENTITY_STATES, and nothing is written between the two replies, so the index it rebuilt must
+// score as the one it replaced.
+func requireLexicalKept(t *testing.T, o observer, s stack, revision uint64, before lexicalReplies) {
+	t.Helper()
+	for _, word := range slices.Sorted(maps.Keys(before)) {
+		if got := o.lexicalSearch(t, s, word, revision).Data; !reflect.DeepEqual(got, before[word]) {
+			t.Errorf("graph-lexical search %q answered %+v after the restart, want %+v as before it", word, got, before[word])
 		}
-		r := o.semantic(t, keyword[e.id], 0)
-		if r.err != nil {
-			t.Fatalf("semantic %q: %s: %v", keyword[e.id], r.raw, r.err)
-		}
-		if hits := hitIDs(r.data.Results); !slices.Equal(hits, wantHits) {
-			t.Errorf("semantic %q = %v, want %v", keyword[e.id], hits, wantHits)
-		}
-	}
-
-	// similar: the other live entities sharing a word with the entity's name, in any order (their
-	// scores depend on the statistics each record was embedded under); a deleted one has no record.
-	for _, id := range live {
-		var similar graph.SimilarData
-		o.askData(t, "similar", graph.SimilarRequest{EntityID: id}, &similar)
-		if hits, wantHits := slices.Sorted(slices.Values(hitIDs(similar.Results))), w.sharing(id); !slices.Equal(hits, wantHits) {
-			t.Errorf("similar %s = %v, want %v", id, hits, wantHits)
-		}
-	}
-	for _, id := range deleted {
-		reply, err := o.ask(t, "similar", graph.SimilarRequest{EntityID: id})
-		requireRefusal(t, "similar "+id, reply, err, graph.ErrorCodeEmbeddingUnavailable, id)
 	}
 	if t.Failed() {
 		t.FailNow()
 	}
-}
-
-// matching is a one-word search's matches among w, sorted by ID, written from the text score
-// localSearch and the text search state (graph.LocalSearchData; processor/graph-query/localsearch.go,
-// score): one word matches an entity when it equals the ID's type position or lies within one of the
-// entity's predicates or string values, lowercased. The callers' words are no type, so every match
-// scores the same and ties order by ID. The values include graph-ingest's indexing profile and a
-// relationship's object, the other entity's ID.
-func (w want) matching(word string) []string {
-	out := []string{}
-	for id, e := range w {
-		held := append([]statement{{vocabulary.EntityIndexingProfile, smokeIndexingProfile}}, e.statements...)
-		if slices.ContainsFunc(held, func(s statement) bool {
-			return strings.Contains(strings.ToLower(s.predicate), word) || strings.Contains(strings.ToLower(s.object), word)
-		}) {
-			out = append(out, id)
-		}
-	}
-	slices.Sort(out)
-	return out
 }
 
 // communityAnswer is one localSearch reply, or the refusal, with graph-clustering's envelope read
@@ -627,33 +580,26 @@ type communityAnswer struct {
 }
 
 // matchIDs is the entity IDs of matches, in the order the reply gave them.
-func matchIDs(t *testing.T, what string, matches []json.RawMessage) []string {
-	t.Helper()
+func matchIDs(matches []graph.TextSearchMatch) []string {
 	out := []string{}
-	for _, raw := range matches {
-		var entity struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(raw, &entity); err != nil || entity.ID == "" {
-			t.Fatalf("%s: a match does not decode to an entity: %s: %v", what, raw, err)
-		}
-		out = append(out, entity.ID)
+	for _, match := range matches {
+		out = append(out, match.ID)
 	}
 	return out
 }
 
-// checkCommunities checks graph-clustering's records through graph-query's localSearch and the text
-// search (composed-stack, "Answers from one configuration"). Every fixed entity's ID starts
-// c360.<platform>.fleet.ops, so they make one level-0 group, whose record holds w's count.
+// checkCommunities checks graph-clustering's records and graph-query's two word searches,
+// localSearch and global search (composed-stack, "Answers from one configuration"). Every fixed
+// entity's ID starts c360.<platform>.fleet.ops, so they make one level-0 group, whose record holds
+// w's count.
 //
-// graph-clustering's GRAPH_STATUS key counts what its maintainer holds, not what it has published, and
-// graph-query answers from its own view of COMMUNITY_INDEX, so neither awaitIndexed nor a bucket read
-// orders a read of the answer. The record's entity_revision does: the highest ENTITY_STATES revision
-// the record reflects, which localSearch compares with min_revision before it answers. So localSearch
-// on the lead with min_revision set to revision is asked until it answers; a refusal that the view is
-// not ready or the record is below revision is asked again, and a latched graph-clustering envelope,
-// which no later tick clears, fails at once.
-func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revision uint64) {
+// localSearch attaches the group's record when graph-query's own view of COMMUNITY_INDEX holds it.
+// Neither GRAPH_STATUS nor a bucket read orders a read of that view, so localSearch on the lead at
+// min_revision revision is asked until it answers with the record of all w's members; a refusal
+// that the word index is not ready or below revision is asked again, and a latched
+// graph-clustering envelope, which no later tick clears, fails at once. Then each word of wordHits
+// is searched both ways (checkWordSearches).
+func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) {
 	t.Helper()
 	lead := f.id(drone1)
 	group := "c360." + f.platform + ".fleet.ops" // level 0: org.platform.system.domain (ADR-102)
@@ -675,11 +621,11 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 		if latched(a.clustering) != "" {
 			return true
 		}
-		var refusal *errs.ClassifiedError
-		if errors.As(a.err, &refusal) {
-			return refusal.Code != graph.ErrorCodeIndexNotReady && refusal.Code != graph.ErrorCodeRevisionNotReached
+		if wordIndexCatchingUp(a.err) {
+			return false
 		}
-		return true
+		record := a.reply.Data.Record
+		return a.err != nil || (record != nil && record.MemberCount == len(w))
 	})
 	if reason := latched(got.clustering); reason != "" {
 		t.Fatalf("%s/%s latched: %s", graph.BucketGraphStatus, readiness.KeyGraphClustering, reason)
@@ -687,54 +633,111 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 	if got.err != nil {
 		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
 	}
-	local := got.reply.Data
-	if got.reply.IndexedRevision < revision || local.CommunityID != group || local.Level != 0 ||
-		local.MemberCount != len(w) || local.EntitiesScanned != len(w) || local.EntitiesTruncated || local.Answer == "" {
-		t.Errorf("%s answered %+v at indexed_revision %d; want group %s, level 0, %d members, %d scanned, "+
-			"not truncated, an answer, at %d or above", what, local, got.reply.IndexedRevision, group, len(w), len(w), revision)
-	}
-	if ids, wantIDs := matchIDs(t, what, local.Entities), w.matching(word); !slices.Equal(ids, wantIDs) {
-		t.Errorf("%s matched %v, want %v", what, ids, wantIDs)
+	if local := got.reply.Data; local.RecordState != graph.RecordRead || local.Answer == "" {
+		t.Errorf("%s answered %+v; want the record read and an answer", what, local)
 	}
 
-	// A text question, read after localSearch's answer: the view held the record at revision then.
-	// One word that names no alias is searched as text; "field" is in four names, so it is one of the
-	// group's most frequent words.
-	const fieldWord = "field"
-	question := graph.GlobalSearchRequest{Query: fieldWord, MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
-	raw, err := o.ask(t, "globalSearch", question)
-	if err != nil {
-		t.Fatalf("globalSearch %q: %s: %v", fieldWord, raw, err)
+	expected := wordHits(t, f, w, deleted)
+	for _, word := range slices.Sorted(maps.Keys(expected)) {
+		checkWordSearches(t, o, s, lead, group, len(w), word, expected[word], revision)
 	}
+	if t.Failed() {
+		t.FailNow()
+	}
+}
+
+// wordIndexCatchingUp reports whether err is graph-lexical's refusal, passed on by graph-query,
+// that its word index has not reached the request's min_revision: index_not_ready before its first
+// build, or revision_not_reached below it. A lost feed, which holds until the process restarts, is
+// not catching up.
+func wordIndexCatchingUp(err error) bool {
+	var refusal *errs.ClassifiedError
+	if !errors.As(err, &refusal) {
+		return false
+	}
+	return refusal.Code == graph.ErrorCodeRevisionNotReached ||
+		(refusal.Code == graph.ErrorCodeIndexNotReady && !strings.Contains(refusal.Error(), "feed is lost"))
+}
+
+// searchAnswer is one graph-query search reply's bytes, or the refusal.
+type searchAnswer struct {
+	raw []byte
+	err error
+}
+
+// askSearch asks graph-query's verb until the reply is not the word index catching up, and
+// decodes it into out. The request carries min_revision, which graph-query passes to graph-lexical,
+// so an answer is read from a word index whose indexed_revision has reached it: that revision is
+// the event that orders the read after the writes.
+func askSearch(t *testing.T, o observer, s stack, verb string, request, out any) {
+	t.Helper()
+	what := fmt.Sprintf("%s %+v", verb, request)
+	got := await(t, s, what+" to answer", func(context.Context) (searchAnswer, error) {
+		var a searchAnswer
+		a.raw, a.err = o.ask(t, verb, request)
+		return a, nil
+	}, func(a searchAnswer) bool { return !wordIndexCatchingUp(a.err) })
+	if got.err != nil {
+		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
+	}
+	if err := json.Unmarshal(got.raw, out); err != nil {
+		t.Fatalf("%s: decode %s: %v", what, got.raw, err)
+	}
+}
+
+// checkWordSearches checks that localSearch on the lead and global search on word answer
+// wantIDs, the word index's expected hits for it, in that order, read at revision or above. Every
+// fixed entity is in the lead's group, so the scoped and the unscoped search find the same
+// entities. Global search names that group, holding every match and its record of members
+// entities, when anything matches, and no group when nothing does.
+func checkWordSearches(t *testing.T, o observer, s stack, lead, group string, members int, word string, wantIDs []string, revision uint64) {
+	t.Helper()
+	at := graph.MinRevisionField{MinRevision: revision}
+
+	var local graph.QueryResponse[graph.LocalSearchData]
+	askSearch(t, o, s, "localSearch", graph.LocalSearchRequest{EntityID: lead, Query: word, MinRevisionField: at}, &local)
+	l := local.Data
+	if ids := matchIDs(l.Matches); !slices.Equal(ids, wantIDs) || l.Matched != len(wantIDs) ||
+		l.CommunityID != group || l.Level != 0 || l.Missing != 0 || l.Truncated || local.IndexedRevision < revision {
+		t.Errorf("localSearch %q on %s: matched %v (%d), group %s level %d, %d missing, truncated %v, "+
+			"indexed_revision %d; want %v (%d), group %s level 0, 0 missing, not truncated, at %d or above",
+			word, lead, ids, l.Matched, l.CommunityID, l.Level, l.Missing, l.Truncated, local.IndexedRevision,
+			wantIDs, len(wantIDs), group, revision)
+	}
+
 	var global graph.QueryResponse[graph.GlobalSearchData]
-	if err := json.Unmarshal(raw, &global); err != nil {
-		t.Fatalf("globalSearch %q: decode %s: %v", fieldWord, raw, err)
-	}
+	askSearch(t, o, s, "globalSearch", graph.GlobalSearchRequest{Query: word, MinRevisionField: at}, &global)
 	text := global.Data.Text
-	if global.Data.Strategy != "text" || text == nil {
-		t.Fatalf("globalSearch %q answered %s, want the text strategy", fieldWord, raw)
+	if text == nil {
+		t.Errorf("globalSearch %q answered %+v, want text", word, global.Data)
+		return
 	}
 	var groups []string
 	for _, g := range text.Groups {
-		groups = append(groups, fmt.Sprintf("%s/%d", g.CommunityID, g.MemberCount))
+		count := 0
+		if g.Record != nil {
+			count = g.Record.MemberCount
+		}
+		groups = append(groups, fmt.Sprintf("%s/%d matches/%s/%d members", g.CommunityID, g.Matches, g.RecordState, count))
 	}
-	if wantGroups := []string{fmt.Sprintf("%s/%d", group, len(w))}; !slices.Equal(groups, wantGroups) ||
-		text.Level != 0 || text.UnreadableGroups != 0 || global.IndexedRevision < revision {
-		t.Errorf("globalSearch %q: groups %v, level %d, %d unreadable, indexed_revision %d; want %v, 0, 0, at %d or above",
-			fieldWord, groups, text.Level, text.UnreadableGroups, global.IndexedRevision, wantGroups, revision)
+	var wantGroups []string
+	if len(wantIDs) > 0 {
+		wantGroups = []string{fmt.Sprintf("%s/%d matches/%s/%d members", group, len(wantIDs), graph.RecordRead, members)}
 	}
-	var matches []string
-	for _, m := range text.Matches {
-		matches = append(matches, m.ID)
-	}
-	if wantMatches := w.matching(fieldWord); !slices.Equal(matches, wantMatches) {
-		t.Errorf("globalSearch %q matched %v, want %v", fieldWord, matches, wantMatches)
+	if ids := matchIDs(text.Matches); !slices.Equal(ids, wantIDs) || text.Matched != len(wantIDs) ||
+		!slices.Equal(groups, wantGroups) || text.Level != 0 || text.UnreadableGroups != 0 || text.Missing != 0 ||
+		text.Truncated || global.IndexedRevision < revision {
+		t.Errorf("globalSearch %q: matched %v (%d), groups %v, level %d, %d unreadable, %d missing, truncated %v, "+
+			"indexed_revision %d; want %v (%d), groups %v, level 0, 0, 0, not truncated, at %d or above",
+			word, ids, text.Matched, groups, text.Level, text.UnreadableGroups, text.Missing, text.Truncated,
+			global.IndexedRevision, wantIDs, len(wantIDs), wantGroups, revision)
 	}
 }
 
 // TestSmoke_OneConfigAnswers holds composed-stack, "Answers from one configuration": the stack boots
-// from one configuration, answers the fixed questions over NATS and over graph-gateway's GraphQL
-// route, streams ENTITY_STATES to a websocket client, and follows an edit and a delete.
+// from one configuration with no graph-embedding, answers the fixed questions over NATS, through
+// fusion and over graph-gateway's GraphQL route, streams ENTITY_STATES to a websocket client, and
+// follows an edit and a delete.
 func TestSmoke_OneConfigAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -751,7 +754,15 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	o.awaitAcknowledged(t, s, last)
 	revision := o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
+	// awaitIndexed read graph-ingest's, graph-index's, graph-clustering's and graph-lexical's
+	// entries, written by this child on a server the reset emptied, so the listing is complete for
+	// the four; no component runs that writes another, graph-embedding's least of all.
+	if keys, want := o.graphStatusKeys(t), []string{readiness.KeyGraphClustering, readiness.KeyGraphIndex,
+		readiness.KeyGraphIngest, readiness.KeyGraphLexical}; !slices.Equal(keys, want) {
+		t.Fatalf("%s holds keys %v, want %v (no %s)", graph.BucketGraphStatus, keys, want, readiness.KeyGraphEmbedding)
+	}
 	checkAnswers(t, o, s, f, wantOf(inputs...), revision)
+	checkFusion(t, o, f)
 	checkGateway(t, s, f, wantOf(inputs...))
 	// The client connects after the writes, so its snapshot holds a put for each fixed entity and
 	// synced, and any put the view had not yet applied follows as a change.
@@ -801,11 +812,11 @@ func (o observer) deleteEntity(t *testing.T, id string) {
 }
 
 // checkWritesAfterRestart publishes one new entity and one edit to a restarted stack, waits on the
-// order design D5 sets after them, and checks the answers: before plus the two writes. It returns
-// what the stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
-// graph-index, graph-embedding and graph-clustering envelopes and the community record an earlier
-// process left, at a lower revision, cannot pass them; the new entity's record and the edit's record at its new revision are ones no earlier
-// process can have written (design D6).
+// ordered waits after them, and checks the answers: before plus the two writes. It returns what the
+// stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
+// graph-index, graph-clustering and graph-lexical envelopes and the community record an earlier
+// process left, at a lower revision, cannot pass them; the new entity's record
+// and the edit's record at its new revision are ones no earlier process can have written.
 func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, before want) want {
 	t.Helper()
 	o.publish(t, f.newDrone())
@@ -819,9 +830,10 @@ func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, befor
 	return after
 }
 
-// TestSmoke_StackRestartKeepsAnswers holds composed-stack, "Stop and start the stack" (design D6,
-// case 1): the stack stops on SIGTERM, a new process boots from the same configuration on the same
-// server, and it answers what the first one did plus what is published after the restart.
+// TestSmoke_StackRestartKeepsAnswers holds composed-stack, "Stop and start the stack": the stack
+// stops on SIGTERM, a new process boots from the same configuration on the same server, and it
+// answers what the first one did plus what is published after the restart. Before any new write,
+// graph-lexical's replies equal the first process's, hits, order and scores.
 func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -838,7 +850,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	revision := o.awaitIndexed(t, first)
 	requireComponentsHealthy(t, first)
 	before := wantOf(inputs...)
-	checkAnswers(t, o, first, f, before, revision)
+	lexical := checkAnswers(t, o, first, f, before, revision)
 	t.Logf("first process, %s: %v", reindexMetric, readReindexCounter(t, first))
 	stopStack(t, first)
 
@@ -848,6 +860,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 		t.Fatalf("the restarted stack reports platform %q, want the first process's %q", second.platform, first.platform)
 	}
 	requireComponentsListed(t, second)
+	requireLexicalKept(t, o, second, revision, lexical)
 	checkWritesAfterRestart(t, o, second, f, before)
 	t.Logf("second process, %s: %v", reindexMetric, readReindexCounter(t, second))
 	stopStack(t, second)
@@ -890,7 +903,7 @@ func killIngestConfig(t *testing.T) string {
 }
 
 // appliedRecord reads graph-ingest's applied-sequence record for id on the ENTITY stream, a declared
-// read beside the public paths (design D5). It reports whether the record exists.
+// read beside the public paths. It reports whether the record exists.
 func (o observer) appliedRecord(t *testing.T, id string) bool {
 	t.Helper()
 	kv, err := o.js.KeyValue(t.Context(), graph.BucketGraphIngestAppliedSeq)
@@ -908,12 +921,12 @@ func (o observer) appliedRecord(t *testing.T, id string) bool {
 	return true
 }
 
-// TestSmoke_KillMidIngestKeepsAcknowledgedWrites holds composed-stack, "Kill mid-ingest" (design D6,
-// case 2): the first process holds graph-ingest on one input, after its entity write and before its
-// applied-sequence record and acknowledgement, and is killed there; a new process boots from the
-// same configuration. Every input the ENTITY stream acknowledged then answers with each statement
-// once, the held input among them, and the index and embedding records catch up, including the
-// writes published after the new process booted.
+// TestSmoke_KillMidIngestKeepsAcknowledgedWrites holds composed-stack, "Kill mid-ingest": the first
+// process holds graph-ingest on one input, after its entity write and before its applied-sequence
+// record and acknowledgement, and is killed there; a new process boots from the same configuration.
+// Every input the ENTITY stream acknowledged then answers with each statement once, the held input
+// among them, and the index, word-index and community records catch up, including the writes published after
+// the new process booted.
 func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -1006,7 +1019,7 @@ func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 
 // brokerBudget bounds the own server's Start and Restart, which require a bounded context. At an
 // hour it is an unreachable fallback: a broker that never comes back ends at go test -timeout
-// (docs/testing.md, #500).
+// (docs/testing.md).
 const brokerBudget = time.Hour
 
 // restartBrokerKeepingURL restarts the NATS server and requires its URL unchanged, as
@@ -1027,9 +1040,10 @@ func restartBrokerKeepingURL(t *testing.T, broker *natsfixture.Fixture) {
 }
 
 // TestSmoke_BrokerRestartBetweenRuns holds composed-stack, "Restart the broker while the stack is
-// stopped" (design D6, case 3): the stack stops on SIGTERM, the NATS server restarts on the same
-// URL with its file storage, and a new process boots from the same configuration and answers what
-// the first one did plus what is published after the restart.
+// stopped": the stack stops on SIGTERM, the NATS server restarts on the same URL with its file
+// storage, and a new process boots from the same configuration and answers what the first one did
+// plus what is published after the restart. Before any new write, graph-lexical's replies equal the
+// first process's, hits, order and scores.
 func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 	// Own server: restarts the NATS server between the two boots, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -1043,9 +1057,11 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 	// The first boot runs in a subtest, so its observer's connection is closed before the restart:
 	// Restart's caller stops what it built on the URL first (natsfixture/restart.go).
 	var (
-		first  stack
-		f      fixture
-		before want
+		first    stack
+		f        fixture
+		before   want
+		revision uint64
+		lexical  lexicalReplies
 	)
 	if !t.Run("first boot", func(t *testing.T) {
 		o := newObserver(t, url)
@@ -1059,10 +1075,10 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 			last = o.publish(t, e)
 		}
 		o.awaitAcknowledged(t, first, last)
-		revision := o.awaitIndexed(t, first)
+		revision = o.awaitIndexed(t, first)
 		requireComponentsHealthy(t, first)
 		before = wantOf(inputs...)
-		checkAnswers(t, o, first, f, before, revision)
+		lexical = checkAnswers(t, o, first, f, before, revision)
 		stopStack(t, first)
 	}) {
 		return
@@ -1078,15 +1094,16 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 			second.platform, first.platform)
 	}
 	requireComponentsListed(t, second)
+	requireLexicalKept(t, o, second, revision, lexical)
 	checkWritesAfterRestart(t, o, second, f, before)
 	stopStack(t, second)
 }
 
 // TestSmoke_BrokerRestartUnderRunningStack holds composed-stack, "Restart the broker under the
-// running stack" (design D6, case 4): the NATS server restarts on the same URL with its file
-// storage while the stack keeps running, and the same process, never restarted, applies a new
-// entity, an edit and a delete published after it, answers what it did before plus those writes,
-// and lists its seven components healthy, with no envelope reporting a lost feed or reset_required.
+// running stack": the NATS server restarts on the same URL with its file storage while the stack
+// keeps running, and the same process, never restarted, applies a new entity, an edit and a delete
+// published after it, answers what it did before plus those writes, and lists its seven components
+// healthy, with no envelope reporting a lost feed or reset_required.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)

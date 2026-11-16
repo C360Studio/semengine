@@ -205,7 +205,7 @@ func openBreaker(t *testing.T) (*RollingWindowBreaker, *fakeClock) {
 }
 
 // Past the cooldown, half-open admits one probe; every other caller is
-// refused while that probe has not reported (#114).
+// refused while that probe has not reported.
 func TestBreaker_HalfOpenAdmitsOneProbe(t *testing.T) {
 	b, clock := openBreaker(t)
 	clock.Advance(30 * time.Second)
@@ -258,8 +258,7 @@ func TestBreaker_ProbeSlotAfterFailedAndPassingProbe(t *testing.T) {
 }
 
 // A probe that has not reported within one Cooldown of being admitted
-// counts as lost: the next caller takes the slot, and not before
-// (owner ruling, #114 comment 6722829046).
+// counts as lost: the next caller takes the slot, and not before.
 func TestBreaker_LostProbeFreesSlotAfterOneCooldown(t *testing.T) {
 	b, clock := openBreaker(t)
 	clock.Advance(30 * time.Second)

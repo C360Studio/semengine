@@ -127,7 +127,7 @@ type readArgs struct {
 }
 
 // UpdateWithRetryRead passes its callback the revision of the bytes it got, and 0 when the key is
-// absent, whether never written, deleted or purged (design D23).
+// absent, whether never written, deleted or purged.
 func TestUpdateWithRetryRead_PassesTheRevisionItRead(t *testing.T) {
 	ctx := t.Context()
 	kv, bucket := newUpdateReadStore(t, "test-update-read-revision")
@@ -193,7 +193,7 @@ func TestUpdateWithRetryRead_PassesTheRevisionItRead(t *testing.T) {
 
 // A callback error matching ErrKVSkipWrite ends the call after that run: nothing is written, the
 // value beside the error is ignored, and the call returns (0, nil); the same through the three
-// wrappers (design D23).
+// wrappers.
 func TestUpdateWithRetryRead_SkipWritesNothing(t *testing.T) {
 	ctx := t.Context()
 	kv, bucket := newUpdateReadStore(t, "test-update-read-skip")
@@ -276,7 +276,7 @@ func TestUpdateWithRetryRead_SkipWritesNothing(t *testing.T) {
 	}
 }
 
-// A run whose write conflicts is rerun with the bytes and revision that beat it (design D23). The
+// A run whose write conflicts is rerun with the bytes and revision that beat it. The
 // other writer is a put made inside the first run, between its read and its write.
 func TestUpdateWithRetryRead_ConflictPassesTheNewerRevision(t *testing.T) {
 	ctx := t.Context()
@@ -332,7 +332,7 @@ func TestUpdateWithRetryRead_ConflictPassesTheNewerRevision(t *testing.T) {
 }
 
 // Any other callback error, and a context that ended before the call, attribute no commit to the
-// call (design D23).
+// call.
 func TestUpdateWithRetryRead_ErrorsAttributeNoCommit(t *testing.T) {
 	ctx := t.Context()
 	kv, bucket := newUpdateReadStore(t, "test-update-read-errors")
@@ -373,9 +373,9 @@ func TestUpdateWithRetryRead_ErrorsAttributeNoCommit(t *testing.T) {
 
 // A write error other than a conflict or jetstream.ErrNoStreamResponse ends the call after that run,
 // with the error and revision 0: the write may have been stored, and a later run's refusal could
-// not show whether it was. nats.go returns ErrNoStreamResponse only when no stream stored the
-// write, so the callback runs again (task 4.18; Codex interim review R2, PR #93 comment
-// 6112098987; owner ruling, #91 comment 6112779037).
+// not show whether it was. nats.go returns ErrNoStreamResponse only for a no-responders reply, when
+// no stream stored the write (jetstream/publish.go:289-291 at v1.55.0, read, not measured), so the
+// callback runs again.
 func TestUpdateWithRetryRead_UnconfirmedWriteEndsTheCall(t *testing.T) {
 	ctx := t.Context()
 	testClient := newFixtureClient(t)

@@ -35,19 +35,18 @@ func kvBackingStreamRetention(
 	return info.Config.MaxAge, info.Config.MaxBytes, nil
 }
 
-// ReconcileNoLifecycleRetention is the boot-time D1 guard for a framework-owned
-// KV bucket — ADR-068's "no reference-blind lifecycle retention on state the
-// live graph references" invariant, applied to the derived-KV plane
-// (framework-owned-bucket-guards; #622). It is the KV analogue of the shipped
-// ObjectStore guard (storage/objectstore/retention.go) and runs TWO steps IN
-// ORDER on the backing stream (KV_<bucket>):
+// ReconcileNoLifecycleRetention is the boot-time guard for a framework-owned KV
+// bucket — ADR-068's "no reference-blind lifecycle retention on state the live
+// graph references" invariant, applied to the derived-KV plane. It is the KV
+// analogue of the ObjectStore guard (storage/objectstore/retention.go) and runs
+// TWO steps IN ORDER on the backing stream (KV_<bucket>):
 //
 //  1. Reconcile (strip-and-log). If the backing stream carries a binding
 //     MaxAge/MaxBytes (e.g. a foreign 7-day TTL from a process that won the
-//     get-or-create race, as in #610/#611, or an out-of-band NATS edit), clear it
-//     via UpdateStream and emit a WARN naming the bucket and the removed
+//     get-or-create race, or an out-of-band NATS edit), clear it via
+//     UpdateStream and emit a WARN naming the bucket and the removed
 //     retention. Stripping stops FUTURE time/size eviction and deletes no stored
-//     key, so it self-heals legacy buckets that a create-or-get path would
+//     key, so it self-heals existing buckets that a create-or-get path would
 //     otherwise never reconcile.
 //
 //  2. Assert (fail-closed). Re-read the backing stream fresh and run the pure

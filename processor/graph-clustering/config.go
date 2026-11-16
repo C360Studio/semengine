@@ -14,16 +14,17 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // defaultDetectionInterval is the time between publications when detection_interval is
-// unset: the pin's.
+// unset.
 const defaultDetectionInterval = "30s"
 
-// removedKeys are the pin's configuration keys graph-clustering no longer defines, each with
-// what replaces it (design D3). A configuration carrying one is refused at construction with
-// that guidance, where strict decoding alone would only say the key is unknown.
+// removedKeys are configuration keys an operator may still write that graph-clustering does not
+// define, each with what replaces it. A configuration carrying one is refused at construction
+// with that guidance, where strict decoding alone would only say the key is unknown.
 var removedKeys = map[string]string{
 	"batch_size":          "it was never read; changed groups are published every detection_interval",
 	"enable_llm":          "LLM community summaries are tier 2 and not ported (#485); records carry a statistical summary",
@@ -41,12 +42,17 @@ var removedKeys = map[string]string{
 }
 
 // Config holds the graph-clustering configuration. Decoding is strict: a key it does not
-// define is refused, and a removed key is refused with what replaces it (design D3).
+// define is refused, and a removed key is refused with what replaces it.
 type Config struct {
 	Ports *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
 	// DetectionInterval is the time between publications of the changed groups, a Go duration
 	// such as 30s or 5m; empty means 30s.
 	DetectionInterval string `json:"detection_interval,omitempty" schema:"type:string,description:Interval between publications of changed groups (e.g. 30s or 5m),category:basic"`
+	// TextSuffixes are the predicate suffixes whose string values keywords are counted from: the
+	// values entitytext.Rule.Values selects, as graph-embedding reads them; empty means
+	// entitytext.DefaultSuffixes. Set it to graph-lexical's list so both select the same values;
+	// graph-lexical also indexes label predicates and offloaded bodies, which keywords do not read.
+	TextSuffixes []string `json:"text_suffixes,omitempty" schema:"type:array,description:Predicate suffixes whose string values keywords are counted from; set it to graph-lexical's text_suffixes. Defaults to common text predicates,category:advanced"`
 
 	// Dependency startup configuration
 	StartupAttempts int `json:"startup_attempts,omitempty" schema:"type:int,description:Max attempts to wait for dependencies at startup,category:advanced"`
@@ -82,7 +88,7 @@ func (c *Config) Validate() error {
 
 // validateInputs accepts exactly one input, the follower's watch of every ENTITY_STATES key with
 // no history. Any other input would advertise a feed nothing reads, so it is refused naming the
-// port (#424, as graph-index).
+// port, as graph-index does.
 func validateInputs(definitions []component.PortDefinition) error {
 	if len(definitions) != 1 {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
@@ -102,8 +108,8 @@ func validateInputs(definitions []component.PortDefinition) error {
 			input.Name, graph.BucketEntityStates))
 }
 
-// interval is the parsed detection_interval. Unlike the pin, which fell back to 30s on a
-// value it could not parse, a value that does not parse or is not above zero is refused.
+// interval is the parsed detection_interval. A value that does not parse or is not above zero is
+// refused, never replaced by the 30s default.
 func (c *Config) interval() (time.Duration, error) {
 	d, err := time.ParseDuration(c.DetectionInterval)
 	if err != nil {
@@ -119,6 +125,9 @@ func (c *Config) interval() (time.Duration, error) {
 
 // ApplyDefaults resolves each zero value to the value its reader uses. Validate only checks.
 func (c *Config) ApplyDefaults() {
+	if len(c.TextSuffixes) == 0 {
+		c.TextSuffixes = entitytext.DefaultSuffixes()
+	}
 	if c.DetectionInterval == "" {
 		c.DetectionInterval = defaultDetectionInterval
 	}
@@ -129,7 +138,7 @@ func (c *Config) ApplyDefaults() {
 		c.StartupInterval = 500 // 500ms
 	}
 	// A configuration with no ports takes DefaultConfig's; a ports block that is present is
-	// used as written, never merged with the defaults (ruling K, #91 comment 6062681355).
+	// used as written, never merged with the defaults.
 	if c.Ports == nil {
 		c.Ports = DefaultConfig().Ports
 	}
@@ -149,7 +158,7 @@ func DefaultConfig() Config {
 
 // decodeConfig decodes rawConfig strictly: a removed key is refused naming it and what replaces
 // it, then any other key Config does not define is refused naming it, and data after the object
-// is refused, as json.Unmarshal did at the pin. Empty rawConfig is DefaultConfig.
+// is refused. Empty rawConfig is DefaultConfig.
 func decodeConfig(rawConfig json.RawMessage) (Config, error) {
 	if len(rawConfig) == 0 {
 		return DefaultConfig(), nil

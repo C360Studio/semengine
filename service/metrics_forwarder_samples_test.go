@@ -11,14 +11,12 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// The metrics forwarder's mapping from gathered families to published samples (design D4,
-// U-d): the pin's mapping tests (metrics_forwarder_test.go:273-607, :849-969) as tables over
-// metricSamples. The pin drove each through a started forwarder, a mock publisher and a
-// sleep; the mapping is one plain function here, so each case is a call. Expected values are
-// the pin's behaviour written out as literals, never computed by the code under test.
+// The metrics forwarder's mapping from gathered families to published samples, as tables over
+// metricSamples. The mapping is one plain function, so each case is a call. Expected values are
+// written out as literals, never computed by the code under test.
 //
 // Named examples suffice, no generated checks: each sample maps on its own, and each case is
-// one input class the pin distinguishes (family type, label set, name prefix and flags).
+// one input class the mapping distinguishes (family type, label set, name prefix and flags).
 
 // samplesNow is the time every case passes; the timestamp a sample carries is its UnixMilli.
 var samplesNow = time.Date(2026, 10, 23, 12, 30, 45, 678_000_000, time.UTC)
@@ -57,10 +55,9 @@ func samplesNamed(t *testing.T, samples []metricSample, name string) metricSampl
 	return found[0]
 }
 
-// TestMetricSamplesMapsWhatTheRegistryGathers is the pin's GatherMetrics (:273-331): a
-// counter, a gauge and a histogram registered on a metrics registry and gathered the way the
-// forwarder gathers, each mapped to one sample on metrics.system.<name>. The histogram's
-// value is its sample count (2), not its sum (0.75).
+// TestMetricSamplesMapsWhatTheRegistryGathers: a counter, a gauge and a histogram registered on a
+// metrics registry and gathered the way the forwarder gathers, each mapped to one sample on
+// metrics.system.<name>. The histogram's value is its sample count (2), not its sum (0.75).
 func TestMetricSamplesMapsWhatTheRegistryGathers(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_messages_total", Help: "Test counter"})
@@ -93,7 +90,7 @@ func TestMetricSamplesMapsWhatTheRegistryGathers(t *testing.T) {
 	}, samplesNamed(t, samples, "test_request_duration_seconds"))
 }
 
-// TestMetricSamplesCarryThePayloadFields is the pin's MessageFormat (:394-462): a counter
+// TestMetricSamplesCarryThePayloadFields: a counter
 // labelled component=test-input and status=success, added 123, gathered from a registry.
 // Every payload field is set, and labels carry every label, component included.
 func TestMetricSamplesCarryThePayloadFields(t *testing.T) {
@@ -119,9 +116,8 @@ func TestMetricSamplesCarryThePayloadFields(t *testing.T) {
 	}, samplesNamed(t, metricSamples(families, false, false, samplesNow), "test_messages_total"))
 }
 
-// TestMetricSamplesSubjectNamesTheComponent is the pin's SubjectPattern (:333-392) and
-// ExtractComponent (:464-606): the subject is metrics.<component>.<name>, the component the
-// sample's component label, else system.
+// TestMetricSamplesSubjectNamesTheComponent: the subject is metrics.<component>.<name>, the
+// component the sample's component label, else system.
 func TestMetricSamplesSubjectNamesTheComponent(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -174,9 +170,8 @@ func TestMetricSamplesSubjectNamesTheComponent(t *testing.T) {
 	}
 }
 
-// TestMetricSamplesValueAndTypeFollowTheFamily covers the pin's value and type mapping
-// (metrics_forwarder.go:389-426), which the pin's MessageFormat checked only as one of five
-// type names: a counter's, gauge's or untyped value; a histogram's or summary's sample count,
+// TestMetricSamplesValueAndTypeFollowTheFamily covers the value and type mapping: a
+// counter's, gauge's or untyped value; a histogram's or summary's sample count,
 // never its sum; 0 when the metric carries no value; the family type in lower case, untyped
 // when it is absent or not one of the five.
 func TestMetricSamplesValueAndTypeFollowTheFamily(t *testing.T) {
@@ -240,8 +235,8 @@ func TestMetricSamplesValueAndTypeFollowTheFamily(t *testing.T) {
 	}
 }
 
-// TestMetricSamplesLeaveOutGoAndProcessFamiliesUnlessIncluded is the pin's
-// SystemMetricsFiltering (:849-969), with the two cross-flag rows added: a go_ family needs
+// TestMetricSamplesLeaveOutGoAndProcessFamiliesUnlessIncluded, cross-flag rows
+// included: a go_ family needs
 // includeGo and a process_ family needs includeProc, each flag alone; every other family is
 // always mapped.
 func TestMetricSamplesLeaveOutGoAndProcessFamiliesUnlessIncluded(t *testing.T) {
@@ -280,8 +275,8 @@ func TestMetricSamplesLeaveOutGoAndProcessFamiliesUnlessIncluded(t *testing.T) {
 	}
 }
 
-// TestMetricSamplesSkipUnnamedFamiliesAndIncompleteLabels covers the pin's guards
-// (metrics_forwarder.go:306-308, :345-347): a nil or unnamed family maps to nothing, a label
+// TestMetricSamplesSkipUnnamedFamiliesAndIncompleteLabels covers the mapping's guards:
+// a nil or unnamed family maps to nothing, a label
 // pair missing its name or value is left out, and samples keep the order of the families and
 // of the metrics within each.
 func TestMetricSamplesSkipUnnamedFamiliesAndIncompleteLabels(t *testing.T) {

@@ -25,9 +25,8 @@ func refusingListen(called *bool) func(string, string) (net.Listener, error) {
 }
 
 // startHealthOnBoundListener starts manager's health listener on a loopback listener the test
-// bound (pin service_manager_health_listener_test.go:259). Port 0 means disabled, so no call asks
-// for a kernel-picked port; the unexported startHealthListener takes the listen function instead
-// (design D2, "Test-only code").
+// bound. Port 0 means disabled, so no call asks for a kernel-picked port; the unexported
+// startHealthListener takes the listen function instead.
 func startHealthOnBoundListener(ctx context.Context, t *testing.T, manager *Manager) net.Listener {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -39,7 +38,7 @@ func startHealthOnBoundListener(ctx context.Context, t *testing.T, manager *Mana
 	return listener
 }
 
-// TestListenerStartsRejectCanceledContextBeforeAcquisition keeps the pin test's health half: an
+// TestListenerStartsRejectCanceledContextBeforeAcquisition covers the health listener: an
 // ended or nil context is refused before the listen function runs, and the refused call does not
 // use up the listener, so a later call with a live context binds. The main half is the lifecycle
 // suite's PreCancelledStartRefused (TestManagerPassesTheLifecycleSuite).
@@ -64,7 +63,7 @@ func TestListenerStartsRejectCanceledContextBeforeAcquisition(t *testing.T) {
 
 // TestStartHealthListener_BindsHealthAndHealthz verifies that StartHealthListener binds /health
 // and /healthz on the requested port and serves the manager's answers. The bind happens before the
-// call returns (design D2), so the pin's poll for the listener is not carried.
+// call returns, so the test does not poll for the listener.
 //
 // spec: operator-surface / The dedicated health listener
 func TestStartHealthListener_BindsHealthAndHealthz(t *testing.T) {
@@ -109,8 +108,7 @@ func TestStartHealthListenerReportsBindFailureSynchronously(t *testing.T) {
 }
 
 // TestHealthListenerCannotRebindAfterCompletedStop: after StopAll stopped the health listener, a
-// second start is refused before its listen function runs (design D2; the pin stopped it with the
-// dropped StopHealthListener).
+// second start is refused before its listen function runs.
 //
 // spec: operator-surface / The dedicated health listener
 func TestHealthListenerCannotRebindAfterCompletedStop(t *testing.T) {
@@ -137,8 +135,8 @@ func TestStartHealthListener_DoubleStartErrors(t *testing.T) {
 }
 
 // TestStopAll_TearsDownHealthListener: StopAll stops the dedicated health listener even when
-// StartAll never ran, and a later StartAll is refused (design D2). StopAll returns after the
-// listener closed, so the pin's poll for a refused request becomes one refused dial.
+// StartAll never ran, and a later StartAll is refused. StopAll returns after the listener closed,
+// so one refused dial shows it, with no poll.
 func TestStopAll_TearsDownHealthListener(t *testing.T) {
 	manager := createTestServiceManager(ManagerConfig{}, createTestServiceDependencies())
 	listener := startHealthOnBoundListener(t.Context(), t, manager)
@@ -154,8 +152,7 @@ func TestStopAll_TearsDownHealthListener(t *testing.T) {
 
 // TestRequestContextOutlivesStartContext: ending StartAll's context after it returned ends no
 // request's context. A request to the main listener made afterwards is answered, and the handler
-// sees a live request context (design D2, S2; replaces the main half of the pin's
-// TestListenerBaseContextsPreserveExactStartValues, which pinned the opposite).
+// sees a live request context.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestRequestContextOutlivesStartContext(t *testing.T) {
@@ -189,8 +186,7 @@ func TestRequestContextOutlivesStartContext(t *testing.T) {
 // TestHealthListenerRequestContextOutlivesStartContext: ending the context given to
 // StartHealthListener after it returned stops nothing: /healthz answers 200 with OK, and the
 // context the server gives a new connection has not ended. The health routes take no middleware,
-// so the test reads that context where the server makes it, as the pin's
-// TestListenerBaseContextsPreserveExactStartValues did (design D2, S2).
+// so the test reads that context where the server makes it.
 //
 // spec: operator-surface / The dedicated health listener
 func TestHealthListenerRequestContextOutlivesStartContext(t *testing.T) {

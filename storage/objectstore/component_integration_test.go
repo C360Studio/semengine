@@ -28,8 +28,8 @@ import (
 )
 
 // The JetStream input the Component tests bind, and the durable consumer the binding plan names
-// for it: objectstore-<instance>-<subject with dots as dashes> (pin legacyObjectStoreConsumerName),
-// spelled out here rather than computed by the plan under test.
+// for it: objectstore-<instance>-<subject with dots as dashes>, spelled out here rather than
+// computed by the plan under test.
 const (
 	inputStream   = "OBJECTSTORE_WRITES"
 	inputSubject  = "objectstore.test.write"
@@ -139,7 +139,7 @@ func awaitHealth(ctx context.Context, t *testing.T, c *Component, done func(comp
 }
 
 // TestObjectStoreLifecycleSuite runs the lifecycle suite on a Component with a core-NATS input
-// and on one with a JetStream input (design D5). Observe lists the input check while it runs, so
+// and on one with a JetStream input. Observe lists the input check while it runs, so
 // the suite's "nothing retained after Stop" proves Stop joined it, and its "Start context end
 // stops nothing" proves the check and the inputs outlive the Start context. The owner that must
 // fail names a bucket NATS refuses, so Start fails at the Store before binding anything; a failure
@@ -253,7 +253,7 @@ func TestProvidedStoresUnderObjectstore(t *testing.T) {
 
 // TestSecondComponentRefusedAtStart: a component manager composing two objectstore Components
 // starts the first and refuses the second at Start, naming the instance objectstore, because both
-// offer their Store under that one name (design D7, owner ruling 3).
+// offer their Store under that one name.
 func TestSecondComponentRefusedAtStart(t *testing.T) {
 	client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 	registry := component.NewRegistry()
@@ -295,9 +295,9 @@ func TestSecondComponentRefusedAtStart(t *testing.T) {
 	}
 }
 
-// TestLostJetStreamInputReportsUnhealthy is #216's ruling for this Component (design D2): with the
-// Component running, its JetStream input's durable consumer is deleted, which ends the consume
-// loop, and Health becomes unhealthy naming the input and the restart that recovers it.
+// TestLostJetStreamInputReportsUnhealthy: with the Component running, its JetStream input's
+// durable consumer is deleted, which ends the consume loop, and Health becomes unhealthy naming the
+// input and the restart that recovers it.
 func TestLostJetStreamInputReportsUnhealthy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -344,10 +344,10 @@ func TestLostJetStreamInputReportsUnhealthy(t *testing.T) {
 	}
 }
 
-// TestMemoryInputLostAtBrokerRestartStaysUnhealthy is the memory case of #216's ruling (design
-// D2), as graph-ingest's TestIntegration_MemoryStreamLostAtBrokerRestartStaysUnhealthy: the
-// memory stream and the input's consumer on it do not survive a broker restart, and the consume
-// loop does not end, so the input check's lookup is what reads the loss. Once the stream is
+// TestMemoryInputLostAtBrokerRestartStaysUnhealthy is the memory case of a lost input, as
+// graph-ingest's TestIntegration_MemoryStreamLostAtBrokerRestartStaysUnhealthy: the memory stream
+// and the input's consumer on it do not survive a broker restart, and the consume loop does not
+// end, so the input check's lookup is what reads the loss. Once the stream is
 // created again, Health is unhealthy naming the consumer, before and after a message is published
 // to it, while the loop still runs.
 func TestMemoryInputLostAtBrokerRestartStaysUnhealthy(t *testing.T) {

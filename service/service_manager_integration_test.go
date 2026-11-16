@@ -21,7 +21,7 @@ import (
 // the manager's NATS client. A subject filter answers that entity's triples and no other's; the
 // answer is the first limit triples of the entities taken in sorted key order, whatever order
 // they were written in; a malformed filter answers 400 naming it; an entity the decoder refuses
-// answers 500 (design D6, Q-A).
+// answers 500.
 //
 // spec: operator-surface / /graph/triples answers a sorted, validated read of ENTITY_STATES
 func TestGraphTriplesReadsEntityStates(t *testing.T) {
@@ -74,7 +74,7 @@ func TestGraphTriplesReadsEntityStates(t *testing.T) {
 
 // TestHealthPublisherPublishesEachServiceAtStart: with a NATS client, StartAll publishes each
 // composed service's health on health.service.<name> as an object with the keys timestamp,
-// name, status and health (design D2, S8).
+// name, status and health.
 //
 // spec: service-lifecycle / The service manager publishes health and counts its drops
 func TestHealthPublisherPublishesEachServiceAtStart(t *testing.T) {

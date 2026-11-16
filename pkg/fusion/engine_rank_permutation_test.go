@@ -24,7 +24,7 @@ import (
 // ranker reorders around the groups. Every group has at least two members and every
 // generated case has at least one group, so the order assertion runs on every case.
 //
-// What the examples still own: which signal outranks which (the pin's
+// What the examples still own: which signal outranks which (the
 // TestEngine_Signals_* tests) and hydration order as the ranking prior
 // (TestEngine_RankingFollowsHydrationOrder).
 

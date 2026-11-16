@@ -1,0 +1,201 @@
+// Probe for fix-622-acronym-plurals. Run beside a copy of
+// graph/lexical/tokens.go with its package clause changed to main:
+//
+//	go run . graph/lexical/testdata/scorecard/corpus.jsonl.gz
+//
+// It compares today's tokenizer with the two proposed rules over the
+// scorecard corpus (each section's name and body): (S) a run that ends in a
+// lower-case s right after two or more capitals drops the s and keeps the
+// capitals as one part; (F) plural rule 5 applies from 3 bytes instead of 4;
+// (F3) rule F, skipped for a part written all in capitals.
+package main
+
+import (
+	"bufio"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"unicode"
+)
+
+func splitS(run string) []string {
+	rs := []rune(run)
+	if n := len(rs); n >= 3 && rs[n-1] == 's' && isCapital(rs[n-2]) && isCapital(rs[n-3]) {
+		rs = rs[:n-1]
+	}
+	return splitIdentifier(string(rs))
+}
+
+func foldF(w string) string {
+	if len(w) == 3 && strings.HasSuffix(w, "s") && !hasAnySuffix(w, "us", "ss") {
+		return w[:2]
+	}
+	return fold(w)
+}
+
+// allCaps reports a part with a capital and no lower-case letter.
+func allCaps(part string) bool {
+	capital := false
+	for _, r := range part {
+		if unicode.IsLower(r) {
+			return false
+		}
+		capital = capital || isCapital(r)
+	}
+	return capital
+}
+
+// tokF3 is rule S plus rule F, with rule F skipped for a part written all in capitals.
+func tokF3(text string) []string {
+	var words []string
+	for _, run := range strings.FieldsFunc(text, notWordRune) {
+		for _, part := range splitS(run) {
+			caps := allCaps(part)
+			for _, w := range strings.FieldsFunc(strings.ToLower(part), notWordRune) {
+				g := foldF(w)
+				if caps {
+					g = fold(w)
+				}
+				if stopwords[w] || stopwords[g] || len(g) > maxWordBytes {
+					continue
+				}
+				words = append(words, g)
+			}
+		}
+	}
+	return words
+}
+
+func tok(text string, split func(string) []string, f func(string) string) []string {
+	var words []string
+	for _, run := range strings.FieldsFunc(text, notWordRune) {
+		for _, part := range split(run) {
+			for _, w := range strings.FieldsFunc(strings.ToLower(part), notWordRune) {
+				g := f(w)
+				if stopwords[w] || stopwords[g] || len(g) > maxWordBytes {
+					continue
+				}
+				words = append(words, g)
+			}
+		}
+	}
+	return words
+}
+
+func byCount(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if m[keys[i]] != m[keys[j]] {
+			return m[keys[i]] > m[keys[j]]
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
+func main() {
+	fh, err := os.Open(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+	zr, err := gzip.NewReader(fh)
+	if err != nil {
+		panic(err)
+	}
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
+	changed, runs := map[string]string{}, map[string]int{}
+	newFold, newFoldSections, today := map[string]int{}, map[string]int{}, map[string]int{}
+	sections := 0
+	formF, formF3 := map[string]int{}, map[string]int{}
+	for sc.Scan() {
+		var s struct{ Name, Body string }
+		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {
+			panic(err)
+		}
+		sections++
+		text := s.Name + " " + s.Body
+		seen := map[string]bool{}
+		for _, run := range strings.FieldsFunc(text, notWordRune) {
+			a := strings.Join(tok(run, splitIdentifier, fold), " ")
+			b := strings.Join(tok(run, splitS, fold), " ")
+			if a != b {
+				changed[run] = a + " -> " + b
+				runs[run]++
+			}
+			for _, part := range splitS(run) {
+				for _, w := range strings.FieldsFunc(strings.ToLower(part), notWordRune) {
+					if foldF(w) != fold(w) && !stopwords[w] {
+						formF[part+" -> "+foldF(w)]++
+						if !allCaps(part) {
+							formF3[part+" -> "+foldF(w)]++
+						}
+					}
+					if foldF(w) != fold(w) && !stopwords[w] {
+						newFold[w]++
+						if !seen[w] {
+							seen[w] = true
+							newFoldSections[w]++
+						}
+					}
+				}
+			}
+		}
+		for _, w := range tok(text, splitIdentifier, fold) {
+			today[w]++
+		}
+	}
+	fmt.Println("sections", sections)
+	fmt.Println("== rule S: runs whose words change (occurrences, run, today -> with S) ==")
+	total := 0
+	for _, k := range byCount(runs) {
+		fmt.Printf("%5d %-26s %s\n", runs[k], k, changed[k])
+		total += runs[k]
+	}
+	fmt.Println("distinct", len(runs), "occurrences", total)
+	fmt.Println("== rule F: 3-byte words that newly fold (occurrences, sections, word -> fold, fold's occurrences as a word today) ==")
+	total, collide := 0, 0
+	for _, k := range byCount(newFold) {
+		f := foldF(k)
+		mark := ""
+		if stopwords[f] {
+			mark = "fold is a stopword: dropped"
+		} else if today[f] > 0 {
+			mark = "meets an existing word"
+			collide++
+		}
+		fmt.Printf("%5d %4d %-4s -> %-3s %5d %s\n", newFold[k], newFoldSections[k], k, f, today[f], mark)
+		total += newFold[k]
+	}
+	fmt.Println("distinct", len(newFold), "occurrences", total, "meeting an existing word", collide)
+	sum := func(m map[string]int) (int, int) {
+		t := 0
+		for _, v := range m {
+			t += v
+		}
+		return len(m), t
+	}
+	fmt.Println("== rule F by written form (occurrences, form -> fold); * = all capitals, skipped by rule F3 ==")
+	for _, k := range byCount(formF) {
+		mark := ""
+		if formF3[k] == 0 {
+			mark = "*"
+		}
+		fmt.Printf("%5d %s %s\n", formF[k], k, mark)
+	}
+	d, t := sum(formF)
+	fmt.Println("rule F: written forms", d, "occurrences", t)
+	d, t = sum(formF3)
+	fmt.Println("rule F3: written forms", d, "occurrences", t)
+	fmt.Println("== witnesses ==")
+	for _, s := range []string{"ID id IDs ids", "URL url URLs urls", "API APIs apis", "PR PRs prs", "ADR ADRs adrs", "UUID UUIDs uuids",
+		"IDS URLS APIS PRS", "CPUs", "HTTPServer HTTPs", "EntityIDsByType EntityIDIsTerminated", "AWS TLS DNS GPS", "bus gas yes its his this", "CAS cas GCS gc DOS dos", "add-ons plug-ins ios io AES"} {
+		fmt.Printf("%-40q today=%q S=%q S+F=%q S+F3=%q\n", s, tok(s, splitIdentifier, fold), tok(s, splitS, fold), tok(s, splitS, foldF), tokF3(s))
+	}
+}

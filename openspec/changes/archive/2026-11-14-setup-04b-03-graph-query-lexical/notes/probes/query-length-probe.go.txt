@@ -1,0 +1,207 @@
+package lexical
+
+// Throwaway design probe for setup-04b-03 (#624). Not for merge. Copy to graph/lexical/ in a copy of the tree.
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestGQParseProbe(t *testing.T) {
+	var qs []string
+	for _, f := range []string{"/tmp/gq/questions.json", "/tmp/gq/questions-osh.json"} {
+		var part []string
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &part); err != nil {
+			t.Fatal(err)
+		}
+		qs = append(qs, part...)
+	}
+	pasted := []string{
+		`panic: runtime error: invalid memory address or nil pointer dereference in TestSearchDuringWrites graph/lexical/index_test.go:309 goroutine 17 [running]`,
+		`--- FAIL: TestConfigManagerStartupVersionArbitration (0.42s) config_test.go:118: kv: key already exists`,
+		`Error: nats: no responders available for request`,
+		`fatal error: concurrent map writes`,
+		`level=ERROR msg="graph-ingest: prefix read refused" code=graph_state_reset_required entity=c360.semengine.docs.markdown.section.s00042`,
+		`github.com/c360studio/semengine/processor/graph-query.(*Component).localSearch.func1(0xc000123450, {0x1a2b3c, 0xc0001d2e40}) /home/runner/work/semengine/processor/graph-query/localsearch.go:276 +0x1c5`,
+		`context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
+		`go test -race ./processor/graph-query -run TestGlobalSearch`,
+		`git reset HEAD~ and *bold* text`,
+		`json: unknown field "summarize_threshold"`,
+	}
+	report := func(label string, list []string) {
+		counts := []int{}
+		refused := map[string][]string{}
+		excluded := 0
+		for _, q := range list {
+			n := len(gqDistinct(Tokens(q)))
+			counts = append(counts, n)
+			pq, err := ParseQuery(q)
+			switch {
+			case errors.Is(err, ErrQueryTooLong):
+				refused["too long"] = append(refused["too long"], q)
+			case errors.Is(err, ErrReservedSyntax):
+				refused["reserved"] = append(refused["reserved"], q)
+			case errors.Is(err, ErrEmptyQuery):
+				refused["empty"] = append(refused["empty"], q)
+			case err != nil:
+				refused["other"] = append(refused["other"], q)
+			}
+			if err == nil && len(pq.excluded) > 0 {
+				excluded++
+				t.Logf("    excludes %v: %q", pq.excluded, q)
+			}
+		}
+		slices.Sort(counts)
+		t.Logf("%s: %d queries; distinct words after tokenizing: median %d, max %d; refused too long %d, reserved %d, empty %d; with an exclusion %d",
+			label, len(list), counts[len(counts)/2], counts[len(counts)-1], len(refused["too long"]), len(refused["reserved"]), len(refused["empty"]), excluded)
+		for k, v := range refused {
+			for _, q := range v {
+				t.Logf("    %s: %q", k, q)
+			}
+		}
+		for i, q := range list {
+			_ = i
+			_ = q
+		}
+	}
+	report("SemSource scorecard questions", qs)
+	report("pasted lines", pasted)
+	for _, q := range pasted {
+		t.Logf("  %2d words  %q", len(gqDistinct(Tokens(q))), q[:min(len(q), 70)])
+	}
+	_ = strings.Fields
+}
+
+func gqDistinct(ws []string) []string {
+	var out []string
+	for _, w := range ws {
+		if !slices.Contains(out, w) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// ---- second file: zz_gq_cost_test.go ----
+package lexical
+
+// Throwaway design probe for setup-04b-03 (#624): search time against query length. Not for merge.
+// Run in a copy of the tree with graph.MaxSearchTerms raised to 64.
+
+import (
+	"sort"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestGQCostProbe(t *testing.T) {
+	corpus := loadCorpus(t)
+	ix := corpusIndex(t, corpus)
+	df := map[string]int{}
+	for _, s := range corpus {
+		seen := map[string]bool{}
+		for _, w := range Tokens(s.Name + " " + s.Body) {
+			if !seen[w] {
+				seen[w] = true
+				df[w]++
+			}
+		}
+	}
+	var words []string
+	for w := range df {
+		words = append(words, w)
+	}
+	sort.Slice(words, func(a, b int) bool { return df[words[a]] > df[words[b]] || df[words[a]] == df[words[b]] && words[a] < words[b] })
+	for _, set := range []struct {
+		name string
+		from int
+	}{{"most common words (worst case)", 0}, {"words ranked 500 on", 500}} {
+		for _, n := range []int{4, 16, 32, 64} {
+			q, err := ParseQuery(strings.Join(words[set.from:set.from+n], " "))
+			if err != nil {
+				t.Fatal(err)
+			}
+			const reps = 50
+			start := time.Now()
+			var matched int
+			for range reps {
+				r, err := ix.Search(q, Options{Limit: 100})
+				if err != nil {
+					t.Fatal(err)
+				}
+				matched = r.Matched
+			}
+			t.Logf("%-32s %2d words: %8.2f ms per search, %4d of %d entities matched", set.name, n, float64(time.Since(start).Microseconds())/1000/reps, matched, ix.Len())
+		}
+	}
+}
+
+// ---- third file: zz_gq_scale_test.go ----
+package lexical
+
+// Throwaway design probe for setup-04b-03 (#624): search time against query length at 50,000 entities, the
+// scorecard corpus put 25 times under new IDs. Not for merge. Run with graph.MaxSearchTerms raised to 64.
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestGQScaleProbe(t *testing.T) {
+	corpus := loadCorpus(t)
+	ix := NewIndex()
+	df := map[string]int{}
+	for c := range 25 {
+		for i, s := range corpus {
+			mustPut(t, ix, fmt.Sprintf("c360.semengine.copy%02d.markdown.section.s%d", c, i), Document{Name: s.Name, Body: s.Body})
+		}
+	}
+	for _, s := range corpus {
+		seen := map[string]bool{}
+		for _, w := range Tokens(s.Name + " " + s.Body) {
+			if !seen[w] {
+				seen[w] = true
+				df[w]++
+			}
+		}
+	}
+	var words []string
+	for w := range df {
+		words = append(words, w)
+	}
+	sort.Slice(words, func(a, b int) bool { return df[words[a]] > df[words[b]] || df[words[a]] == df[words[b]] && words[a] < words[b] })
+	for _, set := range []struct {
+		name string
+		from int
+	}{{"most common words (worst case)", 0}, {"words ranked 500 on", 500}} {
+		for _, n := range []int{4, 16, 32, 64} {
+			q, err := ParseQuery(strings.Join(words[set.from:set.from+n], " "))
+			if err != nil {
+				t.Fatal(err)
+			}
+			const reps = 10
+			start := time.Now()
+			var matched int
+			for range reps {
+				r, err := ix.Search(q, Options{Limit: 100})
+				if err != nil {
+					t.Fatal(err)
+				}
+				matched = r.Matched
+			}
+			t.Logf("50,000 entities, %-32s %2d words: %7.1f ms per search, %5d matched", set.name, n, float64(time.Since(start).Microseconds())/1000/reps, matched)
+		}
+	}
+}

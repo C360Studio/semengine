@@ -1,7 +1,7 @@
 package clustering
 
-// The bounds of a published group record (design D4). Each holds by construction, so a
-// record is never truncated at run time.
+// The bounds of a published group record. Each holds by construction, so a record is
+// never truncated at run time.
 const (
 	// MaxRepEntities is the most representative entity IDs a record holds.
 	MaxRepEntities = 5
@@ -20,9 +20,9 @@ const (
 
 // Community is the published record of one group: every entity whose ID shares one
 // prefix. Level 0 groups by org.platform.system.domain, level 1 by the source
-// org.platform.system, level 2 by the deployment org.platform (ADR-102 d6); ID is that
-// prefix. The record holds counts and samples, never the member list, so its size does
-// not grow with the group.
+// org.platform.system, level 2 by the deployment org.platform (ADR-102 decision 6); ID
+// is that prefix. The record holds counts and samples, never the member list, so its
+// size does not grow with the group.
 type Community struct {
 	// ID is the group's entity-ID prefix.
 	ID string `json:"id"`
@@ -45,8 +45,10 @@ type Community struct {
 	// MaxKeywords most common types, ties broken lexically.
 	TypeCounts map[string]int `json:"type_counts"`
 
-	// Keywords are the group's MaxKeywords most frequent words, most frequent first,
-	// ties broken lexically. Words come only from members' string values.
+	// Keywords are the group's MaxKeywords most distinctive words, best first, ties
+	// broken lexically: each word's share of the group's members times the log of the
+	// graph's members with words over those holding it, scored when the record is
+	// written. Words come only from members' text (the README says how they are chosen).
 	Keywords []string `json:"keywords,omitempty"`
 
 	// StatisticalSummary is a one-line text built from the counts, three types and five

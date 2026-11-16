@@ -12,29 +12,21 @@ import (
 
 // pinnedNATSGoContractVersion is the nats.go release whose KV key/filter
 // grammar the patterns below MIRROR. It is not a "keep deps still" pin — moving
-// it is allowed, but only after re-reading upstream's regexes and confirming
+// it is allowed, but only after re-reading nats.go's regexes and confirming
 // they still match, because our validation would otherwise silently diverge
 // from what the client and server actually accept.
 //
-// v1.48.0 -> v1.52.0 (2026-07-31, gh#790): re-verified against
-// jetstream/kv.go:501-503 at v1.52.0. All three upstream patterns are
-// BYTE-IDENTICAL to v1.48.0 —
+// At v1.55.0 the three patterns, read from jetstream/kv.go:504-506 and the
+// legacy kv.go:391-393, are
 //
 //	validBucketRe    ^[a-zA-Z0-9_-]+$
 //	validKeyRe       ^[-/_=\.a-zA-Z0-9]+$
 //	validSearchKeyRe ^[-/_=\.a-zA-Z0-9*]*[>]?$
 //
-// so the mirrored patterns are unchanged and this is a pin move, not a grammar
-// change. Re-do this comparison on the next bump; a version bump without it
-// turns a contract guard into a version-number formality.
-//
-// v1.52.0 -> v1.54.0 (SemEngine, task 3.7b; go.mod requires v1.54.0):
-// re-verified against jetstream/kv.go:504-506 at v1.54.0. The three patterns
-// are byte-identical to v1.52.0's above.
-//
-// v1.54.0 -> v1.55.0 (2026-10-31, Dependabot PR #464): re-verified against
-// jetstream/kv.go:504-506 and the legacy kv.go:391-393 at v1.55.0. All three
-// patterns are byte-identical to v1.54.0's.
+// byte-identical to v1.54.0 (jetstream/kv.go:504-506), v1.52.0 (:501-503) and
+// v1.48.0, so the mirrored patterns are unchanged. Re-do this comparison on the
+// next bump; a version bump without it turns a contract guard into a
+// version-number formality.
 const pinnedNATSGoContractVersion = "v1.55.0"
 
 var (

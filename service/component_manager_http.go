@@ -28,9 +28,9 @@ var _ HTTPHandler = (*ComponentManager)(nil)
 // registered. The name is the rest of the escaped path, where an encoded
 // separator survives, decoded once with path semantics. A name that is empty,
 // "." or "..", or holds a separator, raw or decoded, is refused, so "a%2Fb"
-// and "a/b" are refused rather than reduced to "b" (design D5; #365). Binding
-// the registered route, not searching for its word, keeps a prefix that holds
-// a route word ("/api/status/components") serving its names (#366).
+// and "a/b" are refused rather than reduced to "b". Binding the registered
+// route, not searching for its word, keeps a prefix that holds a route word
+// ("/api/status/components") serving its names.
 func extractComponentName(r *http.Request, route string) (string, bool) {
 	unescape := func(segment string) string {
 		if decoded, err := url.PathUnescape(segment); err == nil {
@@ -537,7 +537,7 @@ func (cm *ComponentManager) handleComponentConfig(route string) http.HandlerFunc
 // handleGetComponentConfig returns the boot configuration of a specific
 // component. The record's configuration is fixed at construction, so it is
 // encoded holding nothing, and a client that stops reading holds nothing a Stop
-// needs (design D2, "State shape").
+// needs.
 func (cm *ComponentManager) handleGetComponentConfig(w http.ResponseWriter, r *http.Request, route string) {
 	// Extract and validate component name from URL path
 	componentName, valid := extractComponentName(r, route)

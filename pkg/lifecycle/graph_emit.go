@@ -75,7 +75,7 @@ func emitError(operation projection.MutationOperation, err error) error {
 
 // triple is a statement the manager writes: under its own source, graph.SourceLifecycle, so a
 // reconcile replaces the statements the manager wrote before and no other producer's. The
-// manager originates the statement, so it stamps it from the clock (design D15).
+// manager originates the statement, so it stamps it from the clock.
 func triple(subject, predicate string, object any) message.Triple {
 	return message.Triple{
 		Subject: subject, Predicate: predicate, Object: object,

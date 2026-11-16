@@ -13,9 +13,9 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-// countPage is one prefix page: its IDs, which the count verbs read (design D5), and its rows as sent,
-// which local search ranks. total is the group as listed, each ID once, and an ID may be missing from it
-// under concurrent overwrites (#512).
+// countPage is one prefix page: its IDs, which the count verbs read, and its rows as sent, which
+// local search ranks. total is the group as listed, each ID once, and an ID may be missing from it
+// under concurrent overwrites: nats.go does not promise a listing names every key then.
 type countPage struct {
 	ids        []string
 	rows       []json.RawMessage // each row as the page sent it, in the page's order, beside its ID in ids
@@ -81,9 +81,9 @@ func underPrefix(id, prefix string) bool {
 	return prefix == "" || id == prefix || strings.HasPrefix(id, prefix+".")
 }
 
-// hierarchyStats answers how one page of a group divides among its next segment (design D5). The reply
-// is bare and min_revision is ignored, since the verb reads graph-ingest's live listing and no index
-// (design D7). Counted as pathSearch is: a request is one input and at most one error.
+// hierarchyStats answers how one page of a group divides among its next segment. The reply is bare
+// and min_revision is ignored, since the verb reads graph-ingest's live listing and no index.
+// Counted as pathSearch is: a request is one input and at most one error.
 func (c *Component) hierarchyStats(prefixSubject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))

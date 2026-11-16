@@ -36,27 +36,25 @@ func (r *panicLogRecorder) panics() []string {
 	return append([]string(nil), r.records...)
 }
 
-// TestPanickingEntryStaysPending (the pin's TestWorkerPanicCostsOneEntryNotTheGoroutine) pins the second half of the gh#614
-// fallout: where the panic recovery sits, and what a recovered panic is allowed to
-// report.
+// TestPanickingEntryStaysPending pins where the panic recovery sits, and what a
+// recovered panic is allowed to report.
 //
-// The recover() used to guard the whole processEmbeddings for-loop, so ANY panic
-// returned from the loop and that worker goroutine was gone for the process
+// Recovery is per entry. A recover() guarding a whole lane's loop would return from
+// the loop on ANY panic, and that worker goroutine would be gone for the process
 // lifetime — nothing respawns it. At the default 5 workers, five poison entries
-// reduce the embedding pipeline to zero consumers with only ADR-066 watermark lag
-// as an eventual signal. gh#527 bulk retention deletion is precisely the workload
-// that produces concurrent tombstones at volume.
+// would reduce the embedding pipeline to zero consumers with only ADR-066 watermark
+// lag as an eventual signal. Bulk retention deletion is precisely the workload that
+// produces concurrent tombstones at volume.
 //
-// Moving the recovery per-entry fixed that but exposed a second defect, which this
-// test also pins: the terminal completion used to be a defer INSIDE handleKVEntry,
-// and Go runs deferred functions during panic unwinding — so it fired BEFORE the
-// recover() above it, draining the hop-1 readiness watermark for a record that
-// stays durably pending (no markFailed, no SaveGenerated on the panic path). With
-// the goroutine now surviving, that would silently advance the watermark on every
+// The terminal completion runs after handleKVEntry returns, never as a defer INSIDE
+// it: Go runs deferred functions during panic unwinding, so such a defer would fire
+// BEFORE the recover() above it, draining the hop-1 readiness watermark for a record
+// that stays durably pending (no markFailed, no SaveGenerated on the panic path).
+// With the goroutine surviving, that would silently advance the watermark on every
 // panic instead of stalling it, i.e. report caught up over stranded work.
 //
-// Hence three properties, asserted together because the fix for either one alone
-// re-breaks the other:
+// Hence three properties, asserted together because getting either placement right
+// alone leaves the other broken:
 //
 //  1. the worker goroutine survives (the healthy sibling still completes);
 //  2. the poison record is still pending;
@@ -66,7 +64,7 @@ func (r *panicLogRecorder) panics() []string {
 // guaranteed to land on the SAME goroutine — that also makes the poison entry's
 // recovery strictly happen-before the healthy entry's terminal signal, which is
 // what orders assertions 2 and 3. With more than one worker, a surviving sibling
-// would process the healthy entry and property 1 would pass even unfixed.
+// would process the healthy entry and property 1 would pass even with a per-lane recover().
 func TestPanickingEntryStaysPending(t *testing.T) {
 	t.Parallel()
 
@@ -171,11 +169,12 @@ func TestPanickingEntryStaysPending(t *testing.T) {
 // the storage half at the worker seam: an entity tombstoned mid-generation must
 // resolve as a normal, quiet drop.
 //
-// The discriminator is the panic-log assertion. Both the unfixed and fixed builds
-// end with no vector stored — unfixed because SaveGenerated crashed before its
-// Put, fixed because the write was deliberately dropped — so "no vector" alone
-// cannot tell them apart. Requiring that the panic recovery never fires is what
-// distinguishes "handled" from "crashed and swallowed".
+// The discriminator is the panic-log assertion. Both a crashing build and a
+// correct one end with no vector stored — the crashing one because SaveGenerated
+// panics before its Put, the correct one because the write is deliberately dropped
+// — so "no vector" alone cannot tell them apart. Requiring that the panic
+// recovery never fires is what distinguishes "handled" from "crashed and
+// swallowed".
 func TestWorkerTombstoneDuringGenerationIsNotAPanic(t *testing.T) {
 	t.Parallel()
 
@@ -225,7 +224,7 @@ func TestWorkerTombstoneDuringGenerationIsNotAPanic(t *testing.T) {
 	waitForTerminal(t, done, entityID)
 
 	// End Run before asserting on logs: joining the lanes is what orders
-	// the recovery frame's log write against this assertion. (onTerminal now fires
+	// the recovery frame's log write against this assertion. (onTerminal fires
 	// only on a normal return, so a crashing build would time out in
 	// waitForTerminal above rather than reach here — but the join keeps the
 	// assertion independent of which failure mode a regression takes.)

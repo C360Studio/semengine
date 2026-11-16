@@ -17,8 +17,8 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// savePending writes a pending record through the one pending write the package
-// carries (the pin's tests used the dropped SavePending as setup).
+// savePending writes a pending record through the package's one pending write,
+// SavePendingGuarded.
 func savePending(t *testing.T, s *Storage, entityID, contentHash string, sourceRevision uint64) {
 	t.Helper()
 	saved, err := s.SavePendingGuarded(t.Context(), &Record{
@@ -26,7 +26,7 @@ func savePending(t *testing.T, s *Storage, entityID, contentHash string, sourceR
 		ContentHash:    contentHash,
 		SourceText:     "text",
 		SourceRevision: sourceRevision,
-	})
+	}, EmbedderIdentity{Model: "m"})
 	if err != nil {
 		t.Fatalf("SavePendingGuarded: %v", err)
 	}
@@ -36,23 +36,91 @@ func savePending(t *testing.T, s *Storage, entityID, contentHash string, sourceR
 }
 
 // TestSavePendingGuarded_Decisions pins the guarded pending write at the storage
-// boundary. A generated record at a same-or-newer source revision is never
-// downgraded to pending; everything else writes (absent: create; pending or failed:
-// overwrite; generated at an OLDER revision: overwrite, because a newer source state
-// is being queued).
+// boundary. A record generated under the running embedder's identity at a
+// same-or-newer source revision is never downgraded to pending; everything else
+// writes (absent: create; pending or failed: overwrite; generated at an OLDER
+// revision: overwrite, because a newer source state is being queued; generated under
+// another type, model, width or text cap, or met while the running width is
+// unresolved: overwrite, so the running embedder regenerates it).
 func TestSavePendingGuarded_Decisions(t *testing.T) {
 	t.Parallel()
 	const entityID = "acme.ops.robotics.gcs.drone.guard1"
+	running := EmbedderIdentity{Type: "word-count", Model: "word-count-384", Dimensions: 384, MaxTextLen: 4000}
+	with := func(change func(*EmbedderIdentity)) EmbedderIdentity {
+		id := running
+		change(&id)
+		return id
+	}
 
 	type seed func(t *testing.T, s *Storage)
+	generated := func(id EmbedderIdentity, rev uint64) seed {
+		return func(t *testing.T, s *Storage) {
+			savePending(t, s, entityID, "", rev)
+			if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, id, "h", rev); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	cases := []struct {
-		name       string
-		seed       seed
-		queueRev   uint64
+		name     string
+		seed     seed
+		queueRev uint64
+		// unresolved runs the guard as an embedder that has not learned its width yet.
+		unresolved bool
 		wantSaved  bool
 		wantStatus Status
 		wantRev    uint64
 	}{
+		{
+			name:       "generated at SAME revision by ANOTHER type overwritten (provider switch)",
+			seed:       generated(with(func(id *EmbedderIdentity) { id.Type = "other-type" }), 5),
+			queueRev:   5,
+			wantSaved:  true,
+			wantStatus: StatusPending,
+			wantRev:    5,
+		},
+		{
+			name:       "generated at SAME revision by ANOTHER model overwritten (provider switch)",
+			seed:       generated(with(func(id *EmbedderIdentity) { id.Model = "other-model" }), 5),
+			queueRev:   5,
+			wantSaved:  true,
+			wantStatus: StatusPending,
+			wantRev:    5,
+		},
+		{
+			name:       "generated at NEWER revision by ANOTHER width overwritten (provider switch)",
+			seed:       generated(with(func(id *EmbedderIdentity) { id.Dimensions = 768 }), 6),
+			queueRev:   5,
+			wantSaved:  true,
+			wantStatus: StatusPending,
+			wantRev:    5,
+		},
+		{
+			name:       "generated at SAME revision under ANOTHER text cap overwritten",
+			seed:       generated(with(func(id *EmbedderIdentity) { id.MaxTextLen = 8000 }), 5),
+			queueRev:   5,
+			wantSaved:  true,
+			wantStatus: StatusPending,
+			wantRev:    5,
+		},
+		{
+			name:       "generated at SAME revision overwritten while the running width is unresolved",
+			seed:       generated(running, 5),
+			queueRev:   5,
+			unresolved: true,
+			wantSaved:  true,
+			wantStatus: StatusPending,
+			wantRev:    5,
+		},
+		{
+			name:       "generated with NO recorded width overwritten while the running width is unresolved",
+			seed:       generated(with(func(id *EmbedderIdentity) { id.Dimensions = 0 }), 5),
+			queueRev:   5,
+			unresolved: true,
+			wantSaved:  true,
+			wantStatus: StatusPending,
+			wantRev:    5,
+		},
 		{
 			name:       "absent key creates pending",
 			seed:       func(*testing.T, *Storage) {},
@@ -98,7 +166,7 @@ func TestSavePendingGuarded_Decisions(t *testing.T) {
 			name: "generated at OLDER revision overwritten (newer source state)",
 			seed: func(t *testing.T, s *Storage) {
 				savePending(t, s, entityID, "", 4)
-				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "bm25-384", 384, "h", 4); err != nil {
+				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, running, "h", 4); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -111,7 +179,7 @@ func TestSavePendingGuarded_Decisions(t *testing.T) {
 			name: "generated at SAME revision skipped (restart re-delivery)",
 			seed: func(t *testing.T, s *Storage) {
 				savePending(t, s, entityID, "", 5)
-				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "bm25-384", 384, "h", 5); err != nil {
+				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, running, "h", 5); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -124,7 +192,7 @@ func TestSavePendingGuarded_Decisions(t *testing.T) {
 			name: "generated at NEWER revision skipped (stale repair re-drive)",
 			seed: func(t *testing.T, s *Storage) {
 				savePending(t, s, entityID, "", 6)
-				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, "bm25-384", 384, "h", 6); err != nil {
+				if err := s.SaveGenerated(t.Context(), entityID, []float32{1}, running, "h", 6); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -142,12 +210,16 @@ func TestSavePendingGuarded_Decisions(t *testing.T) {
 			s := newTestStorage(t, index, newMemKV())
 			tc.seed(t, s)
 			before := index.revision(entityID)
+			id := running
+			if tc.unresolved {
+				id.Dimensions = 0
+			}
 
 			saved, err := s.SavePendingGuarded(t.Context(), &Record{
 				EntityID:       entityID,
 				SourceText:     "fresh text",
 				SourceRevision: tc.queueRev,
-			})
+			}, id)
 			if err != nil {
 				t.Fatalf("SavePendingGuarded: %v", err)
 			}
@@ -187,7 +259,7 @@ func TestSaveGenerated_NoIndexRecord_DoesNotPanicOrResurrect(t *testing.T) {
 	s := newTestStorage(t, index, newMemKV())
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 
-	err := s.SaveGenerated(t.Context(), entityID, []float32{1, 2, 3}, "all-MiniLM-L6-v2", 3, "content-hash", 1)
+	err := s.SaveGenerated(t.Context(), entityID, []float32{1, 2, 3}, EmbedderIdentity{Model: "all-MiniLM-L6-v2", Dimensions: 3}, "content-hash", 1)
 	if !errors.Is(err, ErrRecordGone) {
 		t.Fatalf("SaveGenerated on a missing key = %v, want ErrRecordGone", err)
 	}
@@ -235,7 +307,7 @@ func TestSaveGenerated_ConcurrentDeleteIsRaceFree(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			err := s.SaveGenerated(t.Context(), entityID, []float32{1, 2, 3}, "m", 3, "hash", uint64(i+1))
+			err := s.SaveGenerated(t.Context(), entityID, []float32{1, 2, 3}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash", uint64(i+1))
 			if err != nil && !errors.Is(err, ErrRecordGone) {
 				t.Errorf("SaveGenerated: unexpected error %v", err)
 			}
@@ -253,10 +325,10 @@ func TestSaveGenerated_NewerRevisionWinsOutOfOrderCompletion(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 	savePending(t, s, entityID, "", 1)
 
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{6, 6, 6}, "m", 3, "hash-6", 6); err != nil {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{6, 6, 6}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-6", 6); err != nil {
 		t.Fatalf("SaveGenerated(rev 6): %v", err)
 	}
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{5, 5, 5}, "m", 3, "hash-5", 5); !errors.Is(err, ErrSupersededRevision) {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{5, 5, 5}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-5", 5); !errors.Is(err, ErrSupersededRevision) {
 		t.Fatalf("SaveGenerated(rev 5) = %v, want ErrSupersededRevision", err)
 	}
 
@@ -313,7 +385,7 @@ func TestSaveGenerated_ConcurrentCommitDoesNotClobberViaCAS(t *testing.T) {
 		}
 	}
 
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{5, 5, 5}, "m", 3, "hash-5", 5); !errors.Is(err, ErrSupersededRevision) {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{5, 5, 5}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-5", 5); !errors.Is(err, ErrSupersededRevision) {
 		t.Fatalf("SaveGenerated(rev 5) = %v, want ErrSupersededRevision", err)
 	}
 	rec, err := s.GetEmbedding(t.Context(), entityID)
@@ -333,7 +405,7 @@ func TestSaveGenerated_ContentHashAndVectorFromSameGeneration(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.003"
 	savePending(t, s, entityID, "stale-hop1-hash", 3)
 
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{7, 8, 9}, "m", 3, "fresh-hop2-key", 3); err != nil {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{7, 8, 9}, EmbedderIdentity{Model: "m", Dimensions: 3}, "fresh-hop2-key", 3); err != nil {
 		t.Fatalf("SaveGenerated: %v", err)
 	}
 	rec, err := s.GetEmbedding(t.Context(), entityID)
@@ -359,7 +431,7 @@ func TestSaveFailed_DoesNotClobberNewerSuccess(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.004"
 	savePending(t, s, entityID, "", 1)
 
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{9, 9, 9}, "m", 3, "hash-6", 6); err != nil {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{9, 9, 9}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-6", 6); err != nil {
 		t.Fatalf("SaveGenerated(rev 6): %v", err)
 	}
 	if err := s.SaveFailed(t.Context(), entityID, "old revision failed", failReasonEmbedderError, 5); !errors.Is(err, ErrSupersededRevision) {
@@ -382,7 +454,7 @@ func TestSaveGenerated_VanishedRecordStillErrRecordGone(t *testing.T) {
 	s := newTestStorage(t, index, newMemKV())
 	const entityID = "acme.ops.robotics.gcs.drone.005"
 
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{1, 2, 3}, "m", 3, "hash", 1); !errors.Is(err, ErrRecordGone) {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{1, 2, 3}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash", 1); !errors.Is(err, ErrRecordGone) {
 		t.Fatalf("SaveGenerated on a vanished record = %v, want ErrRecordGone", err)
 	}
 	if index.has(entityID) {
@@ -405,7 +477,7 @@ func TestSaveFailed_EqualRevisionDoesNotDowngradeSuccess(t *testing.T) {
 	const rev = uint64(9)
 	savePending(t, s, entityID, "", rev)
 
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{4, 5, 6}, "m", 3, "hash-R", rev); err != nil {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{4, 5, 6}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-R", rev); err != nil {
 		t.Fatalf("SaveGenerated(R): %v", err)
 	}
 	if err := s.SaveFailed(t.Context(), entityID, "late duplicate failure", failReasonInternal, rev); !errors.Is(err, ErrSupersededRevision) {
@@ -432,7 +504,7 @@ func TestSaveGenerated_EqualRevisionWinsOverPriorFailure(t *testing.T) {
 	if err := s.SaveFailed(t.Context(), entityID, "boom", failReasonInternal, rev); err != nil {
 		t.Fatalf("SaveFailed(R): %v", err)
 	}
-	if err := s.SaveGenerated(t.Context(), entityID, []float32{7, 8, 9}, "m", 3, "hash-R", rev); err != nil {
+	if err := s.SaveGenerated(t.Context(), entityID, []float32{7, 8, 9}, EmbedderIdentity{Model: "m", Dimensions: 3}, "hash-R", rev); err != nil {
 		t.Fatalf("SaveGenerated(R) after SaveFailed(R): %v", err)
 	}
 	rec, err := s.GetEmbedding(t.Context(), entityID)
@@ -458,11 +530,10 @@ func (k *conflictKV) Update(context.Context, string, []byte, uint64) (uint64, er
 	return 0, jetstream.ErrKeyExists
 }
 
-// TestSaveExhaustionMatchesMaxRetriesExceeded (design D3, changed): when every
-// compare-and-set conflicts, each read-modify-write gives up after the KVStore's own
-// budget (MaxRetries+1 attempts) with an error matching
-// natsclient.ErrKVMaxRetriesExceeded, and the stored record is unchanged. At the pin
-// the budget was the package's own 3 and the error ErrCASExhausted.
+// TestSaveExhaustionMatchesMaxRetriesExceeded: when every compare-and-set conflicts,
+// each read-modify-write gives up after the KVStore's own budget (MaxRetries+1
+// attempts) with an error matching natsclient.ErrKVMaxRetriesExceeded, and the stored
+// record is unchanged.
 func TestSaveExhaustionMatchesMaxRetriesExceeded(t *testing.T) {
 	t.Parallel()
 	const (
@@ -480,11 +551,11 @@ func TestSaveExhaustionMatchesMaxRetriesExceeded(t *testing.T) {
 		call func(ctx context.Context, s *Storage) error
 	}{
 		{"SavePendingGuarded", func(ctx context.Context, s *Storage) error {
-			_, err := s.SavePendingGuarded(ctx, &Record{EntityID: entityID, SourceText: "x", SourceRevision: 2})
+			_, err := s.SavePendingGuarded(ctx, &Record{EntityID: entityID, SourceText: "x", SourceRevision: 2}, EmbedderIdentity{Model: "m"})
 			return err
 		}},
 		{"SaveGenerated", func(ctx context.Context, s *Storage) error {
-			return s.SaveGenerated(ctx, entityID, []float32{1}, "m", 1, "h", 2)
+			return s.SaveGenerated(ctx, entityID, []float32{1}, EmbedderIdentity{Model: "m", Dimensions: 1}, "h", 2)
 		}},
 		{"SaveFailed", func(ctx context.Context, s *Storage) error {
 			return s.SaveFailed(ctx, entityID, "boom", failReasonInternal, 2)
@@ -534,7 +605,7 @@ type deleteKV struct {
 
 func (k *deleteKV) Delete(context.Context, string, ...jetstream.KVDeleteOpt) error { return k.err }
 
-// TestDeleteAtRevisionOutcomes (design D3, the no-text removal): the fenced removal
+// TestDeleteAtRevisionOutcomes (the no-text removal): the fenced removal
 // reports removed when the delete succeeds, nothing removed and no error when the key
 // moved or is gone, and the error otherwise. The real server's fence is driven by
 // TestRevisionGuardHistoryMatchesModel; this pins the mapping of each answer.
@@ -572,8 +643,7 @@ func TestDeleteAtRevisionOutcomes(t *testing.T) {
 
 // TestSaveDedup_RecordsVectorSpace: a dedup record carries the model and dimensions of
 // its vector, and a second save from the same vector space leaves the stored record as
-// it was, writing nothing (design D3, changed: the pin rewrote it to append an entity
-// ID to the dropped EntityIDs field).
+// it was, writing nothing.
 func TestSaveDedup_RecordsVectorSpace(t *testing.T) {
 	t.Parallel()
 	dedup := newMemKV()
@@ -625,18 +695,18 @@ func TestDedupIdentityChange_NeverServesStaleVector(t *testing.T) {
 	s := newTestStorage(t, newMemKV(), newMemKV())
 
 	const text = "an entity description that is identical under both configs"
-	bm25 := EmbedderIdentity{Type: "bm25", Model: "bm25-384", Dimensions: 384, MaxTextLen: 4000}
+	wordCount := EmbedderIdentity{Type: "word-count", Model: "word-count-384", Dimensions: 384, MaxTextLen: 4000}
 	neural := EmbedderIdentity{Type: "http", Model: "all-MiniLM-L6-v2", Dimensions: 384, MaxTextLen: 8000}
 
-	if err := s.SaveDedup(t.Context(), DedupKey(bm25, text), []float32{9, 9, 9}, bm25.Model, bm25.Dimensions); err != nil {
-		t.Fatalf("SaveDedup under bm25: %v", err)
+	if err := s.SaveDedup(t.Context(), DedupKey(wordCount, text), []float32{9, 9, 9}, wordCount.Model, wordCount.Dimensions); err != nil {
+		t.Fatalf("SaveDedup under word-count: %v", err)
 	}
 	got, err := s.GetByContentHash(t.Context(), DedupKey(neural, text))
 	if err != nil {
 		t.Fatalf("GetByContentHash under neural identity: %v", err)
 	}
 	if got != nil {
-		t.Fatalf("stale bm25 vector %v served to the neural embedder", got.Vector)
+		t.Fatalf("stale word-count vector %v served to the neural embedder", got.Vector)
 	}
 }
 
@@ -746,7 +816,7 @@ func TestScanFailed_NormalizesReasonAndSeedsRevision(t *testing.T) {
 }
 
 // TestDerivedReasons_NotInPersistedFailureEnum: the derived-write reasons are in-memory
-// only, so the persisted-failure enum collapses them to reasonUnknown (#625 at the pin).
+// only, so the persisted-failure enum collapses them to reasonUnknown.
 func TestDerivedReasons_NotInPersistedFailureEnum(t *testing.T) {
 	t.Parallel()
 	for _, reason := range []string{ReasonDeleteFailed, ReasonPendingWriteFailed, ReasonEntityReadFailed} {
@@ -848,7 +918,7 @@ func (k *countingKV) Delete(ctx context.Context, key string, opts ...jetstream.K
 	return k.memKV.Delete(ctx, key, opts...)
 }
 
-// TestStorageRefusesInvalidIdentityBeforeAnyBucketCall (#467): every entity-ID entry point
+// TestStorageRefusesInvalidIdentityBeforeAnyBucketCall: every entity-ID entry point
 // refuses an ID that is not a literal six-part entity ID, and every dedup-key entry point
 // a key that is not a literal KV key, with an invalid-input error and no bucket call. A
 // valid input reaches the bucket, so the count can tell the two apart.
@@ -863,11 +933,11 @@ func TestStorageRefusesInvalidIdentityBeforeAnyBucketCall(t *testing.T) {
 
 	entityCalls := map[string]func(ctx context.Context, s *Storage, id string) error{
 		"SavePendingGuarded": func(ctx context.Context, s *Storage, id string) error {
-			_, err := s.SavePendingGuarded(ctx, &Record{EntityID: id, SourceText: "body", SourceRevision: 1})
+			_, err := s.SavePendingGuarded(ctx, &Record{EntityID: id, SourceText: "body", SourceRevision: 1}, EmbedderIdentity{Model: "m"})
 			return err
 		},
 		"SaveGenerated": func(ctx context.Context, s *Storage, id string) error {
-			return s.SaveGenerated(ctx, id, []float32{1}, "m", 1, "h", 1)
+			return s.SaveGenerated(ctx, id, []float32{1}, EmbedderIdentity{Model: "m", Dimensions: 1}, "h", 1)
 		},
 		"SaveFailed": func(ctx context.Context, s *Storage, id string) error {
 			return s.SaveFailed(ctx, id, "boom", failReasonInternal, 1)
@@ -918,7 +988,7 @@ func TestStorageRefusesInvalidIdentityBeforeAnyBucketCall(t *testing.T) {
 		}
 		check(t, name, "dedup-key", false, func(ctx context.Context, s *Storage) error { return call(ctx, s, "dedup-key") })
 	}
-	if _, err := newTestStorage(t, newMemKV(), newMemKV()).SavePendingGuarded(t.Context(), nil); !errs.IsInvalid(err) {
+	if _, err := newTestStorage(t, newMemKV(), newMemKV()).SavePendingGuarded(t.Context(), nil, EmbedderIdentity{Model: "m"}); !errs.IsInvalid(err) {
 		t.Fatalf("SavePendingGuarded(nil) = %v, want an invalid-input error", err)
 	}
 }

@@ -1,7 +1,7 @@
 // Package payloadregistry is the single type authority for a binary
-// (ADR-103): a message.Type is a type of the deployment if and only if it
+// (SemStreams ADR-103): a message.Type is a type of the deployment if and only if it
 // is registered here. A registration carries the factory that decodes the
-// type, the ADR-054 indexing-profile floor graph-ingest stamps on entities
+// type, the SemStreams ADR-054 indexing-profile floor graph-ingest stamps on entities
 // born with it, and the projection contracts bound to it. There is no
 // second catalogue of types and no global registry — each binary constructs
 // its own and injects it through component.Dependencies.PayloadRegistry.
@@ -15,7 +15,7 @@
 // package still reaches neither message nor any component package, so
 // message and agentic can both import it without a cycle.
 //
-// Pattern A (boot-registry) per ADR-029: consumers use the *Registry
+// Pattern A (boot-registry) per SemStreams ADR-029: consumers use the *Registry
 // instance form and dependency-inject it like other registries.
 package payloadregistry
 
@@ -48,7 +48,7 @@ type Factory func() any
 type Builder func(fields map[string]any) (any, error)
 
 // Registration holds factory and metadata for a payload type, plus the
-// attributes registered with the type (ADR-103): its indexing-profile floor
+// attributes registered with the type (SemStreams ADR-103): its indexing-profile floor
 // and the projection contracts bound to it.
 type Registration struct {
 	Factory     Factory        `json:"-"`           // Factory function (not serializable)
@@ -59,7 +59,7 @@ type Registration struct {
 	Description string         `json:"description"` // Human-readable description
 	Example     map[string]any `json:"example"`     // Optional example payload data
 
-	// IndexingProfile is the ADR-054 channel-(c) floor graph-ingest stamps on
+	// IndexingProfile is the SemStreams ADR-054 channel-(c) floor graph-ingest stamps on
 	// an entity born with this type when the producer declares none. Empty
 	// means the type declares no floor: ingest applies control and meters
 	// the gap under indexing_profile_default_total{message_type}.
@@ -177,7 +177,7 @@ func (pr *Registry) Register(registration *Registration) error {
 // registered type: a zero contract MessageType is filled with the structured
 // type (never a parsed key), a different type is refused, contract names are
 // unique within the registration, a contract profile must agree with the
-// type's floor when both are set (O-13), and each contract passes shape
+// type's floor when both are set, and each contract passes shape
 // validation. Predicate declaration is not checked here; it stays at
 // mutation-client construction.
 func bindContracts(registered types.Type, floor string, contracts []contract.Contract) ([]contract.Contract, error) {

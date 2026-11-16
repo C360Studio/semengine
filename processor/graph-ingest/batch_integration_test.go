@@ -28,7 +28,7 @@ func appendThroughCanonicalHandler(t *testing.T, ctx context.Context, c *Compone
 }
 
 // batchSeed is an entity to pre-create on the stream lane, which refuses a write that carries
-// no statement (design D15), so it carries one.
+// no statement, so it carries one.
 func batchSeed(entityID string) *graph.EntityState {
 	return &graph.EntityState{ID: entityID, Triples: withTestMetadata(
 		message.Triple{Subject: entityID, Predicate: "test.batch.seeded", Object: true, Confidence: 1.0},
@@ -36,9 +36,9 @@ func batchSeed(entityID string) *graph.EntityState {
 }
 
 // TestIntegration_AddTriples_SingleSubjectIsOneCAS pins the load-bearing
-// optimisation behind SemStreams ADR-036 §Stage 2: many triples sharing one Subject
-// commit in a single CAS round-trip. Failure shows up as multiple
-// version increments (one per triple) instead of one.
+// optimisation behind SemStreams ADR-036: many triples sharing one Subject commit
+// in a single CAS round-trip. Failure shows up as multiple version increments (one
+// per triple) instead of one.
 func TestIntegration_AddTriples_SingleSubjectIsOneCAS(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -72,9 +72,8 @@ func TestIntegration_AddTriples_SingleSubjectIsOneCAS(t *testing.T) {
 	assert.Equal(t, graph.MutationApplied, response.Results[0].Outcome)
 
 	// Single CAS → the bucket advances by exactly one write (not 5 — one per
-	// triple). The pin counted the entity's Version; design D15 removes it, and the
-	// KV revision (the bucket's sequence) is the fence, so the claim is now that
-	// exactly one write landed in the bucket after pre-create.
+	// triple). The KV revision (the bucket's sequence) is the fence, so exactly
+	// one write landed in the bucket after pre-create.
 	entry, err := c.entityBucket.Get(ctx, entityID)
 	require.NoError(t, err)
 
@@ -138,9 +137,9 @@ func TestIntegration_AddTriples_MultiSubjectGroupsByEntity(t *testing.T) {
 	require.NoError(t, json.Unmarshal(entryB.Value, &entityB))
 	assert.Equal(t, len(preEntityB.Triples)+2, len(entityB.Triples))
 
-	// One batched CAS per entity (design D15: the KV revision replaces the pin's
-	// per-entity Version). The revision is the bucket's sequence, so exactly two
-	// writes after both pre-creates means the two revisions are the next two.
+	// One batched CAS per entity. The revision is the bucket's sequence, so
+	// exactly two writes after both pre-creates means the two revisions are the
+	// next two.
 	base := max(preA.Revision, preB.Revision)
 	assert.ElementsMatch(t, []uint64{base + 1, base + 2}, []uint64{entryA.Revision, entryB.Revision},
 		"one CAS per entity: the bucket advanced by exactly two writes, one on each key")
@@ -275,7 +274,8 @@ func TestIntegration_HandleTripleAddBatch_InvalidJSON(t *testing.T) {
 	defer owner.finish(ctx, t)
 
 	respBytes, err := c.handleCanonicalAppend(ctx, []byte("not json"))
-	// SemStreams ADR-060: a malformed envelope is a typed invalid_request reject (no body).
+	// ADR-060: a malformed envelope is a typed invalid_request reject (no
+	// body).
 	assert.Nil(t, respBytes)
 	var classified *errs.ClassifiedError
 	require.ErrorAs(t, err, &classified)

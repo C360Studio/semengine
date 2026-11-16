@@ -27,10 +27,10 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The follower's tests run against the package's shared NATS server on the real clock. Design D11
-// placed the two heartbeat tests in a synctest bubble; a bubble's clock does not advance while a
-// goroutine waits on a network read, and nats.go's read loop always does, so they run here instead
-// (notes/3.2.md).
+// The follower's tests run against the package's shared NATS server on the real clock, the
+// heartbeat tests included: a synctest bubble's clock does not advance while a goroutine waits on a
+// network read (testing/synctest's doc: network I/O is not durably blocking), and nats.go's read
+// loop always does.
 
 // shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
 var shared natsfixture.Shared
@@ -50,7 +50,7 @@ func run(m *testing.M) int {
 
 // waitBound is the real-clock failure bound of every wait on the server. The longest wait is the
 // lost feed after a delete: the watch closes within two of nats.go's activity checks, 20 s
-// (measured 18.00 s, PR #414 comment 6426443564), so the bound leaves room under load.
+// (measured 18.00 s at nats.go v1.54.0; not promised), so the bound leaves room under load.
 const waitBound = 60 * time.Second
 
 func fixtureClient(t *testing.T) *natsclient.Client {
@@ -244,7 +244,7 @@ func TestFollowerOpenRefusesAbsentBucket(t *testing.T) {
 // returns nil, no goroutine is left in a Follower method or in nats.go's watch delivery, and the
 // watch's consumer is gone from ENTITY_STATES's stream. Deliver parks on the first of more stored
 // entities than the watch's buffer holds, so the native delivery is blocked sending when Run's
-// context ends: nats.go v1.55.0's Stop only unsubscribes, and Run must drain it (#418).
+// context ends: nats.go v1.55.0's Stop only unsubscribes, and Run must drain it.
 func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
@@ -316,7 +316,7 @@ func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 
 // TestFollowerConcurrentQueryReady: while the initial build is incomplete, concurrent QueryReady
 // calls and the heartbeat each read the stream status, and each call refuses with index_not_ready.
-// Under -race this is the regression for #417: the reads share one status handle.
+// Under -race this guards the status handle's stream-info cache: the reads share one handle.
 func TestFollowerConcurrentQueryReady(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
@@ -503,8 +503,8 @@ func TestFollowerLatchesResetOnUnreadableSnapshotValue(t *testing.T) {
 
 // TestFollowerDeclaresLostFeed: the two real triggers an operator causes. Deleting ENTITY_STATES
 // closes the watch; deleting and creating it again leaves the watch open on a stream it no longer
-// reads (PR #414 comment 6426443564). Each is declared: Stuck names it, the envelope reads
-// degraded, QueryReady answers index_not_ready, and the heartbeat goes on.
+// reads. Each is declared: Stuck names it, the envelope reads degraded, QueryReady answers
+// index_not_ready, and the heartbeat goes on.
 func TestFollowerDeclaresLostFeed(t *testing.T) {
 	t.Run("deleted", func(t *testing.T) { lostFeedCase(t, false) })
 	t.Run("deleted and recreated", func(t *testing.T) { lostFeedCase(t, true) })
@@ -561,11 +561,10 @@ func followerStacks() string {
 
 // TestBuildCompletingCallAnswersPastUnwithheldFailure: a failure Withhold leaves out, held before
 // the first build (a Worker failure seeded at Start), does not refuse the call whose envelope
-// latches the build complete. Before it, the gate reads the envelope, which reads Failed and
-// reads degraded; once that same envelope has latched the build, the call answers as every later
-// one does (stop-2 review, item 4). The follower is not run, so no heartbeat latches the build
-// first: the snapshot is marked delivered over an empty bucket, and this QueryReady's envelope is
-// the one that latches it.
+// latches the build complete. Before it, the gate reads the envelope, which reads Failed and reads
+// degraded; once that same envelope has latched the build, the call answers as every later one
+// does. The follower is not run, so no heartbeat latches the build first: the snapshot is marked
+// delivered over an empty bucket, and this QueryReady's envelope is the one that latches it.
 func TestBuildCompletingCallAnswersPastUnwithheldFailure(t *testing.T) {
 	client := fixtureClient(t)
 	entityStates(t, client)

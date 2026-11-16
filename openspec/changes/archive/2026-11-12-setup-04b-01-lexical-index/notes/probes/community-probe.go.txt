@@ -1,0 +1,289 @@
+package clustering
+
+// Throwaway review experiment. Not for merge.
+
+import (
+	"cmp"
+	"fmt"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/message"
+)
+
+type rsection struct{ path, heading, body string }
+
+func rload(t *testing.T, root string) []rsection {
+	var out []rsection
+	seen := map[string]bool{}
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "node_modules" || n == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		var heading string
+		var body strings.Builder
+		flush := func() {
+			b := strings.TrimSpace(body.String())
+			body.Reset()
+			if heading == "" || len(strings.Fields(b)) < 30 || seen[b] {
+				return
+			}
+			if len(b) > 4000 {
+				b = b[:4000]
+			}
+			seen[b] = true
+			rel, _ := filepath.Rel(root, p)
+			out = append(out, rsection{rel, heading, b})
+		}
+		fence := false
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				fence = !fence
+			}
+			if !fence && strings.HasPrefix(line, "#") {
+				if h := strings.TrimLeft(line, "#"); strings.HasPrefix(h, " ") {
+					flush()
+					heading = strings.TrimSpace(h)
+					continue
+				}
+			}
+			body.WriteString(line + "\n")
+		}
+		flush()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+var nonID = regexp.MustCompile(`[^a-z0-9]+`)
+
+func part(s string) string {
+	s = strings.Trim(nonID.ReplaceAllString(strings.ToLower(s), "-"), "-")
+	if s == "" {
+		return "x"
+	}
+	return s
+}
+
+// The rules below are copied from processor/graph-query (textsearch.go, localsearch.go).
+func rterms(query string) []string {
+	var terms []string
+	for term := range strings.FieldsSeq(strings.ToLower(query)) {
+		if !slices.Contains(terms, term) {
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
+func rgroupScore(record *Community, terms []string) float64 {
+	summary := strings.ToLower(record.StatisticalSummary)
+	score := 0.0
+	for _, term := range terms {
+		if strings.Contains(summary, term) {
+			score += 2.0
+		}
+		for _, keyword := range record.Keywords {
+			keyword = strings.ToLower(keyword)
+			if strings.Contains(keyword, term) || strings.Contains(term, keyword) {
+				score += 1.5
+			}
+		}
+	}
+	return score
+}
+
+func rentityScore(searchable string, terms []string) float64 {
+	total := 0.0
+	for _, term := range terms {
+		switch {
+		case term == "section":
+			total += 1.0
+		case strings.Contains(searchable, term):
+			total += 0.5
+		}
+	}
+	return total / float64(len(terms))
+}
+
+func TestReviewCommunities(t *testing.T) {
+	secs := rload(t, "../..")
+	rng := rand.New(rand.NewSource(1))
+	rng.Shuffle(len(secs), func(i, j int) { secs[i], secs[j] = secs[j], secs[i] })
+	if len(secs) > 8000 {
+		secs = secs[:8000]
+	}
+	type grp struct {
+		members      []int
+		types, words map[string]int
+	}
+	groups := map[string]*grp{}
+	ids := make([]string, len(secs))
+	groupOf := make([]string, len(secs))
+	searchable := make([]string, len(secs))
+	headingCount := map[string]int{}
+	for i, s := range secs {
+		dirs := strings.Split(filepath.Dir(s.path), string(filepath.Separator))
+		system, domain := "root", "top"
+		if dirs[0] != "." {
+			system = part(dirs[0])
+			if len(dirs) > 1 {
+				domain = part(dirs[1])
+			}
+		}
+		id := fmt.Sprintf("c360.semengine.%s.%s.section.s%05d", system, domain, i)
+		state := &graph.EntityState{ID: id, Triples: []message.Triple{{Subject: id, Predicate: "doc.section.content", Object: s.body}}}
+		c, err := newContribution(id, state)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		g := groups[c.groups[0]]
+		if g == nil {
+			g = &grp{types: map[string]int{}, words: map[string]int{}}
+			groups[c.groups[0]] = g
+		}
+		g.members = append(g.members, i)
+		g.types[c.typ]++
+		for _, w := range c.words {
+			g.words[w]++
+		}
+		ids[i], groupOf[i] = id, c.groups[0]
+		searchable[i] = "doc.section.content " + strings.ToLower(s.body) + " "
+		headingCount[strings.ToLower(s.heading)]++
+	}
+	records := map[string]*Community{}
+	var keys []string
+	keywordGroups := map[string]int{}
+	sizes := []int{}
+	for id, g := range groups {
+		sort.Slice(g.members, func(a, b int) bool { return ids[g.members[a]] < ids[g.members[b]] })
+		records[id] = newCommunity(0, id, len(g.members), 1, g.types, g.words, nil)
+		keys = append(keys, id)
+		sizes = append(sizes, len(g.members))
+		for _, k := range records[id].Keywords {
+			keywordGroups[k]++
+		}
+	}
+	sort.Strings(keys)
+	sort.Ints(sizes)
+	shared, total := 0, 0
+	for _, id := range keys {
+		for _, k := range records[id].Keywords {
+			total++
+			if keywordGroups[k]*2 >= len(keys) {
+				shared++
+			}
+		}
+	}
+	type kc struct {
+		k string
+		n int
+	}
+	var common []kc
+	for k, n := range keywordGroups {
+		common = append(common, kc{k, n})
+	}
+	slices.SortFunc(common, func(a, b kc) int { return cmp.Or(cmp.Compare(b.n, a.n), cmp.Compare(a.k, b.k)) })
+	var top []string
+	for _, c := range common[:min(12, len(common))] {
+		top = append(top, fmt.Sprintf("%s(%d)", c.k, c.n))
+	}
+	t.Logf("%d sections in %d level-0 groups; sizes median %d, largest %d", len(secs), len(keys), sizes[len(sizes)/2], sizes[len(sizes)-1])
+	t.Logf("%d distinct keywords across all groups; %d of %d keyword slots hold a word that at least half the groups also list", len(keywordGroups), shared, total)
+	t.Logf("most repeated keywords (groups listing it, of %d): %s", len(keys), strings.Join(top, " "))
+	for _, id := range keys[:min(4, len(keys))] {
+		t.Logf("  %s: %s", id, records[id].StatisticalSummary)
+	}
+
+	run := func(name string, wrap func(string) string) {
+		n, noGroup, groupHit, r1, r10 := 0, 0, 0, 0, 0
+		mrr := 0.0
+		for i, s := range secs {
+			if headingCount[strings.ToLower(s.heading)] != 1 || len(strings.Fields(s.heading)) < 3 || n >= 500 {
+				continue
+			}
+			terms := rterms(wrap(s.heading))
+			if len(terms) > 16 {
+				continue
+			}
+			n++
+			type sg struct {
+				key   string
+				score float64
+			}
+			var matched []sg
+			for _, k := range keys {
+				if sc := rgroupScore(records[k], terms); sc > 0 {
+					matched = append(matched, sg{k, sc})
+				}
+			}
+			slices.SortFunc(matched, func(a, b sg) int { return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.key, b.key)) })
+			matched = matched[:min(5, len(matched))]
+			if len(matched) == 0 {
+				noGroup++
+				continue
+			}
+			type hit struct {
+				id    string
+				score float64
+			}
+			var hits []hit
+			inGroup := false
+			for _, m := range matched {
+				if m.key == groupOf[i] {
+					inGroup = true
+				}
+				members := groups[m.key].members
+				for _, d := range members[:min(1000, len(members))] {
+					if sc := rentityScore(searchable[d], terms); sc >= 0.3 {
+						hits = append(hits, hit{ids[d], sc})
+					}
+				}
+			}
+			if inGroup {
+				groupHit++
+			}
+			slices.SortFunc(hits, func(a, b hit) int { return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.id, b.id)) })
+			for rank, h := range hits {
+				if h.id == ids[i] {
+					mrr += 1 / float64(rank+1)
+					if rank == 0 {
+						r1++
+					}
+					if rank < 10 {
+						r10++
+					}
+					break
+				}
+			}
+		}
+		f := func(x int) float64 { return 100 * float64(x) / float64(n) }
+		t.Logf("%-28s %d queries: no group matched %4.1f%%; answer's group among those read %4.1f%%; R@1 %4.1f%% R@10 %4.1f%% MRR %.3f",
+			name, n, f(noGroup), f(groupHit), f(r1), f(r10), mrr/float64(n))
+	}
+	run("global text, keyword phrasing", func(h string) string { return h })
+	run("global text, question phrasing", func(h string) string { return "what is the " + h + "?" })
+}

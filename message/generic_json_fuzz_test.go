@@ -16,9 +16,9 @@ import (
 )
 
 // shapeGen builds a value for GenericJSONPayload.Data from fuzz bytes. Each node is chosen by one
-// byte: every ruled kind (#9 comment 5972117486) is a choice, nested map[string]any and []any to a
-// depth of four, strings and keys of raw bytes (so invalid UTF-8 arises), floats from raw bits (so
-// NaN and the infinities arise), and three kinds the ruling refuses. The generator records what
+// byte: every accepted kind is a choice, nested map[string]any and []any to a depth of four,
+// strings and keys of raw bytes (so invalid UTF-8 arises), floats from raw bits (so NaN and the
+// infinities arise), and three kinds Validate refuses. The generator records what
 // it built, so the oracle reads the facts from construction, never from the message package.
 type shapeGen struct {
 	in      []byte
@@ -199,9 +199,9 @@ func sameShape(v, decoded any) bool {
 // the literal: a json.Decoder with UseNumber reads each number's text, which must be the exact
 // decimal of a generated integer, parse to the same float64 or float32, or equal a generated
 // json.Number. The decode through NewDecoder must then hold the generated tree by the same
-// comparison against the generated values (Codex F30): every number keeps its exact value.
+// comparison against the generated values: every number keeps its exact value.
 // Validate refuses with an invalid-data error exactly when the generator built a refused kind or
-// invalid UTF-8, and returns nil for a NaN, an infinity and every other value (D3).
+// invalid UTF-8, and returns nil for a NaN, an infinity and every other value.
 //
 // Seeds reach each kind (one seed per kind byte), invalid UTF-8 in a key and in a value at
 // depth, each refused kind at depth, a NaN, and an empty map and list.
@@ -225,8 +225,8 @@ func FuzzGenericJSONShapes(f *testing.F) {
 		g := &shapeGen{in: in}
 		top := map[string]any{"v": g.value(0)}
 		payload := message.NewGenericJSON(top)
-		// Validate runs the shape check (D3): it refuses exactly what the generator marked refused,
-		// and passes a NaN or an infinity, which only encoding refuses (owner question 5).
+		// Validate runs the shape check: it refuses exactly what the generator marked refused, and
+		// passes a NaN or an infinity, a Go number by shape, which only encoding refuses.
 		if verr := payload.Validate(); g.foreign || g.badUTF8 {
 			if !errs.IsInvalid(verr) {
 				t.Fatalf("Data %#v: Validate %v; want an invalid-data error", top, verr)

@@ -38,22 +38,21 @@ type JetStreamPort struct {
 	// half the shortest positive BackOff interval, or half the effective AckWait
 	// (an explicit positive value or the 30s server default) when BackOff is
 	// empty, so one missed heartbeat does not trigger redelivery. Honored by
-	// heartbeat-enabled typed consumers and by the explicitly held legacy
-	// AgentRun binding; pure-ack consumers ignore it. New integrations use
-	// natsclient.ConsumeDeliveryWithHeartbeat.
+	// heartbeat-enabled typed consumers; pure-ack consumers ignore it. New
+	// integrations use natsclient.ConsumeDeliveryWithHeartbeat.
 	HeartbeatInterval string `json:"heartbeat_interval,omitempty"`
 	// MaxAckPending caps the number of delivered-but-unacked messages the
 	// server keeps in flight for this consumer — the consumer-side backpressure
 	// lever. Empty/0 leaves policy to NATS, which may inherit a stream limit,
 	// apply its default, or cap it under server/account policy; -1 is unlimited
-	// outstanding acknowledgements. gh#480: there was previously no
-	// config path to this at all, so operators could not tune ingest backpressure.
+	// outstanding acknowledgements. It is the operator's way to tune ingest
+	// backpressure.
 	MaxAckPending int `json:"max_ack_pending,omitempty"`
 
 	// Import declares this INPUT port an import lane: the operator states that
 	// entities arriving here were minted by a PEER deployment, so graph-ingest
 	// accepts a foreign org.platform on it and refuses a subject claiming this
-	// deployment's own pair (ADR-102 d5). Absent or false is the ordinary lane,
+	// deployment's own pair (ADR-102 decision 5). Absent or false is the ordinary lane,
 	// where the deployment's own authority is required — the fail-closed
 	// default, so an operator who declares nothing imports nothing. It is a
 	// statement of trust, not a value the operator computes: the framework
@@ -100,7 +99,7 @@ type ConsumerConfig struct {
 	MaxDeliver        int
 	AckWait           time.Duration
 	HeartbeatInterval time.Duration
-	MaxAckPending     int // 0 = inherited/default/capped server policy; -1 = unlimited outstanding acks (gh#480)
+	MaxAckPending     int // 0 = inherited/default/capped server policy; -1 = unlimited outstanding acks
 }
 
 // GetConsumerConfig validates a JetStream port through the canonical facts

@@ -297,9 +297,9 @@ func TestStreamProvisioner_RefusalIsByPrefixNotCatalogMembership(t *testing.T) {
 	})
 }
 
-// TestConfigValidate_RefusesBackingStreamDeclaration closes the `--validate`
-// hole. cmd/semstreams runs Config.Validate, prints "✓ Configuration is valid"
-// and exits BEFORE streams are ensured — so a config carrying a backing-stream
+// TestConfigValidate_RefusesBackingStreamDeclaration closes the validation
+// hole. A validation run calls Config.Validate and reports the configuration
+// valid before any stream is ensured — so a config carrying a backing-stream
 // declaration would be greenlit by the very tool an operator uses to check it,
 // then hard-fail at boot. The guard is pure and I/O-free so it can run here.
 func TestConfigValidate_RefusesBackingStreamDeclaration(t *testing.T) {

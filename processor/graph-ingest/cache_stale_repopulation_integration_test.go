@@ -46,22 +46,21 @@ func (b *pausingGetBucket) Get(ctx context.Context, key string) (jetstream.KeyVa
 // lock for the read-through-cache stale-repopulation race in the entity query
 // cache (30s TTL).
 //
-// The bug: the cache-miss read path did KV Get -> unmarshal -> Set with no guard
-// against a concurrent invalidate landing between the Get and the Set. A reader
-// that loaded rev1 from KV, then was pre-empted while a concurrent write
-// committed rev2 and invalidated the (already-absent) cache entry, would Set rev1
+// The race: a cache-miss read path that does KV Get -> unmarshal -> Set with no
+// guard against a concurrent invalidate landing between the Get and the Set. A
+// reader that loads rev1 from KV, then is pre-empted while a concurrent write
+// commits rev2 and invalidates the (already-absent) cache entry, would Set rev1
 // back into the cache AFTER the invalidate — resurrecting pre-write state for the
-// full TTL and violating read-after-write coherence (the gated-DAG dispatch stall
-// was one victim).
+// full TTL and violating read-after-write coherence.
 //
-// The fix establishes a per-key invalidation-generation guard: the repopulating
-// Set is dropped if the key was invalidated during the read window. This test
-// drives that window deterministically with explicit channels (no sleeps): the
-// bucket under ENTITY_STATES pauses the reader's KV Get once it has read rev1,
-// before the reader's Set; the test commits rev2 (marker) while it is paused,
-// then releases the reader. Without the guard
-// the reader's stale Set wins and the final read observes rev1 (no marker);
-// with the guard the Set is skipped and the final read observes rev2.
+// A per-key invalidation-generation guard closes it: the repopulating Set is
+// dropped if the key was invalidated during the read window. This test drives
+// that window deterministically with explicit channels (no sleeps): the bucket
+// under ENTITY_STATES pauses the reader's KV Get once it has read rev1, before
+// the reader's Set; the test commits rev2 (marker) while it is paused, then
+// releases the reader. Without the guard the reader's stale Set wins and the
+// final read observes rev1 (no marker); with the guard the Set is skipped and the
+// final read observes rev2.
 func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -103,8 +102,8 @@ func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 	// once, then give the owned reader a finite join budget.
 	defer func() {
 		release()
-		// The pin's 5s join budgets are 10s here: docs/testing.md asks a failure bound
-		// in a test against a broker for the test's context or at least ten seconds.
+		// The join budgets are 10s: docs/testing.md asks a failure bound in a test
+		// against a broker for the test's context or at least ten seconds.
 		joinCtx, cancelJoin := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancelJoin()
 		select {

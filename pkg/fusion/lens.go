@@ -9,16 +9,14 @@ import (
 )
 
 // The Lens SPI is the ONLY domain-specific surface of the deterministic fusion
-// engine (ADR-062 increment 3). The engine owns resolve / expand / rank / budget
-// / envelope; a product-supplied Lens declares which edges to walk, how to read
+// engine (ADR-062). The engine owns resolve / expand / rank / budget /
+// envelope; a product-supplied Lens declares which edges to walk, how to read
 // an entity's human-facing fields, and how to hydrate its verbatim body. One
 // engine, many lenses (code, docs, …) — the proof that fusion is a general
 // primitive, not code in disguise.
 //
-// Lifted from semsource's validated `source/fusion` Lens (rule-of-three:
-// semsource code + docs lenses, plus our research-graph retrieval). The one
-// deliberate change from semsource's shape is Hydrate's return type — see the
-// hydration contract below.
+// The shape is drawn from semsource's code and docs lenses. Hydrate returns a
+// storage handle, not bytes — see the hydration contract below.
 
 // Entity is the minimal projection a Lens reads: the entity's ID and its current
 // triples. Kept deliberately small (no graph.EntityState, no NATS) so pkg/fusion
@@ -72,14 +70,14 @@ func objectString(o any) string {
 
 // ResolveMode picks how the engine turns a raw query string into seed entities.
 // The Lens classifies the query; the engine maps the mode to a resolve strategy
-// (symbol → graph.query.byName exact lookup, prefix → graph.query.prefix, nl →
-// semantic search). Provenance follows from the mode: symbol/prefix are
-// deterministic, nl is embedding.
+// (symbol → graph.query.byName exact lookup, prefix → graph.query.prefixIDs, nl →
+// the word index's search). Provenance follows from the mode: symbol/prefix are
+// deterministic, nl is lexical.
 type ResolveMode string
 
 const (
-	// ResolveModeNL routes the query to semantic (embedding) search. Seeds are
-	// embedding-ranked, so the response provenance is "embedding", not
+	// ResolveModeNL routes the query to the word index's search. Seeds are
+	// ranked by a word match, so the response provenance is "lexical", not
 	// "deterministic".
 	ResolveModeNL ResolveMode = "nl"
 
@@ -88,7 +86,14 @@ const (
 	ResolveModeSymbol ResolveMode = "symbol"
 
 	// ResolveModePrefix routes to deterministic prefix lookup
-	// (graph.query.prefix) — e.g. a path or namespace stem.
+	// (graph.query.prefixIDs). The query must be an entity-ID prefix: whole
+	// dot-separated ID segments, such as "acme.ops.robotics", or empty for
+	// every entity. A file path is not one, because a path is a triple on an
+	// entity and no part of its ID. A lens that returns this mode for a path
+	// gets an invalid error when the path holds a character an ID segment
+	// cannot ("/"). Any other path is read as an ID prefix ("comp.go" lists
+	// the entities under "comp.go."), which finds nothing or entities that
+	// have nothing to do with the file.
 	ResolveModePrefix ResolveMode = "prefix"
 )
 
@@ -164,11 +169,11 @@ type Lens interface {
 	// Hydrate returns a HANDLE to the entity's verbatim body — never the bytes
 	// themselves and never a filesystem read. The engine resolves the handle's
 	// StorageInstance to a registered storage.Store and reads the body with
-	// Get(Key) (ADR-062 hydration contract, increment 4). Returning a handle
-	// (not a string) is what makes fusion deployment-independent: a remote
-	// caller of a standalone fusion service (semsource ADR-0006) cannot read the
-	// service's worktree, so bodies must be addressable through a backend-
-	// agnostic store. Return (nil, nil) when the entity has no verbatim body.
+	// Get(Key) (ADR-062 hydration contract). Returning a handle (not a string)
+	// is what makes fusion deployment-independent: a remote caller of a
+	// standalone fusion service (semsource ADR-0006) cannot read the service's
+	// worktree, so bodies must be addressable through a backend-agnostic store.
+	// Return (nil, nil) when the entity has no verbatim body.
 	//
 	// Error policy (engine contract): hydration is best-effort. A non-nil error
 	// DEGRADES the response — the engine omits that node's body and continues —
@@ -179,9 +184,10 @@ type Lens interface {
 }
 
 // ProvenanceForMode maps a ResolveMode to the honesty-envelope provenance tier:
-// symbol/prefix seeds are deterministic exact lookups; nl seeds come from
-// embedding search. (The research_graph LLM sibling is the only "llm" source —
-// the deterministic engine never sets it.) Exported so the engine's assemble
+// symbol/prefix seeds are deterministic exact lookups; nl seeds come from the
+// word index, a ranked word match that is neither an exact lookup nor an
+// embedding search, so it is lexical. (The research_graph LLM sibling is the
+// only "llm" source — the deterministic engine never sets it.) Exported so the engine's assemble
 // step and any lens-driven caller stamp provenance consistently.
 //
 // Deliberate divergence from semsource's provenanceFor (source/fusion/engine.go),
@@ -189,10 +195,9 @@ type Lens interface {
 // ResolveMode is a CLOSED int enum so "unknown" is unreachable. Here ResolveMode
 // is an OPEN string type, so the catch-all must be the conservative tier —
 // "embedding" — because provenance is a claim about HOW an answer was produced,
-// and an unclassified seed has not earned the stronger claim. (The reasoning once
-// rested on "only deterministic permits an authoritative not-found"; ADR-084
-// retired that license entirely — no provenance tier licenses an absence claim —
-// but the conservative default stands on its own.) CAUTION: this means any NEW deterministic mode added to the enum MUST be
+// and an unclassified seed has not earned the stronger claim. No provenance tier
+// licenses an absence claim (ADR-084); the conservative default stands on its
+// own. CAUTION: this means any NEW deterministic mode added to the enum MUST be
 // added to the deterministic case below, or it silently degrades to embedding
 // (no compile error — open string enum).
 func ProvenanceForMode(mode ResolveMode) Provenance {
@@ -200,7 +205,7 @@ func ProvenanceForMode(mode ResolveMode) Provenance {
 	case ResolveModeSymbol, ResolveModePrefix:
 		return ProvenanceDeterministic
 	case ResolveModeNL:
-		return ProvenanceEmbedding
+		return ProvenanceLexical
 	default:
 		return ProvenanceEmbedding
 	}

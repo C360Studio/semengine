@@ -9,10 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRequestsRefuseAfterClose (moved from metric/admission_test.go with the counter,
-// setup-04a-03-boot-service-manager design D2): a request arriving after admission
-// closed gets 503 with the caller's refusal text and its handler never runs;
-// admission closed with nothing running is observed as complete.
+// TestRequestsRefuseAfterClose: a request arriving after admission closed gets
+// 503 with the caller's refusal text and its handler never runs; admission
+// closed with nothing running is observed as complete.
 func TestRequestsRefuseAfterClose(t *testing.T) {
 	var requests Requests
 	ran := false

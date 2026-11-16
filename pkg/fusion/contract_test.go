@@ -10,7 +10,7 @@ import (
 
 // TestContractVersionIsTwo: every response, answered or deferred, carries
 // contract_version "2" and no index key, the wire change that removed the
-// readiness envelope (ADR-109 D1, design D1).
+// readiness envelope (ADR-109).
 func TestContractVersionIsTwo(t *testing.T) {
 	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
 	cases := map[string]*fakeGraph{
@@ -47,8 +47,7 @@ func TestContractVersionIsTwo(t *testing.T) {
 }
 
 // TestFuse_AnsweredResponseIsNotMarkedDeferred: the Deferred flag must not become
-// decorative by being set everywhere. Ported from the pin's
-// engine_health_gate_test.go, whose other tests exercised the removed status gate.
+// decorative by being set everywhere.
 func TestFuse_AnsweredResponseIsNotMarkedDeferred(t *testing.T) {
 	ent := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
 	g := &fakeGraph{

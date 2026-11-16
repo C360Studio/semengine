@@ -28,7 +28,7 @@ type request struct {
 }
 
 // response is a GraphQL response body. Data is nil, and absent from the body, only when the request was refused
-// before execution; an executed request answers data even when it is empty (all root fields skipped, #591).
+// before execution; an executed request answers data even when it is empty (all root fields skipped).
 type response struct {
 	Data   map[string]any `json:"data,omitzero"`
 	Errors gqlerror.List  `json:"errors,omitempty"`
@@ -76,7 +76,8 @@ func execute(ctx context.Context, resolvers map[string]resolver, req request) (r
 	return resp, false
 }
 
-// prepare parses and validates the request and coerces its variables, refusing what D1 and D6 refuse.
+// prepare parses and validates the request against the schema and coerces its variables, refusing an
+// unnamed pick among several operations, any operation but a query, introspection and a second root field.
 func prepare(req request) (*ast.OperationDefinition, map[string]any, gqlerror.List) {
 	doc, list := gqlparser.LoadQueryWithRules(schema, req.Query, nil)
 	if len(list) > 0 {

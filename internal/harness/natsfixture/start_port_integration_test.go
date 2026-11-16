@@ -21,20 +21,19 @@ const heldPorts = 4
 
 // Left to pick, Docker Desktop on macOS publishes a container's port on the next host port of a
 // counter of its own, which does not see the Mac's listeners; when a Mac process listens on all
-// addresses on that port, the container runs with an empty port list (#209; the probe on PR #210,
-// comment 6151736554). This test starts one fixture, holds the next wildcard ports the operating
-// system hands out via ":0" (never binding p+1..p+4 by number, which can steal a port the kernel
-// handed to a concurrent run while the first container was starting, #254), and then starts a
-// second fixture. Each fixture's HostConfig.PortBindings must carry the explicit host port of its
-// URL rather than Docker's "0", and the second Start must return nil with JetStream answering on
-// its URL().
+// addresses on that port, the container runs with an empty port list (measured on one Mac, not
+// promised). This test starts one fixture, holds the next wildcard ports the operating system hands
+// out via ":0" (never binding p+1..p+4 by number, which can steal a port the kernel handed to a
+// concurrent run while the first container was starting), and then starts a second fixture. Each
+// fixture's HostConfig.PortBindings must carry the explicit host port of its URL rather than
+// Docker's "0", and the second Start must return nil with JetStream answering on its URL().
 func TestStartPastHeldPorts(t *testing.T) {
 	first := startFixture(t)
 	assertExplicitPortBinding(t, first)
 
 	var heldAddrs []string
 	for range heldPorts {
-		// Every address: plays the #209 Mac program, which holds ports on all addresses.
+		// Every address: plays the Mac program that holds ports on all addresses.
 		held, err := net.Listen("tcp", ":0")
 		if err != nil {
 			t.Fatalf("listen :0: %v", err)
@@ -48,14 +47,14 @@ func TestStartPastHeldPorts(t *testing.T) {
 	t.Logf("first fixture at %s; held %v; second fixture at %s", first.URL(), heldAddrs, second.URL())
 }
 
-// Requirement: nats-fixture/Phased start in one container; Scenario: Host port taken before Docker binds it
-// When another process takes the host port freePort just released before Docker binds it (#345),
-// Docker fails ContainerStart with "address already in use". With a live caller context, Start
-// removes the first unstarted container, takes a fresh host port, and starts a second container;
-// when both attempts hit a held port, or when the caller context is cancelled, Start fails in the
-// start phase and leaves no container behind.
+// Requirement: nats-fixture/Start retries a taken host port once; Scenario: Host port taken before Docker binds it
+// When another process takes the host port freePort just released before Docker binds it, Docker
+// fails ContainerStart with "address already in use". With a live caller context, Start removes the
+// first unstarted container, takes a fresh host port, and starts a second container; when both
+// attempts hit a held port, or when the caller context is cancelled, Start fails in the start phase
+// and leaves no container behind.
 func TestStartRetriesOnceOnPortInUse(t *testing.T) {
-	// Every address: held on all addresses so Docker's bind of this port fails (#345).
+	// Every address: held on all addresses so Docker's bind of this port fails.
 	held1, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("listen :0: %v", err)
@@ -63,7 +62,7 @@ func TestStartRetriesOnceOnPortInUse(t *testing.T) {
 	t.Cleanup(func() { _ = held1.Close() })
 	heldPort1 := strconv.Itoa(held1.Addr().(*net.TCPAddr).Port)
 
-	// Every address: held on all addresses so Docker's bind of this port fails (#345).
+	// Every address: held on all addresses so Docker's bind of this port fails.
 	held2, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("listen :0: %v", err)

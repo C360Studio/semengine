@@ -13,10 +13,8 @@ import (
 	"github.com/c360studio/semengine/health"
 )
 
-// The pin's mockService.RegisterMetrics is not carried: Service has no such method here and
-// metric has no MetricsRegistrar. The pin's StopAllCleanup and ReverseOrderShutdown started each
-// service by hand and called StopAll without StartAll, which stops no service here (design D2),
-// so they compose through StartAll, which also creates component-manager from its constructor.
+// StopAll without StartAll stops no service, so StopAllCleanup and ReverseOrderShutdown compose
+// through StartAll, which also creates component-manager from its constructor.
 
 // mockService implements the Service interface for testing
 type mockService struct {
@@ -75,8 +73,8 @@ func (m *mockService) Status() Status {
 	return m.status()
 }
 
-// status is Status for a caller holding mu. The pin's GetStatus called Status while holding the
-// read lock, a recursive RLock that deadlocks when a writer waits between the two.
+// status is Status for a caller holding mu. Calling Status while holding the read lock would be a
+// recursive RLock, which deadlocks when a writer waits between the two.
 func (m *mockService) status() Status {
 	if m.started {
 		return StatusRunning
@@ -146,8 +144,7 @@ func (m *mockService) IsStopped() bool {
 }
 
 // TestServiceManager_ConcurrentOperations tests concurrent registry operations. Every name
-// registered concurrently is offered afterwards; the pin counted Registry.Constructors, which is
-// dropped (design D1).
+// registered concurrently is offered afterwards.
 func TestServiceManager_ConcurrentOperations(t *testing.T) {
 	registry := NewServiceRegistry()
 
@@ -212,8 +209,7 @@ func TestServiceManager_ServiceLifecycle(t *testing.T) {
 	assert.False(t, service.IsHealthy(), "Service should not be healthy after stop")
 }
 
-// TestServiceManager_ErrorHandling tests error scenarios. The pin's GetServiceStatus check is not
-// carried: that method is dropped (design D1).
+// TestServiceManager_ErrorHandling tests error scenarios.
 func TestServiceManager_ErrorHandling(t *testing.T) {
 	registry := NewServiceRegistry()
 	manager := NewServiceManager(registry)
@@ -265,7 +261,7 @@ func createMockServices(t *testing.T, registry *Registry, manager *Manager, name
 }
 
 // TestServiceManager_StopAllCleanup: StopAll stops every service StartAll started, and the
-// manager then holds none (pin registry_race_test.go:204, which read the dropped GetAllServices).
+// manager then holds none.
 func TestServiceManager_StopAllCleanup(t *testing.T) {
 	registry := NewServiceRegistry()
 	manager := NewServiceManager(registry)
@@ -287,8 +283,7 @@ func TestServiceManager_StopAllCleanup(t *testing.T) {
 	}
 }
 
-// TestServiceManager_ReverseOrderShutdown: StopAll stops services in reverse registration order
-// (pin :247).
+// TestServiceManager_ReverseOrderShutdown: StopAll stops services in reverse registration order.
 func TestServiceManager_ReverseOrderShutdown(t *testing.T) {
 	registry := NewServiceRegistry()
 	manager := NewServiceManager(registry)
@@ -320,8 +315,7 @@ func TestServiceManager_ReverseOrderShutdown(t *testing.T) {
 }
 
 // TestServiceManager_ConcurrentStartStop: services read concurrently while StartAll runs; once it
-// returned, ending its context stops nothing, and only StopAll stops the services (design D2,
-// ADR-113; pin :289, which counted the dropped GetHealthyServices and read GetAllServices).
+// returned, ending its context stops nothing, and only StopAll stops the services (ADR-113).
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestServiceManager_ConcurrentStartStop(t *testing.T) {

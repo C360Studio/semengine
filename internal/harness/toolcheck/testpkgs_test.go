@@ -92,7 +92,7 @@ func TestTestPkgsLists(t *testing.T) {
 	for _, tc := range []struct{ list, want string }{
 		{"integration", "./b ./e\n"},
 		{"unit", "./a ./d ./e ./internal/harness/contract\n"},
-		// The repository guards run once, in the unit run, never in the repeat run (owner, PR #419).
+		// The repository guards run once, in the unit run, never in the repeat run.
 		{"repeat", "./a ./d ./e\n"},
 		{"tools", "./internal/harness/mutcheck ./internal/harness/pindiff ./internal/harness/toolcheck\n"},
 	} {

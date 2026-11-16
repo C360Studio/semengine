@@ -1,0 +1,66 @@
+# Run from the repository root: git ls-files '*.go' '*.md' | python3 -I word-shape-probe.py
+# (the Go-only joined-form rows: git ls-files '*.go' | python3 -I word-shape-probe.py)
+import base64, hashlib, os, re, sys
+
+SIB = ("ss", "x", "ch", "sh")
+
+def split(run):
+    out, cur = [], run[0]
+    for i in range(1, len(run)):
+        a, b = run[i - 1], run[i]
+        nxt = run[i + 1] if i + 1 < len(run) else ""
+        if (a.islower() and b.isupper()) or (a.isupper() and b.isupper() and nxt.islower()):
+            out.append(cur)
+            cur = b
+        else:
+            cur += b
+    out.append(cur)
+    return [p.lower() for p in out]
+
+def plural_only(w):
+    n = len(w)
+    if n > 4 and w.endswith("ies") and not w.endswith(("eies", "aies")):
+        return w[:-3] + "y"
+    if n > 3 and w.endswith("es") and not w.endswith(("aes", "ees", "oes")):
+        return w[:-1]
+    if n > 3 and w.endswith("s") and not w.endswith(("us", "ss")):
+        return w[:-1]
+    return w
+
+def with_es(w):
+    n = len(w)
+    if n > 4 and w.endswith("es") and w[:-2].endswith(SIB):
+        return w[:-2]
+    if n > 3 and w.endswith("e") and w[:-1].endswith(SIB):
+        return w[:-1]
+    return plural_only(w)
+
+def words(run, pre, post):
+    if pre and len(run.encode()) > pre:
+        return []
+    return [w for w in split(run) if not (post and len(w.encode()) > post)]
+
+texts = [open(p, encoding="utf-8", errors="replace").read() for p in sys.stdin.read().split()]
+all_runs = [r for t in texts for r in re.findall(r"[^\W_]+", t)]
+runs = set(all_runs)
+print("distinct runs", len(runs), {b: sum(len(r.encode()) > b for r in runs) for b in (32, 48, 64, 96)})
+b64 = base64.b64encode(os.urandom(3000)).decode()
+hexes = [hashlib.sha256(str(i).encode()).hexdigest() for i in range(100)]
+for name, pre, post in [("A", 32, None), ("B", None, 32), ("C", 64, 32), ("C2", 128, 32)]:
+    lost = [r for r in runs if not words(r, pre, post)]
+    junk = sum(len(words(r, pre, post)) for r in re.findall(r"[^\W_]+", b64))
+    print(name, "lost", len(lost), "hex", sum(bool(re.fullmatch("[0-9a-f]+", r)) for r in lost),
+          "base64 words", junk, "sha256 words", sum(len(words(h, pre, post)) for h in hexes))
+vocab = {w.lower() for t in texts for w in re.findall(r"[a-zA-Z]+", t)}
+for f in (plural_only, with_es):
+    ok = bad = 0
+    for w in vocab:
+        for pl in (w + "s", w + "es", w[:-1] + "ies" if w.endswith("y") else None):
+            if pl and pl in vocab and len(w) >= 3:
+                ok, bad = (ok + 1, bad) if f(w) == f(pl) else (ok, bad + 1)
+    print(f.__name__, "fold", ok, "miss", bad)
+multi = sum(len(split(r)) > 1 for r in all_runs)
+parts = sum(len(split(r)) for r in all_runs)
+print("runs", len(all_runs), "multi", multi, "parts", parts,
+      "joined distinct", len({r.lower() for r in all_runs if len(split(r)) > 1}),
+      "split distinct", len({w for r in all_runs for w in split(r)}))

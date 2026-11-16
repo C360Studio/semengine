@@ -9,14 +9,13 @@ import (
 )
 
 // TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop proves graph-ingest's side of
-// component.LifecycleComponent's read line (design D2, "No wait for readers"): Health and
-// DataFlow return while the component's own Stop is still running, and again after it
-// returned, each reporting a stopped component. Stop is held open by a consume callback
-// held on the poison warning (bindHeldInput, lifecycle_owner_test.go): the shell clears
-// running as release begins, and the cleanup then waits for that callback, which the test
-// holds. On today's tree the test passes; it is shown able to fail by mutation row M7 of
-// design D10 (the shell holding its lock across start and cleanup), under which Health
-// does not return while Stop is held.
+// component.LifecycleComponent's read line (no wait for readers): Health and DataFlow
+// return while the component's own Stop is still running, and again after it returned,
+// each reporting a stopped component. Stop is held open by a consume callback held on the
+// poison warning (bindHeldInput, lifecycle_owner_test.go): the shell clears running as
+// release begins, and the cleanup then waits for that callback, which the test holds. It
+// is shown able to fail by a mutation in which the shell holds its lock across start and
+// cleanup, under which Health does not return while Stop is held.
 func TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()

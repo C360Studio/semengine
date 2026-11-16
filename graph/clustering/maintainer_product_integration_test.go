@@ -14,9 +14,10 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// TestMaintainerAsAProduct drives the package from outside, as change 7's watch loop and a
-// product will: build the storage and a Maintainer, feed entity changes, end the
-// bootstrap, tick, and read COMMUNITY_INDEX back with no other SemEngine component.
+// TestMaintainerAsAProduct drives the package from outside, as the graph-clustering
+// component and a product do: build the storage and a Maintainer, feed entity changes,
+// end the bootstrap, tick, and read COMMUNITY_INDEX back with no other SemEngine
+// component.
 func TestMaintainerAsAProduct(t *testing.T) {
 	client := clustering.FixtureClient(t)
 	kv, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketCommunityIndex)
@@ -27,7 +28,7 @@ func TestMaintainerAsAProduct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := clustering.NewMaintainer(storage)
+	m, err := clustering.NewMaintainer(storage, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

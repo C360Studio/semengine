@@ -3,9 +3,9 @@
 //
 // encoding/json matches such a key to the field anyway, so a document holding
 // both spellings decodes whichever comes last, and a merge with defaults drops or
-// applies it depending on what the defaults hold (#325). config checks the
+// applies it depending on what the defaults hold. config checks the
 // configuration file with it, and service checks every strictly decoded service
-// payload (setup-04a-03-boot-service-manager design D5).
+// payload.
 package keycase
 
 import (

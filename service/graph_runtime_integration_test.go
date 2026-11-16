@@ -38,8 +38,8 @@ func graphRuntimeContract(t *testing.T) projection.Contract {
 
 // TestWireGraphRuntimeStripsAForeignTTL: WireGraphRuntime runs the catalog-retention backstop
 // before it builds the mutation client, so a catalog bucket left with a foreign TTL has it
-// stripped and keeps its keys (design D4; pin ADR-068 D1; the bucket set-up is
-// graph/kvcatalog's TestIntegration_EnsureCatalogRetentionClean_StripsForeignTTL).
+// stripped and keeps its keys (the bucket set-up is graph/kvcatalog's
+// TestIntegration_EnsureCatalogRetentionClean_StripsForeignTTL).
 //
 // spec: service-lifecycle / WireGraphRuntime cleans catalog retention first
 func TestWireGraphRuntimeStripsAForeignTTL(t *testing.T) {
@@ -72,7 +72,7 @@ func TestWireGraphRuntimeStripsAForeignTTL(t *testing.T) {
 }
 
 // TestWireGraphRuntimeRefusesANilContext: a nil context is refused as invalid by the backstop, and
-// no client is returned (design D4).
+// no client is returned.
 //
 // spec: service-lifecycle / WireGraphRuntime cleans catalog retention first
 func TestWireGraphRuntimeRefusesANilContext(t *testing.T) {

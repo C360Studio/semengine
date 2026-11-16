@@ -5,20 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"unicode"
-	"unicode/utf8"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/internal/dispatch"
 	"github.com/c360studio/semengine/internal/kvwatch"
+	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/storage"
@@ -45,9 +45,13 @@ const identityBodySeparator = "\n\n"
 const MaxSourceTextLenCeiling = 1_000_000
 
 // workerQueueCapacity is the Worker's keyed pool queue, split across its lanes: as many
-// accepted entries as the watch's update channel buffers, which the pin's workers read from
-// directly (256 at nats.go v1.55.0, jetstream/kv.go WatchFiltered, not promised).
+// accepted entries as the watch's update channel buffers (256 at nats.go v1.55.0,
+// jetstream/kv.go WatchFiltered, not promised).
 const workerQueueCapacity = 256
+
+// embedTimeout bounds one embedder call, so an embedder that never answers holds its lane for
+// this long only.
+const embedTimeout = 30 * time.Second
 
 // GeneratedCallback is called when an embedding has been stored. It receives the context Run
 // was given, the entity ID and the stored vector, and must return promptly once that context
@@ -138,11 +142,6 @@ type StoreResolver interface {
 // context was still live, as nats.go closes it when the bucket is deleted.
 var errWatchLost = errors.New("embedding: the EMBEDDING_INDEX watch was lost")
 
-// errContentUnresolved says no store is registered for a body's StorageInstance, as distinct
-// from a store that resolved and then failed to open or read. The first excludes only the
-// body and keeps the inline identity text; the second is a content failure.
-var errContentUnresolved = errors.New("storage instance unresolved")
-
 // Worker turns the pending records of EMBEDDING_INDEX into generated or failed ones (hop 2).
 // Run watches the bucket and processes each pending record on a keyed pool, one entity's
 // entries at a time.
@@ -217,8 +216,8 @@ func (w *Worker) WithMaxSourceTextLen(n int) *Worker {
 	return w
 }
 
-// WithEmbedderType sets the Type axis of the dedup key identity ("bm25", or a remote
-// embedder's type). The Worker folds it, with the embedder's live Model and Dimensions and the
+// WithEmbedderType sets the Type axis of the dedup key identity: the name the product
+// registered its embedder under. The Worker folds it, with the embedder's live Model and Dimensions and the
 // text cap, into the dedup key, so changing the embedder type cannot serve a vector from the
 // previous vector space.
 func (w *Worker) WithEmbedderType(t string) *Worker {
@@ -461,15 +460,10 @@ func (w *Worker) handleKVEntry(
 // each call, because a remote embedder may resolve its width from its first response
 // (Embedder.Dimensions is safe to read concurrently).
 func (w *Worker) embedderIdentity() EmbedderIdentity {
-	id := EmbedderIdentity{
-		Type:       w.embedderType,
-		MaxTextLen: w.maxSourceTextLen,
+	if w.embedder == nil {
+		return EmbedderIdentity{Type: w.embedderType, MaxTextLen: w.maxSourceTextLen}
 	}
-	if w.embedder != nil {
-		id.Model = w.embedder.Model()
-		id.Dimensions = w.embedder.Dimensions()
-	}
-	return id
+	return IdentityOf(w.embedderType, w.embedder, w.maxSourceTextLen)
 }
 
 // getOrGenerateEmbedding returns a vector from the dedup bucket or generates one.
@@ -542,10 +536,20 @@ func (w *Worker) generateShared(ctx context.Context, key, sourceText string) ([]
 	return v.([]float32), nil
 }
 
-// generateOne is the single embedder call; an empty result is errNoEmbeddingReturned.
+// generateOne is the single embedder call; an empty result is errNoEmbeddingReturned. The call
+// runs under a context derived from ctx that ends 30 seconds after it begins. When the embedder
+// fails and that context has ended by then, the error wraps the context's error,
+// context.DeadlineExceeded for the deadline, whatever the embedder's error was: an embedder may
+// answer its deadline with an error of its own that wraps no context error. An embedder that
+// ignores its context is not bounded by the deadline.
 func (w *Worker) generateOne(ctx context.Context, sourceText string) ([]float32, error) {
-	vectors, err := w.embedder.Generate(ctx, []string{sourceText})
+	callCtx, cancel := context.WithTimeout(ctx, embedTimeout)
+	defer cancel()
+	vectors, err := w.embedder.Generate(callCtx, []string{sourceText})
 	if err != nil {
+		if ctxErr := callCtx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("%w (embedder: %v)", ctxErr, err)
+		}
 		return nil, err
 	}
 	if len(vectors) == 0 {
@@ -586,9 +590,10 @@ func (w *Worker) dedupRecordUsable(entityID, contentHash string, r *DedupRecord)
 // The dedup hit and the offloaded-identity pair are counted here, after the save succeeded, so
 // they count stored vectors, not attempts.
 func (w *Worker) saveAndNotify(ctx context.Context, entityID string, record *Record, vector []float32, contentHash string, sourceRevision uint64, wasDedupHit bool) (terminal bool, outcome TerminalOutcome, reason string) {
-	dimensions := len(vector)
-	model := w.embedder.Model()
-	if err := w.storage.SaveGenerated(ctx, entityID, vector, model, dimensions, contentHash, sourceRevision); err != nil {
+	// The stored width is the vector's own, whatever the embedder reported before it resolved.
+	id := w.embedderIdentity()
+	id.Dimensions = len(vector)
+	if err := w.storage.SaveGenerated(ctx, entityID, vector, id, contentHash, sourceRevision); err != nil {
 		switch {
 		case errors.Is(err, ErrRecordGone):
 			// The entity was removed during generation: nothing to mark failed, and firing
@@ -614,7 +619,7 @@ func (w *Worker) saveAndNotify(ctx context.Context, entityID string, record *Rec
 		return markTerminal, markOutcome, markReason
 	}
 
-	w.logger.Debug("Embedding generated successfully", "entity_id", entityID, "dimensions", dimensions)
+	w.logger.Debug("Embedding generated successfully", "entity_id", entityID, "dimensions", id.Dimensions)
 
 	if wasDedupHit && w.metrics != nil {
 		w.metrics.IncDedupHits()
@@ -666,7 +671,7 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 
 	// fetchTextFromStorage truncates the body and counts that truncation.
 	body, bodyTruncated, err := w.fetchTextFromStorage(ctx, record.StorageRef)
-	if errors.Is(err, errContentUnresolved) {
+	if errors.Is(err, entitytext.ErrNoStore) {
 		body, bodyTruncated, err = "", false, nil
 	}
 	if err != nil {
@@ -693,57 +698,24 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 	return truncated, nil
 }
 
-// truncateAtWord truncates text to at most maxLen runes, preferring the last Unicode
-// whitespace boundary in the back half of the cap. It is the one truncation routine for both
-// lanes, so identical over-cap content yields identical bytes, and the same dedup key, on
-// either. It never splits a multibyte rune, so the result is valid UTF-8. A maxLen of 0 or less
-// returns text unchanged.
+// truncateAtWord cuts text to at most maxLen runes at a word, by entitytext.Truncate. Both lanes
+// cut with it, so identical over-cap content yields identical bytes, and the same dedup key, on
+// either.
 func truncateAtWord(text string, maxLen int) string {
-	if maxLen <= 0 {
-		return text
-	}
-
-	// The byte offset just past the maxLen-th rune; ranging a string yields each rune's start.
-	runeCount := 0
-	cut := len(text)
-	for i := range text {
-		if runeCount == maxLen {
-			cut = i
-			break
-		}
-		runeCount++
-	}
-	if cut == len(text) {
-		return text
-	}
-	truncated := text[:cut]
-
-	// Prefer the last whitespace boundary when it is past the halfway point, in runes.
-	if sp := strings.LastIndexFunc(truncated, unicode.IsSpace); sp > 0 {
-		if utf8.RuneCountInString(truncated[:sp]) > maxLen/2 {
-			return truncated[:sp]
-		}
-	}
-	return truncated
+	return entitytext.Truncate(text, maxLen)
 }
 
-// resolveStore returns the registered owner of instance, resolved per fetch; the store is
-// borrowed, never cached or closed. Another registered instance is never a candidate.
-func (w *Worker) resolveStore(instance string) storage.StreamableStore {
-	if w.storeResolver != nil && instance != "" {
-		if s, ok := w.storeResolver.Streamable(instance); ok {
-			return s
-		}
-	}
-	return nil
-}
-
-// fetchTextFromStorage streams the body from its store, reading at most enough bytes for
-// textCap runes, and truncates it with truncateAtWord. The store holds raw bytes. bodyTruncated
-// reports whether the body itself exceeded the cap, so getSourceText counts a truncation once.
+// fetchTextFromStorage reads the body from the store registered under its StorageInstance
+// through entitytext.ReadBody, which reads at most enough bytes for textCap runes and ends the
+// read 10 seconds after it begins, and truncates it with truncateAtWord. The store holds raw
+// bytes. bodyTruncated reports whether the body itself exceeded the cap, so getSourceText counts
+// a truncation once. An instance with no registered store returns an error wrapping
+// entitytext.ErrNoStore.
 func (w *Worker) fetchTextFromStorage(ctx context.Context, ref *StorageRef) (text string, bodyTruncated bool, err error) {
-	store := w.resolveStore(ref.StorageInstance)
-	if store == nil {
+	limit := w.textCap()
+	raw, err := entitytext.ReadBody(ctx, w.storeResolver,
+		message.StorageReference{StorageInstance: ref.StorageInstance, Key: ref.Key}, limit)
+	if errors.Is(err, entitytext.ErrNoStore) {
 		if w.metrics != nil {
 			w.metrics.IncContentUnresolved()
 		}
@@ -751,37 +723,21 @@ func (w *Worker) fetchTextFromStorage(ctx context.Context, ref *StorageRef) (tex
 			w.logger.Warn("offloaded body excluded from embedding: no live store is registered for the StorageInstance; start or restore that storage component to include the body",
 				slog.String("storage_instance", ref.StorageInstance))
 		})
-		return "", false, fmt.Errorf("%w: %q", errContentUnresolved, ref.StorageInstance)
+		return "", false, err
 	}
-
-	reader, err := store.Open(ctx, ref.Key)
 	if err != nil {
 		if w.metrics != nil {
 			w.metrics.IncContentResolveError()
 		}
-		return "", false, fmt.Errorf("failed to open content from instance %q: %w", ref.StorageInstance, err)
-	}
-	defer reader.Close()
-
-	// The cap is in runes and a rune is up to utf8.UTFMax bytes, so this budget always holds
-	// limit whole runes when the body has them, and the truncation matches the inline lane's.
-	limit := w.textCap()
-	readCap := int64(limit)*utf8.UTFMax + 1
-	data, err := io.ReadAll(io.LimitReader(reader, readCap))
-	if err != nil {
-		if w.metrics != nil {
-			w.metrics.IncContentResolveError()
-		}
-		return "", false, fmt.Errorf("failed to read content from instance %q: %w", ref.StorageInstance, err)
+		return "", false, err
 	}
 
-	if len(data) > 0 && data[0] == '{' {
+	if len(raw) > 0 && raw[0] == '{' {
 		w.logger.Debug("stored content appears JSON-wrapped, expected raw text",
 			slog.String("key", ref.Key),
 			slog.String("hint", "store the raw body text, not a JSON envelope"))
 	}
 
-	raw := string(data)
 	truncated := truncateAtWord(raw, limit)
 	bodyTruncated = len(truncated) < len(raw)
 	if bodyTruncated && w.metrics != nil {

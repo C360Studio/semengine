@@ -96,7 +96,7 @@ func server(port int) component.PortDefinition {
 }
 
 // TestConfigRefusals: each configuration the component cannot honour is refused at construction
-// and by the port declarer, naming the key or port at fault (design D1, D5; output-websocket spec,
+// and by the port declarer, naming the key or port at fault (output-websocket spec,
 // "One input per instance"). The keys, port names and words of the guidance are written out here,
 // not read from the package's tables.
 func TestConfigRefusals(t *testing.T) {
@@ -252,7 +252,7 @@ func TestConfigRefusals(t *testing.T) {
 }
 
 // TestConfigKeysAreRead: every kept key changes what the factory resolves, read against values
-// written out here (design D5).
+// written out here.
 func TestConfigKeysAreRead(t *testing.T) {
 	frames := component.PortDefinition{Name: "frames", Config: component.NATSPort{Subject: "boids.>"}}
 	raw, err := json.Marshal(map[string]any{
@@ -292,7 +292,7 @@ func TestConfigKeysAreRead(t *testing.T) {
 }
 
 // TestDefaultConfig: an empty configuration and {} both stream applied state from ENTITY_STATES on
-// 0.0.0.0:8081 at /ws, pinging every 30s (design D5).
+// 0.0.0.0:8081 at /ws, pinging every 30s.
 func TestDefaultConfig(t *testing.T) {
 	for _, raw := range []string{"", `{}`} {
 		s := mustResolve(t, raw)

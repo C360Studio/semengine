@@ -55,7 +55,7 @@ import (
 // The key is LENGTH-PREFIXED, not delimiter-joined. Predicates, sources, and
 // contexts are arbitrary operator- and producer-supplied strings; joining them
 // on a dot or a pipe would make ("a.b", "c") and ("a", "b.c") the same key —
-// the raw-key-collision class (gh#741) that causes silent data loss elsewhere
+// the raw-key-collision class that causes silent data loss elsewhere
 // in the system. Length prefixes make the encoding injective for every possible
 // field content, including embedded NUL bytes and embedded digits.
 func AppendIdentityKey(t Triple) string {

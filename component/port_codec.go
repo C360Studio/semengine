@@ -55,7 +55,7 @@ var portBindingTable = map[PortKind]portBinding{
 			Type: "int", Editable: true, Minimum: intPointer(-1),
 			Directions: []Direction{DirectionInput}, zeroIsOmitted: true,
 		},
-		// An import lane is an INPUT-side statement of trust (ADR-102 d5); on
+		// An import lane is an INPUT-side statement of trust (ADR-102 decision 5); on
 		// an output port the flag would describe nothing graph-ingest reads.
 		// No zeroIsOmitted: that flag is numeric (it projects Const: 0 and
 		// short-circuits a numeric minimum), so on an output port `import`

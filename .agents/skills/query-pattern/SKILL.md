@@ -30,7 +30,9 @@ component serves exactly its own verbs. graph-index's are `outgoing`, `incoming`
 and `temporal`; the first five forward to
 the verb of the same name behind them, and `semantic`, `similar`, `spatial` and `temporal` forward to the embedding,
 spatial and
-temporal verbs. Those four have no responder in the tree yet and are refused transient `internal` until changes 5 and 7.
+temporal verbs. `spatial` and `temporal` have no responder in the tree yet and are refused transient `internal` until
+change 7; `semantic` and `similar` are answered by graph-embedding, or refused invalid `not_enabled` unless graph-query's
+`embedding_enabled` is true (false when left out).
 graph-query lands in steps (`processor/graph-query/README.md` lists what it
 serves now), so a verb not in the table has no responder yet.
 
@@ -74,41 +76,30 @@ serves now), so a verb not in the table has no responder yet.
   are of the lexically smallest IDs: a sample. Send `next_cursor` as `cursor` for the next page. `hierarchyStats` is
   bare. `summary` refuses when the predicate index cannot answer; `exclude_predicates` asks without it, and `prefix`
   needs it.
-- **`localSearch`** searches one community: the group of entities that share the first 4, 3 or 2 parts of an ID
-  (`level` 0, 1 or 2, default 0). It takes `entity_id` (a full ID in the group), `query` (1 to 16 distinct words) and
-  optionally `level`. It reads the group's record from `COMMUNITY_INDEX`, then one page of the group's entities, and
-  ranks that page by how well the words match. The page is at most 1,000 entities in ID order, so on a larger group the
-  sample is the lexically smallest IDs, `entities_truncated` is true, and a match later in the order is missed. Until
-  `processor/graph-clustering` has published its first records to `COMMUNITY_INDEX` it refuses transient
-  `index_not_ready`; retry it.
-  Its `indexed_revision` is the group record's latest entity write, so to read your own write send the `kv_revision` of
-  a write to an entity in the group you search. A revision from a write to another group can stay above the record, and
-  the request is then refused `revision_not_reached` until the searched group next changes.
-- **`globalSearch`** takes a free-text `query` and picks one strategy from the question's words, with no language
-  model. `searchGraph` is the same handler under a second name, with the same request and `data`. It answers the
-  questions that have an exact answer, searches the rest as text over `COMMUNITY_INDEX`, and refuses a question it
-  cannot answer whole:
-  - A question of one word is an entity reference (an alias, else a full six-part ID): `strategy` `entity`.
-  - "What is connected to pump-42": a path from `pump-42`, both directions, 3 hops, 100 entities: `path`, IDs and
-    edges only (call `batch` for states).
-  - "What changed in the last 2 hours": `temporal`. "What is within 5km of 40.7,-74.0": `spatial`. Until change 7 both
-    are refused transient `internal`, since their responders are not in the tree.
-  - Two of path, time and area, an entity beside a zone or area, or an impossible number is `invalid_request`. A
-    count or other aggregation ("how many", "max retries"), and path words, a similarity or a ranking beside a start,
-    time range or area, are `invalid_request` naming what it cannot do. A named path start that names no entity is
-    `entity_not_found`.
-  - Everything else is the `text` strategy: a question with no hint, path words with no start ("http connection
-    pool"), a similarity or ranking alone, a one-word name that names no entity. It reads up to five groups'
-    records at `level` (0 to 2, default 0) that score above 0 for the words, one page of each, and replies with
-    `matches` (`id`, `label`, `score`, `entity`), the `groups` read, `entities_truncated` and `answer`. Matches are
-    a sample of at most one page per group. Hints it could not apply are named in `unhonoured_hints`. Until
-    `processor/graph-clustering` has published its first records to `COMMUNITY_INDEX` it is refused transient
-    `index_not_ready`; retry it.
-  - Known limits of the keyword classifier (owner-accepted, #535): "from A to B" walks from A and drops B with no
-    signal, so a successful reply does not mean both ends were honoured; "in real-time" beside a place can be refused
-    as a second place, a loud refusal of an answerable question.
-  - To read a known entity, prefer `entity` or `entityByAlias`; `globalSearch` is for a question you cannot route
-    yourself.
+- **`localSearch` and `globalSearch`** find entities by the words of their text. Each asks graph-lexical's word index
+  (BM25, with quoted phrases and `-` exclusions), reads the hits back from graph-ingest, and returns the matches best
+  first with the entity as stored. `localSearch` takes `entity_id` (a full ID that names the group, at `level` 0 to 2,
+  default 0), `query` and optionally `limit` (1 to 100, default 10), and searches that group only. `globalSearch`
+  takes a free-text `query`, `level` and `limit`, searches every entity and lists the groups holding the matches.
+  `searchGraph` is the same handler under a second name, with the same request; with `embedding_enabled` true it also asks
+  the embedding search and answers one merged list, each match with `word_rank` and `vector_rank`.
+  - Word search helps only entities that have text. Metric-heavy entities, such as sensor or drone telemetry, have no
+    words to match and gain nothing from it; reach them by prefix, predicate, name, alias or relationship.
+  - A group's `COMMUNITY_INDEX` record is attached when there is one, and never decides the answer: `record_state` is
+    `read` (the `record` holds `member_count`, `community_summary` and `keywords`), `none`, `not_ready` or `unreadable`.
+    Neither verb waits for `processor/graph-clustering`.
+  - `truncated` is true when more entities matched than `limit` returned (`matched` says how many), a hit was gone when
+    it was read back (`missing`), or matches were left out to fit `max_payload`. Page with a larger `limit`, not a cursor.
+  - `globalSearch` answers every question by its words and lists what else the question seemed to ask for in `hints`:
+    `entity` (a one-word question), `path` (a start to walk from), `time_range`, `area`, `aggregation`, `similarity`,
+    `ranking`, `classification`. Each hint says whether it was `honoured`; only `entity` and `path` ever are, and then
+    `data.entity` or `data.path` holds the answer. A hint never refuses the search. A keyword classifier reads ordinary
+    words as hints ("max retries" is an aggregation), so check `honoured` before trusting that a hint was applied.
+  - One damaged hit refuses a search until it is fixed (issue #656): the `batch` read refuses every entity when one is
+    damaged.
+  - A refusal from graph-lexical (`index_not_ready` while it rebuilds, `revision_not_reached`) or from `batch` reaches
+    the caller as it arrived; no word index running is a transient `internal`.
+  - To read a known entity, prefer `entity` or `entityByAlias`; search is for words you cannot route yourself.
 - **`indexed_revision` of 0** on a `summary` with predicates excluded claims nothing. Do not compare it with a write's
   `kv_revision` or retry on it.
 
@@ -128,9 +119,7 @@ the index has not reached it, the verb refuses with transient `revision_not_reac
 detail, and never waits; retry it. A bare verb (`entity`, `batch`, `prefix`, and `hierarchyStats` on `graph.query.*`)
 ignores the field: graph-ingest, which answers it, is the authority. On `graph.query.*`, `byName`, `predicate`,
 `entityByAlias`, `relationships`, `pathSearch`, `localSearch`, `globalSearch`, `searchGraph` and `summary` (unless it
-excludes predicates) honour it. `localSearch` compares it with the searched group's record, not the whole index (see above);
-the text strategy of `globalSearch` compares it with the highest revision among the records at its `level`, which a
-write anywhere reaches once clustering has published it.
+excludes predicates) honour it. The search verbs pass it to the word index, which holds them to a write it has applied.
 
 ## Points that hold
 

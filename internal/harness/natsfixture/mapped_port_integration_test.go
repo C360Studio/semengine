@@ -13,11 +13,11 @@ import (
 )
 
 // A mapped-port failure names what an inspect of the container showed, or why the inspect failed,
-// at Start and at Restart, so the next occurrence of #180 names its own cause (nats-fixture › "A
-// missing mapped port fails Start", "A missing mapped port fails Restart"). The read is the
-// fixture's one test seam; the inspect is Docker's. To fail the inspect, the read cancels the
-// caller's context before it fails: the inspect runs under that context. Each operation reads the
-// port once and returns one error: neither tries again.
+// at Start and at Restart, so a failure such as Docker leaving the container's port list empty
+// names its own cause (nats-fixture › "A missing mapped port fails Start", "A missing mapped port
+// fails Restart"). The read is the fixture's one test seam; the inspect is Docker's. To fail the
+// inspect, the read cancels the caller's context before it fails: the inspect runs under that
+// context. Each operation reads the port once and returns one error: neither tries again.
 func TestMappedPortFailureCarriesTheInspect(t *testing.T) {
 	ops := []struct {
 		name string

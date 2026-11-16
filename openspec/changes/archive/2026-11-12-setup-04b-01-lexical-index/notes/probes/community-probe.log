@@ -1,0 +1,11 @@
+go test ./graph/clustering -run TestReviewCommunities -v -count=1   (commit 2853486d)
+
+8000 sections in 41 level-0 groups; sizes median 12, largest 6601
+196 distinct keywords across all groups; 21 of 410 keyword slots hold a word that at least half the groups also list
+most repeated keywords (groups listing it, of 41): not(21) its(19) that(19) entity(15) graph(13) one(13) component(7) only(7) bucket(6) each(6) error(6) every(6)
+  c360.semengine.agents.contracts: Community of 51 entities including 51 sections. Key themes: not, that, its, every, design.
+  c360.semengine.agents.skills: Community of 49 entities including 49 sections. Key themes: not, one, graph, its, each.
+  c360.semengine.agents.top: Community of 16 entities including 16 sections. Key themes: its, only, review, that, contract.
+  c360.semengine.claude.agents: Community of 4 entities including 4 sections. Key themes: action, agents, authority, behavioral, contracts.
+global text, keyword phrasing 500 queries: no group matched  6.6%; answer's group among those read 11.8%; R@1  2.0% R@10  4.0% MRR 0.026
+global text, question phrasing 500 queries: no group matched  0.0%; answer's group among those read  4.4%; R@1  0.2% R@10  1.0% MRR 0.004

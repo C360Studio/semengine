@@ -9,12 +9,12 @@ import (
 // embeddingProviderRule is the requirement every violation names.
 const embeddingProviderRule = "(embedding-index › Tier 0 imports no provider code)"
 
-// openAIModule is the provider SDK the pin's excluded http_embedder.go imported.
+// openAIModule is the OpenAI provider SDK, which tier 0 code never reaches.
 const openAIModule = "github.com/sashabaranov/go-openai"
 
 // TestEmbeddingImportsNoProviderModule holds the rule that graph/embedding builds at tier 0:
 // it reaches neither the OpenAI SDK nor the module's model package, directly or through a
-// package it imports (#35).
+// package it imports.
 //
 // Requirement: embedding-index/Tier 0 imports no provider code
 func TestEmbeddingImportsNoProviderModule(t *testing.T) {
@@ -26,9 +26,9 @@ func TestEmbeddingImportsNoProviderModule(t *testing.T) {
 // queryProviderRule is the requirement every graph/query violation names.
 const queryProviderRule = "(query-classification › Tier 0 classification imports no provider code)"
 
-// TestQueryImportsNoProviderModule holds the rule that graph/query builds at tier 0: without the
-// pin's LLM client adapter it reaches neither the OpenAI SDK nor the module's model package,
-// directly or through a package it imports. It reuses the embedding guard's listing and reader;
+// TestQueryImportsNoProviderModule holds the rule that graph/query builds at tier 0: it reaches
+// neither the OpenAI SDK nor the module's model package, directly or through a package it imports.
+// It reuses the embedding guard's listing and reader;
 // TestEmbeddingImportsNoProviderModuleSensitivity shows that reader can fail.
 //
 // Requirement: query-classification/Tier 0 classification imports no provider code
@@ -38,12 +38,51 @@ func TestQueryImportsNoProviderModule(t *testing.T) {
 		providerViolations(t, root, "./graph/query", queryProviderRule))
 }
 
+// TestQueryImportsNoEmbedding holds the rule that graph/query classifies without embedding code:
+// neither it nor any package it reaches is graph/embedding or a package under it. The chain's
+// tiers are keyword patterns and an LLM the caller supplies; a vector index is not one of them.
+//
+// Requirement: query-classification/Tier 0 classification imports no provider code
+func TestQueryImportsNoEmbedding(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "graph/query embedding imports", queryEmbeddingPaths(
+		modulePath(t, root), goList(t, root, "./graph/query", "-deps", "{{.ImportPath}}")))
+}
+
+// Requirement: query-classification/Tier 0 classification imports no provider code
+func TestQueryImportsNoEmbeddingSensitivity(t *testing.T) {
+	const module = "example.com/fixture"
+	self := module + "/graph/query"
+	requireNoViolations(t, "name-prefixed sibling", queryEmbeddingPaths(module,
+		[]string{self, module + "/graph/embeddingindex", module + "/pkg/errs"}))
+	for _, dep := range []string{module + "/graph/embedding", module + "/graph/embedding/sub"} {
+		requireViolation(t, queryEmbeddingPaths(module, []string{self, dep}), dep, queryProviderRule)
+	}
+	requireViolation(t, queryEmbeddingPaths(module, nil), "listed no package", queryProviderRule)
+}
+
+// queryEmbeddingPaths names graph/embedding, or a package under it, in graph/query's go list -deps
+// listing deps. An empty listing is a violation: a check that saw nothing is not a pass.
+func queryEmbeddingPaths(module string, deps []string) []string {
+	if len(deps) == 0 {
+		return []string{"go list -deps listed no package for graph/query; a check that saw nothing is not a pass " +
+			queryProviderRule}
+	}
+	var violations []string
+	for _, dep := range deps {
+		if under(dep, module+"/graph/embedding") {
+			violations = append(violations, "graph/query reaches "+dep+" "+queryProviderRule)
+		}
+	}
+	return violations
+}
+
 // graphEmbeddingProviderRule is the requirement every processor/graph-embedding violation names.
 const graphEmbeddingProviderRule = "(graph-embedding › Tier-0 config)"
 
 // TestGraphEmbeddingImportsNoProviderModule holds the rule that processor/graph-embedding builds at
-// tier 0 without the pin's HTTP embedder (design D6): it does not import the module's model
-// package, and it reaches the OpenAI SDK through nothing it imports.
+// tier 0 without an HTTP embedder: it does not import the module's model package, and it reaches
+// the OpenAI SDK through nothing it imports.
 // model is held to graph-embedding's own imports because component reaches it for every
 // component (component.Dependencies' ModelRegistry), with no provider code behind it at tier 0.
 //
@@ -52,16 +91,28 @@ func TestGraphEmbeddingImportsNoProviderModule(t *testing.T) {
 	requireNoDirectModelProvider(t, "./processor/graph-embedding", graphEmbeddingProviderRule)
 }
 
-// llmPlumbingRule is the rule every processor/graph-clustering and tree-wide violation names: the
-// owner's ruling 2 on #32 (PR #582 comment 6768832111), tier 0 builds without the LLM plumbing.
+// llmPlumbingRule is the rule every processor/graph-clustering and tree-wide violation names: tier
+// 0 builds without the LLM plumbing, so it needs no external provider.
 const llmPlumbingRule = "(#32 › tier 0 builds without the LLM plumbing)"
 
 // TestGraphClusteringImportsNoProviderModule holds processor/graph-clustering to graph-embedding's
 // guard: it does not import the module's model package, and it reaches the OpenAI SDK through
-// nothing it imports. The pin's clustering imported graph/llm for its LLM summarizer and anomaly
-// review; neither is carried (setup-04a-07 design D4, D5).
+// nothing it imports. graph-clustering has no LLM summarizer or anomaly review, the code that would
+// need graph/llm.
 func TestGraphClusteringImportsNoProviderModule(t *testing.T) {
 	requireNoDirectModelProvider(t, "./processor/graph-clustering", llmPlumbingRule)
+}
+
+// graphLexicalProviderRule is the requirement every processor/graph-lexical violation names.
+const graphLexicalProviderRule = "(graph-lexical › Configuration is strict and tier 0)"
+
+// TestGraphLexicalImportsNoProviderModule holds processor/graph-lexical to graph-embedding's
+// guard: it does not import the module's model package, and it reaches the OpenAI SDK through
+// nothing it imports. The word index needs no model at any tier.
+//
+// Requirement: graph-lexical/Configuration is strict and tier 0
+func TestGraphLexicalImportsNoProviderModule(t *testing.T) {
+	requireNoDirectModelProvider(t, "./processor/graph-lexical", graphLexicalProviderRule)
 }
 
 // requireNoDirectModelProvider fails t on each provider path in pkg's listings, naming rule.
@@ -76,7 +127,7 @@ func requireNoDirectModelProvider(t *testing.T, pkg, rule string) {
 // Requirement: graph-embedding/Tier-0 config
 func TestGraphEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 	const module = "example.com/fixture"
-	for _, pkg := range []string{"./processor/graph-embedding", "./processor/graph-clustering"} {
+	for _, pkg := range []string{"./processor/graph-embedding", "./processor/graph-clustering", "./processor/graph-lexical"} {
 		t.Run(strings.TrimPrefix(pkg, "./processor/"), func(t *testing.T) {
 			name := strings.TrimPrefix(pkg, "./")
 			self := module + "/" + name
@@ -119,8 +170,8 @@ func directModelProviderPaths(module, pkg, rule string, direct, deps []string) [
 }
 
 // TestTreeImportsNoProviderPlumbing holds the module, every package go list ./... builds, to the
-// owner's ruling on #32: tier 0 builds without the LLM plumbing. Nothing reaches the pin's LLM
-// client (graph/llm), its wire types (model/wire) or the OpenAI SDK, directly or through a package
+// owner ruling that tier 0 builds without the LLM plumbing. Nothing reaches the LLM client
+// (graph/llm), its wire types (model/wire) or the OpenAI SDK, directly or through a package
 // it imports. Neither graph/llm nor model/wire is in the tree; this guards their return.
 // It replaces no per-package guard: those also forbid model, which component reaches for every
 // component (TestGraphEmbeddingImportsNoProviderModule), so the tree-wide listing cannot.

@@ -27,10 +27,9 @@ type caseTarget struct {
 	Plain   string               // no tag: the field name is the key
 }
 
-// TestCheckRefusesEachShapeItWalks has one case per shape the walk visits (design
-// § Generated checks: each key is judged alone against the names at its own level,
-// so examples suffice). Each refusal sits beside an exact match at the same level,
-// which must pass.
+// TestCheckRefusesEachShapeItWalks has one case per shape the walk visits. Each key
+// is judged alone against the names at its own level, so examples suffice. Each
+// refusal sits beside an exact match at the same level, which must pass.
 func TestCheckRefusesEachShapeItWalks(t *testing.T) {
 	cases := []struct {
 		name    string

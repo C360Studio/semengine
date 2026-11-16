@@ -11,8 +11,8 @@ import (
 )
 
 // defaultQueryTimeoutMs is above graph-ingest's 10 s budget on batch and prefix
-// (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's 30 s
-// budget for a request handler (design D7).
+// (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's
+// 30 s budget for a request handler.
 const defaultQueryTimeoutMs = 15000
 
 // maxQueryTimeoutMs is the largest millisecond count a time.Duration holds; one more wraps negative.
@@ -26,6 +26,11 @@ type Config struct {
 	// the default, 15000. It does not end a wait to write to a broker that has stopped reading
 	// (ADR-112, "Time").
 	QueryTimeoutMs int `json:"query_timeout_ms,omitempty" schema:"type:int,description:Deadline on the reply to each downstream request in milliseconds; a blocked write can outlast it (ADR-112),default:15000,category:basic"`
+	// EmbeddingEnabled says the composition runs graph-embedding. When false, which is what a
+	// configuration that leaves the key out or sets it null reads, semantic and similar refuse every
+	// request not_enabled without sending it: tier 0 runs no graph-embedding, and a tier 1 product
+	// sets the key true.
+	EmbeddingEnabled bool `json:"embedding_enabled" schema:"type:bool,description:Whether graph-embedding runs; when false semantic and similar are refused not_enabled,default:false,category:basic"`
 }
 
 // queriesPort is the one input graph-query serves.
@@ -84,8 +89,7 @@ func (c *Config) Validate() error {
 }
 
 // ApplyDefaults sets default values. A configuration with no ports takes DefaultConfig's; a ports
-// block that is present is used as written, never merged with the defaults (ruling K, #91 comment
-// 6062681355).
+// block that is present is used as written, never merged with the defaults.
 func (c *Config) ApplyDefaults() {
 	if c.QueryTimeoutMs == 0 {
 		c.QueryTimeoutMs = defaultQueryTimeoutMs

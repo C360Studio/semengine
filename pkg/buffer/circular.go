@@ -371,7 +371,7 @@ func (cb *circularBuffer[T]) WriteWithTimeout(item T, timeout time.Duration) err
 		return cb.Write(item)
 	}
 	if timeout <= 0 {
-		// As at the pin: a bound already passed refuses, even when there is space.
+		// A bound already passed refuses, even when there is space.
 		return cb.writeBounded("WriteWithTimeout", item, expired, deadlineExceeded, nil)
 	}
 	timer := time.NewTimer(timeout)

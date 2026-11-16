@@ -184,15 +184,20 @@ func (hb *HeartbeatService) cleanup(ctx context.Context) error {
 	if hb.runCancel != nil {
 		hb.runCancel()
 	}
+	var loopErr error
 	if hb.loopDone != nil {
 		select {
 		case <-hb.loopDone:
 		case <-ctx.Done():
-			return fmt.Errorf("wait for heartbeat loop: %w", ctx.Err())
+			loopErr = fmt.Errorf("wait for heartbeat loop: %w", ctx.Err())
 		}
 	}
+	var baseErr error
 	if err := hb.BaseService.Stop(ctx); err != nil {
-		return fmt.Errorf("stop heartbeat base service: %w", err)
+		baseErr = fmt.Errorf("stop heartbeat base service: %w", err)
+	}
+	if err := errors.Join(loopErr, baseErr); err != nil {
+		return err
 	}
 	hb.logger.Info("heartbeat stopped")
 	return nil

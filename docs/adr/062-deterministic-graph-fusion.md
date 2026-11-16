@@ -25,7 +25,14 @@
 >   `deferred` with `defer_reason` `index_not_ready` and no misses; the same reply on any other walk read (relation
 >   targets, paths, impact, graph) is skipped and labelled. The response carries no `index` block, and
 >   `contract_version` is `"2"`.
-> - Also changed: `Resolve` returns the search's unreadable and failed record counts, every piece the engine leaves out
+> - Changed by SemEngine (change `setup-04b-04-removal-keywords`, owner question 2 ruled (b), epic #10 comment
+>   6880665588): an `nl` resolve asks graph-lexical's word search (`graph.lexical.query.search`), not the embedding
+>   search, and its answers carry a fourth provenance value, `lexical`, which "Honesty envelope" does not list: a
+>   ranked word match is neither an exact lookup (`deterministic`) nor a semantic search (`embedding`).
+>   `ProvenanceForMode` maps `nl` to `lexical`, `symbol` and `prefix` to `deterministic`, and any other mode to
+>   `embedding`, the conservative default.
+> - Also changed: `Resolve` returns what the word index left out of an `nl` search, `bodies_not_indexed` and
+>   `excluded`, which every response built after it carries; every piece the engine leaves out
 >   is declared on the response (`relations_truncated`, `paths_truncated` and the facets' `truncated`), and
 >   `NewEngine` takes a logger and returns an error. `ClassSpecificity` counts the ancestors of a function passed to
 >   `fusionvocab.New`, because the BFO/CCO hierarchy lives in semvocab. `fusionnats` starts nothing and watches no

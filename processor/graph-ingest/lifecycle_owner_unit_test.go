@@ -8,11 +8,11 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// TestLifecycleOwnerStopBeforeStartIsTerminal reads, at the pin, lifecycleUsed after the
-// refused Start and after the refused Stop(nil). The guard keeps its state to itself
-// (design D22), so each read is a probe, assertGuardUnused, which uses the guard up: each
-// probe runs on a fresh component that repeats the steps before it. The components passed
-// Initialize, so Start reaches the guard (design D13).
+// TestLifecycleOwnerStopBeforeStartIsTerminal checks that the guard is still unused after
+// the refused Start and after the refused Stop(nil). The guard keeps its state to itself,
+// so each read is a probe, assertGuardUnused, which uses the guard up: each probe runs on
+// a fresh component that repeats the steps before it. The components passed Initialize,
+// so Start reaches the guard.
 func TestLifecycleOwnerStopBeforeStartIsTerminal(t *testing.T) {
 	newOwner := func() *Component {
 		owner := createTestComponent(t)

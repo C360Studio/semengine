@@ -13,8 +13,8 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// TestResolveServiceConfigsIsPureAndCanonical is moved unchanged from the pin's
-// service_composition_test.go:233-273 (design D6).
+// TestResolveServiceConfigsIsPureAndCanonical: resolving service configs leaves its input
+// unchanged and returns them in canonical form.
 func TestResolveServiceConfigsIsPureAndCanonical(t *testing.T) {
 	original := types.ServiceConfigs{
 		"optional": {
@@ -60,8 +60,7 @@ func TestResolveServiceConfigsIsPureAndCanonical(t *testing.T) {
 	}
 }
 
-// TestPendingServiceChangesClassifications is moved unchanged from the pin's
-// service_composition_test.go:351-392 (design D6).
+// TestPendingServiceChangesClassifications: each kind of service change is classified.
 func TestPendingServiceChangesClassifications(t *testing.T) {
 	boot := types.ServiceConfigs{
 		"add-disabled":      {Enabled: false, Config: json.RawMessage(`{"a":1}`)},
@@ -105,8 +104,7 @@ func TestPendingServiceChangesClassifications(t *testing.T) {
 	}
 }
 
-// cloneServiceConfigs is moved with the two tests above from the pin's
-// service_composition_test.go:604-612.
+// cloneServiceConfigs deep-copies a service config map for the two tests above.
 func cloneServiceConfigs(t *testing.T, configs types.ServiceConfigs) types.ServiceConfigs {
 	t.Helper()
 	clone := make(types.ServiceConfigs, len(configs))
@@ -118,7 +116,7 @@ func cloneServiceConfigs(t *testing.T, configs types.ServiceConfigs) types.Servi
 }
 
 // TestDecodeStrictServiceJSON: the strict decoder fills known fields, refuses an unknown key and a
-// trailing value, and leaves the target untouched for empty input (design D6).
+// trailing value, and leaves the target untouched for empty input.
 func TestDecodeStrictServiceJSON(t *testing.T) {
 	type target struct {
 		Port int    `json:"port"`
@@ -151,7 +149,7 @@ func TestDecodeStrictServiceJSON(t *testing.T) {
 }
 
 // TestCanonicalServiceJSONIsIdempotent checks canonicalServiceJSON's normalization law on generated
-// nested JSON objects (design, Generated checks): canonicalizing twice equals canonicalizing once,
+// nested JSON objects: canonicalizing twice equals canonicalizing once,
 // and the canonical text decodes, with UseNumber, to a value deep-equal to the input's decoded
 // value, an oracle that does not call the code under test. Each generated input is written with
 // its own key order and whitespace, so the input is rarely canonical already. Every case reaches

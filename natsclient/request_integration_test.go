@@ -63,7 +63,7 @@ func TestIntegration_Request_Timeout(t *testing.T) {
 	defer closeClient(t, client)
 
 	// Send request to non-existent subject (no responder). natsclient returns
-	// nats.go's no-responders error unwrapped (design D5).
+	// nats.go's no-responders error unwrapped.
 	_, err = client.RequestClassified(ctx, "nonexistent.subject", []byte("test"), 100*time.Millisecond)
 	require.ErrorIs(t, err, nats.ErrNoResponders)
 }
@@ -235,8 +235,7 @@ func TestIntegration_SubscribeForRequests(t *testing.T) {
 // deadline back over a channel and the test brackets it by events: the handler
 // started after the request was sent and before the reply arrived, so its deadline
 // lies between those two instants plus the configured timeout. No bound depends on
-// how fast the host runs. WithRequestHandlerTimeout was dropped as dead surface
-// (task 3.7a); the timeout is set through the environment variable it overrode.
+// how fast the host runs. The timeout is set through requestHandlerTimeoutEnv.
 func TestIntegration_SubscribeForRequests_HandlerTimeoutConfigurable(t *testing.T) {
 	ctx := context.Background()
 
@@ -348,7 +347,7 @@ func TestIntegration_RequestWithRetryClassified_NoResponder(t *testing.T) {
 
 	// Every attempt publishes the request once; nats.go counts each publish in the connection's
 	// OutMsgs, an answer that comes from the connection, not from the client's own accounting. This
-	// is the probe of that count at the pinned nats.go (design simplify-04a-16, Tests).
+	// test is the probe of that count at the pinned nats.go (v1.55.0).
 	before := client.GetConnection().Stats().OutMsgs
 
 	// Send request to subject with no responder

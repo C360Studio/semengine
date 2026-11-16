@@ -1,4 +1,4 @@
-// Package errs provides standardized error handling patterns for SemStreams components.
+// Package errs provides standardized error handling patterns for SemEngine components.
 // It includes error classification, standard error variables, and helper functions
 // for consistent error wrapping and classification across the system.
 package errs
@@ -13,7 +13,7 @@ import (
 type ErrorClass int
 
 // The zero ErrorClass names no class, so a ClassifiedError built without one is
-// not read as retryable: Classify gives it ErrorFatal (#258).
+// not read as retryable: Classify gives it ErrorFatal.
 const (
 	// ErrorTransient represents temporary errors that may be retried
 	ErrorTransient ErrorClass = iota + 1
@@ -149,7 +149,7 @@ func (ce *ClassifiedError) Is(target error) bool {
 }
 
 // IsTransient checks if an error is transient and should be retried. It reads the
-// error's class, then its sentinels, never its text (#146): the text can carry an
+// error's class, then its sentinels, never its text: the text can carry an
 // entity ID or a peer's message, and a word in it must not decide a retry.
 func IsTransient(err error) bool {
 	if err == nil {
@@ -172,7 +172,7 @@ func IsTransient(err error) bool {
 }
 
 // IsFatal checks if an error is fatal and should stop processing. Like
-// IsTransient it reads the error's class, then its sentinels, never its text (#146).
+// IsTransient it reads the error's class, then its sentinels, never its text.
 func IsFatal(err error) bool {
 	if err == nil {
 		return false
@@ -273,13 +273,10 @@ func inheritMachineContract(classified *ClassifiedError, err error) *ClassifiedE
 //
 // Prefer WrapTransient/WrapFatal/WrapInvalid for new code — the
 // attribution prefix is operator-visible in logs and worth the cost
-// when no caller is parsing the message. This bare constructor exists
-// for the gh#93 dual-encoding window: handlers that need to preserve
-// the historic "<kind>: <detail>" body shape (e.g. "not found: <id>",
-// "invalid request: <reason>") so the body-prefix sniffers downstream
-// keep working while the X-Error-Class header layer rolls out. Once
-// Phase 4 retires the legacy body shape, the Wrap* family becomes
-// preferred uniformly.
+// when no caller is parsing the message. This bare constructor serves
+// handlers whose reply body keeps the "<kind>: <detail>" shape (e.g.
+// "not found: <id>", "invalid request: <reason>") for readers that
+// match a body prefix instead of reading the X-Error-Class header.
 //
 // Returns nil when err is nil.
 func Classified(class ErrorClass, err error) *ClassifiedError {

@@ -7,9 +7,9 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The storage reporting rows of natsclient's test of the same name, moved with the code: every
-// exported, error-returning storagereport entry that takes a context refuses a nil one, without
-// panicking, with the invalid-data error the rest of natsclient returns (Codex F32).
+// The storage reporting rows of natsclient's test of the same name: every exported,
+// error-returning storagereport entry that takes a context refuses a nil one, without panicking,
+// with the invalid-data error the rest of natsclient returns.
 func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 	collector := accountTestCollector(t, (&accountAwareLister{}).source())
 	publisher := newTestPublisher(t, newFakeReportStore(1), defaultSource())

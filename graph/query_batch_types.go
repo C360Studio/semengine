@@ -3,13 +3,13 @@ package graph
 // Batch entity-query wire types (`graph.ingest.query.batch`, lifted to the public
 // surface as `graph.query.batch`).
 //
-// Before ADR-084 the batch response was `{"entities":[…]}` and an ID whose KV read
-// came back not-found was simply absent from that list. A caller could not tell an
-// entity that does not exist from one the read failed to reach, and — because the
-// list carries no correspondence to the requested order or membership — could not even
-// tell WHICH id was missing without diffing the sets itself. Nothing did. That is the
-// confirmed drop path in SemStreams gh#597: a top-ranked seed vanished between resolve and
-// hydration and the response looked like an ordinary shorter list.
+// An entity list alone cannot report omission: an ID whose KV read came back
+// not-found would simply be absent from it. A caller could not tell an entity that
+// does not exist from one the read failed to reach, and — because the list carries
+// no correspondence to the requested order or membership — could not even tell WHICH
+// id was missing without diffing the sets itself. A top-ranked seed that vanished
+// between resolve and hydration would look like an ordinary shorter list. So the
+// response names each missing ID (ADR-084).
 //
 // Reporting omission does NOT license the inverse inference. `missing` with reason
 // `not_found` says this read did not find the key; it does not say the entity never
@@ -47,7 +47,7 @@ type EntityBatchRequest struct {
 
 // EntityBatchResponse is the batch-query reply. Entities keeps its field name and
 // shape, so a consumer reading only `entities` is unaffected; `missing` is additive and
-// omitempty, so a fully-hydrated batch is byte-identical to the pre-ADR-084 response.
+// omitempty, so a fully-hydrated batch is the bare `{"entities":[…]}` object.
 type EntityBatchResponse struct {
 	Entities []EntityState `json:"entities"`
 	// Missing names the requested IDs not present in Entities, with a reason each.

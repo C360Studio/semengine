@@ -21,8 +21,8 @@
 // and cross-bucket-coherent) is the correct eventual home for backpressure.
 //
 // Thresholds are OPERATOR CONFIGURATION resolved AT EVALUATION TIME. See
-// ThresholdSource in storage_report.go: SemStreams is flow-based and its
-// components are runtime-reconfigurable, so a threshold captured at
+// ThresholdSource in storage_report.go: configuration can change after boot
+// (config.Manager keeps watching it), so a threshold captured at
 // composition-root construction would apply a stale number successfully and
 // silently after a post-boot edit.
 

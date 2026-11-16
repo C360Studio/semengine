@@ -10,9 +10,10 @@ import (
 	"pgregory.net/rapid"
 )
 
-// The generated check for design D9: histories of RegisterOrGet, Unregister and writes through
+// The generated check for RegisterOrGet: histories of RegisterOrGet, Unregister and writes through
 // returned handles, compared after every step with a reference model the test owns. The model is
-// written from D9's rules and Prometheus' registration contract, never from registry.go:
+// written from the metric-registry spec's rules and Prometheus' registration contract, never from
+// registry.go:
 //
 //   - a key holds one collector, identified by its concrete type and its descriptor (name, help,
 //     label names); a registration under a held key succeeds, returning the held collector, only
@@ -44,7 +45,7 @@ const (
 	kindCoreAlias                      // a *GaugeVec with semengine_service_status' descriptor
 )
 
-// concrete names the concrete collector type, which is what D9 compares.
+// concrete names the concrete collector type, which is what RegisterOrGet compares.
 func (k propKind) concrete() string {
 	switch k {
 	case kindCounter:
@@ -325,7 +326,7 @@ func requireRefused(t *rapid.T, err error, got propHandle, context string) {
 	}
 }
 
-// TestPropRegisterOrGetHistory: design D9's generated check (docs/testing.md, "Check a history
+// TestPropRegisterOrGetHistory: RegisterOrGet's generated check (docs/testing.md, "Check a history
 // against a reference model").
 func TestPropRegisterOrGetHistory(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {

@@ -20,12 +20,12 @@ import (
 const suiteMessageLoggerConfig = `{"monitor_subjects":["suite.logger.b","suite.logger.a"]}`
 
 // messageLoggerOwner adapts the message logger to the lifecycle suite (lifecycle-suite, "Observe
-// adapter contract"; design D2, D7 U-a). Observe lists "base-status=<status>" while the base
+// adapter contract"). Observe lists "base-status=<status>" while the base
 // service is not stopped, "subscription:<subject>" for each subscription the logger holds, in
 // sorted order, "subscribe-retry" while the retry of failed subscribes runs, and
 // "watch-streams=<n>" while n watch streams are open. It reads the base service's status through
 // its accessor and the rest from the logger's unexported state under the logger's own lock, never a
-// lifecycle guard's field, and adds nothing to the MessageLogger (#186, #190).
+// lifecycle guard's field, and adds nothing to the MessageLogger.
 type messageLoggerOwner struct {
 	ml *MessageLogger
 }
@@ -59,11 +59,11 @@ func (o *messageLoggerOwner) Observe() lifecycletest.Observation {
 	return lifecycletest.Observation{Unresolved: held}
 }
 
-// TestMessageLoggerPassesTheLifecycleSuite runs the lifecycle suite on the message logger (ADR-113;
-// design D2; the pin's message_logger_lifecycle_test.go:70-100). Every logger is built through
-// NewMessageLoggerService over one fixture client, shared because each fixtureClient call resets
-// the shared server. The must-fail owner is a logger stopped before Start, whose Start is refused
-// (base_lifecycle_test.go's precedent). The logger is one-shot: no restart is promised.
+// TestMessageLoggerPassesTheLifecycleSuite runs the lifecycle suite on the message logger
+// (ADR-113). Every logger is built through NewMessageLoggerService over one fixture client, shared
+// because each fixtureClient call resets the shared server. The must-fail owner is a logger stopped
+// before Start, whose Start is refused (base_lifecycle_test.go's precedent). The logger is
+// one-shot: no restart is promised.
 //
 // spec: service-lifecycle / The message logger's Start bounds Start and Stop is the only stop
 func TestMessageLoggerPassesTheLifecycleSuite(t *testing.T) {
@@ -91,7 +91,7 @@ func TestMessageLoggerPassesTheLifecycleSuite(t *testing.T) {
 		require.Empty(t, owner.Observe().Unresolved, "a Stop that returned nil left a handle")
 	})
 
-	// design D2, "Refusals": a Start after any Stop is refused with errs.ErrAlreadyStarted and
+	// A Start after any Stop is refused with errs.ErrAlreadyStarted and
 	// holds nothing. The suite's FailedStartHoldsNothing accepts any refusal.
 	t.Run("StartAfterStopIsRefused", func(t *testing.T) {
 		owner := newOwner()
@@ -101,8 +101,8 @@ func TestMessageLoggerPassesTheLifecycleSuite(t *testing.T) {
 	})
 }
 
-// TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing is design D2's final check: with
-// one subject, the Start context is cancelled while the logger writes that subject's Debug
+// TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing checks Start's final context check:
+// with one subject, the Start context is cancelled while the logger writes that subject's Debug
 // "Subscribed to subject" record, which it writes after its last subscribe has succeeded and been
 // recorded. Start then returns an error matching context.Canceled, writes no "MessageLogger
 // started" record, and holds nothing; a later Stop returns nil (ADR-113: if ctx ends before Start

@@ -255,7 +255,7 @@ func assertCommonConfigWire(t *testing.T, raw []byte, kind PortKind) {
 
 // TestJetStreamImportLaneDecodesFromOperatorJSON pins the import lane across
 // the seam an operator actually uses: JSON. The flag is the ONE knob deciding
-// whether graph-ingest admits a foreign org.platform (ADR-102 d5), so the path
+// whether graph-ingest admits a foreign org.platform (ADR-102 decision 5), so the path
 // from `"import": true` in a config to StreamFacts.Import() is contract, not
 // convenience — and a Go struct literal in a component test does not exercise
 // the decoder.

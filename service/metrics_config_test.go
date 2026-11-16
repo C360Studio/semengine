@@ -19,7 +19,7 @@ func TestMetricsRejectsRetiredInnerEnabled(t *testing.T) {
 
 // TestServiceConfigRefusesKeyInAnotherCase: a strictly decoded service payload refuses a key that
 // differs only in letter case from its field's name, naming both spellings, at the top level and
-// inside server_info; the exact spelling beside each variant decodes (design D5). encoding/json
+// inside server_info; the exact spelling beside each variant decodes. encoding/json
 // alone would decode {"Port":9091} into Port without a word.
 //
 // spec: service-lifecycle / A service configuration key in another letter case is refused

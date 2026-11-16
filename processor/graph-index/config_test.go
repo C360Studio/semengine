@@ -49,8 +49,8 @@ func defaultConfigWith(t *testing.T, key string, value any) string {
 
 // TestUnknownConfigKeyIsRefused: a configuration carrying a key graph-index does not
 // define is refused at construction, naming the key; the same configuration without it
-// builds (design D9; graph-index spec, "A configuration carrying batch_size"). The keys
-// are batch_size, which the pin defined and nothing read (S15), and a misspelling.
+// builds (graph-index spec, "A configuration carrying batch_size"). The keys are
+// batch_size, which nothing reads, and a misspelling.
 func TestUnknownConfigKeyIsRefused(t *testing.T) {
 	raw, err := json.Marshal(DefaultConfig())
 	if err != nil {
@@ -88,8 +88,7 @@ func TestConfigRefusesDataAfterTheObject(t *testing.T) {
 }
 
 // TestConfigWorkersZeroMeansOneLane: "workers": 0 builds and runs one lane, the default
-// semsource relies on (design D9; graph-index spec, "workers 0"); an absent key is the
-// same.
+// semsource relies on (graph-index spec, "workers 0"); an absent key is the same.
 func TestConfigWorkersZeroMeansOneLane(t *testing.T) {
 	for name, raw := range map[string]string{
 		"zero":   `{"workers": 0}`,
@@ -108,7 +107,7 @@ func TestConfigWorkersZeroMeansOneLane(t *testing.T) {
 }
 
 // TestConfigWorkersRange: workers other than 0 is the lane count, 1 to 16; outside that
-// range construction fails as invalid configuration (design D9).
+// range construction fails as invalid configuration.
 func TestConfigWorkersRange(t *testing.T) {
 	for _, workers := range []int{1, 7, 16} {
 		c, err := createFromJSON(t, defaultConfigWith(t, "workers", workers))
@@ -132,7 +131,7 @@ func TestConfigWorkersRange(t *testing.T) {
 }
 
 // TestConfigDefaults: the startup wait defaults to 30 attempts 500 ms apart, coalescing
-// is off, and each set value is kept (pin ApplyDefaults, less batch_size).
+// is off, and each set value is kept.
 func TestConfigDefaults(t *testing.T) {
 	c, err := createFromJSON(t, `{}`)
 	if err != nil {
@@ -164,8 +163,8 @@ func indexOutputs() []component.PortDefinition {
 }
 
 // TestConfigValidateOutputs: the four graph-index buckets are required and the only
-// outputs permitted, each a kv-write port (pin component_test.go:281, :330 and
-// Validate's ownership check).
+// outputs permitted, each a kv-write port, and an output another component owns is
+// refused.
 func TestConfigValidateOutputs(t *testing.T) {
 	entityWatch := []component.PortDefinition{
 		{Name: "entity_watch", Config: component.KVWatchPort{Bucket: graph.BucketEntityStates}},
@@ -196,8 +195,7 @@ func TestConfigValidateOutputs(t *testing.T) {
 	}
 }
 
-// TestDefaultConfigIsValid: DefaultConfig validates and names the four index buckets
-// (pin component_test.go:482).
+// TestDefaultConfigIsValid: DefaultConfig validates and names the four index buckets.
 func TestDefaultConfigIsValid(t *testing.T) {
 	config := DefaultConfig()
 	if err := config.Validate(); err != nil {
@@ -226,8 +224,7 @@ func TestDefaultConfigIsValid(t *testing.T) {
 }
 
 // TestConfigWithoutPortsTakesDefaultPorts: a configuration with no ports key builds with
-// DefaultConfig's ports (ruling K, #91 comment 6062681355, applied to graph-index by PR
-// #414 comment 6431777824).
+// DefaultConfig's ports.
 func TestConfigWithoutPortsTakesDefaultPorts(t *testing.T) {
 	for _, raw := range []string{`{}`, `{"workers": 2}`, `{"ports": null}`} {
 		t.Run(raw, func(t *testing.T) {
@@ -252,8 +249,7 @@ func TestConfigWithoutPortsTakesDefaultPorts(t *testing.T) {
 
 // TestConfigPresentPortsUsedAsWritten: a ports block that is present is the whole set,
 // never merged with the defaults, so an empty inputs or outputs list is no inputs or no
-// outputs and construction refuses it (ruling K, PR #414 comment 6431777824; the pin
-// filled an empty side from the defaults).
+// outputs and construction refuses it.
 func TestConfigPresentPortsUsedAsWritten(t *testing.T) {
 	entityWatch := []component.PortDefinition{
 		{Name: "entity_watch", Config: component.KVWatchPort{Bucket: graph.BucketEntityStates}},
@@ -284,8 +280,8 @@ func TestConfigPresentPortsUsedAsWritten(t *testing.T) {
 // TestConfigRefusesInputsTheFollowerDoesNotRead: graph-index reads one source, a watch of
 // every key of ENTITY_STATES with no history (the follower's WatchAll). An input port that
 // declares anything else is refused by construction and by port declaration, naming the
-// port, so a composition never advertises a feed graph-index does not read (#424). A
-// watch of ENTITY_STATES under another port name is still used as written (ruling K).
+// port, so a composition never advertises a feed graph-index does not read. A watch of
+// ENTITY_STATES under another port name is still used as written.
 func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
 	renamed := []component.PortDefinition{
 		{Name: "states", Config: component.KVWatchPort{Bucket: graph.BucketEntityStates}},

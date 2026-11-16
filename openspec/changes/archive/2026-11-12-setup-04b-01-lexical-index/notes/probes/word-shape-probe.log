@@ -1,0 +1,19 @@
+Word-shape measurements on the tree's Go and Markdown files at a1783aa1 (python3 over `git ls-files '*.go' '*.md'`;
+a run is a maximal run of Unicode letters and digits; identifier splitting at lower-to-upper steps and before the last
+capital of a capital run followed by lower case; 2026-11-12; source word-shape-probe.py.txt; the base64 counts vary
+by run because the bytes are random)
+
+distinct runs 41,864; over 32 bytes 2,263; over 48 613; over 64 58; over 96 0
+runs that lose every word, by length rule:
+  A  cap 32 bytes before splitting            2,263   (4,000 random base64 chars -> about 300 words; 100 sha256 hex -> 0)
+  B  cap 32 bytes after splitting               345   (about 1,000 to 1,100 words; 0)
+  C  cap 64 before and 32 after                 402   (about 600 words; 0)
+  C2 cap 128 before and 32 after                345   (about 900 words; 0)
+  every run B loses is lower-case hex (345 of 345: commit SHAs and digests)
+
+plural pairs (w with w+s, w+es or y->ies, both present, w at least 3 letters):
+  plural-only stemmer      2,024 fold, 117 do not
+  plus the two "es" rules  2,087 fold,  54 do not; folding is idempotent on every split word of the Go files
+
+Go files only: 1,431,626 runs, 136,081 split into two or more words (9.5%); holding the joined form as well adds
+8.3% more words and 14,899 distinct joined forms beside 10,504 distinct split words

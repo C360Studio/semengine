@@ -31,7 +31,7 @@ var (
 	ErrAlreadyStarted = errors.New("graphview: view already started")
 )
 
-// PoisonError is the typed per-key poison signal (G6, ADR-079 semantics): a
+// PoisonError is the typed per-key poison signal (G6, SemStreams ADR-079 semantics): a
 // stored value for Key failed the injected validating decode at Revision. It
 // is surfaced in the delta lane (Delta.Op == DeltaPoison, Delta.Err), on
 // point reads of the poisoned key, and in Snapshot.Poisoned — never as a

@@ -8,8 +8,7 @@ import (
 
 const (
 	// openBudget bounds the caller's open function: a connect and its first round trip to a broker
-	// that is already answering. The value is natsclient's fixture-client timeout, which the pin's
-	// NewTestClient family used.
+	// that is already answering. The value is natsclient's fixture-client timeout.
 	openBudget = 15 * time.Second
 	// closeBudget bounds the close Open registers. The test's own context is already cancelled
 	// when cleanups run, so the close gets fresh finite authority.

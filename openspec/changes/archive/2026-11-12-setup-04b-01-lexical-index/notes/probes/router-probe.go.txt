@@ -1,0 +1,52 @@
+package graphquery
+
+// Throwaway review probe. Not for merge.
+
+import (
+	"context"
+	"strings"
+	"testing"
+)
+
+func TestReviewRoutes(t *testing.T) {
+	for _, q := range []string{
+		"what is the difference between real-time and batch ingest",
+		"how are entities related to their sources",
+		"which sensors are linked to the gateway",
+		"storage area is flooded",
+		"what is the area of responsibility for the ops team",
+		"time zone settings for the scheduler",
+		"what does the dashboard look like",
+		"I would like the pump manual",
+		"compare pump-7 and pump-9",
+		"what is the max temperature of pump-7",
+		"total cost of the outage",
+		"how many sensors are offline",
+		"count of open work orders",
+		"mean time between failures",
+		"what failed pumps were reported last week",
+		"what happened today",
+		"pump failures today",
+		"the most recent firmware update",
+		"top 5 alerts",
+		"minimum viable configuration",
+		"sum-check errors on the bus",
+		"relational database schema",
+		"pathology report for patient",
+		"connection pool exhausted",
+		"pump failure vibration",
+		"status of pump-7",
+		"find documents similar to the maintenance guide",
+	} {
+		route, err := routeGlobalSearch(context.Background(), q)
+		if err != nil {
+			t.Logf("%-62q REFUSED: %v", q, err)
+			continue
+		}
+		extra := route.reference
+		if len(route.unhonoured) > 0 {
+			extra += " not honoured: " + strings.Join(route.unhonoured, ",")
+		}
+		t.Logf("%-62q %s %s", q, route.strategy, extra)
+	}
+}

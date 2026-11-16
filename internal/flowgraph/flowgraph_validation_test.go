@@ -305,8 +305,8 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 // TestUnconnectedOptionalInterfacePortReportsNoPublishers holds an unconnected
 // input that is not required to no_publishers, whatever its name, subject or
 // interface contract. Beside a plain control port, each port carries an
-// interface contract and one or both of the marks the pin's heuristic read as
-// an optional alternative: a "-" in the name, or a ".graphable", ".typed" or
+// interface contract and one or both of the marks a naming heuristic could read
+// as an optional alternative: a "-" in the name, or a ".graphable", ".typed" or
 // ".validated" part in the subject.
 func TestUnconnectedOptionalInterfacePortReportsNoPublishers(t *testing.T) {
 	ports := []component.Port{

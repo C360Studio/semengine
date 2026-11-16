@@ -2,6 +2,7 @@ package graphclustering
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	graphlexical "github.com/c360studio/semengine/processor/graph-lexical"
 )
 
 // createFromJSON builds graph-clustering through CreateGraphClustering from raw, as a
@@ -77,12 +79,11 @@ func requireRefused(t *testing.T, raw string, want ...string) {
 	}
 }
 
-// TestConfigRefusesRemovedKeys: each configuration key the pin defined and graph-clustering
-// does not is refused at construction and by port declaration, naming the key and saying it was
-// removed with what replaces it; the same configuration without it builds (design D3;
-// graph-clustering spec, "Removed configuration is refused"). The keys and the words of their
-// guidance are written out here, not read from the package's table. A key nobody ever defined
-// (a misspelling) is refused naming it too.
+// TestConfigRefusesRemovedKeys: each removed configuration key is refused at construction and by
+// port declaration, naming the key and saying it was removed with what replaces it; the same
+// configuration without it builds (graph-clustering spec, "Removed configuration is refused"). The
+// keys and the words of their guidance are written out here, not read from the package's table. A
+// key nobody ever defined (a misspelling) is refused naming it too.
 func TestConfigRefusesRemovedKeys(t *testing.T) {
 	raw, err := json.Marshal(DefaultConfig())
 	if err != nil {
@@ -136,9 +137,8 @@ func entityWatch() component.PortDefinition {
 }
 
 // TestConfigRefusesOutputPorts: graph-clustering writes COMMUNITY_INDEX itself and declares no
-// output ports, so the pin's default outputs (a graph-mutation request port and a COMMUNITY_INDEX
-// write, which semboids' configuration declares) are refused, as is any one of them alone
-// (design D3).
+// output ports, so a graph-mutation request port and a COMMUNITY_INDEX write, the outputs
+// semboids' configuration declares, are refused, as is a COMMUNITY_INDEX write alone.
 func TestConfigRefusesOutputPorts(t *testing.T) {
 	mutations := component.PortDefinition{Name: "graph_mutations", Config: component.NATSRequestPort{Subject: "graph.mutation.>"}}
 	communities := component.PortDefinition{Name: "communities", Config: component.KVWritePort{Bucket: graph.BucketCommunityIndex}}
@@ -180,8 +180,7 @@ func TestConfigWithoutPortsTakesDefaultPorts(t *testing.T) {
 // TestConfigRefusesInputsTheFollowerDoesNotRead: the one input is the follower's watch of every
 // ENTITY_STATES key with no history; any other input, a second input, or none is refused, naming
 // the port where there is one, so a composition never advertises a feed graph-clustering does not
-// read (#424, as graph-index). The pin's default also read ENTITY_STATES, OUTGOING_INDEX and
-// INCOMING_INDEX through kv-read ports; those are refused.
+// read, as graph-index does. A kv-read port, on ENTITY_STATES or OUTGOING_INDEX, is refused too.
 func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
 	cases := map[string]struct {
 		inputs []component.PortDefinition
@@ -202,7 +201,7 @@ func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
 }
 
 // TestConfigStartupWait: the wait for ENTITY_STATES defaults to 30 attempts 500 ms apart, and set
-// values are kept (pin ApplyDefaults); a negative value is refused.
+// values are kept; a negative value is refused.
 func TestConfigStartupWait(t *testing.T) {
 	c := mustCreate(t, `{}`)
 	if c.config.StartupAttempts != 30 || c.config.StartupInterval != 500 {
@@ -218,10 +217,9 @@ func TestConfigStartupWait(t *testing.T) {
 	requireRefused(t, `{"startup_interval_ms": -1}`, "startup_interval_ms")
 }
 
-// TestConfigDetectionInterval: detection_interval defaults to the pin's 30 s and a set duration is
-// kept; where the pin fell back to 30 s on a value it could not parse, a value that is not a
-// duration, or is not above zero, is refused naming the key. The ticker that reads it is
-// TestDetectionIntervalIsRead's (task 2.3).
+// TestConfigDetectionInterval: detection_interval defaults to 30 s and a set duration is kept; a
+// value that is not a duration, or is not above zero, is refused naming the key, never replaced by
+// the default. The ticker that reads it is TestDetectionIntervalIsRead's.
 func TestConfigDetectionInterval(t *testing.T) {
 	for raw, want := range map[string]string{`{}`: "30s", `{"detection_interval": "5m"}`: "5m0s"} {
 		d, err := mustCreate(t, raw).config.interval()
@@ -234,11 +232,26 @@ func TestConfigDetectionInterval(t *testing.T) {
 	}
 }
 
+// TestConfigTextSuffixes: text_suffixes left out resolves to graph-lexical's default list, so
+// both read the same text unless an operator sets one of them; a set list is kept as written. The
+// keywords it selects are TestTextSuffixesIsRead's.
+func TestConfigTextSuffixes(t *testing.T) {
+	lexical := graphlexical.DefaultConfig()
+	lexical.ApplyDefaults()
+	if got := mustCreate(t, `{}`).config.TextSuffixes; !slices.Equal(got, lexical.TextSuffixes) {
+		t.Fatalf("default text_suffixes = %q; want graph-lexical's %q", got, lexical.TextSuffixes)
+	}
+	want := []string{".name", ".signature", ".comment"}
+	if got := mustCreate(t, `{"text_suffixes": [".name", ".signature", ".comment"]}`).config.TextSuffixes; !slices.Equal(got, want) {
+		t.Fatalf("set text_suffixes = %q; want %q", got, want)
+	}
+}
+
 // FuzzResolveConfig: for any bytes, resolveConfig, DeclarePorts and CreateGraphClustering agree
 // on accepting or refusing, a refusal is classified invalid, and whatever is accepted carries no
 // removed key and reads only what graph-clustering reads: a detection interval above zero, a
-// startup wait of at least one attempt, no outputs, and one input that is a full ENTITY_STATES
-// watch with no history. The seeds cover each class: empty, null, the defaults, each kept key, a
+// text_suffixes list that is not empty, a startup wait of at least one attempt, no outputs, and
+// one input that is a full ENTITY_STATES watch with no history. The seeds cover each class: empty, null, the defaults, each kept key, a
 // removed key, an unknown key, trailing data, a bad or non-positive interval, a negative startup
 // value, an output, an unread input, two inputs, no input, not JSON, not an object.
 func FuzzResolveConfig(f *testing.F) {
@@ -247,6 +260,7 @@ func FuzzResolveConfig(f *testing.F) {
 		`null`,
 		`{}`,
 		`{"detection_interval":"1m","startup_attempts":2,"startup_interval_ms":10}`,
+		`{"text_suffixes":[".name",".comment"]}`,
 		`{"ports":{"inputs":[{"name":"w","config":{"kind":"kv-watch","bucket":"ENTITY_STATES"}}]}}`,
 		`{"entity_id_edges":{"include_siblings":false}}`,
 		`{"enable_anomaly_detection":true}`,
@@ -291,7 +305,8 @@ func FuzzResolveConfig(f *testing.F) {
 				}
 			}
 		}
-		if d, err := config.interval(); err != nil || d <= 0 || config.StartupAttempts < 1 || config.StartupInterval < 1 {
+		if d, err := config.interval(); err != nil || d <= 0 || config.StartupAttempts < 1 || config.StartupInterval < 1 ||
+			len(config.TextSuffixes) == 0 {
 			t.Fatalf("resolveConfig(%q) accepted %+v (interval %v, %v)", raw, config, d, err)
 		}
 		if len(config.Ports.Outputs) != 0 || len(inputs) != 1 {

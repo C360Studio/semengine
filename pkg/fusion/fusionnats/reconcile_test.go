@@ -12,7 +12,7 @@ import (
 
 func ent(id string) graph.EntityState { return graph.EntityState{ID: id} }
 
-// TestReconcileHydration covers the ADR-084 D6 set logic: what a handler might
+// TestReconcileHydration covers the ADR-084 set logic: what a handler might
 // send that a client trusting the reply would mishandle. These are the named
 // witnesses of TestReconcileTotal.
 func TestReconcileHydration(t *testing.T) {

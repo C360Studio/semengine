@@ -104,12 +104,11 @@ func TestCachePreferMetricsOverStats(t *testing.T) {
 	assert.NotNil(t, memCache.stats, "stats should always be enabled")
 }
 
-// TestCacheMetricsTwoCachesOnePrefixGatherTheSum holds design D9 for pkg/cache: two caches built
-// with the same prefix on one registry share one collector per metric, so every operation either
-// cache performs is gathered. The oracle is the operations this test performs, counted by hand:
-// each cache has room for one entry and does two sets (one eviction), one hit, one miss and one
-// delete. At the pin the second cache's registrations returned nil without registering its
-// collectors, so its writes were never gathered.
+// TestCacheMetricsTwoCachesOnePrefixGatherTheSum: two caches built with the same prefix on one
+// registry share one collector per metric, so every operation either cache performs is gathered.
+// The oracle is the operations this test performs, counted by hand: each cache has room for one
+// entry and does two sets (one eviction), one hit, one miss and one delete. It fails if the second
+// cache's writes go to collectors the registry does not gather.
 func TestCacheMetricsTwoCachesOnePrefixGatherTheSum(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 

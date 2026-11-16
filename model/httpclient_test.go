@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-// TestNewHTTPClient_ZeroOptionsAppliesFrameworkDefaults pins the
-// beta.43 reframe: zero opts now select FRAMEWORK defaults (tighter
-// than Go's net/http defaults) — IdleConnTimeout 30s,
-// MaxIdleConnsPerHost 1. ResponseHeaderTimeout still defaults to 0
-// (no timeout) because non-streaming LLM calls legitimately take
-// minutes for slow models; capping there would false-positive.
+// TestNewHTTPClient_ZeroOptionsAppliesFrameworkDefaults pins that zero
+// opts select FRAMEWORK defaults (tighter than Go's net/http defaults)
+// — IdleConnTimeout 30s, MaxIdleConnsPerHost 1. ResponseHeaderTimeout
+// still defaults to 0 (no timeout) because non-streaming LLM calls
+// legitimately take minutes for slow models; capping there would
+// false-positive.
 func TestNewHTTPClient_ZeroOptionsAppliesFrameworkDefaults(t *testing.T) {
 	c := NewHTTPClient(HTTPClientOptions{})
 	if c == nil {
@@ -119,11 +119,10 @@ func TestHTTPClientOptionsFromEndpoint(t *testing.T) {
 }
 
 // TestNewHTTPClient_ResponseHeaderTimeoutFiresFast proves the operator-set
-// ResponseHeaderTimeout cancels a hung request. Simulates the failure mode
-// semspec hit on openrouter-qwen3-moe (beta.33 post-mortem): server takes
-// the connection but never sends headers. Without the timeout the client
-// would block until the request-level ctx fires (minutes); with it set,
-// the client returns within the timeout window.
+// ResponseHeaderTimeout cancels a hung request. Simulates a server that
+// takes the connection but never sends headers. Without the timeout the
+// client would block until the request-level ctx fires (minutes); with it
+// set, the client returns within the timeout window.
 func TestNewHTTPClient_ResponseHeaderTimeoutFiresFast(t *testing.T) {
 	// Server that accepts the connection but never writes a response.
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -154,7 +153,7 @@ func TestNewHTTPClient_ResponseHeaderTimeoutFiresFast(t *testing.T) {
 		t.Fatal("expected error from ResponseHeaderTimeout, got nil")
 	}
 	// Bound proves it was the 200ms header timeout, not the 10s outer ctx —
-	// the failure semspec saw was a multi-minute wedge with an in-flight ctx.
+	// the failure it guards against is a multi-minute wedge with an in-flight ctx.
 	if elapsed > 2*time.Second {
 		t.Errorf("request took %v, want < 2s — ResponseHeaderTimeout did not fire", elapsed)
 	}

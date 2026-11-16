@@ -14,7 +14,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// defaultQueryTimeoutMs is the pin's 60 s query timeout (design D5).
+// defaultQueryTimeoutMs is the default query timeout, 60 s.
 const defaultQueryTimeoutMs = 60000
 
 // maxQueryTimeoutMs is the largest millisecond count a time.Duration holds; one more wraps negative.

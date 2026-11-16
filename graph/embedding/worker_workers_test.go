@@ -16,10 +16,10 @@ func TestWorkerCallbacksCarryOperationContext(t *testing.T) {
 	require.NotNil(t, terminal)
 }
 
-// TestWithWorkers_FloorsAtOne guards gh#620 at the library seam.
+// TestWithWorkers_FloorsAtOne guards the worker-count floor at the library seam.
 //
-// graph-embedding derived its worker count as batch_size/10, so any batch_size
-// under 10 produced ZERO workers by integer division. Run runs exactly
+// A component that derives its worker count as batch_size/10 gets ZERO workers by
+// integer division for any batch_size under 10. Run runs exactly
 // w.workers lanes for the EMBEDDING_INDEX watch, so zero means the
 // component silently processes nothing while every health signal stays green.
 // The floor lives here rather than at each call site because no caller ever

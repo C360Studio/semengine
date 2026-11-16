@@ -158,9 +158,8 @@ func TestMutationClientRefusesMissingTimestamp(t *testing.T) {
 }
 
 // TestMutationClientReconcileRequiresSource: Reconcile requires Metadata.Source,
-// as Create and Append do, and sends it as the request's source (design D15,
-// "Conditional replace"); without it nothing is sent, whatever the desired
-// statements carry.
+// as Create and Append do, and sends it as the request's source; without it
+// nothing is sent, whatever the desired statements carry.
 //
 // Requirement: projection-mutation/Conditional reconcile at a caller-observed revision
 func TestMutationClientReconcileRequiresSource(t *testing.T) {

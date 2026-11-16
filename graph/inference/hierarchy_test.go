@@ -27,8 +27,8 @@ import (
 // follow, or the fixture becomes an import and mints nothing.
 //
 // The platform is a DEPLOYMENT id, not a product or domain name: position 2 is
-// the composition root's own platform.id (ADR-102 d2), and the framework's own
-// exemplar should not model the habit the change exists to retire. "logistics"
+// the composition root's own platform.id (ADR-102 decision 2), and the
+// framework's own exemplar should not model a product name there. "logistics"
 // here would read as a product; the taxonomy it belongs to lives at position 4,
 // where these fixtures already put it.
 const (
@@ -73,11 +73,10 @@ func statementCount(triples []message.Triple, predicate string, object any) int 
 	return n
 }
 
-// fakeStore is graph-ingest as the inference sees it through EntityStore, and it
-// refuses what graph-ingest refuses (#134 item 4): CreateEntity of a key the
-// store holds returns natsclient.ErrKVKeyExists as is, as graph-ingest's create
-// does (createEntityWithReceipt returns the bucket's conflict sentinel
-// unwrapped).
+// fakeStore is graph-ingest as the inference sees it through EntityStore, and
+// it refuses what graph-ingest refuses: CreateEntity of a key the store holds
+// returns natsclient.ErrKVKeyExists as is, as graph-ingest's create does
+// (createEntityWithReceipt returns the bucket's conflict sentinel unwrapped).
 //
 // createErr, when set, is what CreateEntity returns; failOn, when set, limits it
 // to creates of that ID.
@@ -179,16 +178,14 @@ func (s *fakeStore) entity(id string) (*gtypes.EntityState, bool) {
 	return entity.Clone(), true
 }
 
-// TestNewHierarchyInferenceRefusesEmptyAuthority pins the third of the three
-// LOUD paths the migration note promises (review HIGH-3). Deleting all three
-// refusals in one compiling mutant previously left six suites green.
+// TestNewHierarchyInferenceRefusesEmptyAuthority pins one of the inference's
+// LOUD refusals.
 //
 // An inference holding no authority pair could only answer "everything is
-// foreign" and mint nothing, for every entity, forever — the silent shape this
-// whole change exists to remove. It is a construction mistake, so construction
-// refuses it (#134 item 1). graph-ingest cannot reach it (its factory refuses
-// an absent deps.Platform first), which is exactly why the branch needs its own
-// test rather than an integration one.
+// foreign" and mint nothing, for every entity, forever, and silently. It is a
+// construction mistake, so construction refuses it. graph-ingest cannot reach
+// it (its factory refuses an absent deps.Platform first), which is exactly why
+// the branch needs its own test rather than an integration one.
 func TestNewHierarchyInferenceRefusesEmptyAuthority(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -212,13 +209,13 @@ func TestNewHierarchyInferenceRefusesEmptyAuthority(t *testing.T) {
 	}
 }
 
-// TestAddToContainersSkipsForeignAuthority is the DISCRIMINATING test for
-// the ADR-102 skip, and it lives here rather than at the graph-ingest seam
-// because there the skip is not named. Without it, graph-ingest's own authority
-// gate refuses every container birth under a peer's pair, AddToContainers
-// returns a joined error, and graph-ingest refuses the imported entity's birth
-// (design D21): at the seam a deleted check shows as an import that never
-// lands, and here as the skip itself.
+// TestAddToContainersSkipsForeignAuthority is the DISCRIMINATING test for the
+// ADR-102 skip, and it lives here rather than at the graph-ingest seam because
+// there the skip is not named. Without it, graph-ingest's own authority gate
+// refuses every container birth under a peer's pair, AddToContainers returns a
+// joined error, and graph-ingest refuses the imported entity's birth: at the
+// seam a deleted check shows as an import that never lands, and here as the
+// skip itself.
 //
 // It also covers the case graph-ingest cannot: this is exported framework
 // surface, and a consumer calling AddToContainers directly has no second
@@ -330,8 +327,8 @@ func TestHierarchyInference_AllLevels(t *testing.T) {
 	assert.Equal(t, "c360.semstreams-hierarchy-test.sensor.document.group.container", forwardPredicates[vocabulary.HierarchySystemMember])
 	assert.Equal(t, "c360.semstreams-hierarchy-test.sensor.group.container.level", forwardPredicates[vocabulary.HierarchyDomainMember])
 
-	// No inverse edge (ruling M, #91 comment 6080973822): each container holds
-	// only the type statement it was born with.
+	// No inverse edge: each container holds only the type statement it was born
+	// with.
 	assertContainersHoldOnlyTheirType(t, store, "c360.semstreams-hierarchy-test.sensor.document.temperature.group",
 		"c360.semstreams-hierarchy-test.sensor.document.group.container",
 		"c360.semstreams-hierarchy-test.sensor.group.container.level")
@@ -381,7 +378,7 @@ func TestHierarchyInference_ContainerReuse(t *testing.T) {
 // one's create. The inference asks storage through the create; graph-ingest
 // refuses it with natsclient.ErrKVKeyExists, and that refusal is the container
 // existing, so the birth goes on, carries its edge to the container, and writes
-// nothing to it (#134 items 4 and 7).
+// nothing to it.
 func TestHierarchyInference_ContainerExistsInStorage(t *testing.T) {
 	const entityID = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-001"
 	const typeContainerID = "c360.semstreams-hierarchy-test.sensor.document.temperature.group"
@@ -436,9 +433,9 @@ func TestHierarchyInference_ContainerEntityProperties(t *testing.T) {
 // TestBuildContainerIDs pins each container to its NAMED prefix level under the
 // canonical order org.platform.system.domain.type.instance (ADR-102). The
 // fixture deliberately gives positions 3 and 4 distinguishable values ("src"
-// and "dom") so a builder that read them in the retired order would produce a
-// different string — the previous fixture named them "domain"/"system" in
-// position order, which made every assertion here order-blind.
+// and "dom") so a builder that read them in the wrong order would produce a
+// different string; values named "domain"/"system" in position order would make
+// every assertion here order-blind.
 func TestBuildContainerIDs(t *testing.T) {
 	eid := semtypes.EntityID{
 		Org: "org", Platform: "platform",
@@ -449,21 +446,20 @@ func TestBuildContainerIDs(t *testing.T) {
 	// Level 5 (type prefix) + one padding token.
 	assert.Equal(t, "org.platform.src.dom.type.group", buildTypeContainerID(eid))
 
-	// Level 4 (taxonomy prefix) + two padding tokens. Reached through the
-	// retired-name CreateSystemEdges field and hierarchy.system.member (H7).
+	// Level 4 (taxonomy prefix) + two padding tokens. Its membership predicate is
+	// hierarchy.system.member, a name from an older order of the ID positions.
 	assert.Equal(t, "org.platform.src.dom.group.container", buildTaxonomyContainerID(eid))
 
-	// Level 3 (source prefix) + three padding tokens. Reached through the
-	// retired-name CreateDomainEdges field and hierarchy.domain.member (H7).
+	// Level 3 (source prefix) + three padding tokens. Its membership predicate is
+	// hierarchy.domain.member, a name from an older order of the ID positions.
 	assert.Equal(t, "org.platform.src.group.container.level", buildSourceContainerID(eid))
 }
 
-// TestHierarchyInference_DeletedContainerIsBornAgain holds #130 and design D21:
-// the inference keeps no record of which containers exist, so each birth asks
-// storage, and a container deleted since an earlier birth of its type is created
-// again by the next birth of that type. At the pin a cache answered for the
-// deleted container, its inverse edge was refused for an absent subject, and
-// every later birth of the type failed until the process restarted.
+// TestHierarchyInference_DeletedContainerIsBornAgain: the inference keeps no
+// record of which containers exist, so each birth asks storage, and a container
+// deleted since an earlier birth of its type is created again by the next birth
+// of that type. A cache of existing containers would answer for the deleted one,
+// and no later birth of the type would create it again.
 func TestHierarchyInference_DeletedContainerIsBornAgain(t *testing.T) {
 	const first = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-001"
 	const second = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-002"
@@ -487,11 +483,10 @@ func TestHierarchyInference_DeletedContainerIsBornAgain(t *testing.T) {
 	assertContainersHoldOnlyTheirType(t, store, containerID)
 }
 
-// TestHierarchyInference_BirthWritesNoSiblingEdge holds ruling G (#91 comment
-// 6062681355) and design D21: a birth of a type that already has a member
-// returns no hierarchy.type.sibling statement and writes none on the member
-// born before it. The predicate stays registered in vocabulary; the inference
-// does not write it.
+// TestHierarchyInference_BirthWritesNoSiblingEdge: a birth of a type that
+// already has a member returns no hierarchy.type.sibling statement and writes
+// none on the member born before it. The predicate stays registered in
+// vocabulary; the inference does not write it.
 func TestHierarchyInference_BirthWritesNoSiblingEdge(t *testing.T) {
 	const first = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-001"
 	const second = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-002"

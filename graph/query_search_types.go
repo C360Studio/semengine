@@ -7,8 +7,8 @@ import "time"
 // QueryResponse, and the verb table (QueryVerbs) names which verb sends which. Their responders arrive
 // with later changes, except the embedding verbs', which processor/graph-embedding answers; these
 // types declare what those responders send. The embedding verbs claim no ENTITY_STATES revision and
-// send IndexedRevision 0. TemporalRangeRequest and SpatialBoundsRequest are what graph-query's
-// global search sends to the range and bounds verbs, so what their responders must decode.
+// send IndexedRevision 0. TemporalRangeRequest and SpatialBoundsRequest are the range and bounds verbs'
+// requests, which graph-query forwards and their responders must decode.
 
 // SimilarityHit is one entity a semantic or similar lookup found.
 type SimilarityHit struct {
@@ -17,10 +17,10 @@ type SimilarityHit struct {
 }
 
 const (
-	// DefaultSimilarityLimit is what a semantic or similar request's limit of 0 means.
+	// DefaultSimilarityLimit is what a semantic, similar or word search request's limit of 0 means.
 	DefaultSimilarityLimit = 10
-	// MaxSimilarityLimit is the largest limit a semantic or similar request may send; a larger or
-	// negative one is refused, never clamped.
+	// MaxSimilarityLimit is the largest limit a semantic, similar or word search request may send; a
+	// larger or negative one is refused, never clamped.
 	MaxSimilarityLimit = 100
 )
 
@@ -47,8 +47,8 @@ type SimilarRequest struct {
 	MinRevisionField
 }
 
-// SemanticData is the reply to a text search over the embeddings. EmbedderType names the embedder that
-// answered ("bm25" or "http"). UnreadableRecords is the number of EMBEDDING_INDEX records the
+// SemanticData is the reply to a text search over the embeddings. EmbedderType is the name the product
+// registered the answering embedder under. UnreadableRecords is the number of EMBEDDING_INDEX records the
 // responder could not decode, and FailedRecords the number of entities whose latest embedding failed;
 // neither entity can be a hit. A 0 in both says no record was left out for either reason; an entity whose
 // embedding is still pending is left out too and counted in neither, so the counts never prove completeness.
@@ -96,8 +96,8 @@ type TemporalData struct {
 
 // TemporalRangeRequest is the time-range verb's request (graph.temporal.query.range): the entities
 // that changed from StartTime to EndTime, at most Limit of them. The times are RFC 3339 on the wire,
-// under start_time and end_time; SemStreams spelled them startTime and endTime. A responder decodes it
-// strictly, refusing an unknown key by name, and reads min_revision as every derived-index verb does.
+// under start_time and end_time, never startTime and endTime. A responder decodes it strictly,
+// refusing an unknown key by name, and reads min_revision as every derived-index verb does.
 type TemporalRangeRequest struct {
 	StartTime time.Time `json:"start_time"`
 	EndTime   time.Time `json:"end_time"`

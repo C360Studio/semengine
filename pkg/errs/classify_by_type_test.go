@@ -7,9 +7,8 @@ import (
 )
 
 // IsTransient and IsFatal read an error's class and its sentinels, never its
-// text (owner ruling N, #91 comment 6080973822, extended to IsFatal in comment
-// 6083704900; #146): an error's text can carry an entity ID or a peer's message,
-// and a word in it must not decide whether the work is retried or stopped.
+// text: an error's text can carry an entity ID or a peer's message, and a word
+// in it must not decide whether the work is retried or stopped.
 
 // textOnlyError carries text in an unclassified error that wraps no sentinel.
 func textOnlyError(text string) error {
@@ -41,7 +40,7 @@ func TestIsTransientClassifiesByClassAndSentinel(t *testing.T) {
 		t.Errorf("IsTransient(%q) = true, want false: its class is fatal", fatal)
 	}
 
-	// Each word the pin's text match read (errs.go:177-193 at 8b99efe9).
+	// Words that read as transient in plain text; none may decide the class.
 	for _, word := range []string{"timeout", "connection", "network", "temporary", "unavailable", "busy", "retry"} {
 		if err := textOnlyError(word); IsTransient(err) {
 			t.Errorf("IsTransient(%q) = true, want false: a text match decided the class", err)
@@ -74,7 +73,7 @@ func TestIsFatalClassifiesByClassAndSentinel(t *testing.T) {
 		t.Errorf("IsFatal(%q) = true, want false: its class is transient", transient)
 	}
 
-	// Each word the pin's text match read (errs.go:220-236 at 8b99efe9).
+	// Words that read as fatal in plain text; none may decide the class.
 	words := []string{"fatal", "panic", "corrupted", "invalid config", "missing config", "out of memory", "disk full"}
 	for _, word := range words {
 		if err := textOnlyError(word); IsFatal(err) {

@@ -18,12 +18,12 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// SemStreams ADR-054 Phase 1: graph-ingest stamps a single-valued entity.indexing.profile
+// SemStreams ADR-054: graph-ingest stamps a single-valued entity.indexing.profile
 // triple at every entity-CREATION seam (canonical create and Graphable arrival),
-// resolving via precedence envelope > Graphable
-// IndexingProfiler > fallback floor (default control). It is NEVER stamped on a
-// re-arrival (immutable after create). These tests drive the production
-// mutation handlers and create seams against the mock KV bucket.
+// resolving via precedence envelope > Graphable IndexingProfiler > fallback floor
+// (default control). It is NEVER stamped on a re-arrival (immutable after create).
+// These tests drive the production mutation handlers and create seams against the
+// mock KV bucket.
 
 const testProfileEntityID = "c360.platform.test.sys.widget.001"
 
@@ -201,7 +201,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 		"re-arrival must keep the create-time profile and stay single-valued")
 }
 
-// --- SemStreams ADR-054 §1 invariant: the structural graph is NEVER gated by profile ---
+// --- SemStreams ADR-054 invariant: the structural graph is NEVER gated by profile ---
 
 func TestIndexingProfile_StructuralGraphNeverGated_TraceEntityStaysQueryable(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
@@ -216,8 +216,8 @@ func TestIndexingProfile_StructuralGraphNeverGated_TraceEntityStaysQueryable(t *
 	_, err := comp.handleCanonicalCreate(ctx, createData)
 	require.NoError(t, err)
 
-	// A 'trace' entity is excluded from EMBEDDING (Phase 3) but must remain
-	// fully queryable/traversable: the query path must not filter on profile.
+	// A 'trace' entity is excluded from EMBEDDING but must remain fully
+	// queryable/traversable: the query path must not filter on profile.
 	queryReq, _ := json.Marshal(map[string]any{"prefix": "c360", "limit": 10})
 	respData, err := comp.handleQueryPrefixWithMaxPayload(ctx, queryReq, 1<<20)
 	require.NoError(t, err)
@@ -254,8 +254,8 @@ func TestIndexingProfile_FloorMetric_FiresExactlyOnFloor(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	ctx := context.Background()
 
-	// A unique message_type isolates this counter label. The vec is now the
-	// component's own (design D4), so no other test touches it.
+	// A unique message_type isolates this counter label. The vec is the
+	// component's own, so no other test touches it.
 	mt := message.Type{Domain: "metrictest", Category: "widget", Version: "v1"}
 	counter := comp.indexingProfileDefault.WithLabelValues(mt.Key())
 
@@ -324,15 +324,11 @@ func TestStampExplicitIndexingProfile_IgnoresInvalid(t *testing.T) {
 	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es))
 }
 
-// TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric is kept from the
-// pin's indexing_profile_registry_test.go, which design D2 does not port (it
-// asserts the agentic and research payloads' floors, the agentic domain's
-// contract). Graph-ingest's part is kept: through the production create
-// handler, a type registered with a floor takes it (trace, not the
-// always-control default) and, because a registered floor is a deliberate
-// classification rather than an operator gap, the default-fallback metric does
-// not fire. The pin used agentic's request type; here a test-registered type
-// carries the same floor (D2).
+// TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric: through the
+// production create handler, a type registered with a floor takes it (trace,
+// not the always-control default) and, because a registered floor is a
+// deliberate classification rather than an operator gap, the default-fallback
+// metric does not fire. A test-registered type carries the floor.
 func TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	ctx := context.Background()
@@ -364,16 +360,10 @@ func TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric(t *testing.T) {
 		"a registered floor is NOT a gap → the default metric must NOT fire")
 }
 
-// TestIndexingProfile_Append_DoesNotStamp and
-// TestIndexingProfile_RegistryFloor_RegisteredNoFloorFiresMetric also come from the
-// pin's indexing_profile_registry_test.go (:126-160, :187-209). Design D2 excludes that
-// file for its agentic and research floors; neither test touches that domain, so they
-// are kept here unchanged except for imports and the metric (below).
-
-// TestIndexingProfile_Append_DoesNotStamp locks the indexing invariant:
-// append is NOT a stamp seam. An entity updated via append carries no
-// additional profile triple — reconcileIndexingProfile is not on this path.
-// The entity must be pre-created (SemStreams ADR-055 deleted the auto-vivify path);
+// TestIndexingProfile_Append_DoesNotStamp locks the indexing invariant: append is
+// NOT a stamp seam. An entity updated via append carries no additional profile
+// triple — reconcileIndexingProfile is not on this path. The entity must be
+// pre-created (SemStreams ADR-055: an append to an absent entity is refused);
 // Appending to a pre-existing entity must NOT re-stamp indexing metadata.
 func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
@@ -410,11 +400,9 @@ func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 }
 
 // The complement: a REGISTERED type that declares no floor falls to control AND
-// fires the metric — its new meaning under SemStreams ADR-103: the label names a
-// Registration literal whose IndexingProfile is empty.
-//
-// The pin read getIndexingProfileDefaultMetric(nil); the counter is the component's
-// own now (design D4).
+// fires the metric — its meaning under SemStreams ADR-103: the label names a
+// Registration literal whose IndexingProfile is empty. The counter is the
+// component's own.
 func TestIndexingProfile_RegistryFloor_RegisteredNoFloorFiresMetric(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	ctx := context.Background()

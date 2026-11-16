@@ -36,7 +36,7 @@ transport"; `TestGraphImportsNoTransport`).
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
   and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. On `graph.query.*` the shape
-  depends on the verb: `entity`, `batch`, `prefix` and `hierarchyStats` are bare, and `byName`, `predicate`,
+  depends on the verb: `entity`, `batch`, `prefix`, `prefixIDs` and `hierarchyStats` are bare, and `byName`, `predicate`,
   `entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`,
   `similar`, `spatial` and `temporal` are enveloped. A caller
   decodes by the verb's table row (`QueryVerb.Enveloped`, and `QueryVerb.Reply` for the type of the body or of `data`),
@@ -46,11 +46,12 @@ transport"; `TestGraphImportsNoTransport`).
   `revision_not_reached` (`ErrorCodeRevisionNotReached`), the revision it reached in the detail, and does not wait. The
   bare verbs ignore the field.
 - **The verb table.** `QueryVerbs` declares the request/reply verbs, each with its subject and responder:
-  graph-ingest's `entity`, `batch` and `prefix` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
+  graph-ingest's `entity`, `batch`, `prefix` and `prefixIDs` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
   `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`, `byName`) on
   `graph.index.query.*`, the four verbs of the embedding, spatial and temporal responders (`search` and `similar` on
-  `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), and graph-query's
-  `entity`, `batch`, `prefix`, `byName`, `predicate`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`,
+  `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), graph-lexical's
+  word `search` on `graph.lexical.query.*` (`processor/graph-lexical`), and graph-query's
+  `entity`, `batch`, `prefix`, `prefixIDs`, `byName`, `predicate`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`,
   `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and `temporal` on
   `graph.query.*`. A name is unique only within its responder: `entity` is declared for graph-ingest and for
   graph-query. Each row also marks `Enveloped` and gives the `Reply` type.
@@ -59,7 +60,7 @@ transport"; `TestGraphImportsNoTransport`).
   `globalSearch` time-range and area strategies are refused transient `internal`. A verb a consumer serves under
   `graph.query.*` is not in the table. `QueryVerbs`' doc comment names each verb's request and reply types.
 - **Local search.** `LocalSearchRequest` names an entity (`entity_id`), a `level` from 0 to 2 and a `query` of 1 to
-  `MaxSearchTerms` (16) distinct words, and the search runs in that entity's community: the group of entities that share
+  `MaxSearchTerms` (32) distinct words, and the search runs in that entity's community: the group of entities that share
   the first 4, 3 or 2 parts of its ID. `LocalSearchData` is the reply: the community's record (`community_id`,
   `level`, `member_count`, `community_summary`, `keywords`), the matching `entities` best first, `entities_scanned`,
   `entities_truncated` and an `answer` sentence. The matches come from one page of at most 1,000 entities in ID order,
@@ -76,10 +77,10 @@ transport"; `TestGraphImportsNoTransport`).
   `unhonoured_hints` (the hints the text search could not apply: `path`, `similarity`, `ranking`) and an `answer`
   sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
   `SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit`, `min_revision`) are what graph-query sends to the
-  time-range and bounds verbs, and so what change 7's responders decode; the pin spelled the times `startTime` and
+  time-range and bounds verbs, and so what the responders decode; SemStreams spelled the times `startTime` and
   `endTime`. Which questions each strategy answers, and what is refused, is in `processor/graph-query/README.md`.
 - **Counts.** `PrefixQueryResponse.Total` is the number of distinct keys in the listing before the cursor and any limit,
-  as listed and not a snapshot (#512). `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
+  as listed and not a snapshot. `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
   is the whole group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type
   counts or children cover that page and no more. `Truncated` false says only that it is the last page. When `summary`
   leaves predicates out (`ExcludePredicates`), its `indexed_revision` is 0, which claims nothing: do not compare it with
@@ -175,7 +176,7 @@ This provides maximum flexibility while maintaining semantic clarity.
 ## What is elsewhere
 
 - `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and the write-guard pair
-  (`IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`) the rule engine reads once it is ported (change 6).
+  (`IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`) the rule engine reads once the rule engine is ported.
 - `natsclient`: `IsKVTombstone`, which reports whether a KV watch entry is a delete or a purge.
 - `graph/readiness`: the readiness computation and the GRAPH_STATUS publisher.
 - `graph/inference`: hierarchy inference (its hierarchy slice).

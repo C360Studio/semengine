@@ -210,8 +210,8 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		require.NoError(t, err)
 
 		// Every attempt conflicts: the update function writes the key itself after the attempt
-		// read it, so the attempt's revision is stale when it writes. The pin raced a 2 ms
-		// background writer against a 10 ms sleep in the update function instead.
+		// read it, so the attempt's revision is stale when it writes, with no race against a
+		// background writer to decide it.
 		counter := 2
 		err = kv.UpdateWithRetry(ctx, "exhaustion-key", func(_ []byte) ([]byte, error) {
 			_, putErr := bucket.Put(ctx, "exhaustion-key", []byte(fmt.Sprintf("v%d", counter)))
@@ -280,10 +280,10 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		// that sentinel terminate the retry loop cleanly, NOT burn the full
 		// retry budget into ErrKVMaxRetriesExceeded.
 		//
-		// This is the scenario filed in issue #122. The fix in IsKVNotFoundError
-		// recognizing jetstream.ErrKeyDeleted is the defensive guard; this test
-		// validates the end-to-end behavior the must-exist callers (e.g.
-		// graph-ingest's handleEntityUpdateWithTriples) depend on.
+		// IsKVNotFoundError recognizing jetstream.ErrKeyDeleted is the
+		// defensive guard; this test validates the end-to-end behavior the
+		// must-exist callers (e.g. graph-ingest's
+		// handleEntityUpdateWithTriples) depend on.
 		kv := client.NewKVStore(bucket, func(opts *KVOptions) {
 			opts.MaxRetries = 3
 			opts.RetryDelay = 10 * time.Millisecond

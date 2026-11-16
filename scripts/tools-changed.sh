@@ -8,7 +8,7 @@
 #   Outside GitHub Actions: the files git diff reports against the merge base of HEAD
 #     and origin/main, plus untracked files that git does not ignore.
 #   In Actions, on a pull_request: the files git diff reports against the merge base
-#     with origin/$GITHUB_BASE_REF (the verify job checks out with fetch-depth: 0).
+#     with origin/$GITHUB_BASE_REF (the checks job checks out with fetch-depth: 0).
 #   In Actions, on a push or any other event: every tool test runs.
 #
 # Diffs use --no-renames, so a file moved out of a trigger path still counts. A missing

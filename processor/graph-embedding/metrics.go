@@ -16,7 +16,7 @@ var metricSubsystem = strings.ReplaceAll(key, "-", "_")
 // embeddingMetrics holds graph-embedding's own collectors.
 type embeddingMetrics struct {
 	// contentUnresolved counts entities whose offloaded body was left out of the embedding
-	// because no store is registered for its storage instance (pin metrics.go:122).
+	// because no store is registered for its storage instance.
 	contentUnresolved prometheus.Counter
 }
 

@@ -28,7 +28,7 @@ import (
 // instanceName is the one StorageInstance the Component stamps into every reference and offers
 // its Store under, and the instance of its store-provide port. The factory receives no instance
 // name, and consumers resolve references by this literal; a second Component in one process is
-// refused at Start by the store registry (design D7, owner ruling 3).
+// refused at Start by the store registry.
 const instanceName = "objectstore"
 
 // storedPort is the one output the Component publishes on: a StoredMessage per stored body.
@@ -71,12 +71,11 @@ func defaultPorts() *component.PortConfig {
 // Component stores the bodies of the messages on its inputs in a NATS ObjectStore bucket and
 // publishes a StoredMessage carrying each body's reference on its stored output (ADR-063).
 //
-// Only a message.ContentStorable payload's body is stored, through the Store's StoreContent;
-// every other message is refused (design D3, owner ruling 1). A refusal or a failed write is
-// logged at error level and counted in Health's ErrorCount. A core-NATS input is at-most-once: such
-// a message is then gone. A JetStream input is at-least-once: a refusal is terminated, a failure
-// NAKed for redelivery, and a delivery is acked only after its body is stored and its reference
-// published (design D4, owner ruling 2).
+// Only a message.ContentStorable payload's body is stored, through the Store's StoreContent; every
+// other message is refused. A refusal or a failed write is logged at error level and counted in
+// Health's ErrorCount. A core-NATS input is at-most-once: such a message is then gone. A JetStream
+// input is at-least-once: a refusal is terminated, a failure NAKed for redelivery, and a delivery
+// is acked only after its body is stored and its reference published.
 type Component struct {
 	config   componentConfig
 	inputs   []component.Port
@@ -234,7 +233,7 @@ func resolveConfig(rawConfig json.RawMessage) (componentConfig, []component.Port
 // resolvePorts resolves the configured ports and appends the store-provide output. Each port is
 // core NATS or JetStream on one subject and declares no consumer_name, and names are unique. The
 // only output is stored, and an input needs it: a body stored with no reference published is
-// addressable by nobody (design D3).
+// addressable by nobody.
 func resolvePorts(ports component.PortConfig) ([]component.Port, []component.Port, error) {
 	seen := make(map[string]bool, len(ports.Inputs)+len(ports.Outputs))
 	resolve := func(definitions []component.PortDefinition, direction component.Direction) ([]component.Port, error) {
@@ -309,8 +308,8 @@ func (c *Component) OutputPorts() []component.Port {
 
 // Health reports the lifecycle shell's verdict over the Component's one stuck state: a JetStream
 // input whose consume loop ended while running, which only a process restart clears, or whose
-// consumer the latest input check could not find (#216's ruling; checkInputs). ErrorCount is
-// reported and never lowers Healthy.
+// consumer the latest input check could not find (checkInputs). ErrorCount is reported and never
+// lowers Healthy.
 func (c *Component) Health() component.HealthStatus {
 	var fault string
 	if f := c.inputFault.Load(); f != nil {
@@ -508,9 +507,9 @@ func (c *Component) release(ctx context.Context) error {
 // check. A JetStream consumer's Drain is issued once; a later cleanup waits on the same drain,
 // through natsclient's WaitConsumerHandlers, which returns nil once the consumer's handlers have
 // all returned: the consume loop's Closed() alone does not prove that, since it can close while a
-// handler still runs once the connection is lost for good (TestStopJoinsHandlerAfterConnectionLoss,
-// #439). The client is injected and shared, so its Close is not the Component's to call. The Store
-// has nothing to close.
+// handler still runs once the connection is lost for good
+// (TestStopJoinsHandlerAfterConnectionLoss). The client is injected and shared, so its Close is not
+// the Component's to call. The Store has nothing to close.
 func (c *Component) cleanup(ctx context.Context) error {
 	var cleanupErr error
 	for index := range c.consumers {

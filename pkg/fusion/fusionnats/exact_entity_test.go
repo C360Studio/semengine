@@ -11,8 +11,8 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// The pin's exact-entity tests (slice_e_contract_test.go:16-53), on the tree's
-// wire: Entity reads graph-query's entity verb, whose reply is an ExactEntity.
+// Exact-entity tests: Entity reads graph-query's entity verb, whose reply is an
+// ExactEntity.
 
 func TestSliceEFusionEntityUsesExactEntityWire(t *testing.T) {
 	id := "acme.ops.robotics.gcs.drone.001"

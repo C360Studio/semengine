@@ -9,7 +9,11 @@ bucket current. A *community* here is a *group*: every entity whose ID shares th
 3 parts (level 1) or first 2 parts (level 2). Groups are derived from IDs, not detected from relationships (ADR-099),
 so no external provider and no other index is involved. For each group the component keeps one bounded record
 (counts, keywords, a few sample IDs, never a member list); `graph/clustering` defines the record, and its README
-lists the fields.
+lists the fields. Keywords are counted from each member's text, the values whose predicates end in one of
+`text_suffixes`, the same values graph-embedding reads; graph-lexical selects the same values under the same list and
+also indexes registered label predicates and offloaded bodies, which keywords do not read. They are the words that set a
+group apart from the rest of the graph, scored when the group's record is written; that README says how, and why a group
+nobody touched can keep keywords scored against older counts until a restart.
 
 A *revision* is the number NATS gives each write to a bucket. The component has two parts:
 
@@ -65,6 +69,7 @@ when the key reads `degraded`.
 | --- | --- | --- | --- |
 | `ports` | object | the input above | Inputs only. A `ports` block that is present is used as written; one that is absent takes the default |
 | `detection_interval` | string | `30s` | Time between publications, a Go duration such as `30s` or `5m`. A value that does not parse or is not above zero is refused |
+| `text_suffixes` | array | `.title .content .description .summary .text .name .body .abstract .subject` | Predicate suffixes whose string values keywords are counted from; set it to graph-lexical's list so both select the same values |
 | `startup_attempts` | int | 30 | Tries to find `ENTITY_STATES` at startup; negative is refused |
 | `startup_interval_ms` | int | 500 | Pause between those tries; negative is refused |
 
@@ -119,7 +124,7 @@ registers one, `semengine_graph_clustering_publication_failures_total` (counter)
 ## Known limits
 
 - **No LLM summaries.** A record's summary is a one-line template over its counts. Language-model summaries are tier 2
-  (#485) and not present.
+  and not present.
 - **Replay-time reset is permanent.** A stored `ENTITY_STATES` value that cannot be decoded during the replay stops
   publication until the process restarts.
 - **Records update on successful ticks.** `detection_interval` is how often a tick starts, not a bound on how stale a

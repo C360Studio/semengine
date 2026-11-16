@@ -2,8 +2,28 @@
 # Run every gate cheapest first, report wall time per step, then require that
 # verification left tracked files unchanged. Keeps going after a failure so one
 # run reports every broken gate.
+#
+# Usage: scripts/verify.sh [checks|integration]
+# With no group it runs every step. A group runs the part of the one list a CI job owns
+# (merge-gate spec, "Verify runs in groups"): checks leaves out test:integration and
+# cover:check; integration runs only ateam:doctor, test:integration and cover:check.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+
+group=${1:-}
+if [ $# -gt 1 ] || ! case "$group" in "" | checks | integration) true ;; *) false ;; esac; then
+  echo "verify: unknown group '$*'; give no group, checks or integration" >&2
+  exit 2
+fi
+
+# in_group STEP succeeds when the chosen group runs STEP.
+in_group() {
+  case "$group:$1" in
+    checks:test:integration | checks:cover:check) return 1 ;;
+    integration:ateam:doctor | integration:test:integration | integration:cover:check) return 0 ;;
+    integration:*) return 1 ;;
+  esac
+}
 
 # Order is the contract: cheapest first, ateam:doctor first of all (harness-boundaries spec,
 # "ateam doctor gates verify"). test:integration needs a reachable Docker
@@ -39,6 +59,7 @@ host_state
 failed=()
 timings=()
 for s in "${steps[@]}"; do
+  in_group "$s" || continue
   echo "==> task $s"
   start=$(date +%s)
   if ! task "$s"; then failed+=("$s"); fi

@@ -15,7 +15,7 @@ var metricSubsystem = strings.ReplaceAll(key, "-", "_")
 
 // clusteringMetrics holds graph-clustering's own collectors.
 type clusteringMetrics struct {
-	// publicationFailures counts ticks whose publication to COMMUNITY_INDEX failed (design D2).
+	// publicationFailures counts ticks whose publication to COMMUNITY_INDEX failed.
 	publicationFailures prometheus.Counter
 }
 

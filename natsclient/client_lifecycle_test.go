@@ -28,7 +28,7 @@ import (
 // only when the client is wrong.
 const lifecycleBound = 10 * time.Second
 
-// clientOwner adapts Client to the lifecycle suite (design D3). Unresolved lists what a started
+// clientOwner adapts Client to the lifecycle suite. Unresolved lists what a started
 // Client retains: the nats.Conn, the JetStream handle, the subscriptions on that connection, the
 // internal consumer claims, each kind of client-owned work still running (the health monitor, the
 // metrics poller, the claim-release goroutines, the two timer callbacks, client-owned
@@ -434,8 +434,8 @@ func TestClientCloseUnderEndedContextAlwaysReportsIt(t *testing.T) {
 	require.NoError(t, c.Close(live), "a later Close with a live context")
 }
 
-// TestClientCloseUnderShortDeadlineClosesConnection is task 4.3's bounded Close (transport-client,
-// "Close under an ended context"): a client-owned handler holds the drain past the end of Close's
+// TestClientCloseUnderShortDeadlineClosesConnection is the bounded Close of transport-client's
+// "Close under an ended context": a client-owned handler holds the drain past the end of Close's
 // context. Close returns the context's error while the handler still runs, the connection is
 // closed by then, and a second Close with a live context waits for the handler and then returns
 // nil. The handler is held until the test releases it, so the context's end is the only way the
@@ -556,7 +556,7 @@ func (s *consumerOnlyStream) CreateOrUpdateConsumer(context.Context, jetstream.C
 }
 
 // TestClientCloseJoinsInternalClaimRelease is the claim-release site of
-// ConsumeInternalStreamWithConfig (design D3): Close joins the release, which waits for the
+// ConsumeInternalStreamWithConfig: Close joins the release, which waits for the
 // consumer's Closed channel.
 func TestClientCloseJoinsInternalClaimRelease(t *testing.T) {
 	c, err := NewClient("nats://unused")
@@ -705,12 +705,11 @@ func TestClientCloseDuringConnectStartsNothing(t *testing.T) {
 	assert.ErrorIs(t, connectErr, nats.ErrConnectionClosed, "Connect that Close overtook reports the close")
 }
 
-// TestClientCloseJoinsClaimRelease: a port consumer's claim release waits for the consumer's
-// Closed channel, and Close joins it (design D3, the claim-release site). Close under an ended
-// context reports it while the release waits; once Closed fires, Close returns nil with the
-// claim released. A consumer started once Close has begun is refused before native Consume is
-// called (design D3, consumer setup that meets Close): its claim is released, and its claim
-// release is dropped, logged and not counted.
+// TestClientCloseJoinsClaimRelease: a port consumer's claim release waits for the consumer's Closed
+// channel, and Close joins it. Close under an ended context reports it while the release waits;
+// once Closed fires, Close returns nil with the claim released. A consumer started once Close has
+// begun is refused before native Consume is called: its claim is released, and its claim release is
+// dropped, logged and not counted.
 func TestClientCloseJoinsClaimRelease(t *testing.T) {
 	h := newRecordingHandler("")
 	c, err := NewClient("nats://unused", WithLogger(slog.New(h)), WithMetrics(metric.NewMetricsRegistry()))
@@ -766,7 +765,7 @@ func TestClientCloseJoinsClaimRelease(t *testing.T) {
 	require.Empty(t, owner.Observe().Unresolved, "the refused consumer kept its claim")
 }
 
-// TestClientLifecycleSuite runs the lifecycle suite on Client (design D3) against an embedded
+// TestClientLifecycleSuite runs the lifecycle suite on Client against an embedded
 // server, with a must-fail factory whose URL is a refused local port.
 func TestClientLifecycleSuite(t *testing.T) {
 	url := embeddedServerURL(t)

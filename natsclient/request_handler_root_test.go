@@ -8,10 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests in this file are design natsclient-handler-root T1-T3 (#311; owner ruling, #9
-// comment 5994720412 item 2): SubscribeForRequests' context bounds its setup only, and each
-// handler's context descends from a context the client owns, which ends when Close begins.
-// They use a real connection to an embedded server, so they do not run inside synctest (#156).
+// The tests in this file prove transport-client's "A setup context does not parent its handlers"
+// and "A handler's context descends from one the client owns" for SubscribeForRequests: its
+// context bounds its setup only, and each handler's context descends from a context the client
+// owns, which ends when Close begins. They use a real connection to an embedded server, so they
+// do not run inside synctest (a nats.go connection in a bubble needs a test process of its own;
+// docs/testing.md).
 
 // connectedRequestClient returns a client connected to an embedded server, closed on cleanup.
 func connectedRequestClient(t *testing.T) *Client {
@@ -23,7 +25,7 @@ func connectedRequestClient(t *testing.T) *Client {
 	return c
 }
 
-// T1: a request that arrives after the setup context was cancelled gets a handler context
+// A request that arrives after the setup context was cancelled gets a handler context
 // that has not ended.
 func TestRequestHandlerContextOutlivesSetupContext(t *testing.T) {
 	c := connectedRequestClient(t)
@@ -82,7 +84,7 @@ func requireContextEndsOnClose(t *testing.T, c *Client, h *heldRequestHandler) {
 	require.NoError(t, awaitErr(t, closed, "Close"), "Close joins the handler and returns nil")
 }
 
-// T2: Close beginning while a handler runs ends the handler's context, and Close returns nil
+// Close beginning while a handler runs ends the handler's context, and Close returns nil
 // only after the handler has returned.
 func TestRequestHandlerContextEndsWhenCloseBegins(t *testing.T) {
 	c := connectedRequestClient(t)
@@ -96,8 +98,9 @@ func TestRequestHandlerContextEndsWhenCloseBegins(t *testing.T) {
 	requireContextEndsOnClose(t, c, h)
 }
 
-// T3: as T2, after Unsubscribe has ended the subscription's delivery while the handler still
-// runs. Unsubscribe does not wait for the running handler.
+// As TestRequestHandlerContextEndsWhenCloseBegins, after Unsubscribe has ended the
+// subscription's delivery while the handler still runs. Unsubscribe does not wait for the
+// running handler.
 func TestRequestHandlerContextEndsWhenCloseBeginsAfterUnsubscribe(t *testing.T) {
 	c := connectedRequestClient(t)
 	h := newHeldRequestHandler(t)

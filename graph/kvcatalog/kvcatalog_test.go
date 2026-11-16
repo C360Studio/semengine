@@ -115,7 +115,7 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 		return s
 	}
 
-	// Owner decision 2026-07-28: ENTITY_STATES History = 1.
+	// By owner decision, ENTITY_STATES History = 1.
 	assert.Equal(t, uint8(1), spec(graph.BucketEntityStates).History)
 	assert.Equal(t, natsclient.ClassAuthoritative, spec(graph.BucketEntityStates).Class)
 	assert.Equal(t, "graph-ingest", spec(graph.BucketEntityStates).Owner)
@@ -124,14 +124,13 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 	assert.Equal(t, uint8(3), spec(graph.BucketGraphStatus).History)
 
 	// The shared runtime configuration bucket is catalogued for BOTH guarantees.
-	// Owner-only by owner ruling 2026-08-31 (SemStreams #1168 comment 5479005060): once
-	// identity correctness state shares a bucket, letting a generic rule writer
-	// onto the rest of the configuration plane is the wrong boundary, and the
-	// existing owner predicate closes the whole class without a remembered-key
-	// list. Its retention is STRICT — verify and refuse, never reconcile —
-	// because the platform identity it holds is create-once and a silent TTL
-	// strip would conceal that the identity may already have expired (ADR-104;
-	// ADR-102 d7).
+	// Owner-only by owner ruling: once identity correctness state shares a bucket,
+	// letting a generic rule writer onto the rest of the configuration plane is
+	// the wrong boundary, and the existing owner predicate closes the whole class
+	// without a remembered-key list. Its retention is STRICT — verify and refuse,
+	// never reconcile — because the platform identity it holds is create-once and
+	// a silent TTL strip would conceal that the identity may already have expired
+	// (ADR-104; ADR-102 decision 7).
 	sharedConfig := spec(graph.BucketSemEngineConfig + "_acme_dep")
 	assert.Equal(t, natsclient.RetentionNoLifecycleStrict, sharedConfig.Retention.Kind)
 	assert.Equal(t, uint8(5), sharedConfig.History)
@@ -166,9 +165,9 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		graph.BucketEmbeddingIndex, graph.BucketEmbeddingDedup, graph.BucketCommunityIndex,
 		graph.BucketCommunitySummaries,
 		graph.BucketGraphIngestAppliedSeq, graph.BucketGraphStatus, graph.BucketStorageReport,
-		// The configuration bucket family joined the guard set with ADR-104: a
+		// The configuration bucket family is in the guard set (ADR-104): a
 		// generic update_kv into platform_identity forges an authority the next
-		// boot adopts. Members are per deployment since SemStreams #1188.
+		// boot adopts. Members are per deployment.
 		graph.BucketSemEngineConfig + "_acme_dep",
 	} {
 		assert.True(t, IsFrameworkOwnedBucket(name), "%s must be framework-owned", name)
@@ -177,9 +176,8 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		"the retired provenance-only bucket must not remain in the generic write guard")
 	assert.False(t, IsFrameworkOwnedBucket("STRUCTURAL_INDEX"),
 		"the retired structural persistence bucket must not remain in the generic write guard")
-	// Anomaly detection is never ported (owner ruling 1, PR #582 comment
-	// 6768832111), so nothing writes ANOMALY_INDEX and the catalog does not
-	// guard it.
+	// Anomaly detection is not part of SemEngine (owner ruling), so nothing
+	// writes ANOMALY_INDEX and the catalog does not guard it.
 	assert.False(t, IsFrameworkOwnedBucket("ANOMALY_INDEX"),
 		"the never-ported anomaly bucket must not remain in the generic write guard")
 	assert.False(t, IsFrameworkOwnedBucket("AGENT_LOOPS"),
@@ -201,10 +199,10 @@ func TestSpecFor_UnknownNameResolvesFalse(t *testing.T) {
 }
 
 // TestConfigBucketFamilyResolvesEveryMember pins the catalog's one name
-// family (SemStreams #1188): every per-deployment configuration bucket resolves to the
-// strict, owner-only descriptor under its OWN name — so acquisition creates
-// that member and every update_kv guard refuses it — while the bare prefix,
-// the bucket SemStreams #1188 orphaned, is no longer framework state.
+// family: every per-deployment configuration bucket resolves to the strict,
+// owner-only descriptor under its OWN name — so acquisition creates that member
+// and every update_kv guard refuses it — while the bare prefix is not framework
+// state.
 func TestConfigBucketFamilyResolvesEveryMember(t *testing.T) {
 	for _, member := range []string{
 		graph.BucketSemEngineConfig + "_acme_dep",
@@ -234,7 +232,7 @@ func TestConfigBucketFamilyResolvesEveryMember(t *testing.T) {
 
 // TestEntityStatesKeepsOneRevision: the entity bucket keeps one revision per
 // key, so SemEngine offers no point-in-time read of an entity's state; an
-// entity's history is its input stream (#99).
+// entity's history is its input stream.
 //
 // Requirement: graph-entity-writes/One stored revision per entity
 func TestEntityStatesKeepsOneRevision(t *testing.T) {

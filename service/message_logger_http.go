@@ -334,7 +334,7 @@ func isValidBucketName(bucket string) bool {
 	return bucket != "" && bucket != "." && bucket != ".." && !strings.ContainsAny(bucket, `/\*>`)
 }
 
-// handleKVQuery reads an existing KV bucket's entries (D4). It never creates the bucket.
+// handleKVQuery reads an existing KV bucket's entries. It never creates the bucket.
 func (ml *MessageLogger) handleKVQuery(w http.ResponseWriter, r *http.Request) {
 	bucket := r.PathValue("bucket")
 	if !isValidBucketName(bucket) {
@@ -348,7 +348,7 @@ func (ml *MessageLogger) handleKVQuery(w http.ResponseWriter, r *http.Request) {
 		pattern = "*"
 	}
 	limit := parseLimit(query.Get("limit"), kvQueryDefaultLimit, kvQueryMaxLimit)
-	// Opt-in status filter (#613): when set, keep only records whose top-level JSON "status"
+	// Opt-in status filter: when set, keep only records whose top-level JSON "status"
 	// field equals it, e.g. ?status=failed over EMBEDDING_INDEX enumerates the durable failed
 	// embeddings. Empty (the default) keeps every record.
 	statusFilter := query.Get("status")
@@ -390,12 +390,12 @@ func (ml *MessageLogger) queryKVBucket(
 	}
 
 	entries := make([]map[string]any, 0)
-	// A listing cut short is an error, never the keys so far (#533).
+	// A listing cut short is an error, never the keys so far.
 	keys, err := natsclient.FilteredKeys(ctx, kv, ">")
 	if err != nil {
 		return nil, fmt.Errorf("list keys of %s: %w", bucket, err)
 	}
-	// The listing is in delivery order and can repeat a key (#512): sort and
+	// The listing is not promised to be sorted or free of repeats: sort and
 	// remove repeats before the limit.
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
@@ -419,7 +419,7 @@ func (ml *MessageLogger) queryKVBucket(
 		if !recordMatchesStatus(entry.Value(), statusFilter) {
 			continue
 		}
-		// The stored JSON is embedded as is, so every number token survives unrounded (#370); the
+		// The stored JSON is embedded as is, so every number token survives unrounded; the
 		// response encoder still compacts it and escapes HTML characters. A value that is not JSON
 		// travels as a JSON string, as the watch sends it.
 		value := json.RawMessage(entry.Value())
@@ -438,12 +438,12 @@ func (ml *MessageLogger) queryKVBucket(
 }
 
 // recordMatchesStatus reports whether a stored KV value passes the opt-in status
-// filter (#613). An EMPTY filter matches everything (the filter is off, so the endpoint
+// filter. An EMPTY filter matches everything (the filter is off, so the endpoint
 // is unchanged). A non-empty filter matches only a JSON object whose top-level "status"
 // string equals it; any other value (not JSON, a string, array, number, or an object
 // whose status is not a string) never matches, so a bucket without status-shaped records
 // returns nothing under a filter rather than leaking unfiltered rows. Only the status
-// field is decoded; the value itself is answered as stored (#370).
+// field is decoded; the value itself is answered as stored.
 func recordMatchesStatus(value []byte, statusFilter string) bool {
 	if statusFilter == "" {
 		return true
@@ -478,7 +478,7 @@ func matchesPattern(str, pattern string) bool {
 		}
 		parts := strings.Split(pattern, "*")
 		if len(parts) == 2 {
-			// The length check keeps the prefix and suffix from sharing a character (#371).
+			// The length check keeps the prefix and suffix from sharing a character.
 			return len(str) >= len(parts[0])+len(parts[1]) &&
 				strings.HasPrefix(str, parts[0]) && strings.HasSuffix(str, parts[1])
 		}

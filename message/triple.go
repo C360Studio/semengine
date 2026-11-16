@@ -1,4 +1,4 @@
-// Package message provides core message infrastructure for SemStreams.
+// Package message provides core message infrastructure for SemEngine.
 // See doc.go for complete package documentation.
 package message
 
@@ -87,9 +87,8 @@ type Triple struct {
 	// Only the "xsd:" and "rdf:" prefixes are expanded to full IRIs on export;
 	// an absolute IRI is passed through as written. Any OTHER prefix reaches
 	// the output as a relative reference, which is not valid RDF — so use one
-	// of those two prefixes, or write the IRI out in full. This comment used to
-	// offer "geo:point" as an example and that is exactly the trap (gh#1267);
-	// gh#1272 is the same mechanism one prefix over.
+	// of those two prefixes, or write the IRI out in full. A prefix such as
+	// "geo:point" looks like a natural example and is exactly that trap.
 	Datatype string `json:"datatype,omitempty"`
 
 	// ExpiresAt indicates when this triple should be considered expired.

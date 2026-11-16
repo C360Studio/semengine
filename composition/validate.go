@@ -28,7 +28,7 @@ func Validate(catalog *component.Registry, cfg *config.Config) (*Result, error) 
 	result := newResult()
 
 	// ValidateDocument, not Validate: the judgment must not depend on TLS
-	// files on this machine, nor write to standard error (#347). It
+	// files on this machine, nor write to standard error. It
 	// normalizes in place (platform.org is lowercased), so judge a clone and
 	// leave the caller's document untouched.
 	working := cfg.Clone()

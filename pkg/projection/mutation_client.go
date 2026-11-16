@@ -123,7 +123,7 @@ func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (Mu
 			errors.New("entity.triples must be empty; CreateMutation.Triples is the sole fact source"))
 	}
 	entity := request.Entity.Clone()
-	// O-17: the bound contract is the only spelling of the type a caller needs.
+	// The bound contract is the only spelling of the type a caller needs.
 	// A zero stamp is filled from the contract's structured type before
 	// validation and before the request is built (no key is parsed); a
 	// non-zero stamp that differs is rejected below.
@@ -257,7 +257,7 @@ func (c *MutationClient) ReadAuthoritative(ctx context.Context, entityID string)
 	}
 	exact, err := c.reader.ReadExactEntity(ctx, entityID)
 	if err != nil {
-		// A read writes nothing, so every failure of it is not committed (#267): a classified
+		// A read writes nothing, so every failure of it is not committed: a classified
 		// reply whatever its class, a timeout, a client that is not connected. The commit rule
 		// for a mutation's error (ClassifyMutationError) is not asked.
 		return nil, notCommittedError(MutationOperationReadAuthoritative, err)
@@ -347,7 +347,7 @@ func canonicalizeTriples(
 	}
 	// Every operation here requires Source; Reconcile also sends it as the
 	// request's source, and graph-ingest replaces only that source's
-	// statements of the group (design D15).
+	// statements of the group.
 	if metadata.Source == "" {
 		return nil, invalidMutationError(operation, errors.New("source is required"))
 	}

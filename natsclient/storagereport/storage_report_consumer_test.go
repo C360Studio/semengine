@@ -193,7 +193,7 @@ func eventually(t *testing.T, condition func() bool, msg string) {
 // of this whole file: the operator surfaces read the PUBLISHED report rather
 // than recomputing an inventory, so no two of them can disagree.
 func TestReportConsumer_SnapshotIsBuiltFromTheBucket(t *testing.T) {
-	// The consumer publishes its snapshot before it tells the observer (#559);
+	// The consumer publishes its snapshot before it tells the observer;
 	// synctest.Wait orders every read below after both.
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeWatchStore{}
@@ -323,7 +323,7 @@ func TestReportConsumer_UndecodableRowIsSkippedNotFatal(t *testing.T) {
 // surface silent with it, and the silence looks exactly like an account with
 // nothing in it.
 func TestReportConsumer_ReestablishesADroppedWatch(t *testing.T) {
-	// R1a: the consumer's retry backoff, the Eventually polls and runConsumer's stop limit run
+	// The consumer's retry backoff, the Eventually polls and runConsumer's stop limit run
 	// on the bubble's clock, so a limit expires only when the watch is never re-established.
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeWatchStore{}
@@ -348,7 +348,7 @@ func TestReportConsumer_ReestablishesADroppedWatch(t *testing.T) {
 // TestReportConsumer_RetriesWhenTheWatchCannotBeEstablished covers the cold
 // start where the bucket is not reachable yet.
 func TestReportConsumer_RetriesWhenTheWatchCannotBeEstablished(t *testing.T) {
-	// R1a: the consumer's retry backoff, the Eventually polls and runConsumer's stop limit run
+	// The consumer's retry backoff, the Eventually polls and runConsumer's stop limit run
 	// on the bubble's clock, so a limit expires only when the retry never succeeds.
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeWatchStore{err: errors.New("bucket not found")}

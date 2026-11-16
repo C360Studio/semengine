@@ -69,8 +69,7 @@ func TestContextBoundariesRejectNil(t *testing.T) {
 // Run on a running view returns ErrAlreadyStarted and the first keeps running;
 // once Run has returned, on a stop, a lost watch or a watch that could not
 // open, Run returns ErrViewStopped and opens nothing, so a view never
-// re-bootstraps (the pin returned ErrAlreadyStarted for a failed view). A
-// replacement is a new view.
+// re-bootstraps. A replacement is a new view.
 func TestRunOnce(t *testing.T) {
 	t.Run("running, then stopped", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {

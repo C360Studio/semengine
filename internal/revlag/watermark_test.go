@@ -11,11 +11,9 @@ import (
 	"pgregory.net/rapid"
 )
 
-// The tests from here to TestWatermark_Concurrent began as SemStreams'
-// pkg/revlag/watermark_test.go at the pin 8b99efe9c66a4faa4fa509f9f62cc6bad8392128. Their time
-// expectations follow the #408 rule (design D1 of the OpenSpec change fix-408-revlag-simplify):
-// IndexedAt's time is the commit time of the lowest in-flight revision, or of Observed's revision
-// when none is in flight. Each carries the spec requirement it proves.
+// The time expectations of the tests from here to TestWatermark_Concurrent follow ADR-083
+// decision 3: IndexedAt's time is the commit time of the lowest in-flight revision, or of
+// Observed's revision when none is in flight. Each carries the spec requirement it proves.
 
 // The watermark's whole reason to exist is honesty under SPARSE, out-of-order,
 // multi-path completion. These tests feed sparse ascending revision streams (e.g.
@@ -281,9 +279,6 @@ func TestWatermark_Concurrent(t *testing.T) {
 	wantIndexedAt(t, w, n, commitAt(n), "after draining all")
 }
 
-// The tests below are new in SemEngine (OpenSpec changes setup-04a-04-graph-roots-revlag and
-// fix-408-revlag-simplify); the ones above began as the SemStreams pin's.
-
 // TestWatermark_ObservedIsHighestAccepted pins Observed apart from the floor: it is the
 // highest revision accepted whether or not that revision has completed, and a completion
 // at a revision never delivered does not move it.
@@ -407,14 +402,13 @@ func (r reading) equal(o reading) bool {
 	return r.floor == o.floor && r.at.Equal(o.at) && r.observed == o.observed
 }
 
-// TestWatermark_ConcurrentReadersAndWriters is the real wiring and the #408 proof: one
-// goroutine observes revisions in ascending order and hands each to a pool of workers that
-// complete it, while a reader calls IndexedAt and Observed throughout. Keys repeat (r%16), so
-// one completion can drain a lower revision of its key that another worker is about to
-// complete; 1,500 and 2,000 have keys of their own, so only their own completions drain them.
-// At checkpoints A and B the test asks the reader for a read begun after the writes it waited
-// for, and the exact value read is the proof that a read reflects every call that returned
-// before it. Run under -race.
+// TestWatermark_ConcurrentReadersAndWriters is the real wiring: one goroutine observes revisions
+// in ascending order and hands each to a pool of workers that complete it, while a reader calls
+// IndexedAt and Observed throughout. Keys repeat (r%16), so one completion can drain a lower
+// revision of its key that another worker is about to complete; 1,500 and 2,000 have keys of
+// their own, so only their own completions drain them. At checkpoints A and B the test asks the
+// reader for a read begun after the writes it waited for, and the exact value read is the proof
+// that a read reflects every call that returned before it. Run under -race.
 //
 // spec: revision-watermark / The Watermark is safe for concurrent use
 // spec: revision-watermark / Observe accepts only a revision above Observed
@@ -559,8 +553,8 @@ func startReader(w *Watermark) (r *freeReader, readAt func() reading, reads *int
 // TestWatermark_RetentionTracksInFlight checks retention without reading any field of the
 // watermark: a million revisions observed and completed must not grow the live heap, with
 // nothing else in flight and with one revision stuck below them. One retained 8-byte entry per
-// completion would grow it by about 8 MB; the bound is 1 MiB (PR #407 probe,
-// issuecomment-6388227813: the pin's code grows it by about 0 bytes, 1,864 under -race).
+// completion would grow it by about 8 MB; the bound is 1 MiB: code that retains nothing measured
+// about 0 bytes of growth (1,864 under -race).
 //
 // spec: revision-watermark / Retained state tracks in-flight work
 func TestWatermark_RetentionTracksInFlight(t *testing.T) {
@@ -617,7 +611,7 @@ func wantHeapBound(t *testing.T, grew int64, n int, what string) {
 	}
 }
 
-// TestPropWatermarkHistory is the generated check of design D5: a history of Observe and
+// TestPropWatermarkHistory is the generated check of the watermark: a history of Observe and
 // Complete calls goes to the watermark and to the test's own model of the requirements, and
 // after every call the watermark's result must equal the model's. The model keeps each
 // in-flight revision with its key and commit time, and the highest accepted revision with its
@@ -703,7 +697,7 @@ func newPropHistory(c *propCounts) *propHistory {
 	return &propHistory{w: New(), inFlight: map[uint64]propEntry{}, c: c}
 }
 
-// step draws one operation of design D5 and applies it.
+// step draws one Observe or Complete operation of the history and applies it.
 func (h *propHistory) step(rt *rapid.T) {
 	key := rapid.SampledFrom(propKeys).Draw(rt, "key")
 	op := rapid.SampledFrom([]string{"next", "next", "zeroTime", "lower", "reobserve", "zero", "complete", "complete"}).
@@ -791,7 +785,7 @@ func (h *propHistory) check(rt *rapid.T, op string) {
 	h.c.checks++
 }
 
-// BenchmarkWatermarkInFlight is the evidence for design D3's claims 1-3 (notes/2.1.md): with n
+// BenchmarkWatermarkInFlight measures per-call cost against the in-flight set's size: with n
 // revisions in flight under keys of their own, each iteration observes one new revision and
 // completes the oldest, so the set stays at n and every completion drains the lowest in-flight
 // revision; the read benchmark reads with n in flight. Per-call cost that does not grow from

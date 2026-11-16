@@ -1,11 +1,10 @@
-// Package natsfixture gives one test one disposable, real NATS server in a container
-// (openspec change setup-02-isolated-harness, capability nats-fixture). The pattern is adapted from
-// SemStreams natsclient/test_client.go at 5457b345 (ledger row L1) over nats.go and
-// testcontainers-go directly, without its eleven caller knobs (ledger row L2).
+// Package natsfixture gives one test one disposable, real NATS server in a container (capability
+// nats-fixture). It works over nats.go and testcontainers-go directly and offers no start, connect
+// or bucket-prefix knobs (nats-fixture › "No start knobs").
 //
 // Start succeeds only after JetStream answers; Stop closes the connection and removes the
-// container, which removes everything in it. Test-only: contract test T-B1 refuses any production
-// import.
+// container, which removes everything in it. Test-only: the contract test TestImportGraph refuses
+// any production import.
 package natsfixture
 
 import (
@@ -77,7 +76,8 @@ type Fixture struct {
 	errorf func(format string, args ...any)
 	logf   func(format string, args ...any) // the test log, for a failed Start's container log
 	// readPort reads the container's mapped client port: readMappedPort, or a test's replacement
-	// that fails the mapped-port phase. It is the fixture's one test seam (#180).
+	// that fails the mapped-port phase. It is the fixture's one per-fixture test seam; pickPort is
+	// the package-level one.
 	readPort func(context.Context, testcontainers.Container) (string, error)
 
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
@@ -123,8 +123,8 @@ func New(t testing.TB, opts ...Option) *Fixture {
 // Start starts one NATS container with JetStream from the pinned image, connects, and returns once
 // JetStream answers. Every operation runs under ctx. A failure returns an error naming the phase
 // (phaseError lists them), after removing whatever Start created; only a start-phase failure where
-// Docker reports the picked host port "address already in use" tries a second container (#345). A
-// second Start returns ErrAlreadyUsed.
+// Docker reports the picked host port "address already in use" tries a second container. A second
+// Start returns ErrAlreadyUsed.
 func (f *Fixture) Start(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Start with a nil context")
@@ -217,7 +217,8 @@ func (f *Fixture) attempt(ctx context.Context) error {
 			}
 			if f.maxPayloadSet {
 				// testcontainers copies Files in a PostCreates hook before ContainerStart, draining the
-				// Reader on each attempt (#352).
+				// Reader, so each attempt gets a new one (not promised by testcontainers;
+				// TestStartRetriesOnceOnPortInUse checks the limit after a retry).
 				req.Files = []testcontainers.ContainerFile{{
 					Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
 					ContainerFilePath: maxPayloadConfig,
@@ -302,7 +303,7 @@ func (f *Fixture) attempt(ctx context.Context) error {
 }
 
 // pickPort is freePort; a test in this package swaps it to give the start phase a port a listener
-// already holds, exercising the #345 port-in-use retry against Docker.
+// already holds, exercising the port-in-use retry against Docker.
 var pickPort = freePort
 
 // isAddressInUse reports whether Docker refused to start the container because another process
@@ -313,16 +314,16 @@ func isAddressInUse(err error) bool {
 
 // freePort asks the operating system for a free TCP port on every IPv4 address and releases it, so
 // the start phase can give Docker that exact host port. It picks with "tcp4" because Docker's bind
-// was seen on every IPv4 address (#345's error text; Docker's choice is not promised), and an
-// every-address "tcp" pick was handed a port a daemon held on 127.0.0.1 (#390). That a "tcp4" pick
-// skips a port an IPv4 socket holds was measured on one Mac (PR #404 comment 6386556253, go1.26.10,
+// was seen on every IPv4 address (in its "address already in use" error text; Docker's choice is
+// not promised), and an every-address "tcp" pick was handed a port a daemon held on 127.0.0.1
+// (#390). That a "tcp4" pick skips a port an IPv4 socket holds was measured on one Mac (go1.26.10,
 // macOS 26.5.2), not promised. Left to pick, Docker Desktop for Mac takes the next port of a
 // counter of its own, which does not see the Mac's listeners, and a container whose port a Mac
-// process holds runs with an empty port list (#209; the probe on PR #210, comment 6151736554;
-// TestStartPastHeldPorts). The macOS kernel hands ports out in sequence (the same probe), so a
-// port-0 listener does not get this port back until the range wraps; a process that binds it
-// before Docker does fails the container start with "address already in use", which the start
-// phase retries once with a new port (#345; TestStartRetriesOnceOnPortInUse). Restart keeps the
+// process holds runs with an empty port list (#209; measured on one Mac, not promised;
+// TestStartPastHeldPorts). The macOS kernel hands ports out in sequence (measured on one Mac, not
+// promised), so a port-0 listener does not get this port back until the range wraps; a process
+// that binds it before Docker does fails the container start with "address already in use", which
+// the start phase retries once with a new port (TestStartRetriesOnceOnPortInUse). Restart keeps the
 // binding (TestRestartURLDials).
 func freePort() (string, error) {
 	l, err := net.Listen("tcp4", ":0")

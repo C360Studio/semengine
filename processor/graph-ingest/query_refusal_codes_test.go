@@ -15,10 +15,9 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// TestQueryRefusalsCarryACode: every refusal of the entity, batch and prefix query verbs
-// carries a classified code, and giving it one does not change its class (#300 section B;
-// design D3). The wanted class and code are spelled out, not taken from the constants the
-// handlers use; the entity verb's rows hold its codes as they were.
+// TestQueryRefusalsCarryACode: every refusal of the entity, batch, prefix and prefixIDs query verbs
+// carries a classified code and the class its kind of refusal calls for. The wanted class
+// and code are spelled out, not taken from the constants the handlers use.
 func TestQueryRefusalsCarryACode(t *testing.T) {
 	const (
 		stored = "acme.ops.robotics.gcs.drone.001"
@@ -48,6 +47,10 @@ func TestQueryRefusalsCarryACode(t *testing.T) {
 	}
 	prefix := func(c *Component, data []byte) error {
 		_, err := c.handleQueryPrefixWithMaxPayload(context.Background(), data, 1<<20)
+		return err
+	}
+	prefixIDs := func(c *Component, data []byte) error {
+		_, err := c.handleQueryPrefixIDsWithMaxPayload(context.Background(), data, 1<<20)
 		return err
 	}
 
@@ -201,6 +204,81 @@ func TestQueryRefusalsCarryACode(t *testing.T) {
 			},
 			class: errs.ErrorFatal, code: "internal",
 		},
+		{
+			name: "prefixIDs: maximum payload not observable",
+			call: func(t *testing.T, c *Component) error {
+				_, err := c.handleQueryPrefixIDsNATS(context.Background(), request(t, graph.PrefixQueryRequest{Prefix: "acme"}))
+				return err
+			},
+			class: errs.ErrorTransient, code: "internal",
+		},
+		{
+			name:  "prefixIDs: malformed request",
+			call:  func(_ *testing.T, c *Component) error { return prefixIDs(c, []byte("{")) },
+			class: errs.ErrorInvalid, code: "invalid_request",
+		},
+		{
+			name: "prefixIDs: prefix and pattern both set",
+			call: func(t *testing.T, c *Component) error {
+				return prefixIDs(c, request(t, graph.PrefixQueryRequest{Prefix: "acme", Pattern: "acme.*.*.*.*.*"}))
+			},
+			class: errs.ErrorInvalid, code: "invalid_request",
+		},
+		{
+			name: "prefixIDs: malformed prefix",
+			call: func(t *testing.T, c *Component) error {
+				return prefixIDs(c, request(t, graph.PrefixQueryRequest{Prefix: "acme.*"}))
+			},
+			class: errs.ErrorInvalid, code: "entity_id_prefix_invalid",
+		},
+		{
+			name: "prefixIDs: malformed pattern",
+			call: func(t *testing.T, c *Component) error {
+				return prefixIDs(c, request(t, graph.PrefixQueryRequest{Pattern: "acme.*"}))
+			},
+			class: errs.ErrorInvalid, code: "entity_id_pattern_invalid",
+		},
+		{
+			name:  "prefixIDs: pattern listing failure",
+			setup: func(_ *testing.T, _ *Component, b *mockKVBucket) { b.listFilteredFunc = listDown },
+			call: func(t *testing.T, c *Component) error {
+				return prefixIDs(c, request(t, graph.PrefixQueryRequest{Pattern: "acme.*.*.*.*.*"}))
+			},
+			class: errs.ErrorTransient, code: "internal",
+		},
+		{
+			name:  "prefixIDs: prefix listing failure",
+			setup: func(_ *testing.T, _ *Component, b *mockKVBucket) { b.listFilteredFunc = listDown },
+			call: func(t *testing.T, c *Component) error {
+				return prefixIDs(c, request(t, graph.PrefixQueryRequest{Prefix: "acme"}))
+			},
+			class: errs.ErrorTransient, code: "internal",
+		},
+		{
+			name:  "prefixIDs: exact-key read failure",
+			setup: func(_ *testing.T, _ *Component, b *mockKVBucket) { b.getFunc = kvDown },
+			call: func(t *testing.T, c *Component) error {
+				return prefixIDs(c, request(t, graph.PrefixQueryRequest{Prefix: stored}))
+			},
+			class: errs.ErrorTransient, code: "internal",
+		},
+		{
+			name: "prefixIDs: malformed cursor",
+			call: func(t *testing.T, c *Component) error {
+				return prefixIDs(c, request(t, graph.PrefixQueryRequest{Prefix: "acme", Cursor: "%%%"}))
+			},
+			class: errs.ErrorInvalid, code: "invalid_request",
+		},
+		{
+			name:  "prefixIDs: no ID fits the maximum payload",
+			setup: func(t *testing.T, c *Component, _ *mockKVBucket) { storePrefixEntity(t, c, stored) },
+			call: func(t *testing.T, c *Component) error {
+				_, err := c.handleQueryPrefixIDsWithMaxPayload(context.Background(),
+					request(t, graph.PrefixQueryRequest{Prefix: "acme"}), 16)
+				return err
+			},
+			class: errs.ErrorInvalid, code: "response_too_large",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
@@ -224,8 +302,8 @@ func TestQueryRefusalsCarryACode(t *testing.T) {
 }
 
 // TestQueryBatchEmptyIDsRepliesAnEmptyResponse: a batch request with no IDs is answered with
-// an empty graph.EntityBatchResponse, encoded like every other batch reply (design D3), not
-// with a hand-written body.
+// an empty graph.EntityBatchResponse, encoded like every other batch reply, not with a
+// hand-written body.
 func TestQueryBatchEmptyIDsRepliesAnEmptyResponse(t *testing.T) {
 	c := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	reply, err := c.handleQueryBatchNATS(context.Background(), []byte(`{"ids":[]}`))

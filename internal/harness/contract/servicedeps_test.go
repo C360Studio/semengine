@@ -10,8 +10,7 @@ import (
 const serviceDepsRule = "(service-lifecycle › The service package reaches no agentic package)"
 
 // TestServiceReachesNoAgenticPackage holds the rule that the service package does not bring in the
-// agentic domain: SemStreams' service/milestone_service.go, the pin's only service-to-agentic
-// edge, is not ported (issue #30).
+// agentic domain: no package it depends on, directly or transitively, is an agentic one.
 //
 // Requirement: service-lifecycle/The service package reaches no agentic package
 func TestServiceReachesNoAgenticPackage(t *testing.T) {
@@ -80,7 +79,7 @@ func serviceDepViolations(t *testing.T, root, pkg string) []string {
 }
 
 // agenticServiceDeps reads go list -deps output and names each path with an agentic element: one
-// named agentic, or agentic- and a suffix, as the pin's processor/agentic-tools is.
+// named agentic, or agentic- and a suffix, such as processor/agentic-tools.
 func agenticServiceDeps(deps []string) []string {
 	if len(deps) == 0 {
 		return []string{"go list -deps listed no package; a check that saw nothing is not a pass " + serviceDepsRule}

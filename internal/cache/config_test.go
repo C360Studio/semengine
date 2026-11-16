@@ -147,8 +147,7 @@ func TestConfig_UnmarshalJSON_RealWorldExample(t *testing.T) {
 }
 
 // TestConfig_UnmarshalJSON_RefusesUnknownKeys: a key Config does not have is an error, never
-// silently ignored (owner ruling, #9 comment 5968830525, rule 2(b); Codex F5). The oracle is the
-// error and its naming the key.
+// silently ignored. The oracle is the error and its naming the key.
 func TestConfig_UnmarshalJSON_RefusesUnknownKeys(t *testing.T) {
 	for _, data := range []string{
 		`{"enabled": true, "strategy": "lru", "max_size": 10, "max_entries": 10}`,
@@ -163,8 +162,8 @@ func TestConfig_UnmarshalJSON_RefusesUnknownKeys(t *testing.T) {
 }
 
 // TestConfig_UnmarshalJSON_RefusesStatsInterval: stats_interval was parsed, defaulted and
-// validated but read by no behaviour, so it is removed (owner ruling, #9 comment 5968830525;
-// Codex F4), and a configuration that still sets it fails loudly instead of being ignored.
+// validated but read by no behaviour, so Config has no such key, and a configuration that still
+// sets it fails loudly instead of being ignored.
 func TestConfig_UnmarshalJSON_RefusesStatsInterval(t *testing.T) {
 	var cfg Config
 	err := json.Unmarshal([]byte(`{"enabled": true, "strategy": "lru", "max_size": 10, "stats_interval": "30s"}`), &cfg)
@@ -174,8 +173,8 @@ func TestConfig_UnmarshalJSON_RefusesStatsInterval(t *testing.T) {
 }
 
 // TestConfig_UnmarshalJSON_NullIsANoOp: a JSON null leaves the Config as it was, as encoding/json
-// does for any struct. At the pin it panicked with a nil-pointer dereference in UnmarshalJSON (pin
-// config.go:243), found by FuzzConfigUnmarshalJSON's null seed.
+// does for any struct, never a nil-pointer dereference in UnmarshalJSON; FuzzConfigUnmarshalJSON's
+// null seed covers the same input.
 func TestConfig_UnmarshalJSON_NullIsANoOp(t *testing.T) {
 	cfg := DefaultConfig()
 	if err := json.Unmarshal([]byte(`null`), &cfg); err != nil {

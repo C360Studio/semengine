@@ -36,9 +36,9 @@
 //
 // [FromComponentHealth] turns a component.HealthStatus into a Status. The word comes from Healthy
 // alone: true gives "healthy" and false gives "unhealthy". The component's own Status word is not
-// read, so a component that reports itself "degraded" with Healthy false is reported "unhealthy"
-// (owner ruling, PR #318 comment 6271450376). Healthy is copied as is, and Metrics carries the
-// component's Uptime, ErrorCount and LastCheck (as LastActivity).
+// read, so a component that reports itself "degraded" with Healthy false is reported "unhealthy".
+// Healthy is copied as is, and Metrics carries the component's Uptime, ErrorCount and LastCheck (as
+// LastActivity).
 //
 // When the component's LastError is empty, Message is "Component healthy" or "Component
 // unhealthy", following Healthy. Otherwise Message is LastError with likely secrets replaced, in

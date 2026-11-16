@@ -69,9 +69,9 @@ type envelopeRead struct {
 
 // awaitEnvelopeAfterTick publishes a status tick now and reads the readiness key, until
 // done accepts a published envelope or within passes. Each observation runs its own tick,
-// as awaitHealthAfterTick does, so no wait depends on the heartbeat's cadence (design D5):
-// the running loop can land a compute it began earlier between the tick and the read, and
-// the next observation's tick replaces it.
+// as awaitHealthAfterTick does, so no wait depends on the heartbeat's cadence: the running
+// loop can land a compute it began earlier between the tick and the read, and the next
+// observation's tick replaces it.
 func awaitEnvelopeAfterTick(
 	ctx context.Context, t *testing.T, c *Component, client *natsclient.Client,
 	within time.Duration, done func(graph.IndexStatusResponse) bool,
@@ -138,10 +138,9 @@ func publishEntity(ctx context.Context, t *testing.T, client *natsclient.Client,
 	require.NoError(t, err)
 }
 
-// TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp drives the whole producer:
-// a real component, real consumers, a real GRAPH_STATUS bucket. It asserts the
-// envelope reaches Ready with bootstrap complete on an idle stack — the SemStreams gh#712 signal
-// that did not exist.
+// TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp drives the whole producer: a real
+// component, real consumers, a real GRAPH_STATUS bucket. It asserts the envelope reaches Ready
+// with bootstrap complete on an idle stack.
 func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
@@ -157,9 +156,9 @@ func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	status, raw := readEnvelope(ctx, t, client)
 	require.Zero(t, status.Lag, "idle stack reports no backlog")
 
-	// Task 3.6 asserted on the WIRE: a stream sequence in a KV-revision field would
-	// silently corrupt every read-your-writes check in the system, and omitempty is
-	// what keeps these off the wire.
+	// Asserted on the WIRE: a stream sequence in a KV-revision field would silently
+	// corrupt every read-your-writes check in the system, and omitempty is what
+	// keeps these off the wire.
 	var wire map[string]any
 	require.NoError(t, json.Unmarshal(raw, &wire))
 	for _, banned := range []string{"indexed_revision", "target_revision", "revision"} {
@@ -168,10 +167,9 @@ func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	}
 }
 
-// TestIntegration_ReadinessEnvelope_BacklogIsNotReady is the SemStreams gh#712 case itself: while
-// entities are still being applied, the envelope must NOT read caught-up. Before this
-// change a consumer could only see total_entities > 0 plus green health, which is
-// exactly what read as settled while ingest was mid-flight.
+// TestIntegration_ReadinessEnvelope_BacklogIsNotReady: while entities are still being applied,
+// the envelope must NOT read caught-up. total_entities > 0 plus green health is exactly what
+// reads as settled while ingest is mid-flight, so the envelope must tell them apart.
 func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
@@ -185,11 +183,13 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 		publishEntity(ctx, t, client, "c360.test.readiness.backlog.drone."+string(rune('a'+i%26))+itoa(i))
 	}
 
-	// Hold every applied message after its entity write, before its applied-sequence record and acknowledgement,
-	// until the not-ready window has been observed (checkpoint 3 M3): graph-ingest's logger handler pauses on
-	// "Entity ingested" (fix-301 design D2, "The pause"). A held message is not acked, so the consumer counts it as
-	// outstanding and no envelope can read caught-up, however the goroutines are scheduled; the backlog's size alone
-	// gave no such ordering. The deferred release runs before owner.finish, so a failed assertion cannot hold Stop.
+	// Hold every applied message after its entity write, before its applied-sequence
+	// record and acknowledgement, until the not-ready window has been observed:
+	// graph-ingest's logger handler pauses on "Entity ingested". A held message is not
+	// acked, so the consumer counts it as outstanding and no envelope can read
+	// caught-up, however the goroutines are scheduled; the backlog's size alone gave
+	// no such ordering. The deferred release runs before owner.finish, so a failed
+	// assertion cannot hold Stop.
 	pause := newPauseOnRecord("Entity ingested")
 	cfg := DefaultConfig()
 	configJSON, err := json.Marshal(cfg)
@@ -206,17 +206,16 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	registerMergeTestPayload(t, c)
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
-	// FIRST assert the not-ready window this test is named for. Without it the test
-	// only proved eventual readiness plus a non-zero scope — the SemStreams gh#732 case — while
-	// its name promised SemStreams gh#712's "nonempty and healthy read as settled". An envelope
-	// reporting caught-up while a message is held is the defect this must catch.
+	// FIRST assert the not-ready window this test is named for: eventual readiness
+	// plus a non-zero scope alone would not show that a nonempty, healthy stack still
+	// applying its backlog does not read as settled. An envelope reporting caught-up
+	// while a message is held is the defect this must catch.
 	pause.awaitEntered(ctx, t, 30*time.Second)
 
 	// probe.Await stops at the first published envelope that is either not ready with work
 	// outstanding, or ready; while the message is held, ready is the defect. A key not
-	// published yet means the producer's first tick has not landed (the iteration that
-	// failed in CI): unpublished is not not-ready, it is not-yet-observed, so the wait
-	// goes on.
+	// published yet means the producer's first tick has not landed: unpublished is not
+	// not-ready, it is not-yet-observed, so the wait goes on.
 	last, waitErr := awaitEnvelopeAfterTick(ctx, t, c, client, 10*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready || status.Lag > 0
 	})
@@ -233,23 +232,22 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	require.NoError(t, err, "the producer must reach caught-up after draining the backlog")
 
 	// ...and having caught up, its scope must record that there WAS an initial build.
-	// This is the distinction SemStreams gh#732 raises: complete && scope == 0 means
-	// "authoritatively nothing to do", so a non-empty boot backlog must not report 0.
+	// complete && scope == 0 means "authoritatively nothing to do", so a non-empty
+	// boot backlog must not report 0.
 	status, _ := readEnvelope(ctx, t, client)
 	require.Positive(t, status.BootstrapScope,
 		"a producer that bound onto a %d-message backlog must not report scope 0", backlog)
 }
 
 // TestIntegration_ReadinessEnvelope_NoStreamingPortIsHonestlyCaughtUp covers the
-// mutation-only deployment shape. It is NOT an edge case: measured 2026-07-30, 9 of
-// the 18 shipped graph-ingest instances declare their only input port as type "nats"
-// (core NATS request/reply for graph_mutations), which setupSubscriptions skips — so
-// they bind zero jetstream consumers and have no backlog to be behind on.
+// mutation-only deployment shape. It is a supported deployment shape: a mutation-only
+// graph-ingest declares its only input port as type "nats" (core NATS request/reply
+// for graph_mutations), which setupSubscriptions skips — so it binds zero jetstream
+// consumers and has no backlog to be behind on.
 //
-// Reporting degraded here would make half the shipped fleet permanently unready and
-// every consumer folding on this key defer forever. The port shape below is copied
-// from configs/flows/ops-agent.json rather than invented, so the test fails if that
-// shape stops being reachable. (An ABSENT input list cannot be used: Config.Validate
+// Reporting degraded here would make every mutation-only deployment permanently
+// unready and every consumer folding on this key defer forever. The port shape below
+// is a mutation-only flow's. (An ABSENT input list cannot be used: Config.Validate
 // requires at least one input port.)
 func TestIntegration_ReadinessEnvelope_NoStreamingPortIsHonestlyCaughtUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
@@ -295,8 +293,8 @@ func itoa(n int) string {
 	return string(b)
 }
 
-// TestIntegration_ReadyImpliesTheWritesAreDurable is task 8.1: the durability
-// guarantee, asserted on the quantity production actually consults.
+// TestIntegration_ReadyImpliesTheWritesAreDurable: the durability guarantee, asserted on
+// the quantity production actually consults.
 //
 // The envelope's soundness rests on acknowledgement being the TERMINAL step of the
 // ingest success path — the graph write, its derived writes, and the durable guard
@@ -304,18 +302,14 @@ func itoa(n int) string {
 // The observable consequence is this: at the instant the producer first reports
 // caught-up, every published entity must already be readable in ENTITY_STATES.
 //
-// DEVIATION FROM THE TASK TEXT, with its reason MEASURED. Task 8.1 asked to "force a
-// write failure and assert NumPending + NumAckPending stays > 0 while it fails". That
-// assumes write failures are RETRYABLE. They are mostly not: probed 2026-07-30 with
-// poisoned resident state and with the RMW target deleted, both produce TERMINAL
-// dispositions (Term), so the message leaves both counters within milliseconds and
-// outstanding work correctly returns to zero. Asserting "stays > 0" would assert
-// something false about this component. It also observes the documented honesty
-// boundary live: lag == 0 means no outstanding work, NOT that every message was
-// applied — a terminated message is simply gone (SemStreams gh#742 owns that visibility).
+// It does not force a write failure. A refused write (poisoned resident state, or an
+// entity deleted under the merge) is Nak'd and stays outstanding until it is redelivered,
+// so the test proves durability from the caught-up instant instead. It also observes the
+// documented honesty boundary live: lag == 0 means no outstanding work, NOT that every
+// message was applied — a terminated poison payload is simply gone.
 //
-// IT DELIBERATELY DOES NOT ASSERT ON THE ACK FLOOR. §D0 measured it unusable, nothing
-// here reads it, and it would pass for the wrong reason under MaxDeliver exhaustion.
+// IT DELIBERATELY DOES NOT ASSERT ON THE ACK FLOOR: nothing here reads it, and it would
+// pass for the wrong reason under MaxDeliver exhaustion.
 func TestIntegration_ReadyImpliesTheWritesAreDurable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
@@ -412,12 +406,11 @@ func TestIntegration_ReadinessEnvelope_AbsentKeyIsNotAFailure(t *testing.T) {
 			"failing here is what broke TestIntegration_ReadinessEnvelope_BacklogIsNotReady in CI")
 }
 
-// TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog is design D2 (ADR-109
-// Decision 3; #183): bootstrap_complete is true once Start returns, whatever the backlog.
-// A message of a backlog the consumer bound onto is held after its entity write by a pause
-// on "Entity ingested" (fix-301 design D2), so every envelope while it is held has work
-// outstanding; that envelope must still say bootstrap_complete, with ready false and lag
-// above zero.
+// TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog: bootstrap_complete is
+// true once Start returns, whatever the backlog (ADR-109, Decision 3). A message of a
+// backlog the consumer bound onto is held after its entity write by a pause on "Entity
+// ingested", so every envelope while it is held has work outstanding; that envelope must
+// still say bootstrap_complete, with ready false and lag above zero.
 func TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()

@@ -100,7 +100,7 @@ func jsonldObjectValue(obj classifiedObject, pm *prefixMap) any {
 // jsonldLiteralValue formats a literal value for JSON-LD.
 // Uses native JSON types only when they are syntactically valid JSON and
 // preserve the supplied lexical form and datatype; otherwise emits an explicit
-// "@value"/"@type" object (#252).
+// "@value"/"@type" object.
 func jsonldLiteralValue(obj classifiedObject, pm *prefixMap) any {
 	switch obj.datatype {
 	case xsdBoolean:

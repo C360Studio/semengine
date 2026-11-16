@@ -15,6 +15,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/graph/readiness"
@@ -31,11 +32,11 @@ const key = readiness.KeyGraphEmbedding
 var _ component.Discoverable = (*Component)(nil)
 
 // workerWatchLost is the stuck state Health names once the Worker's Run has returned while the
-// run context was live (design D2): nothing embeds a pending record until the process restarts.
+// run context was live: nothing embeds a pending record until the process restarts.
 const workerWatchLost = "embedding worker watch lost; restart the process"
 
 // vectorCacheWatchLost is the stuck state Health names once the vector cache's Run has returned
-// while the run context was live (design D5): the verbs refuse until the process restarts.
+// while the run context was live: the verbs refuse until the process restarts.
 const vectorCacheWatchLost = "vector cache watch lost; restart the process"
 
 // Component implements the graph-embedding processor.
@@ -48,6 +49,9 @@ type Component struct {
 	logger          *slog.Logger
 	metricsRegistry *metric.MetricsRegistry
 	metrics         *embeddingMetrics
+
+	// text selects the values hop 1 embeds, from text_suffixes.
+	text entitytext.Rule
 
 	// storeRegistry resolves an offloaded body's StorageRef to its store (ADR-063); it is the
 	// injected registry when a store-read input is declared and nil otherwise.
@@ -71,22 +75,27 @@ type Component struct {
 	offloadExcludedWarn sync.Once
 
 	// workerLost latches when the Worker's Run returns while the run context is live; nothing
-	// rebinds the watch, as for the follower's lost feed (design D2).
+	// rebinds the watch, as for the follower's lost feed.
 	workerLost atomic.Bool
 	// cacheLost latches when the vector cache's Run returns while the run context is live; the
-	// verbs refuse from then on (design D5).
+	// verbs refuse from then on.
 	cacheLost atomic.Bool
 
-	// The query side (query.go). embedder is the Worker's BM25 embedder, whose statistics the
-	// search verb reads without changing (GenerateQuery); cache is the in-memory view of the
-	// generated vectors in EMBEDDING_INDEX the verbs rank (design D2, D3). start sets both.
-	embedder *embedding.BM25Embedder
+	// embedderType is the name the product registered its embedder under: the type part of the
+	// dedup key and search's embedder_type. newEmbedder builds the embedder; start calls it.
+	embedderType string
+	newEmbedder  func() (embedding.Embedder, error)
+	// embedder is the one embedder start built: the Worker embeds documents with it and the search
+	// verb embeds queries with it (GenerateQuery). cleanup closes it last and clears it once
+	// closed. cache is the in-memory view of the generated vectors in EMBEDDING_INDEX the verbs
+	// rank; start sets it.
+	embedder embedding.Embedder
 	cache    *embedding.VectorCache
 	// subscriptions are the query request subscriptions, one per verb the table in graph declares
 	// for graph-embedding; cleanup drains them first.
 	subscriptions []*natsclient.Subscription
 
-	// failed is the failed map (failed.go, design D3): seeded at Start, changed by the Worker's
+	// failed is the failed map (failed.go): seeded at Start, changed by the Worker's
 	// terminal outcomes and hop 1, read by the follower through Failed and by the repair lane.
 	failed failedMap
 
@@ -103,7 +112,7 @@ type Component struct {
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-embedding: the ports
-// CreateGraphEmbedding will report for rawConfig, computed without dependencies.
+// the factory will report for rawConfig, computed without dependencies.
 func DeclarePorts(rawConfig json.RawMessage, _ string) (component.PortConfig, error) {
 	_, inputs, outputs, err := resolveConfig(rawConfig)
 	if err != nil {
@@ -113,35 +122,34 @@ func DeclarePorts(rawConfig json.RawMessage, _ string) (component.PortConfig, er
 }
 
 // resolveConfig parses rawConfig, applies defaults, validates, and resolves the effective
-// ports. It is the one derivation DeclarePorts and CreateGraphEmbedding share.
+// ports. It is the one derivation DeclarePorts and the factory share.
 func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []component.Port, error) {
 	var config Config
 	if len(rawConfig) > 0 {
 		// Strict decoding: a key Config does not define is refused, naming the key, where
-		// encoding/json would drop it (design D4). It replaces the pin's targeted cache_ttl
-		// probe. A port definition decodes through its own UnmarshalJSON.
+		// encoding/json would drop it. A port definition decodes through its own UnmarshalJSON.
 		decoder := json.NewDecoder(bytes.NewReader(rawConfig))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&config); err != nil {
-			return Config{}, nil, nil, errs.WrapInvalid(err, "CreateGraphEmbedding", "factory", "config unmarshal")
+			return Config{}, nil, nil, errs.WrapInvalid(err, "graphembedding", "factory", "config unmarshal")
 		}
-		// json.Unmarshal, which the pin used, refused data after the object; keep that.
+		// Data after the object is refused, as json.Unmarshal refuses it.
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			return Config{}, nil, nil, errs.WrapInvalid(errors.New("data after the configuration object"),
-				"CreateGraphEmbedding", "factory", "config unmarshal")
+				"graphembedding", "factory", "config unmarshal")
 		}
 	} else {
 		config = DefaultConfig()
 	}
 	config.ApplyDefaults()
 	if err := config.Validate(); err != nil {
-		return Config{}, nil, nil, errs.Wrap(err, "CreateGraphEmbedding", "factory", "config validation")
+		return Config{}, nil, nil, errs.Wrap(err, "graphembedding", "factory", "config validation")
 	}
 	inputs := make([]component.Port, 0, len(config.Ports.Inputs))
 	for _, definition := range config.Ports.Inputs {
 		port, err := definition.Resolve(component.DirectionInput)
 		if err != nil {
-			return Config{}, nil, nil, errs.WrapInvalid(err, "CreateGraphEmbedding", "factory", "resolve input port")
+			return Config{}, nil, nil, errs.WrapInvalid(err, "graphembedding", "factory", "resolve input port")
 		}
 		inputs = append(inputs, port)
 	}
@@ -149,11 +157,26 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 	return config, inputs, nil, nil
 }
 
-// CreateGraphEmbedding is the factory function for creating graph-embedding components. It
-// opens no connection.
-func CreateGraphEmbedding(rawConfig json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
+// refuseWithoutEmbedder is the factory Register adds. It always refuses, class invalid:
+// graph-embedding has no embedder of its own, so a product with one (tier 1, such as semembed)
+// registers it with RegisterWithEmbedder, and a tier 0 composition leaves graph-embedding out.
+func refuseWithoutEmbedder(json.RawMessage, component.Dependencies) (component.Discoverable, error) {
+	return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "factory",
+		"embedder check: graph-embedding has no embedder of its own (from tier 1 a product registers one with RegisterWithEmbedder)")
+}
+
+// newFactory returns the factory RegisterWithEmbedder adds: it builds graph-embedding with the
+// product's embedder constructor, which only Start calls. It opens no connection.
+func newFactory(embedderType string, newEmbedder func() (embedding.Embedder, error)) component.Factory {
+	return func(rawConfig json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
+		return create(rawConfig, deps, embedderType, newEmbedder)
+	}
+}
+
+func create(rawConfig json.RawMessage, deps component.Dependencies, embedderType string,
+	newEmbedder func() (embedding.Embedder, error)) (component.Discoverable, error) {
 	if deps.NATSClient == nil {
-		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "CreateGraphEmbedding", "factory", "NATSClient required")
+		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "factory", "NATSClient required")
 	}
 	config, inputs, outputs, err := resolveConfig(rawConfig)
 	if err != nil {
@@ -164,7 +187,7 @@ func CreateGraphEmbedding(rawConfig json.RawMessage, deps component.Dependencies
 	for _, input := range inputs {
 		facts, err := input.Facts()
 		if err != nil {
-			return nil, errs.WrapInvalid(err, "CreateGraphEmbedding", "factory", "project input port")
+			return nil, errs.WrapInvalid(err, "graphembedding", "factory", "project input port")
 		}
 		if _, ok := facts.StoreReadBucket(); ok {
 			storeRegistry = deps.StoreRegistry
@@ -173,7 +196,7 @@ func CreateGraphEmbedding(rawConfig json.RawMessage, deps component.Dependencies
 	}
 	metrics, err := newEmbeddingMetrics(deps.MetricsRegistry)
 	if err != nil {
-		return nil, errs.Wrap(err, "CreateGraphEmbedding", "factory", "register metrics")
+		return nil, errs.Wrap(err, "graphembedding", "factory", "register metrics")
 	}
 	return &Component{
 		config:          config,
@@ -183,13 +206,41 @@ func CreateGraphEmbedding(rawConfig json.RawMessage, deps component.Dependencies
 		logger:          deps.GetLoggerWithComponent(key),
 		metricsRegistry: deps.MetricsRegistry,
 		metrics:         metrics,
+		text:            entitytext.New(config.TextSuffixes, config.MaxTextLen),
 		storeRegistry:   storeRegistry,
+		embedderType:    embedderType,
+		newEmbedder:     newEmbedder,
 	}, nil
 }
 
-// Register registers the graph-embedding factory with the component registry. It asks boot
-// for no model registry: at tier 0 the embedder is BM25, which needs no provider.
+// Register registers a graph-embedding factory that refuses construction, naming
+// RegisterWithEmbedder and tier 1: graph-embedding has no embedder of its own. It is the
+// registration every component package exports, so a composition that lists graph-embedding
+// without an embedder fails at construction rather than running without one.
 func Register(registry *component.Registry) error {
+	return register(registry, refuseWithoutEmbedder)
+}
+
+// RegisterWithEmbedder registers graph-embedding with a product's embedder. embedderType names
+// the embedder: it is the type part of the dedup key, so two embedders never share a stored
+// vector, and search replies it as embedder_type. newEmbedder is called once per Start, never at
+// construction, and the embedder it returns is closed by Stop. An empty embedderType or a nil
+// newEmbedder is refused, class invalid, and nothing is registered. Registering asks boot for no
+// model registry: the product owns the embedder and whatever it connects to.
+func RegisterWithEmbedder(registry *component.Registry, embedderType string,
+	newEmbedder func() (embedding.Embedder, error)) error {
+	if embedderType == "" {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "RegisterWithEmbedder",
+			"embedder type is required")
+	}
+	if newEmbedder == nil {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "graphembedding", "RegisterWithEmbedder",
+			"embedder constructor is required")
+	}
+	return register(registry, newFactory(embedderType, newEmbedder))
+}
+
+func register(registry *component.Registry, factory component.Factory) error {
 	return registry.Register(component.Registration{
 		Name:        key,
 		Type:        "processor",
@@ -198,7 +249,7 @@ func Register(registry *component.Registry) error {
 		Description: "Graph entity embedding generation processor",
 		Version:     "1.0.0",
 		Schema:      schema,
-		Factory:     CreateGraphEmbedding,
+		Factory:     factory,
 		Ports:       DeclarePorts,
 	})
 }
@@ -226,6 +277,13 @@ func (c *Component) Health() component.HealthStatus {
 	return c.lifecycle.Health(stuck...)
 }
 
+// identity is the running embedder's identity as the Worker folds it into the dedup key: the
+// registered type, the embedder's live Model and Dimensions, and the text cap. It is read on
+// each call, because a remote embedder resolves its width from its first response.
+func (c *Component) identity() embedding.EmbedderIdentity {
+	return embedding.IdentityOf(c.embedderType, c.embedder, c.config.MaxTextLen)
+}
+
 // DataFlow reports input messages: one per delivered ENTITY_STATES entry, update or delete,
 // with the delivered value's length, counted before coalescing.
 func (c *Component) DataFlow() component.FlowMetrics { return c.lifecycle.DataFlow() }
@@ -234,8 +292,8 @@ func (c *Component) DataFlow() component.FlowMetrics { return c.lifecycle.DataFl
 // configuration.
 func (c *Component) Initialize() error { return c.lifecycle.Initialize() }
 
-// Start begins following ENTITY_STATES and writing pending records. The lifecycle state is
-// the shell's (component.Lifecycle): Start before Initialize, a nil or ended context and a
+// Start builds the embedder, then begins following ENTITY_STATES and writing pending records.
+// The lifecycle state is the shell's (component.Lifecycle): Start before Initialize, a nil or ended context and a
 // second Start are refused, the second with errs.ErrAlreadyStarted, and a Start that fails is
 // rolled back through cleanup. A component with no NATS client is refused first.
 //
@@ -250,9 +308,19 @@ func (c *Component) Start(ctx context.Context) error {
 	return c.lifecycle.Start(ctx, c.start, c.cleanup)
 }
 
-// start opens the follower and the buckets, then starts what Stop joins. Nothing it acquires
-// before the run context needs releasing.
+// start builds the embedder, opens the follower and the buckets, then starts what Stop joins.
+// Of what it acquires before the run context, only the embedder needs releasing; cleanup closes
+// it when a later step fails.
 func (c *Component) start(ctx context.Context) error {
+	embedder, err := c.newEmbedder()
+	if err != nil {
+		return errs.Wrap(err, "Component", "Start", "build the embedder")
+	}
+	if embedder == nil {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Component", "Start", "the embedder constructor returned no embedder")
+	}
+	c.embedder = embedder
+
 	f, err := follower.Open(ctx, follower.Config{
 		Client:          c.natsClient,
 		Key:             key,
@@ -263,7 +331,7 @@ func (c *Component) start(ctx context.Context) error {
 		Deliver:         c.deliver,
 		Failed:          c.failed.counts,
 		// Only hop 1's failures, which can leave a stale vector in the index, withhold the verbs;
-		// a Worker failure leaves no vector and is answered past (design D5, F2).
+		// a Worker failure leaves no vector and is answered past.
 		Withhold: c.failed.withheld,
 	})
 	if err != nil {
@@ -273,8 +341,8 @@ func (c *Component) start(ctx context.Context) error {
 		return err
 	}
 	// The failed records EMBEDDING_INDEX holds seed the failed map before the follower publishes,
-	// so the first envelope counts them (pin component.go:1063-1099). A seed that cannot be read
-	// fails Start: a map left short would let readiness read ready over failed records.
+	// so the first envelope counts them. A seed that cannot be read fails Start: a map left short
+	// would let readiness read ready over failed records.
 	failedRecords, err := c.storage.ScanFailed(ctx)
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "seed the failed map from "+graph.BucketEmbeddingIndex)
@@ -316,13 +384,12 @@ func (c *Component) start(ctx context.Context) error {
 	}()
 
 	// Hop 2: the Worker embeds each pending record and reports its terminal outcome to
-	// onTerminal. Its embedder also embeds the search verb's queries: one instance serves both,
-	// as at the pin (design D3).
-	c.embedder = embedding.NewBM25Embedder(embedding.BM25Config{})
+	// onTerminal. Its embedder also embeds the search verb's queries, so documents and queries
+	// share one vector space.
 	worker := embedding.NewWorker(c.storage, c.embedder, c.logger).
 		WithWorkers(c.config.Workers).
 		WithMaxSourceTextLen(c.config.MaxTextLen).
-		WithEmbedderType(c.config.EmbedderType).
+		WithEmbedderType(c.embedderType).
 		WithMetrics(c.metrics).
 		WithOnTerminal(c.onTerminal)
 	// A nil *storeregistry.Registry in the interface would be a non-nil resolver that panics.
@@ -350,7 +417,7 @@ func (c *Component) start(ctx context.Context) error {
 
 	// The vector cache the verbs answer from. Until it has applied its watch's first snapshot,
 	// and after its watch is lost, the verbs refuse index_not_ready.
-	c.cache = embedding.NewVectorCache(c.storage)
+	c.cache = embedding.NewVectorCache(c.storage, c.identity)
 	cached := make(chan struct{})
 	c.cached = cached
 	go func() {
@@ -390,30 +457,26 @@ func (c *Component) openBuckets(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does
-// nothing, and a Stop whose context ends first returns that context's error and keeps what is
-// left for the next Stop.
+// nothing, and any non-nil Stop on a started component initiates every teardown step, bounds
+// drain/join waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start. It drains the query subscriptions first, so no handler is running. Then it ends
-// the run context, joins the follower's Run, so nothing more is delivered, the repair lane, so no
-// repair pass is in flight, the Worker's Run, so no terminal outcome follows, and the vector
-// cache's Run, then shuts the coalescer down, which waits for a batch in progress. A ctx that ends
-// first returns its error with the handles kept, and the next Stop resumes.
+// partial start. It initiates every query subscription drain, ends the run context, waits up to
+// ctx for the follower's Run, repair lane, Worker's Run, and vector cache's Run, and initiates
+// coalescer shutdown without returning early on an earlier ctx error. A ctx that ends before
+// all joins complete returns its error with the handles kept, and the next Stop resumes. The
+// embedder is closed last, once nothing that embeds can still run; a close that fails is
+// returned with the embedder kept, and the next Stop closes it again.
 func (c *Component) cleanup(ctx context.Context) error {
-	// Stop serving queries first: Drain returns once every running handler has returned. Each
-	// drain is begun whatever the one before returned, so one handler that outlasts ctx does not
-	// keep the other verb serving.
-	var failures []error
+	var cleanupErr error
 	for _, sub := range c.subscriptions {
-		failures = append(failures, sub.Drain(ctx))
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
+		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
 	}
 	if c.runCancel != nil {
 		c.runCancel()
 	}
+	var waitErr error
 	for _, done := range []chan struct{}{c.feeds, c.repairs, c.worked, c.cached} {
 		if done == nil {
 			continue
@@ -421,17 +484,23 @@ func (c *Component) cleanup(ctx context.Context) error {
 		select {
 		case <-done:
 		case <-ctx.Done():
-			return ctx.Err()
+			if waitErr == nil {
+				waitErr = ctx.Err()
+			}
 		}
 	}
 	if c.coalescer != nil {
-		if err := c.coalescer.Shutdown(ctx); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.coalescer.Shutdown(ctx))
 	}
-	if err := ctx.Err(); err != nil {
+	if err := errors.Join(cleanupErr, waitErr, ctx.Err()); err != nil {
 		return err
 	}
 	c.runCancel, c.feeds, c.repairs, c.worked, c.cached, c.coalescer, c.subscriptions = nil, nil, nil, nil, nil, nil, nil
+	if c.embedder != nil {
+		if err := c.embedder.Close(); err != nil {
+			return errs.Wrap(err, "Component", "Stop", "close the embedder")
+		}
+		c.embedder = nil
+	}
 	return nil
 }

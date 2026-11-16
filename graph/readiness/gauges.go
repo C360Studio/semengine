@@ -10,9 +10,8 @@ import (
 // producer.
 //
 // Set is the single projection site, so a field added to IndexStatusResponse cannot be
-// wired in one producer and forgotten in another. At the SemStreams pin, two producers
-// each built their own set, and both left out bootstrap_complete, the field
-// EvaluateReadinessGate reads.
+// wired in one producer and forgotten in another (such as bootstrap_complete, the field
+// EvaluateReadinessGate reads).
 type Gauges struct {
 	subsystem string
 
@@ -38,8 +37,7 @@ const metricNamespace = "semengine"
 // same subsystem.
 //
 // The emitted metric NAMES are an external contract (ADR-066): dashboards and operator
-// alerts read them. They are the names the SemStreams pin emits, and a test compares
-// them against the live registry.
+// alerts read them, and a test compares them against the live registry.
 func NewGauges(subsystem string) *Gauges {
 	return &Gauges{
 		subsystem: subsystem,
@@ -59,7 +57,7 @@ func NewGauges(subsystem string) *Gauges {
 			Namespace: metricNamespace,
 			Subsystem: subsystem,
 			Name:      "bootstrap_complete",
-			Help:      "1 when the producer has finished its INITIAL build in this process lifetime, else 0. Distinguishes an index mid-format-cutover from one merely behind (gh#474, ADR-084)",
+			Help:      "1 when the producer has finished its INITIAL build in this process lifetime, else 0. Distinguishes an index mid-format-cutover from one merely behind (ADR-084)",
 		}),
 		state: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: metricNamespace,

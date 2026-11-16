@@ -19,8 +19,7 @@ func RegisterOpenAPISpec(name string, spec *OpenAPISpec) {
 
 // GetAllOpenAPISpecs returns a copy of the registration map. The *OpenAPISpec
 // values are the registered pointers themselves, so a change through one is seen
-// by every later caller. The service manager's /openapi.json handler reads it
-// (PR 2 of the port).
+// by every later caller. The service manager's /openapi.json handler reads it.
 func GetAllOpenAPISpecs() map[string]*OpenAPISpec {
 	openAPIRegistryMu.RLock()
 	defer openAPIRegistryMu.RUnlock()

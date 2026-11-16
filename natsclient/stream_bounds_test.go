@@ -133,12 +133,11 @@ func TestEnsureStream_BoundsRefusalIsFatal(t *testing.T) {
 // TestCreateStream_RefusesUnboundedBeforeTheConnectionCheck covers the OTHER
 // provisioning seam, and the placement difference between the two.
 //
-// Client.CreateStream only ever creates, so there is no bind path to protect and
-// no reason to wait for the server to say which act this is: the refusal is
-// unconditional, exactly like the backing-stream prefix refusal beside it. This
-// seam was missed when bounds first came to EnsureStream — the two are siblings
-// and one of them was left as the supported route around the requirement — which
-// is what this test exists to prevent recurring.
+// Client.CreateStream only ever creates, so there is no bind path to protect
+// and no reason to wait for the server to say which act this is: the refusal is
+// unconditional, exactly like the backing-stream prefix refusal beside it. The
+// two are siblings: a bound on EnsureStream alone would leave CreateStream as
+// the supported route around the requirement, which this test prevents.
 func TestCreateStream_RefusesUnboundedBeforeTheConnectionCheck(t *testing.T) {
 	c := &Client{}
 	require.NotEqual(t, StatusConnected, c.Status(),
@@ -203,15 +202,13 @@ func TestEnsureStream_BoundsCheckDoesNotPrecedeTheConnectionCheck(t *testing.T) 
 
 // TestAutoCreate_IsAProvisioningSeamAndIsGuarded covers the THIRD creation seam.
 //
-// Consumer auto-create is stream creation whatever it is called, and it was the
-// last unguarded route to an unbounded ordinary stream — reachable from four
-// in-repo callers and exported for sister repos through
-// StreamConsumerConfig.AutoCreate. It is pinned here because the pattern has now
-// repeated twice: a comment asserting two seams cannot drift is not a mechanism,
-// and both times the missing seam was found by looking rather than by a test
-// failing.
+// Consumer auto-create is stream creation whatever it is called, a route to an
+// unbounded ordinary stream reachable from in-repo callers and, through
+// StreamConsumerConfig.AutoCreate, from consumer repositories. It is pinned by
+// a test because a comment asserting that creation seams cannot drift is not a
+// mechanism: a missing seam would be found only by looking.
 func TestAutoCreate_IsAProvisioningSeamAndIsGuarded(t *testing.T) {
-	// The shape the four in-repo callers used to pass: subjects and a storage tier,
+	// The shape an auto-creating caller passes without bounds: subjects and a storage tier,
 	// no bounds. Because an AutoCreateConfig is supplied, DefaultStreamConfig is
 	// skipped entirely, so nothing filled them in.
 	underDeclared := jetstream.StreamConfig{

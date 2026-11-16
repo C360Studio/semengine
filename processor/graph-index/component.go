@@ -23,7 +23,7 @@ import (
 )
 
 // key names graph-index once: its registration, its logger, its metric keys and their
-// subsystem, and its GRAPH_STATUS key (design D3).
+// subsystem, and its GRAPH_STATUS key.
 const key = readiness.KeyGraphIndex
 
 var _ component.Discoverable = (*Component)(nil)
@@ -38,8 +38,7 @@ type Component struct {
 	logger          *slog.Logger
 	metricsRegistry *metric.MetricsRegistry
 
-	// lifecycle is the lifecycle state, Health and DataFlow (component.Lifecycle,
-	// ADR-108, design D4).
+	// lifecycle is the lifecycle state, Health and DataFlow (component.Lifecycle, ADR-108).
 	lifecycle component.Lifecycle
 
 	metrics *indexMetrics
@@ -81,7 +80,7 @@ type Component struct {
 	failedCount    atomic.Int64
 
 	// lastProjections maps an entity ID to the projection last indexed for it, for the
-	// reindex_events_total metric (#108's instrument): one string per entity.
+	// reindex_events_total metric: one string per entity.
 	lastProjections sync.Map
 }
 
@@ -101,14 +100,15 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 	var config Config
 	if len(rawConfig) > 0 {
 		// Strict decoding: a key Config does not define is refused, naming the key, where
-		// encoding/json would drop it (design D9). A port definition decodes through its
+		// encoding/json would drop it. A port definition decodes through its
 		// own UnmarshalJSON, which this setting does not reach.
 		decoder := json.NewDecoder(bytes.NewReader(rawConfig))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&config); err != nil {
 			return Config{}, nil, nil, errs.WrapInvalid(err, "CreateGraphIndex", "factory", "config unmarshal")
 		}
-		// json.Unmarshal, which the pin used, refused data after the object; keep that.
+		// A Decoder stops after the first value, where json.Unmarshal refuses data after the
+		// object; refuse it here too.
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			return Config{}, nil, nil, errs.WrapInvalid(errors.New("data after the configuration object"),
 				"CreateGraphIndex", "factory", "config unmarshal")
@@ -201,7 +201,7 @@ func (c *Component) Health() component.HealthStatus {
 }
 
 // DataFlow reports input messages: one per delivered ENTITY_STATES entry, update or delete,
-// with the delivered value's length, counted before coalescing (design D4). ErrorRate is
+// with the delivered value's length, counted before coalescing. ErrorRate is
 // the errors counted (Health's ErrorCount) per input.
 func (c *Component) DataFlow() component.FlowMetrics {
 	return c.lifecycle.DataFlow()
@@ -229,7 +229,7 @@ func (c *Component) Start(ctx context.Context) error {
 	return c.lifecycle.Start(ctx, c.start, c.cleanup)
 }
 
-// start acquires what Start owns, in the order the write path needs (notes/4.2.md): the
+// start acquires what Start owns, in the order the write path needs: the
 // follower, the index buckets, the pool, the goroutines Stop joins, then the query
 // subscriptions. Nothing it acquires before the run context needs releasing.
 func (c *Component) start(ctx context.Context) error {
@@ -288,29 +288,22 @@ func (c *Component) start(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does
-// nothing, and a Stop whose context ends first returns that context's error and keeps what
-// is left for the next Stop.
+// nothing, and any non-nil Stop on a started component initiates every teardown step, bounds
+// drain/join waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *Component) Stop(ctx context.Context) error {
 	return c.lifecycle.Stop(ctx)
 }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating
-// a partial start. It drains the query subscriptions first, so no handler is running. Then
-// the order is graph-ingest's (design D4): end the feeds' context and join them, so nothing
-// new is submitted; drain the pool with Shutdown while the run context is still live, so work
-// it accepted is written; then end the run context. A ctx that ends
-// first returns its error with the handles kept, and the next Stop resumes; the handles are
-// cleared only once everything is released.
+// a partial start. It initiates every query subscription drain, ends the feeds' context, waits
+// up to ctx for the feeds, and initiates pool Shutdown while keeping poolCtx live until the
+// pool's accepted work has finished writing, without returning early on an earlier ctx error.
+// A ctx that ends before all joins complete returns its error with the handles kept, and the
+// next Stop resumes; poolCancel runs and handles are cleared once everything has joined.
 func (c *Component) cleanup(ctx context.Context) error {
-	// Stop serving queries first: Drain returns once every running handler has returned. Each drain
-	// is begun whatever the one before returned, so one handler that outlasts ctx does not keep the
-	// other verbs serving.
-	var failures []error
+	var cleanupErr error
 	for _, sub := range c.subscriptions {
-		failures = append(failures, sub.Drain(ctx))
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
+		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
 	}
 	if c.runCancel != nil {
 		c.runCancel()
@@ -319,19 +312,17 @@ func (c *Component) cleanup(ctx context.Context) error {
 		select {
 		case <-c.feeds:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
 	}
 	if c.pool != nil {
-		if err := c.pool.Shutdown(ctx); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.pool.Shutdown(ctx))
+	}
+	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {
+		return err
 	}
 	if c.poolCancel != nil {
 		c.poolCancel()
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	c.runCancel, c.poolCancel, c.feeds, c.pool, c.coalescer, c.subscriptions = nil, nil, nil, nil, nil, nil
 	return nil

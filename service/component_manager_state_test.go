@@ -17,15 +17,9 @@ import (
 	"github.com/c360studio/semengine/component"
 )
 
-// The component manager's state shape and its own health (design D2, "State shape" and "No wait
-// for readers"; D4, "The manager's own health"; #360). The set of components is fixed at
+// The component manager's state shape and its own health. The set of components is fixed at
 // construction and each component's changing state is one value on its own record, so no read
 // waits on a component's Start or Stop, and a read during or after Stop asks the component itself.
-// The pin's borrow-fence tests (component_manager_owner_test.go:137-156, :180-311) are dropped with
-// the fence; its TestComponentManagerTerminalHealthProjectionInvokesNoChild (:158-178) is flipped
-// here as TestComponentHealthAfterStopAsksEachComponent, and its
-// TestPerformDetailedHealthCheck_ReportsFailedComponent (component_manager_start_barrier_test.go:
-// 390-425, a struct literal) is adapted as TestComponentManagerHealthNamesEveryFailedComponent.
 
 // stateHealthComponent is a lifecycleTestComponent whose Health, DataFlow and DebugStatus answer
 // from what the component knows, without waiting: healthy and "running" until its own Stop
@@ -119,7 +113,7 @@ func stateListedNames(t *testing.T, mux *http.ServeMux) []string {
 // the names /components/list gives, are the same before Start, after it, after Stop and, on a
 // second manager, after a failed Start; the start positions are by name within the one phase. A
 // withComponents callback that writes a ManagedComponent's State, LastError and StartOrder, or
-// deletes an entry, changes nothing the manager reports (design D2, "State shape").
+// deletes an entry, changes nothing the manager reports.
 //
 // spec: service-lifecycle / The component manager's reads wait on no lock and not on Stop
 func TestComponentListIsFixedAtConstruction(t *testing.T) {
@@ -180,7 +174,7 @@ func TestComponentListIsFixedAtConstruction(t *testing.T) {
 
 // TestComponentReadsReturnWhileAComponentStartIsBlocked: while one component's Start is held open
 // by the test, GetComponentStatus, GetComponentHealth and /components/status/{name} return, and a
-// sibling whose Start returned reads StateStarted (design D2, "State shape"). The sibling is a store
+// sibling whose Start returned reads StateStarted. The sibling is a store
 // provider, so it starts in the first phase, which every Start of joins before the held component's
 // phase begins: its state is written before the held Start is entered, with no wait in the test.
 //
@@ -224,7 +218,7 @@ func TestComponentReadsReturnWhileAComponentStartIsBlocked(t *testing.T) {
 
 // TestComponentReadsReturnWhileAComponentStopIsBlocked: while one component's Stop is held open by
 // the test, GetComponentStatus, GetComponentHealth and /components/status/{name} return, and the
-// sibling Stop stopped first reads StateStopped (design D2, "No wait for readers"). Within the one
+// sibling Stop stopped first reads StateStopped. Within the one
 // phase the Stop order is the reverse of the order by name, and the stop sequence calls each Stop
 // on one stack, so stop-b's state is written before stop-a's Stop is entered.
 //
@@ -280,11 +274,8 @@ func TestComponentReadsReturnWhileAComponentStopIsBlocked(t *testing.T) {
 	requireComponentStates(t, cm, component.StateStopped, held.name, sibling.name)
 }
 
-// TestComponentHealthAfterStopAsksEachComponent, flipped from the pin's
-// TestComponentManagerTerminalHealthProjectionInvokesNoChild (component_manager_owner_test.go:
-// 158-178), which found no health and no call into a component after Stop: here each component is
-// asked, and what it answers after its own Stop is what GetComponentHealth and /components/health
-// return (design D2, "No wait for readers"; D7).
+// TestComponentHealthAfterStopAsksEachComponent: after Stop each component is still asked, and
+// what it answers after its own Stop is what GetComponentHealth and /components/health return.
 //
 // spec: service-lifecycle / The component manager's reads wait on no lock and not on Stop
 func TestComponentHealthAfterStopAsksEachComponent(t *testing.T) {
@@ -328,8 +319,7 @@ func TestComponentHealthAfterStopAsksEachComponent(t *testing.T) {
 // TestComponentManagerHealthNamesAComponentLeftFailedByARollback: before Start the check looks and
 // answers healthy; after a Start that fails and whose rollback Stop fails too, the component is
 // left in StateFailed and the check reports it, naming it and carrying its last error; once a later
-// Stop stops it, the check is healthy (design D4). The pin answered healthy after the failed Start,
-// since its started flag was never set (:1156-1159). The check is called directly: BaseService
+// Stop stops it, the check is healthy. The check is called directly: BaseService
 // starts only after every component started, so production never runs it after a failed Start.
 //
 // spec: service-lifecycle / The component manager's health reads every component
@@ -359,11 +349,9 @@ func TestComponentManagerHealthNamesAComponentLeftFailedByARollback(t *testing.T
 	require.NoError(t, cm.healthCheck(), "the check still reports the component a later Stop stopped")
 }
 
-// TestComponentManagerHealthNamesEveryFailedComponent, adapted from the pin's
-// TestPerformDetailedHealthCheck_ReportsFailedComponent (component_manager_start_barrier_test.go:
-// 390-425), which built a struct-literal manager and set its state by hand: a Stop that leaves two
-// components failed makes the check name both, in name order, each carrying its Stop error, and a
-// retried Stop that succeeds clears it (design D4).
+// TestComponentManagerHealthNamesEveryFailedComponent: a Stop that leaves two components failed
+// makes the check name both, in name order, each carrying its Stop error, and a retried Stop that
+// succeeds clears it.
 //
 // spec: service-lifecycle / The component manager's health reads every component
 func TestComponentManagerHealthNamesEveryFailedComponent(t *testing.T) {
@@ -402,8 +390,8 @@ func TestComponentManagerHealthNamesEveryFailedComponent(t *testing.T) {
 // manager's health check, /components/list, /components/status/{name}?debug=true and
 // /components/config/{name} run while the test runs Start, a Stop in which one component's Stop
 // fails, and a retried Stop; the supervisor's health publish when Start returns (over the
-// unconnected client) runs among them. Under -race this is the state shape's race check (design
-// D2). The readers end on a closed channel and are joined, never slept. Beyond the race detector,
+// unconnected client) runs among them. Under -race this is the state shape's race check. The
+// readers end on a closed channel and are joined, never slept. Beyond the race detector,
 // a health check a reader began after the failing Stop returned, and ended before the retry began,
 // names the failed component; the test waits for one such check before it retries, so the
 // assertion runs.

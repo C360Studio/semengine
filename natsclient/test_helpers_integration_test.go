@@ -17,12 +17,10 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// This file is the integration lane's half of the helpers that replace the pin's test_client.go
-// (admission ledger row natsclient/test_client.go): the broker is internal/harness/natsfixture,
-// which always runs JetStream, so the pin's WithJetStream, WithKV, WithMinimalFeatures and
-// WithFileStorage have nothing left to choose. Shared tests reset the package-wide broker via
-// shared.Reset(t); tests that restart, stop, or reconfigure the broker start their own via
-// natsfixture.New.
+// This file is the integration lane's half of the test helpers: the broker is
+// internal/harness/natsfixture, which always runs JetStream, so a test has no broker features to
+// choose. Shared tests reset the package-wide broker via shared.Reset(t); tests that restart,
+// stop, or reconfigure the broker start their own via natsfixture.New.
 
 // shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
 var shared natsfixture.Shared
@@ -42,8 +40,7 @@ func run(m *testing.M) int {
 
 // fixtureClientTimeout is the Client's dial timeout (WithTimeout sets nothing else) and the bound on
 // its first connection. It is a failure bound, never reached against a broker whose Start has
-// returned (design D8 R1b); 15 s is the largest the pin asked for (WithTestTimeout at
-// kv_key_contract_integration_test.go:47).
+// returned.
 const fixtureClientTimeout = 15 * time.Second
 
 type sharedFixture struct {
@@ -61,17 +58,15 @@ func startFixture(t *testing.T) sharedFixture {
 	return sharedFixture{url: shared.Reset(t)}
 }
 
-// fixtureClient is a connected Client on a started broker, the pin's TestClient without the
-// container handle.
+// fixtureClient is a connected Client on a started broker, without the container handle.
 type fixtureClient struct {
 	Client *Client
 	URL    string
 }
 
-// newFixtureClient replaces the pin's NewTestClient (test_client.go:854): the shared broker is
-// reset via shared.Reset(t), and the Client is built as the pin built it (:777-781: no reconnects,
-// no health monitor) and connected under fixtureClientTimeout. Its Close is registered on t.Cleanup
-// after shared.Reset's post-test check, so it runs first.
+// newFixtureClient resets the shared broker via shared.Reset(t) and returns a Client built by
+// openFixtureClient (no reconnects, no health monitor) and connected under fixtureClientTimeout.
+// Its Close is registered on t.Cleanup after shared.Reset's post-test check, so it runs first.
 func newFixtureClient(t *testing.T) *fixtureClient {
 	t.Helper()
 	return newFixtureClientAt(t, shared.Reset(t))
@@ -84,9 +79,9 @@ func newFixtureClientAt(t *testing.T, url string) *fixtureClient {
 	return &fixtureClient{Client: natsfixture.Open(t, url, openFixtureClient), URL: url}
 }
 
-// openFixtureClient opens a Client the way the pin's NewTestClient built it: no reconnects, no
-// health monitor. It is the open function this package gives natsfixture.Open; a failed connect
-// closes the client before returning.
+// openFixtureClient opens a Client with no reconnects and no health monitor, so nothing but the
+// test acts on the connection. It is the open function this package gives natsfixture.Open; a
+// failed connect closes the client before returning.
 func openFixtureClient(ctx context.Context, url string) (*Client, func(context.Context) error, error) {
 	client, err := NewClient(url,
 		WithTimeout(fixtureClientTimeout),
@@ -105,9 +100,8 @@ func openFixtureClient(ctx context.Context, url string) (*Client, func(context.C
 	return client, client.Close, nil
 }
 
-// stream creates a stream on the broker, with the bounds the pin's testStreamConfig declared
-// (test_client.go:919-930: MaxAge, MaxBytes, DiscardOld; file storage). It replaces the pin's
-// WithStreams(TestStreamConfig{...}).
+// stream creates a stream on the broker with natsfixture.CreateStream's declared bounds (MaxAge,
+// MaxBytes, DiscardOld), on file storage.
 func (tc *fixtureClient) stream(t *testing.T, name string, subjects ...string) {
 	t.Helper()
 	js, err := tc.Client.JetStream()
@@ -119,8 +113,8 @@ func (tc *fixtureClient) stream(t *testing.T, name string, subjects ...string) {
 	}
 }
 
-// dial returns a connection of the test's own on the fixture's URL, replacing the pin's
-// GetNativeConnection where a test needs a raw connection; it is closed on t.Cleanup.
+// dial returns a connection of the test's own on the fixture's URL, for a test that needs a raw
+// connection; it is closed on t.Cleanup.
 func dial(t *testing.T, url string) *nats.Conn {
 	t.Helper()
 	nc, err := nats.Connect(url, nats.Timeout(fixtureClientTimeout), nats.MaxReconnects(0))
@@ -132,8 +126,8 @@ func dial(t *testing.T, url string) *nats.Conn {
 }
 
 // failureBound bounds a wait on a channel, callback or observed state that a correct run reaches
-// first (design D8 R1b). The lane runs under -race; a bound below 10 s is not a failure bound, so the
-// pin's 1-5 s bounds on such waits take this one.
+// first. The lane runs under -race; a bound below 10 s is not a failure bound, so every such wait
+// takes this one.
 const failureBound = 10 * time.Second
 
 // restartBound bounds natsfixture.Restart, which stops and starts a container; stopBound bounds a
@@ -144,8 +138,8 @@ const (
 )
 
 // closeClient closes c under closeBudget, a bounded root (harness-boundaries, "Bounded cleanup
-// roots"): the pin's deferred Close calls ran under the test's own context or under
-// context.Background(), neither of which ends. A Close error fails the test.
+// roots"): a deferred Close under the test's own context or under context.Background() runs
+// under a context that never ends. A Close error fails the test.
 func closeClient(t *testing.T, c *Client) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), closeBudget)
@@ -157,7 +151,9 @@ func closeClient(t *testing.T, c *Client) {
 
 // flushClient returns once the broker has answered a PING on c's connection. The broker handles a
 // connection's protocol in order, so a subscription c made before the flush is registered when it
-// returns: the event the pin's 50 ms sleeps after SubscribeForRequests stood in for (design D8 R1b).
+// returns (Subscribe's registration rests on the same order;
+// TestSubscribeRegistrationAnswersAnotherConnection measures it). It is the event that orders a
+// request after its responder's subscription, where a sleep would order nothing.
 func flushClient(t *testing.T, c *Client) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), failureBound)

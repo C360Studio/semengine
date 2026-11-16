@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestResponse_Unhydrated pins ADR-084 D4's fusion-facing half: partial hydration is
+// TestResponse_Unhydrated pins ADR-084's fusion-facing half: partial hydration is
 // reported on the response, distinctly from a miss, and the wire is unchanged when
 // nothing was lost.
 func TestResponse_Unhydrated(t *testing.T) {

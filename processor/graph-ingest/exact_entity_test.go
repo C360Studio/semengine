@@ -36,9 +36,8 @@ func TestHandleQueryEntityReturnsEntityAndSameEntryRevision(t *testing.T) {
 	if exact.Entity == nil || exact.Entity.ID != entityID {
 		t.Fatalf("entity = %#v", exact.Entity)
 	}
-	// EntityState has no Version (design D15): the KV revision is the one
-	// revision, so the pin's check that a logical Version was not taken for it
-	// has nothing left to compare. The same-entry check below is the claim.
+	// EntityState has no Version: the KV revision is the one revision, so the
+	// same-entry check below is the claim.
 	if exact.KVRevision == 0 || exact.KVRevision != revision {
 		t.Fatalf("kv_revision = %d, want same-entry revision %d", exact.KVRevision, revision)
 	}

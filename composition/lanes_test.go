@@ -18,10 +18,10 @@ func contract(typ string) *component.InterfaceContract {
 	return &component.InterfaceContract{Type: typ}
 }
 
-// TestValidateKeepsSameNamedLanesApart is Codex's #346 probe: a processor may
-// name an input and an output alike, and the output's interface contract must
-// not stand in for the input's. The row with the output renamed `out` is the
-// control: it gives the same judgment, so each assertion is shown to run.
+// TestValidateKeepsSameNamedLanesApart: a processor may name an input and an
+// output alike, and the output's interface contract must not stand in for the
+// input's. The row with the output renamed `out` is the control: it gives the
+// same judgment, so each assertion is shown to run.
 func TestValidateKeepsSameNamedLanesApart(t *testing.T) {
 	cases := []struct {
 		name         string

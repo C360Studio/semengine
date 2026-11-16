@@ -68,8 +68,7 @@ func shutdownInCleanup(t *testing.T, server *PProfServer) {
 }
 
 // TestMaybeStartPProfDisabledStartsNothing: with debug off or a port that is not positive,
-// MaybeStartPProf starts nothing and logs nothing, and the nil server's Shutdown returns nil
-// (design D3).
+// MaybeStartPProf starts nothing and logs nothing, and the nil server's Shutdown returns nil.
 //
 // spec: service-lifecycle / The profiling server stops on Shutdown
 func TestMaybeStartPProfDisabledStartsNothing(t *testing.T) {
@@ -86,7 +85,7 @@ func TestMaybeStartPProfDisabledStartsNothing(t *testing.T) {
 }
 
 // TestMaybeStartPProfLogsABindFailure: a port another listener holds fails the bind, which
-// MaybeStartPProf logs at Warn naming the port, and nothing is started (design D3, probe H1).
+// MaybeStartPProf logs at Warn naming the port, and nothing is started.
 //
 // spec: service-lifecycle / The profiling server stops on Shutdown
 func TestMaybeStartPProfLogsABindFailure(t *testing.T) {
@@ -109,7 +108,7 @@ func TestMaybeStartPProfLogsABindFailure(t *testing.T) {
 }
 
 // TestPProfShutdownRefusesANilContext: Shutdown refuses a nil context before anything else, on a
-// started server and on a nil one, and the started server still serves afterwards (design D3).
+// started server and on a nil one, and the started server still serves afterwards.
 //
 // spec: service-lifecycle / The profiling server stops on Shutdown
 func TestPProfShutdownRefusesANilContext(t *testing.T) {
@@ -140,7 +139,7 @@ func TestPProfShutdownRefusesANilContext(t *testing.T) {
 
 // TestPProfShutdownWaitsForAnInFlightRequest: a Shutdown given an ended context while a request is
 // blocked in its handler returns that context's error; once the handler returns, a later Shutdown
-// returns nil (design D3; probes H2 to H4).
+// returns nil.
 //
 // spec: service-lifecycle / The profiling server stops on Shutdown
 func TestPProfShutdownWaitsForAnInFlightRequest(t *testing.T) {
@@ -191,7 +190,7 @@ func TestPProfShutdownWaitsForAnInFlightRequest(t *testing.T) {
 }
 
 // TestPProfServesTheIndexAndLeavesNothingRunning serves the pprof index through startPProf inside
-// synctest.Test (background-work, "Stopped inside a bubble"; design D3, probe H5). The bubble
+// synctest.Test (background-work, "Stopped inside a bubble"). The bubble
 // returns only once every goroutine it started has exited, so a Shutdown that left the serving
 // goroutine running fails the test.
 //

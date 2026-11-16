@@ -22,8 +22,8 @@ import (
 
 // The stream lane's write (replaceEntity) is a compare-and-set that the bucket retries after a
 // create conflict or a create no stream received (jetstream.ErrNoStreamResponse). Each retry must
-// start from the arrival as it came and the stored state it reads (PR #93 comment 6060120246).
-// These tests make the entity's first create fail once and read what the retry stored.
+// start from the arrival as it came and the stored state it reads. These tests make the entity's
+// first create fail once and read what the retry stored.
 
 // createFailsOnce is the in-memory entity bucket with one failing create: the first create of
 // key runs beforeFail, when set (another lane's write), keeps the value it was given and returns
@@ -97,9 +97,8 @@ func isHierarchyPredicate(predicate string) bool {
 
 // TestReplaceEntityRetryAfterCreateErrorStoresNoStatementTwice: the birth's create fails once
 // with jetstream.ErrNoStreamResponse, the one error other than a conflict after which the bucket
-// runs the callback again (no stream stored the write; task 4.18), so the key is still absent and
-// the bucket retries the birth. The entity is born with each statement once, hierarchy statements
-// included.
+// runs the callback again (no stream stored the write), so the key is still absent and the bucket
+// retries the birth. The entity is born with each statement once, hierarchy statements included.
 func TestReplaceEntityRetryAfterCreateErrorStoresNoStatementTwice(t *testing.T) {
 	c, bucket, arrival := newRetryingStreamLane(t, jetstream.ErrNoStreamResponse)
 
@@ -155,7 +154,7 @@ func TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival(t *testing.T) {
 		}
 	}
 
-	// Read before the write, which must not change the arrival but did before #91's repair.
+	// Read before the write, which must not change the arrival.
 	arrivalPredicates := make(map[string]bool)
 	for _, tr := range arrival.Triples {
 		arrivalPredicates[tr.Predicate] = true
@@ -187,12 +186,12 @@ func TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival(t *testing.T) {
 }
 
 // The write seam refuses a stored value it cannot change (spec graph-entity-writes, "The write
-// path refuses a stored value it cannot change"; design D23). On the stream lane and on both
-// append lanes, the canonical request and the in-process one, a refused write stores nothing and
-// the refusal is recorded at the revision the seam read. Each lane settles as it does for any
-// poisoned stored value: the error is fatal/graph_state_reset_required, the stream message is
-// negatively acknowledged (never terminated, so the arrival survives a repair), and the canonical
-// append replies failed for the subject.
+// path refuses a stored value it cannot change"). On the stream lane and on both append lanes,
+// the canonical request and the in-process one, a refused write stores nothing and the refusal is
+// recorded at the revision the seam read. Each lane settles as it does for any poisoned stored
+// value: the error is fatal/graph_state_reset_required, the stream message is negatively
+// acknowledged (never terminated, so the arrival survives a repair), and the canonical append
+// replies failed for the subject.
 //
 // The test plants the stored value at seamReadRevision. Right after the seam's read it plays
 // another writer that stores the same value again at the next revision, so a record taken from a
@@ -339,7 +338,7 @@ func TestWriteSeamRefusesEmptyStoredValue(t *testing.T) {
 
 // seamStoredWithout is a value at seamKey holding seamHeld and a statement of another predicate
 // with no field, "source" or "timestamp", as a writer outside graph-ingest could store it: graph's
-// encoder, which plants it, does not check statement metadata (checkpoint 3 H3).
+// encoder, which plants it, does not check statement metadata.
 func seamStoredWithout(t *testing.T, field string) []byte {
 	t.Helper()
 	bare := message.Triple{
@@ -365,10 +364,9 @@ func seamStoredWithout(t *testing.T, field string) []byte {
 
 // A value that does not decode, a write whose result the write gate refuses for a statement it
 // keeps from the stored value, and one whose result keeps a statement with no source or no
-// timestamp (checkpoint 3 H3), are refused; the record is at the revision the seam read, not at a
-// later read's. An append that adds nothing over a value only the full rule refuses is not here:
-// it reports unchanged, the cost design D23 declares
-// (TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged).
+// timestamp, are refused; the record is at the revision the seam read, not at a later read's. An
+// append that adds nothing over a value only the full rule refuses is not here: it reports
+// unchanged, a declared cost (TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged).
 func TestWriteSeamRecordsStoredPoisonAtTheRevisionRead(t *testing.T) {
 	writes := []seamWrite{
 		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
@@ -390,8 +388,8 @@ func TestWriteSeamRecordsStoredPoisonAtTheRevisionRead(t *testing.T) {
 // An append whose every statement is already stored writes nothing and is unchanged at the
 // revision it read, even over a value holding a statement with no source or no timestamp: the
 // write path's read check stays the trusted decode plus the key check, so a write declined before
-// the metadata check of its result is not refused for it, and nothing is recorded (design D23;
-// ADR-110 Decision 6; checkpoint 3 H3).
+// the metadata check of its result is not refused for it, and nothing is recorded (ADR-110
+// Decision 6).
 func TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged(t *testing.T) {
 	for _, field := range []string{"source", "timestamp"} {
 		t.Run("statement without a "+field, func(t *testing.T) {
@@ -428,10 +426,9 @@ func TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged(t *testing.T
 
 // A stream arrival from a statement's own source, carrying its predicate, replaces the stored set
 // of that predicate and source whole, so a stored statement with no timestamp in that set is
-// replaced and the write applies: the metadata check is of the merge's result, never of the
-// stored statements before the replace (design D23; checkpoint 3 H3). A stored set with no
-// timestamp is older than any arrival's. On an unprofiled entity the write also stamps the profile
-// (SemStreams ADR-054).
+// replaced and the write applies: the metadata check is of the merge's result, never of the stored
+// statements before the replace. A stored set with no timestamp is older than any arrival's. On an
+// unprofiled entity the write also stamps the profile (SemStreams ADR-054).
 func TestStreamArrivalReplacesStoredStatementWithoutTimestamp(t *testing.T) {
 	const (
 		id      = "acme.ops.test.system.widget.no-time"
@@ -498,13 +495,13 @@ func TestStreamArrivalReplacesStoredStatementWithoutTimestamp(t *testing.T) {
 	}
 }
 
-// An arrival whose every set is older than the stored set of its predicate and source applies
-// nothing (graph-entity-writes, "Every set is older"; design D23). Over a profiled entity the
-// write is declined: the value and the revision the test planted stay, and the stream lane still
-// acknowledges the arrival and counts and logs each set. Over an unprofiled entity the arrival
-// writes once, to stamp the profile (SemStreams ADR-054) at the arrival's time. The arrival goes through
-// processIngest, the stream lane's per-message handler, so its settlement is observed; the
-// stored revision is planted by the test, so "unchanged" is not read off the code under test.
+// An arrival whose every set is older than the stored set of its predicate and source applies nothing
+// (graph-entity-writes, "Every set is older"). Over a profiled entity the write is declined: the value
+// and the revision the test planted stay, and the stream lane still acknowledges the arrival and counts
+// and logs each set. Over an unprofiled entity the arrival writes once, to stamp the profile (SemStreams
+// ADR-054) at the arrival's time. The arrival goes through processIngest, the stream lane's per-message
+// handler, so its settlement is observed; the stored revision is planted by the test, so "unchanged" is
+// not read off the code under test.
 func TestStreamArrivalAllOlderWritesNothing(t *testing.T) {
 	const (
 		id      = "acme.ops.test.system.widget.all-older"
@@ -635,13 +632,13 @@ func TestStreamArrivalAllOlderWritesNothing(t *testing.T) {
 	})
 }
 
-// An arrival whose only statement is the indexing profile carries nothing that can apply to a
-// profiled entity: the profile is create-time immutable (SemStreams ADR-054), so the replace drops the
-// arrival's, and no set is left. It writes nothing (graph-entity-writes, "Timestamp orders a
-// replace": a message with at least one set, none of which applies; design D23; #150), whatever
-// its age: older and newer than the stored profile alike, the value and the revision the test
-// planted stay, so the arrival's storage reference is not taken, and the stream lane still
-// acknowledges it. No set was older, so none is counted stale.
+// An arrival whose only statement is the indexing profile carries nothing that can apply to a profiled
+// entity: the profile is create-time immutable (SemStreams ADR-054), so the replace drops the
+// arrival's, and no set is left. It writes nothing (graph-entity-writes, "Timestamp orders a replace":
+// a message with at least one set, none of which applies), whatever its age: older and newer than the
+// stored profile alike, the value and the revision the test planted stay, so the arrival's storage
+// reference is not taken, and the stream lane still acknowledges it. No set was older, so none is
+// counted stale.
 func TestStreamArrivalOnlyProfileWritesNothing(t *testing.T) {
 	const (
 		id      = "acme.ops.test.system.widget.profile-only"

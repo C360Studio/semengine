@@ -15,11 +15,10 @@ import (
 )
 
 // TestMetaCarriesOnlyWhatTheWireCarries: BaseMessage.MarshalJSON writes created_at, received_at
-// and source and nothing else, so a Meta that holds more loses it on the first Decode (PR #48,
-// Codex review 5969256728: a federation UID present before encoding, absent after). Owner ruling
-// #72 comment 5969293525 removes the FederationMeta family; this test keeps the package from
-// offering such a Meta again: every exported type in message that implements Meta has exactly
-// Meta's exported methods, and no exported interface extends Meta.
+// and source and nothing else, so a Meta that holds more loses it on the first Decode (a
+// federation UID present before encoding is absent after). This test keeps the package from
+// offering such a Meta: every exported type in message that implements Meta has exactly Meta's
+// exported methods, and no exported interface extends Meta.
 func TestMetaCarriesOnlyWhatTheWireCarries(t *testing.T) {
 	loaded, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes}, ".")
 	if err != nil {
@@ -96,9 +95,9 @@ func TestBaseMessageMetaSurvivesTheWire(t *testing.T) {
 }
 
 // TestBaseMessageTimestampsAreMilliseconds: MarshalJSON writes created_at and received_at as
-// integer Unix milliseconds, and Decode reads them back as exactly that (owner ruling 7, #9 comment
-// 5969522395). At the pin decode went through timestamp.Parse, which reads a number up to 10^12 as
-// seconds, so any instant before 2001-09-09 came back wrong (1999-01-01 as year 30969). The
+// integer Unix milliseconds, and Decode reads them back as exactly that. A seconds heuristic that
+// reads a number up to 10^12 as seconds would bring any instant before 2001-09-09 back wrong
+// (1999-01-01 as year 30969). The
 // expected instants are written out with time.Date, and the wire is read with the standard
 // library, so neither side of the check uses the package's conversion. The epoch is 0 ms, which
 // DefaultMeta already holds as "no time" (the zero time.Time) before encoding; it must come back
@@ -152,7 +151,7 @@ func TestBaseMessageTimestampsAreMilliseconds(t *testing.T) {
 
 // TestBaseMessageRefusesTimestampsThatAreNotMilliseconds: a timestamp is an integer number of
 // milliseconds, or absent or null for none. Anything else is refused rather than read as some
-// other unit or dropped to the zero time (owner ruling 7, #9 comment 5969522395).
+// other unit or dropped to the zero time.
 func TestBaseMessageRefusesTimestampsThatAreNotMilliseconds(t *testing.T) {
 	dec := message.NewDecoder(payloadfixture.NewWithSubset(t, message.RegisterPayloads))
 	envelope := func(meta string) []byte {
@@ -189,9 +188,9 @@ func TestBaseMessageRefusesTimestampsThatAreNotMilliseconds(t *testing.T) {
 
 // TestBaseMessageRefusesSourceThatIsNotUTF8: JSON text is UTF-8, and encoding/json documents that
 // Marshal replaces each invalid byte of a string with U+FFFD, so a source that is not valid UTF-8
-// would reach the wire as a different source with no error. Encoding refuses it instead (owner
-// ruling 2, #9 comment 5969776736), whether the source came through NewBaseMessage or a Meta
-// given with WithMeta; a valid source, U+FFFD itself included, encodes and decodes unchanged.
+// would reach the wire as a different source with no error. Encoding refuses it instead, whether
+// the source came through NewBaseMessage or a Meta given with WithMeta; a valid source, U+FFFD
+// itself included, encodes and decodes unchanged.
 func TestBaseMessageRefusesSourceThatIsNotUTF8(t *testing.T) {
 	coreJSON := message.Type{Domain: "core", Category: "json", Version: "v1"}
 	payload := func() message.Payload { return message.NewGenericJSON(map[string]any{"k": "v"}) }
@@ -267,9 +266,9 @@ func packageErrors(loaded []*packages.Package) []string {
 }
 
 // TestBaseMessageRefusesTypeThatIsNotUTF8: a type component that is not valid UTF-8 would reach the
-// wire as U+FFFD with no error, so encoding the envelope refuses it (owner ruling, #9 comment
-// 5970334875). BaseMessage.Validate refuses it through Type.Validate, and MarshalJSON validates
-// first (design D2). A valid component, U+FFFD itself included, reaches the wire unchanged.
+// wire as U+FFFD with no error, so encoding the envelope refuses it. BaseMessage.Validate refuses
+// it through Type.Validate, and MarshalJSON validates first. A valid component, U+FFFD itself
+// included, reaches the wire unchanged.
 func TestBaseMessageRefusesTypeThatIsNotUTF8(t *testing.T) {
 	payload := func() message.Payload { return message.NewGenericJSON(map[string]any{"k": "v"}) }
 	for _, mt := range []message.Type{

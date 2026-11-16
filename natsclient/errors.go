@@ -1,4 +1,4 @@
-// Package natsclient — the unified RPC error contract (ADR-060, gh#93).
+// Package natsclient — the unified RPC error contract (ADR-060).
 //
 // A request/reply is EITHER a success body (with no error header) OR a single
 // typed error value. There is no in-band error channel. A handler error from a
@@ -14,8 +14,7 @@
 // drives errs.IsInvalid / IsTransient / IsFatal, the code is reached via
 // errors.As(err, &ce) → ce.Code, the one control-flow sentinel round-trips via
 // errors.Is(err, errs.ErrRevisionMismatch), and the structured detail via
-// ce.Detail. (The earlier additive window — a legacy "error: <msg>" body kept
-// alongside the headers — was retired with the PR-D breaking change.)
+// ce.Detail.
 //
 // Caller pattern:
 //
@@ -85,14 +84,11 @@ const (
 
 	// HeaderErrorCode carries the ADR-060 stable machine Code for the
 	// failure (the graph.ErrorCode* values: "entity_not_found",
-	// "revision_mismatch", ...). Additive over the gh#93 header set:
-	// legacy callers ignore it; ClassifyReply reads it into
+	// "revision_mismatch", ...). ClassifyReply reads it into
 	// (*errs.ClassifiedError).Code so errors.Is(err, ErrRevisionMismatch)
 	// and ce.Code discrimination work across the wire. Set ONLY when the
-	// handler error carries a non-empty Code, so existing uncoded handler
-	// errors are byte-for-byte unchanged on the wire (the reply body is
-	// also unchanged — Code rides the header; the standard error body for
-	// Detail lands with the breaking PR).
+	// handler error carries a non-empty Code; an uncoded handler error
+	// carries no X-Error-Code header.
 	HeaderErrorCode = "X-Error-Code"
 )
 
@@ -107,8 +103,7 @@ const (
 
 // errorBody is the ADR-060 standard error reply body. The class and code ride
 // headers (X-Error-Class / X-Error-Code); this body carries the human-readable
-// message and the structured Detail (entity id, revisions). It replaces the
-// legacy "error: <msg>" text body the framework used through PR-C.
+// message and the structured Detail (entity id, revisions).
 type errorBody struct {
 	Message string         `json:"message"`
 	Detail  map[string]any `json:"detail,omitempty"`
@@ -188,12 +183,12 @@ func RespondError(msg *nats.Msg, err error) error {
 // is the standard {message, detail} envelope; the message + detail + the
 // X-Error-Class / X-Error-Code headers reconstruct a *errs.ClassifiedError so
 // errors.As(err, &ce) reaches ce.Code/ce.Detail and errors.Is(err,
-// errs.ErrRevisionMismatch) round-trips. The legacy "error: " body fallback is
-// gone (every producer header-stamps via RespondError).
+// errs.ErrRevisionMismatch) round-trips. A body alone never signals failure:
+// every producer header-stamps via RespondError.
 //
 // Numbers in Detail decode as float64 (ADR-060): every integer up to 2^53
 // survives the wire exactly, and a larger revision may come back rounded. No
-// known workload reaches that range, so the limit is the contract (#509).
+// known workload reaches that range, so the limit is the contract.
 func ClassifyReply(msg *nats.Msg) ([]byte, error) {
 	if msg == nil {
 		return nil, nil
@@ -218,10 +213,10 @@ func ClassifyReply(msg *nats.Msg) ([]byte, error) {
 //
 // Transport failures are returned as the underlying error. A timeout returns
 // context.DeadlineExceeded, which classifies as ErrorTransient via
-// pkg/errs.IsTransient (P10). No responders returns nats.ErrNoResponders, matched
-// by errors.Is or IsNoResponders; its class is not promised until #93 settles how
-// raw nats.go errors classify (ADR-112). Classification does not authorize a
-// retry; the operation's contract owns that decision.
+// pkg/errs.IsTransient (measured at nats.go v1.55.0, ADR-112). No responders
+// returns nats.ErrNoResponders, matched by errors.Is or IsNoResponders; its class
+// is not promised (ADR-112). Classification does not authorize a retry; the
+// operation's contract owns that decision.
 //
 // Handler failures arrive as a *errs.ClassifiedError reconstructed
 // from the X-Error-Class / X-Error-Code headers + {message, detail} body.
@@ -231,7 +226,6 @@ func ClassifyReply(msg *nats.Msg) ([]byte, error) {
 // create, reconcile, append, and delete always make one transport attempt;
 // ambiguity is returned to the component. Use RequestWithRetryClassified only
 // for a non-graph operation whose contract explicitly authorizes redelivery.
-// See docs/operations/07-nats-request-retry.md.
 func (c *Client) RequestClassified(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error) {
 	msg, err := c.RequestWithHeaders(ctx, subject, data, nil, timeout)
 	if err != nil {
@@ -254,14 +248,14 @@ func (c *Client) RequestClassified(ctx context.Context, subject string, data []b
 // X-Error-Class / X-Error-Code headers + {message, detail} body. After the last
 // failed attempt the transport error arrives wrapped by retry.Do and still
 // matches with errors.Is: a timeout matches context.DeadlineExceeded (transient
-// by pkg/errs.IsTransient, P10), no responders matches nats.ErrNoResponders
-// (IsNoResponders; class not promised, ADR-112). A caller's cancellation, before
-// or during an attempt, matches context.Canceled and is transient.
+// by pkg/errs.IsTransient, measured at nats.go v1.55.0, ADR-112), no responders
+// matches nats.ErrNoResponders (IsNoResponders; class not promised, ADR-112). A
+// caller's cancellation, before or during an attempt, matches context.Canceled
+// and is transient.
 //
 // Canonical graph mutations and steady-state queries use RequestClassified.
 // Retrying graph mutations can duplicate effects after a lost reply; retrying a
-// hung query masks responder problems as latency. See
-// docs/operations/07-nats-request-retry.md.
+// hung query masks responder problems as latency.
 func (c *Client) RequestWithRetryClassified(
 	ctx context.Context,
 	subject string,
@@ -318,8 +312,7 @@ func (c *Client) RequestWithRetryClassified(
 //
 // Use for the FIRST read on boot / initial reconcile / after a reconnect, where
 // a not-yet-subscribed responder must not degrade to a full-query-timeout hang.
-// For steady-state reads use RequestClassified (timeout = real signal). See
-// docs/operations/07-nats-request-retry.md.
+// For steady-state reads use RequestClassified (timeout = real signal).
 func (c *Client) RequestReadyClassified(
 	ctx context.Context, subject string, data []byte, probeTimeout, budget time.Duration,
 ) ([]byte, error) {
@@ -331,16 +324,16 @@ func (c *Client) RequestReadyClassified(
 }
 
 // IsNoResponders reports whether err is (or wraps) the NATS "no responders"
-// transport error — the responder is not subscribed. The condition is
-// temporary at startup / after a reconnect (retry via a readiness-gated read);
-// its errs class is not promised (ADR-112). It is distinct
-// from a timeout of an EXISTING responder (which signals it is hung — surface,
-// don't retry). On nats-server's default configuration a request with no
-// subscriber gets no responders at once (P15; TestIntegration_Request_Timeout
-// asserts the error). Whether another server configuration answers with a
-// plain timeout instead is not promised, so a false here does NOT prove a
-// responder exists — it only confirms the fast-fail no-responders signal when
-// the server sends it.
+// transport error — the responder is not subscribed. The condition is temporary
+// at startup / after a reconnect (retry via a readiness-gated read); its errs
+// class is not promised (ADR-112). It is distinct from a timeout of an EXISTING
+// responder (which signals it is hung — surface, don't retry). On nats-server's
+// default configuration a request with no subscriber gets no responders at once
+// (measured at nats.go v1.55.0, ADR-112; TestIntegration_Request_Timeout
+// asserts the error). Whether another server configuration answers with a plain
+// timeout instead is not promised, so a false here does NOT prove a responder
+// exists — it only confirms the fast-fail no-responders signal when the server
+// sends it.
 func IsNoResponders(err error) bool {
 	return errors.Is(err, nats.ErrNoResponders)
 }

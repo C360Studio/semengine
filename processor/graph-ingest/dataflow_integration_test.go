@@ -16,10 +16,10 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// TestIntegration_DataFlowCountsInputMessages: DataFlow counts each input message once,
-// a stream delivery or a mutation request, and its payload bytes; containers born for a
-// message, a merge that writes nothing, and queries add no message (#302; design D2). The
-// oracle is the test's own tally of what it sent.
+// TestIntegration_DataFlowCountsInputMessages: DataFlow counts each input message once, a
+// stream delivery or a mutation request, and its payload bytes; containers born for a
+// message, a merge that writes nothing, and queries add no message. The oracle is the
+// test's own tally of what it sent.
 func TestIntegration_DataFlowCountsInputMessages(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

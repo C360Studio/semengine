@@ -56,7 +56,7 @@ func TestConsumerSetupWaitsForStreamThatBecomesVisible(t *testing.T) {
 			go func() {
 				// Bounded far above the probe interval, so a setup that stopped
 				// re-probing reports itself here instead of stalling the test
-				// until its deadline (design D8 R1b; the pin's bound was 2 s).
+				// until its deadline.
 				probeCtx, probeCancel := context.WithTimeout(ctx, failureBound)
 				defer probeCancel()
 				for range 2 {

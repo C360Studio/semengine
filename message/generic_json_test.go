@@ -106,7 +106,7 @@ func TestGenericJSON_UnmarshalJSON(t *testing.T) {
 
 	assert.NotNil(t, payload.Data)
 	assert.Equal(t, "temp-001", payload.Data["sensor_id"])
-	// A number decodes as its literal (Codex F30), so no value is rounded through float64.
+	// A number decodes as its literal, so no value is rounded through float64.
 	assert.Equal(t, json.Number("23.5"), payload.Data["temperature"])
 	assert.Equal(t, "celsius", payload.Data["unit"])
 }

@@ -14,16 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntegration_BatchQuery_ReportsMissingIDs closes the SemStreams gh#597 drop path over the
-// production handler: a requested ID whose KV read comes back not-found used to vanish
-// from the response, leaving the caller a shorter list with no correspondence to what
-// it asked for. Nothing downstream could tell "this entity does not exist" from "this
-// read did not reach it", and the symptom surfaced several hops away as a missing
-// search result.
+// TestIntegration_BatchQuery_ReportsMissingIDs drives the production handler: a requested ID
+// whose KV read comes back not-found must not vanish from the response, leaving the caller a
+// shorter list with no correspondence to what it asked for. Nothing downstream could tell
+// "this entity does not exist" from "this read did not reach it", and the symptom would
+// surface several hops away as a missing search result.
 //
-// The response now names every unhydrated ID with a reason, and — this is the part
-// worth pinning — the entity list is UNCHANGED for a fully-hydrated batch, so a
-// consumer that only reads `entities` is not broken by the addition.
+// The response names every unhydrated ID with a reason, and — this is the part worth pinning —
+// the entity list is UNCHANGED for a fully-hydrated batch, so a consumer that only reads
+// `entities` is not broken by the `missing` list.
 func TestIntegration_BatchQuery_ReportsMissingIDs(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -109,13 +108,13 @@ func TestIntegration_BatchQuery_ReportsMissingIDs(t *testing.T) {
 }
 
 // TestIntegration_BatchQuery_EmptyIDIsAccountedFor pins the totality contract against
-// its most likely accidental input. An empty requested ID used to be skipped outright,
-// so it appeared in NEITHER entities nor missing — the response claimed to account for
+// its most likely accidental input. An empty requested ID skipped outright would
+// appear in NEITHER entities nor missing — the response would claim to account for
 // every requested ID while quietly dropping one.
 //
 // It is reported as `error`, not `not_found`: the key was never looked up, and calling
-// it not-found would assert something unobserved, which is the exact move this change
-// exists to stop.
+// it not-found would assert something unobserved, which is the exact move the missing
+// list exists to stop.
 func TestIntegration_BatchQuery_EmptyIDIsAccountedFor(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

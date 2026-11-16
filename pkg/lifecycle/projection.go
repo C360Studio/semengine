@@ -141,10 +141,10 @@ func setFieldFromObject(field reflect.Value, object any, fieldName string) error
 // the predicate AND subject, as a string. Empty when no matching triple
 // exists or the Object isn't string-shaped.
 //
-// Subject scoping (per ADR-049 reviewer B3): triples carry a Subject;
-// only those belonging to entityID are considered. Triples with an
-// empty Subject are treated as entity-scoped (entry from the legacy
-// pre-Subject pipeline). This is defensive — graph-ingest stores
+// Subject scoping (ADR-049): triples carry a Subject; only those
+// belonging to entityID are considered. A triple with an empty
+// Subject is stored under the entity's key, so it is treated as
+// entity-scoped. This is defensive — graph-ingest stores
 // triples under per-entity KV keys today, but future cross-entity
 // triple storage would silently mis-project without this check.
 //

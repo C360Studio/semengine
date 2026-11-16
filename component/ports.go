@@ -58,8 +58,8 @@ type PortDefinition struct {
 	// — a UI, a peer process, a rule action — so no publisher in the
 	// composition's graph is expected. It is an operator statement, not a
 	// predicted framework value: composition validation suppresses only the
-	// no-publisher orphan finding for this port and nothing else (ADR-100
-	// owner ruling on user.message, 2026-08-26). Meaningful on inputs.
+	// no-publisher orphan finding for this port and nothing else (ADR-100).
+	// Meaningful on inputs.
 	External bool     `json:"external,omitempty" schema:"readonly,type:bool,description:Input is fed from outside the composition; no in-graph publisher is expected"`
 	Config   Portable `json:"config" schema:"editable,type:object,description:Typed semantic port configuration"`
 }

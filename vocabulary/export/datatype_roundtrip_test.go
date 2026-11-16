@@ -10,17 +10,17 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// This file owns the three consequences of #1267 end to end, through the
+// This file checks three datatype outcomes end to end, through the
 // authoritative ENTITY_STATES persistence seam rather than a helper that
-// reconstructs the round trip. Each assertion was committed first as the
-// CURRENT (broken) output and flipped here by the change that fixed it:
+// reconstructs the round trip. Each guards a failure an export that trusts
+// only the Go value would have:
 //
-//  1. a predicate declared "int" emitted xsd:double after the JSON round trip
-//     (encoding/json decodes every JSON number into float64 into an `any`);
-//  2. a triple carrying message.EntityReferenceDatatype emitted a LITERAL whose
-//     datatype IRI was the relative reference "@id" — invalid RDF (#1272);
-//  3. a triple carrying "rdf:JSON" emitted an unexpanded prefix, because
-//     expandDatatypePrefix knew only "xsd:".
+//  1. a predicate declared "int" would emit xsd:double after the JSON round
+//     trip (encoding/json decodes every JSON number into float64 into an `any`);
+//  2. a triple carrying message.EntityReferenceDatatype would emit a LITERAL
+//     whose datatype IRI is the relative reference "@id" — invalid RDF;
+//  3. a triple carrying "rdf:JSON" would emit an unexpanded prefix unless
+//     prefix expansion knows "rdf:" as well as "xsd:".
 
 const (
 	roundTripEntityID = "acme.ops.gcs.robotics.drone.001"
@@ -98,8 +98,8 @@ func mustNotContain(t *testing.T, format, out, unwanted string) {
 	}
 }
 
-// TestDeclaredIntSurvivesEntityStateRoundTrip is the whole issue in one
-// fixture. The Go value that reaches the serializer is float64 no matter what
+// TestDeclaredIntSurvivesEntityStateRoundTrip is the declared-datatype problem
+// in one fixture. The Go value that reaches the serializer is float64 no matter what
 // the author declared, so the declaration is the only place the fact survives.
 //
 // spec: predicate-contract / RDF export honors the declared datatype and never fabricates a value
@@ -150,9 +150,9 @@ func TestDeclarationContradictedByValueFallsBackToObservation(t *testing.T) {
 	}
 }
 
-// TestEntityReferenceDatatypeSerializesAsResource closes #1272. The framework's
-// own per-triple entity-reference marker denotes an IRI node; it emitted a
-// literal whose datatype IRI was the relative reference "@id".
+// TestEntityReferenceDatatypeSerializesAsResource: the framework's own
+// per-triple entity-reference marker denotes an IRI node, so it must not be
+// emitted as a literal whose datatype IRI is the relative reference "@id".
 //
 // The negative assertion is on `^^<@id>`, not `^^@id`: both serializers wrap an
 // uncompactable datatype in angle brackets, so a probe asserting the unwrapped
@@ -230,8 +230,7 @@ func objectTerm(t *testing.T, ntriples string) string {
 
 // TestRDFJSONDatatypeExpandsToAnIRI pins that a prefixed datatype this
 // repository actually writes reaches the output as an IRI. Turtle compacts it
-// back to rdf:JSON, but only with an @prefix declaration binding the prefix —
-// which is exactly what was missing.
+// back to rdf:JSON, but only with an @prefix declaration binding the prefix.
 //
 // spec: predicate-contract / RDF export honors the declared datatype and never fabricates a value
 func TestRDFJSONDatatypeExpandsToAnIRI(t *testing.T) {
@@ -302,7 +301,7 @@ func TestDeclaredDateTimeSurvivesTheRoundTripAsAString(t *testing.T) {
 // checked against the observed value like every other one. Each declared branch
 // verifies the value can carry the type — entity_id checks IsValidEntityID, int
 // checks the integer lexical form, datetime parses RFC 3339, bool type-asserts —
-// and json was the one branch that applied to any string at all, emitting
+// so json must too, or it would apply to any string at all and emit
 // "hovering"^^rdf:JSON, an ill-typed literal the requirement forbids.
 //
 // spec: predicate-contract / RDF export honors the declared datatype and never fabricates a value
@@ -342,7 +341,7 @@ func TestDeclaredJSONAppliesToAValueThatIsJSON(t *testing.T) {
 }
 
 // TestUndeclaredPredicateSerializesByObservation pins that a predicate
-// declaring nothing is untouched by this change.
+// declaring nothing is serialized by observing its Go value alone.
 //
 // spec: predicate-contract / RDF export honors the declared datatype and never fabricates a value
 func TestUndeclaredPredicateSerializesByObservation(t *testing.T) {
@@ -364,9 +363,9 @@ func TestUndeclaredPredicateSerializesByObservation(t *testing.T) {
 	mustNotContain(t, "N-Triples", out, xsdIntegerIRI)
 }
 
-// TestAbsoluteIRIObjectSerializesAsResource closes #1142.
-// message.IsValidEntityID is false for anything carrying a scheme, so an IRI
-// object fell to the literal branch by construction.
+// TestAbsoluteIRIObjectSerializesAsResource: message.IsValidEntityID is false
+// for anything carrying a scheme, so without the absolute-IRI branch an IRI
+// object would fall to the literal branch by construction.
 //
 // spec: predicate-contract / RDF export honors the declared datatype and never fabricates a value
 func TestAbsoluteIRIObjectSerializesAsResource(t *testing.T) {
@@ -395,7 +394,7 @@ func TestAbsoluteIRIObjectSerializesAsResource(t *testing.T) {
 	}
 }
 
-// TestCanonicalEntityIDIsNotMistakenForAnIRI pins task 6.3: the entity-ID
+// TestCanonicalEntityIDIsNotMistakenForAnIRI pins that the entity-ID
 // branch and the absolute-IRI branch cannot both match, because a canonical
 // 6-part ID carries no scheme and ":" is not a legal entity-ID character.
 //

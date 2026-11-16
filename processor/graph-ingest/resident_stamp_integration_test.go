@@ -21,10 +21,10 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// TestResidentUnregisteredStampIsNotPoison documents design §10 and is a
-// barrier against a later registry-consulting codec: an entity persisted under
-// a key no binary registers is swept without a poison entry, reads back with
-// the stamp unchanged, and stays mutable through must-exist operations.
+// TestResidentUnregisteredStampIsNotPoison is a barrier against a later
+// registry-consulting codec: an entity persisted under a key no binary
+// registers is swept without a poison entry, reads back with the stamp
+// unchanged, and stays mutable through must-exist operations.
 func TestResidentUnregisteredStampIsNotPoison(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -48,9 +48,8 @@ func TestResidentUnregisteredStampIsNotPoison(t *testing.T) {
 
 	configJSON, err := json.Marshal(DefaultConfig())
 	require.NoError(t, err)
-	// The pin's registry was payloadbuiltins.NewTestRegistry; design D2 takes the
-	// per-package RegisterPayloads graph-ingest's fixture registry uses. Neither holds
-	// legacy.gone.v1.
+	// The registry is the per-package RegisterPayloads graph-ingest's fixture registry
+	// uses, which does not hold legacy.gone.v1.
 	comp, err := CreateGraphIngest(configJSON, component.Dependencies{
 		NATSClient: nc, PayloadRegistry: payloadfixture.NewWithSubset(t, message.RegisterPayloads, inference.RegisterPayloads),
 		Platform: types.PlatformMeta{Org: "c360", Platform: "test"},

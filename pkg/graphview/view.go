@@ -51,7 +51,7 @@ var _ WatcherSource = (jetstream.KeyValue)(nil)
 // invoked outside the projection mutex, and MUST be fast and non-blocking —
 // they run on Run's goroutine, or on the goroutine of an attach or detach,
 // and a blocking callback holds Run. This is the observability seam for
-// metrics (ADR-081 build task 2.5).
+// metrics.
 type Hooks struct {
 	// OnApply fires after every delivered entry has been applied (including
 	// skips and tombstones), with the entry's key and KV revision.
@@ -198,8 +198,8 @@ func New[T any](source WatcherSource, decode DecodeFunc[T], opts ...Option) (*Vi
 // the tick window itself. Ending ctx is a stop: reads and attaches return
 // ErrViewStopped, every attached subscription closes with ErrViewStopped,
 // OnWatcherLost does not fire, and Run returns ctx.Err(). Ending the watch's
-// context closes its update channel too (probe P11, PR #458 comment
-// 6472856197), so a closed channel is a loss only while ctx is live. On a
+// context closes its update channel too (measured at nats.go v1.54.0; not
+// promised), so a closed channel is a loss only while ctx is live. On a
 // loss, reads and attaches return an error matching ErrNotReady and
 // ErrWatcherLost, every attached subscription closes with an error matching
 // ErrWatcherLost, OnWatcherLost fires once after that, and Run returns an
@@ -387,7 +387,7 @@ func (v *View[T]) WaitCaughtUp(ctx context.Context) error {
 //
 // Subtracting it from a local time.Now() crosses a NATS server clock against
 // a local one and is off by the skew between them. Accepted, the same trade
-// as ADR-083 D3: the alternative — measuring currency in revisions — is wrong
+// as ADR-083 decision 3: the alternative — measuring currency in revisions — is wrong
 // by multiples under a coalescing change alone.
 func (v *View[T]) Applied() (revision uint64, appliedAt time.Time) {
 	v.mu.Lock()
@@ -720,7 +720,7 @@ func (v *View[T]) failClosed(cause error) error {
 		s.terminate(term)
 	}
 	// OnWatcherLost reports the loss only once every attached subscription's
-	// Deltas has closed (design D2). Each delivery goroutine returns promptly
+	// Deltas has closed. Each delivery goroutine returns promptly
 	// once terminate closed its done channel (Subscription.run).
 	for _, s := range subs {
 		<-s.closed
@@ -740,10 +740,10 @@ func (v *View[T]) failClosed(cause error) error {
 // iteration, and per-subscriber enqueue are ONE critical section under the
 // projection mutex. A detached batch never exists outside the lock, so no
 // apply can supersede a captured value and no attach can interleave between
-// capture and enqueue — the SemStreams PR #583 stale-delivery interleaving
-// (batch holds K@R5, view applies K@R6, subscriber attaches snapshotting R6,
-// batch then delivers R5) is structurally unrepresentable rather than
-// revision-guarded at each enqueue site. The work under the lock is bounded map writes; the
+// capture and enqueue — the stale-delivery interleaving (batch holds K@R5,
+// view applies K@R6, subscriber attaches snapshotting R6, batch then
+// delivers R5) is structurally unrepresentable rather than revision-guarded
+// at each enqueue site. The work under the lock is bounded map writes; the
 // channel sends happen on per-subscriber goroutines outside the lock.
 func (v *View[T]) fanOut() {
 	v.mu.Lock()

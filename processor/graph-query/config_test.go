@@ -33,9 +33,9 @@ func createFromJSON(t *testing.T, raw string) (*Component, error) {
 }
 
 // TestUnknownConfigKeyIsRefused: a key Config does not define is refused at construction and by
-// DeclarePorts, naming the key, with and without a ports block. The list holds what the pin
-// accepted and read, what it accepted and ignored (P2; MIGRATION.md's deployed keys), and
-// the old spelling of the timeout, whose advertised "5s" the pin refused for another reason (P1).
+// DeclarePorts, naming the key, with and without a ports block. The list holds keys an older
+// configuration may carry, read or ignored (MIGRATION.md names the deployed ones), and the old
+// spellings of the timeout.
 func TestUnknownConfigKeyIsRefused(t *testing.T) {
 	for _, entry := range []struct{ key, value string }{
 		{"no_such_key", `1`},
@@ -79,9 +79,8 @@ func TestConfigRefusesDataAfterTheObject(t *testing.T) {
 	}
 }
 
-// TestConfigTimeout: query_timeout_ms defaults to 15000 (design D7), zero means that default as it
-// does for graph-index's optional numbers, a value is kept, and a negative one is refused naming
-// the key.
+// TestConfigTimeout: query_timeout_ms defaults to 15000, zero means that default as it does for
+// graph-index's optional numbers, a value is kept, and a negative one is refused naming the key.
 func TestConfigTimeout(t *testing.T) {
 	for raw, want := range map[string]int{
 		``:                         15000,
@@ -108,6 +107,33 @@ func TestConfigTimeout(t *testing.T) {
 	}
 	if _, err := createFromJSON(t, `{"query_timeout_ms":"5s"}`); err == nil {
 		t.Fatal(`CreateGraphQuery accepted {"query_timeout_ms":"5s"}`)
+	}
+}
+
+// TestConfigEmbeddingEnabled: embedding_enabled is off when left out or null (tier 0 runs no
+// graph-embedding), reads what is written when it is a boolean, and is refused when it is anything else.
+func TestConfigEmbeddingEnabled(t *testing.T) {
+	for raw, want := range map[string]bool{
+		``:                            false,
+		`{}`:                          false,
+		`{"embedding_enabled":null}`:  false,
+		`{"embedding_enabled":true}`:  true,
+		`{"embedding_enabled":false}`: false,
+		`{"ports":{"inputs":[` + requiredPort + `]}}`: false,
+	} {
+		c, err := createFromJSON(t, raw)
+		if err != nil {
+			t.Errorf("CreateGraphQuery(%q): %v", raw, err)
+			continue
+		}
+		if c.config.EmbeddingEnabled != want {
+			t.Errorf("CreateGraphQuery(%q) embedding_enabled = %v, want %v", raw, c.config.EmbeddingEnabled, want)
+		}
+	}
+	for _, raw := range []string{`{"embedding_enabled":"false"}`, `{"embedding_enabled":0}`} {
+		if _, err := createFromJSON(t, raw); err == nil {
+			t.Errorf("CreateGraphQuery accepted %s", raw)
+		}
 	}
 }
 
@@ -173,7 +199,7 @@ func TestConfigWithoutPortsTakesTheRequiredPort(t *testing.T) {
 // TestConfigRefusesEveryOtherInputShape: a ports block is used as written, never merged with the
 // defaults, and anything but the one required port is refused. graph-query answers only on its
 // verbs, so a port that says otherwise advertises something nothing serves. The first two cases are
-// the input forms the pin's doc.go advertised and its Validate refused (P3).
+// port forms older documentation described.
 func TestConfigRefusesEveryOtherInputShape(t *testing.T) {
 	const contract = `"interface":{"type":"graph.query","version":"v1"}`
 	entity := `{"name":"query_entity","config":{"kind":"nats-request","subject":"graph.query.entity"}}`
@@ -278,6 +304,7 @@ func FuzzDeclarePorts(f *testing.F) {
 		`{}`,
 		`null`,
 		`{"query_timeout_ms":250}`,
+		`{"embedding_enabled":false}`,
 		`{"ports":{"inputs":[` + requiredPort + `]}}`,
 		`{"no_such_key":1}`,
 		`{} {}`,

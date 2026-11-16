@@ -167,7 +167,14 @@ func (f *fakeKV) decodeAll() (map[string]*Community, error) {
 // a fakeKV.
 func newTestMaintainer(t *testing.T) (*Maintainer, *fakeKV) {
 	t.Helper()
-	m, kv, err := newFakeMaintainer()
+	return newTextMaintainer(t, nil)
+}
+
+// newTextMaintainer is newTestMaintainer reading text under suffixes, as a product passes its
+// text_suffixes; nil is the default list.
+func newTextMaintainer(t *testing.T, suffixes []string) (*Maintainer, *fakeKV) {
+	t.Helper()
+	m, kv, err := newFakeMaintainer(suffixes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,18 +183,24 @@ func newTestMaintainer(t *testing.T) (*Maintainer, *fakeKV) {
 
 // newFakeMaintainer is newTestMaintainer for a caller without a *testing.T, such as a
 // Rapid check. natsclient.NewClient does not dial.
-func newFakeMaintainer() (*Maintainer, *fakeKV, error) {
+func newFakeMaintainer(suffixes []string) (*Maintainer, *fakeKV, error) {
+	kv := &fakeKV{data: map[string][]byte{}}
+	m, err := newMaintainerOver(kv, suffixes)
+	return m, kv, err
+}
+
+// newMaintainerOver is a restart: a new Maintainer over kv's bucket as it is.
+// natsclient.NewClient does not dial.
+func newMaintainerOver(kv *fakeKV, suffixes []string) (*Maintainer, error) {
 	client, err := natsclient.NewClient("")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	kv := &fakeKV{data: map[string][]byte{}}
 	storage, err := NewNATSCommunityStorage(client.NewKVStore(kv))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	m, err := NewMaintainer(storage)
-	return m, kv, err
+	return NewMaintainer(storage, suffixes)
 }
 
 // textState is an entity whose one string value is text; with no text it has a number only.
@@ -231,9 +244,9 @@ func puts(keys ...string) []string {
 }
 
 func TestNewMaintainerRefusesNil(t *testing.T) {
-	m, err := NewMaintainer(nil)
+	m, err := NewMaintainer(nil, nil)
 	if m != nil || !errs.IsInvalid(err) {
-		t.Fatalf("NewMaintainer(nil) = %v, %v; want nil and an invalid error", m, err)
+		t.Fatalf("NewMaintainer(nil, nil) = %v, %v; want nil and an invalid error", m, err)
 	}
 }
 
@@ -242,6 +255,9 @@ func TestNewMaintainerRefusesNil(t *testing.T) {
 func TestObsoleteDeliveryIgnored(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	id := "acme.dep1.src.docs.note.n1"
+	// Another deployment's entity, so the graph holds words n1 does not: a word every member
+	// with words holds is no keyword.
+	mustUpsert(t, m, "acme.dep2.src.docs.note.n1", 1, "other")
 	mustUpsert(t, m, id, 9, "alpha beta")
 	mustUpsert(t, m, id, 7, "gamma")
 	mustUpsert(t, m, id, 9, "gamma")
@@ -254,8 +270,8 @@ func TestObsoleteDeliveryIgnored(t *testing.T) {
 	mustTick(t, m)
 
 	records := kv.records(t)
-	if len(records) != 3 {
-		t.Fatalf("records = %v, want the entity's three groups", slices.Sorted(maps.Keys(records)))
+	if len(records) != 6 {
+		t.Fatalf("records = %v, want the two entities' three groups each", slices.Sorted(maps.Keys(records)))
 	}
 	for _, key := range groupKeys(id) {
 		r := records[key]
@@ -538,8 +554,13 @@ func TestRetainedWordsDoNotPinInput(t *testing.T) {
 // Delete return; the next tick publishes their changes.
 func TestUpsertDuringBlockedWrite(t *testing.T) {
 	m, kv := newTestMaintainer(t)
-	mustUpsert(t, m, "acme.dep1.src.docs.note.n1", 1, "alpha")
+	// The keywords tell the final members apart: n1 and n3 make alpha a keyword (two holders)
+	// and beta none (one); with n2 still held both would be, and without n3 neither.
+	mustUpsert(t, m, "acme.dep1.src.docs.note.n1", 1, "alpha beta")
 	mustUpsert(t, m, "acme.dep1.src.docs.note.n2", 1, "beta")
+	// Another deployment's entity, so the graph holds words the group does not: a word every
+	// member with words holds is no keyword. Its records sort after the group's.
+	mustUpsert(t, m, "acme.dep2.src.docs.note.n1", 1, "other")
 	m.BootstrapDone()
 
 	// The write waits only on release, not on the KVStore's own timeout, so an Upsert that
@@ -561,7 +582,7 @@ func TestUpsertDuringBlockedWrite(t *testing.T) {
 
 	applied := make(chan error, 1)
 	go func() {
-		err := m.Upsert("acme.dep1.src.docs.note.n3", 1, textState("acme.dep1.src.docs.note.n3", "gamma"))
+		err := m.Upsert("acme.dep1.src.docs.note.n3", 1, textState("acme.dep1.src.docs.note.n3", "alpha"))
 		applied <- errors.Join(err, m.Delete("acme.dep1.src.docs.note.n2", 2))
 	}()
 	// The receive orders the check after Upsert and Delete.
@@ -575,7 +596,7 @@ func TestUpsertDuringBlockedWrite(t *testing.T) {
 	}
 	mustTick(t, m)
 	r := kv.records(t)["0.acme.dep1.src.docs"]
-	if r.MemberCount != 2 || !slices.Equal(r.Keywords, []string{"alpha", "gamma"}) {
+	if r.MemberCount != 2 || !slices.Equal(r.Keywords, []string{"alpha"}) {
 		t.Fatalf("record = %+v, want n1 and n3", r)
 	}
 }
@@ -689,8 +710,7 @@ func TestRepresentativesWithoutScan(t *testing.T) {
 
 // TestTickCost: after the first tick, a tick reads nothing from COMMUNITY_INDEX and writes
 // only the changed groups' records; an unchanged graph writes nothing, and the same value
-// at a newer revision writes only that entity's groups, whose entity_revision rose
-// (design D1, "Costs").
+// at a newer revision writes only that entity's groups, whose entity_revision rose.
 func TestTickCost(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	var ids []string
@@ -760,6 +780,9 @@ func TestRecordNamesItsLatestWrite(t *testing.T) {
 	keys := groupKeys(a)
 	mustUpsert(t, m, a, 1, "alpha")
 	mustUpsert(t, m, b, 2, "beta")
+	// Another deployment's entity, so the graph holds words the group does not: a word every
+	// member with words holds is no keyword. No step touches its groups.
+	mustUpsert(t, m, "acme.dep2.s1.docs.note.a", 1, "other")
 	m.BootstrapDone()
 	mustTick(t, m)
 	kv.takeOps()

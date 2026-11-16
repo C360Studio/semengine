@@ -50,8 +50,9 @@ task merge:check  # -- <n>: review gate for PR n
 task verify       # every gate, cheapest first
 ```
 
-Run `task verify` before every implementation push. CI: `ci.yml` runs `verify` and `Required` fails unless it
-passed; `merge-check.yml` runs `scripts/merge-check.sh` (`task merge:check`) on the base commit as `Merge check`.
+Run `task verify` before every implementation push. CI: `ci.yml` runs `task verify` as two jobs, `Checks` and
+`Integration`, and `Required` fails unless both passed; `merge-check.yml` runs `scripts/merge-check.sh`
+(`task merge:check`) on the base commit as `Merge check`.
 Gate selection per diff: `preflight` skill. Session checkpoints: ateam's `pickup` and `handoff`.
 
 ## Rules and what enforces them
@@ -92,7 +93,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Classified NATS RPC handlers use `RequestClassified` / `RequestWithRetryClassified`, propagating class, code, detail | `dev`, `rev` |
 | `verify+review` | Non-evictable buckets have no TTL or binding `MaxBytes`; stream bounds protect capacity, not entity lifecycle | `dev`, `rev` |
 | `review` | Large content moves as a `StorageReference`, never a bucket or stream name; `StoreContent` stores only the raw body | `dev`, `rev` |
-| `verify+review` | `graph.ingest.query.*`, `graph.index.query.*`, `graph.embedding.query.*`, `graph.spatial.query.*`, `graph.temporal.query.*`, `graph.query.*` (the verbs in the table), `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec |
+| `verify+review` | `graph.ingest.query.*`, `graph.index.query.*`, `graph.embedding.query.*`, `graph.spatial.query.*`, `graph.temporal.query.*`, `graph.lexical.query.*`, `graph.query.*` (the verbs in the table), `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec |
 | `verify` | The `graph` root package imports no NATS client, directly or transitively | `graph-transport-boundary` spec |
 | `verify+review` | Predicates (3 parts), literal entity IDs (6 parts, <=256B), entity patterns/prefixes, NATS KV keys/filters pass shared validators at entry; sort/dedup before limit; no partial readiness | `dev`, `rev` |
 | `verify+review` | Only `graph-ingest` writes domain entities to `ENTITY_STATES`; other code emits `graph.Graphable` or writes its own `graph/kvcatalog` bucket; single-valued predicates replace | `dev`, `rev`; `graph-entity-writes` spec |
@@ -171,6 +172,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Pushed claim branches update by merging `origin/main`, never rebase or force-push | `protocol` |
 | `review` | Evidence in a PR or task opens on another machine; git-ignored paths named local only | `protocol`; `.agents/skills/preflight` |
 | `review` | Docs are for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
+| `review` | Comments, tests, and docs give the reason in plain words, never port history (issue, PR, comment, checkpoint, task, or design-decision reference; "the pin did X"); an ADR is named only where it is the reason (#606) | `dev`, `rev`, `writer` |
 | `review` | Developer notes on task choices the design leaves open go in `openspec/changes/<id>/notes/<task>.md`, linked from a PR comment (#159) | `dev`, `rev`; `protocol` |
 
 ## Where state lives

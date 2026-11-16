@@ -12,7 +12,7 @@ import (
 
 // TestValidateExampleConfigHasNoErrorFindings validates the example a developer
 // copies first, config/example_config.json, against a catalog built by the
-// Register function of each factory it names (owner ruling 4, #9). It loads
+// Register function of each factory it names. It loads
 // the file through the production loader, so a key the loader or a factory
 // refuses fails here too. LoadFile refuses a path outside the working
 // directory, so the bytes go through LoadFromBytes, which merges them the

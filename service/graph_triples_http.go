@@ -214,7 +214,7 @@ func scanGraphTriples(
 	if err != nil {
 		return nil, fmt.Errorf("list entity keys: %w", err)
 	}
-	// The listing is in delivery order and can repeat a key (#512).
+	// The listing is not promised to be sorted or free of repeats: sort and remove repeats.
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
 
@@ -255,7 +255,7 @@ func graphTripleKeys(ctx context.Context, reader kvcatalog.CatalogReader) ([]str
 	ctx, cancel := context.WithTimeout(ctx, natsclient.DefaultKVOptions().Timeout)
 	defer cancel()
 
-	// A listing cut short is an error, never the keys so far (#533).
+	// A listing cut short is an error, never the keys so far.
 	keys, err := natsclient.FilteredKeys(ctx, reader, ">")
 	if err != nil {
 		return nil, fmt.Errorf("kv keys: %w", err)

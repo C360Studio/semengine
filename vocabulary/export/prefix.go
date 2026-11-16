@@ -137,7 +137,7 @@ func (pm *prefixMap) compact(iri string) (string, bool) {
 		return iri, false
 	}
 	local := iri[len(bestNS):]
-	// Only compact if the local part is a valid unescaped Turtle PN_LOCAL (#250).
+	// Only compact if the local part is a valid unescaped Turtle PN_LOCAL.
 	if !isValidPNLocal(local) {
 		return iri, false
 	}
@@ -227,7 +227,7 @@ func (pm *prefixMap) usedPrefixMap() map[string]string {
 // with an RFC 3986 gen-delim character (':', '/', '?', '#', '[', ']', '@').
 // Namespaces ending in other characters (such as OBO/BFO's '_') require an
 // expanded term definition with "@prefix": true so compact IRIs expand back to
-// their original IRI (#249).
+// their original IRI.
 func (pm *prefixMap) jsonldContext() map[string]any {
 	result := make(map[string]any, len(pm.used))
 	for p := range pm.used {

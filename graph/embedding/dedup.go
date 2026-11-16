@@ -22,25 +22,37 @@ const inProcessKeySchema = "semstreams/embedding/singleflight/v1"
 // vectors in different, incomparable vector spaces.
 //
 // It exists because EMBEDDING_DEDUP is durable, untimed, and never cleared: an
-// operator who switches embedder_type from bm25 to another embedder against the
+// operator who switches from one embedder to another against the
 // same NATS state would otherwise get every already-embedded entity's OLD vector back, stamped
 // with the NEW model's name. When both spaces happen to share a dimension count
-// (384 is the default for both BM25 here and TEI's all-MiniLM-L6-v2), cosine
+// (two 384-dimension models, such as all-MiniLM-L6-v2 and another small model), cosine
 // similarity returns a plausible-looking score across unrelated spaces and no
 // health signal fires. Folding identity into the key makes that impossible:
 // stale keys simply never match again and age out.
 type EmbedderIdentity struct {
-	// Type is the configured embedder kind ("bm25", or a product embedder's name).
+	// Type is the name the product registered its embedder under.
 	Type string
 	// Model is the embedder's model identifier.
 	Model string
 	// Dimensions is the vector width the embedder produces.
 	Dimensions int
 	// MaxTextLen is the source-text truncation cap applied before generation.
-	// It belongs in the key because the cap is derived from the embedder type
-	// (4000 for bm25, 8000 otherwise): flipping type changes the TEXT that gets
-	// embedded, not only the model that embeds it.
+	// It belongs in the key because the cap is configured apart from the
+	// embedder: changing it changes the TEXT that gets embedded, not only the
+	// model that embeds it.
 	MaxTextLen int
+}
+
+// IdentityOf is the identity of embedder registered as embedderType with the text cap
+// maxTextLen: Model and Dimensions are read now, so a remote embedder's width is 0 until it
+// has resolved it.
+func IdentityOf(embedderType string, embedder Embedder, maxTextLen int) EmbedderIdentity {
+	return EmbedderIdentity{
+		Type:       embedderType,
+		Model:      embedder.Model(),
+		Dimensions: embedder.Dimensions(),
+		MaxTextLen: maxTextLen,
+	}
 }
 
 // DedupKey derives the EMBEDDING_DEDUP key for text under a given embedder
@@ -52,13 +64,12 @@ type EmbedderIdentity struct {
 //
 // An identity with a non-positive Dimensions has not learned its vector width
 // yet (a remote embedder resolves it from its first response) and gets NO key.
-// "" is the package's established "dedup disabled for this record" signal, which
-// both hops already honour: it is stored as the pending record's ContentHash and
-// getOrGenerateEmbedding generates unconditionally for it. The alternative of
-// keying on a placeholder width is what split EMBEDDING_DEDUP into two disjoint
-// keyspaces per embedder; omitting Dimensions from the key instead would be worse
-// still, since keys would then collide across models of different width — exactly
-// what folding identity into the key was meant to prevent. The cost is redundant
+// "" is the package's "dedup disabled for this record" signal:
+// getOrGenerateEmbedding generates unconditionally for it. Keying on a
+// placeholder width instead would split EMBEDDING_DEDUP into two disjoint
+// keyspaces per embedder; omitting Dimensions from the key would be worse still,
+// since keys would then collide across models of different width — exactly what
+// folding identity into the key prevents. The cost is redundant
 // embeds during the brief unresolved window, once per process.
 func DedupKey(id EmbedderIdentity, text string) string {
 	if id.Dimensions <= 0 {
@@ -84,7 +95,7 @@ func DedupKey(id EmbedderIdentity, text string) string {
 }
 
 // InProcessDedupKey derives a STABLE process-local key for collapsing concurrent
-// byte-identical embedder calls (#630), EXCLUDING the learned Dimensions.
+// byte-identical embedder calls, EXCLUDING the learned Dimensions.
 //
 // Unlike DedupKey it ALWAYS returns a key — even before the embedder has resolved
 // its vector width (a remote embedder reports Dimensions()==0 until its first response).

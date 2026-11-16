@@ -18,7 +18,7 @@ var incomingIndexMarker = []byte{}
 //
 // Unconditional Put, no CAS (ADR-065): each (target, source, predicate) key is written by
 // its source entity's lane alone, so no two writers contend on it. If this bucket ever
-// needs CAS again, that invariant no longer holds.
+// needs CAS, that invariant no longer holds.
 func incomingIndexKey(targetID, sourceID, predicate string) string {
 	return targetID + "." + sourceID + "." + encodePredicateToken(predicate)
 }

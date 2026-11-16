@@ -1,0 +1,29 @@
+go test ./graph/embedding -run TestReviewExperiment -v -count=1   (commit 2853486d, go1.26.11 darwin/arm64)
+
+corpus: 8000 sections, 19795 distinct tokens, avg 123 tokens; 500 known-item queries
+real BM25 (inverted index)                     R@1  14.0%  R@10  38.8%  MRR 0.221  docs>0/query    3195
+shipped embedder, 384 dims                     R@1   5.8%  R@10  16.2%  MRR 0.094  docs>0/query    5530  top10 overlap with real BM25 11.7%
+  same vectors, query after a restart          R@1   6.0%  R@10  17.2%  MRR 0.099  docs>0/query    5530  top10 overlap with real BM25 11.9%
+  same, question phrasing                      R@1   5.8%  R@10  16.2%  MRR 0.094  docs>0/query    5530  top10 overlap with real BM25 11.7%
+  same corpus, another ingest order            R@1   5.4%  R@10  16.4%  MRR 0.088  docs>0/query    5530  top10 overlap with real BM25 11.7%
+    ingest order alone changed the top hit for 97 of 500 queries, the top-10 set for 431
+  vectors rebuilt against final statistics     R@1   5.0%  R@10  15.2%  MRR 0.084  docs>0/query    5530  top10 overlap with real BM25 11.4%
+  made-up words in no document: 200 of 200 queries returned hits; 2355 docs above 0 on average (29.4% of the corpus); best similarity 0.65
+shipped embedder, 4096 dims                    R@1  10.8%  R@10  30.2%  MRR 0.174  docs>0/query    3616  top10 overlap with real BM25 32.2%
+graph-query substring rule, whole corpus       R@1   9.4%  R@10  22.4%  MRR 0.139  docs>0/query     212  top10 overlap with real BM25 16.4%
+  same, question phrasing                      R@1   4.4%  R@10  13.2%  MRR 0.074  docs>0/query     340  top10 overlap with real BM25  9.7%
+stemmer: 545 of 1383 singular/plural pairs in the corpus get different stems, e.g. absence→absence / absences→absenc; abstraction→abstrac / abstractions→abstraction; acknowledge→acknowledge / acknowledges→acknowledg; acknowledgement→acknowledge / acknowledgements→acknowledgement; acquire→acquire / acquires→acquir; action→ac / actions→action; activate→activate / activates→activat; adaptation→adapta / adaptations→adaptation; addition→addi / additions→addition; adoption→adop / adoptions→adoption; advance→advance / advances→advanc; advertise→advertise / advertises→advertis
+
+SHORT=1 go test ./graph/embedding -run TestReviewExperiment -v -count=1   (each section cut to its first 20 words)
+
+real BM25 (inverted index)                     R@1  16.2%  R@10  33.2%  MRR 0.223  docs>0/query    1022
+shipped embedder, 384 dims                     R@1   7.8%  R@10  18.2%  MRR 0.111  docs>0/query    2312  top10 overlap with real BM25 20.4%
+  same vectors, query after a restart          R@1   9.4%  R@10  20.8%  MRR 0.129  docs>0/query    2312  top10 overlap with real BM25 22.8%
+  same, question phrasing                      R@1   7.8%  R@10  18.2%  MRR 0.111  docs>0/query    2312  top10 overlap with real BM25 20.4%
+  same corpus, another ingest order            R@1   7.6%  R@10  17.4%  MRR 0.107  docs>0/query    2312  top10 overlap with real BM25 20.5%
+    ingest order alone changed the top hit for 100 of 500 queries, the top-10 set for 443
+  vectors rebuilt against final statistics     R@1   7.2%  R@10  17.6%  MRR 0.106  docs>0/query    2312  top10 overlap with real BM25 20.0%
+  made-up words in no document: 200 of 200 queries returned hits; 546 docs above 0 on average (6.8% of the corpus); best similarity 0.74
+shipped embedder, 4096 dims                    R@1  13.8%  R@10  28.0%  MRR 0.184  docs>0/query    1186  top10 overlap with real BM25 50.7%
+graph-query substring rule, whole corpus       R@1  10.2%  R@10  12.8%  MRR 0.112  docs>0/query       8  top10 overlap with real BM25  8.2%
+  same, question phrasing                      R@1   3.6%  R@10   4.4%  MRR 0.039  docs>0/query      10  top10 overlap with real BM25  2.5%

@@ -253,12 +253,12 @@ func validateWorkflowPredicate(workflow, field, predicate string) error {
 // time AFTER the Schema is parsed, because the projection-field predicates live
 // in the parsed structMeta, not on the Workflow struct.
 //
-// Why this matters (gh#234): Manager.Transition replaces rather than appends —
+// Why this matters: Manager.Transition replaces rather than appends —
 // it writes RemoveTriples for every predicate in the transition delta (phase +
 // audit). For a VALID schema that is correct (all delta predicates are
 // single-valued). But if a delta predicate ALSO names a child-link or reference
 // predicate, the Transition would delete those many-cardinality triples — silent
-// data loss. No valid schema regresses; this fails the malformed schema loudly
+// data loss. A valid schema passes; this fails the malformed schema loudly
 // at Register rather than dangerously at the first Transition.
 func (w *Workflow) validateDisjointness(meta *structMeta) error {
 	// Cardinality-many predicates: child links and references. A predicate

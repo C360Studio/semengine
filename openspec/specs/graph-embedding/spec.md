@@ -1,8 +1,8 @@
 # graph-embedding Specification
 
 ## Purpose
-The graph-embedding component follows `ENTITY_STATES` and gives every entity a BM25 embedding at tier 0, with no
-external provider. This capability states when its readiness reports an entity done, how it counts and clears
+The graph-embedding component follows `ENTITY_STATES` and gives every entity an embedding from the embedder a product
+registers with it; it does not run at tier 0, where no embedder exists. This capability states when its readiness reports an entity done, how it counts and clears
 failures, which configuration it accepts, and what its health reports.
 
 ## Requirements
@@ -51,21 +51,6 @@ written, a guarded result that finds it already generated, or the record removed
 - **WHEN** a stranded entity's repair reads it successfully and the pending write then fails
 - **THEN** the entity is still counted failed (`TestRepairConvergesStranded`)
 
-### Requirement: Tier-0 config
-
-graph-embedding SHALL refuse at construction an unknown config key, naming it, and any `embedder_type` other than
-`bm25`, and SHALL import no provider module.
-
-#### Scenario: A removed key
-
-- **WHEN** the config holds `batch_size`
-- **THEN** construction fails naming `batch_size` (`TestConfigRefusesUnknownKey`)
-
-#### Scenario: The HTTP embedder at tier 0
-
-- **WHEN** the config holds `embedder_type: http`
-- **THEN** construction fails naming the value and tier 0 (`TestConfigRefusesHTTPEmbedder`)
-
 ### Requirement: The embedding verbs are served from Start until Stop
 
 graph-embedding SHALL serve `search` and `similar` on the subjects their `graph.QueryVerbs()` rows name, and on no
@@ -79,9 +64,9 @@ other subject, from `Start` until `Stop` returns.
 ### Requirement: The embedding verbs answer in the envelope
 
 Each answer SHALL be a `graph.QueryResponse` with producer `graph-embedding` and `indexed_revision` 0, whose `data` is
-a `graph.SemanticData` (with `embedder_type` `bm25`) or a `graph.SimilarData`. Its `results` SHALL be a JSON array,
-its `unreadable_records` SHALL be the number of `EMBEDDING_INDEX` records the cache could not decode, and its
-`failed_records` the number of entities whose latest embedding failed in the Worker.
+a `graph.SemanticData` (with `embedder_type` the name the embedder was registered under) or a `graph.SimilarData`. Its
+`results` SHALL be a JSON array, its `unreadable_records` SHALL be the number of `EMBEDDING_INDEX` records the cache
+could not decode, and its `failed_records` the number of entities whose latest embedding failed in the Worker.
 
 #### Scenario: An empty index
 
@@ -126,7 +111,7 @@ applies. The entity `similar` names SHALL never be one of its own hits.
 
 #### Scenario: A query of stopwords only
 
-- **WHEN** `query` holds only stopwords
+- **WHEN** `query` embeds to the zero vector, as a query of stopwords only does under the test embedder
 - **THEN** the reply's `results` is `[]` (`TestSearchQueryEdges`)
 
 #### Scenario: Ties across the limit
@@ -198,3 +183,70 @@ A vector cache watch lost while the component runs SHALL be named in `Health` as
 - **WHEN** `EMBEDDING_INDEX` is deleted while the component runs
 - **THEN** `Health` names the lost cache watch, `Healthy` is false, and both verbs are refused `index_not_ready`
   (`TestHealthNamesLostCacheWatch`)
+
+### Requirement: A body store that hangs frees the Worker's lane
+
+graph-embedding SHALL read an offloaded body through `graph/entitytext`, which gives the read a context that ends 10
+seconds after it began; a store that fails after that context has ended returns a deadline error, and a store that
+ignores its context is not bounded by it. On a failed read the entity's record SHALL be failed with reason
+`content_error`, as any body read failure is today, without withholding the verbs, and the lane SHALL go on to its
+next record.
+
+#### Scenario: One hung read on a lane
+
+- **WHEN** a lane holds two pending records whose bodies sit on a store that blocks the first read until its context
+  ends, then returns an error that wraps no context error, and serves the second
+- **THEN** the first record is failed `content_error` and the second is generated, 10 seconds later
+  (`TestHungStoreFreesWorkerLane`, under `testing/synctest`)
+
+### Requirement: graph-embedding runs only with a product's embedder
+
+graph-embedding SHALL embed with the `embedding.Embedder` a product registers through `RegisterWithEmbedder` under a
+non-empty name, which SHALL be the type part of the dedup identity. A factory registered by plain `Register` SHALL
+refuse construction, class invalid, naming `RegisterWithEmbedder` and tier 1. graph-embedding SHALL refuse at
+construction an unknown config key, `embedder_type` among them, naming it, and SHALL import no provider module.
+
+#### Scenario: No embedder registered
+
+- **WHEN** graph-embedding is created from a registry filled by `Register`
+- **THEN** construction fails invalid, naming `RegisterWithEmbedder` and tier 1 (`TestRegisterWithoutEmbedderRefuses`)
+
+#### Scenario: A product's embedder
+
+- **WHEN** a product registers graph-embedding with its embedder and an entity with text is written
+- **THEN** the entity's record is generated from that embedder's vector, `search` embeds the query with it and
+  replies the registered name as `embedder_type` (`TestProductEmbedderIsUsed`)
+
+#### Scenario: A removed key
+
+- **WHEN** the config holds `batch_size` or `embedder_type`
+- **THEN** construction fails naming the key (`TestConfigRefusesUnknownKey`)
+
+### Requirement: The embedder lives from Start to Stop
+
+graph-embedding SHALL build its embedder in `Start` and close it once in `Stop`. A `Start` that fails after building
+it SHALL close it, or report both errors and keep it for `Stop`.
+
+#### Scenario: The embedder's lifetime
+
+- **WHEN** a component is built and never started, started and stopped, or its `Start` fails after the build
+- **THEN** no embedder is built, one is closed once, or it is closed (else kept and closed by `Stop`)
+  (`TestEmbedderClosedOnStop`)
+
+### Requirement: An embedder that hangs frees the Worker's lane
+
+The Worker SHALL give each embedder call a deadline 30 seconds after it begins. A call that fails after that deadline
+SHALL fail the record `timeout`, whether or not the embedder's error wraps the deadline, and the lane SHALL go on to
+its next record.
+
+#### Scenario: One hung call on a lane
+
+- **WHEN** a lane holds two pending records, the embedder blocks the first call until its context ends, then serves
+  the second
+- **THEN** the first record is failed `timeout` and the second is generated, 30 seconds later
+  (`TestHungEmbedderFreesWorkerLane`, under `testing/synctest`)
+
+#### Scenario: An error that does not wrap the deadline
+
+- **WHEN** the embedder returns a plain error once its call's deadline has passed
+- **THEN** the record is failed `timeout`, not `embedder_error` (`TestHungEmbedderFreesWorkerLane`)

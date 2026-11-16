@@ -53,18 +53,16 @@ func entityStored(bucket *mockKVBucket, id string) bool {
 }
 
 // TestInterruptedApplicationIsRedeliveredNotAStop holds graph-ingest-recovery, "An interrupted
-// application is redelivered, not a stop" (design D8, "Long apply"; #91 comment 6109278240, item 1).
-// When the delivery helper reports that the owner must stop (the application panicked, an
-// in-progress signal could not be sent, or the delivery has no metadata), the input is left
-// unsettled, the interrupted-work count under that cause rises by one, one ERROR line names the
-// cause, and the next input on the same lane is applied and acknowledged. The interruption adds
-// nothing to the error count Health reports (#91 comment 6124130342): where it lands outside the
+// application is redelivered, not a stop". When the delivery helper reports that the owner must stop
+// (the application panicked, an in-progress signal could not be sent, or the delivery has no
+// metadata), the input is left unsettled, the interrupted-work count under that cause rises by one,
+// one ERROR line names the cause, and the next input on the same lane is applied and acknowledged.
+// The interruption adds nothing to the error count Health reports: where it lands outside the
 // entity's write, that count is unchanged; where it lands in the entity's write (its read inside the
 // compare-and-set, or a container's birth), the write it cut counts once, at its own site, and logs
-// its own ERROR line beside the cause's (Codex B1 on PR #93). The lane is one lane of a keyed pool
-// on a context of its own, as Start runs it.
-// The last case holds the design's "At Stop": an input that reaches its lane after the lane's
-// context has ended is negatively acknowledged, applies nothing, and is logged at WARN.
+// its own ERROR line beside the cause's. The lane is one lane of a keyed pool on a context of its
+// own, as Start runs it. The last case: an input that reaches its lane after the lane's context has
+// ended is negatively acknowledged, applies nothing, and is logged at WARN.
 func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -368,10 +366,10 @@ func refuseEntityCreate(bucket *mockKVBucket) {
 	}
 }
 
-// TestOrdinaryLaneWriteErrorCountsOnce holds the other side of TestInterruptedApplicationIsRedeliveredNotAStop
-// (Codex B1 on PR #93; #91 comment 6124130342): an entity write that fails on the lane with no
-// interruption raises the error count Health reports by one, at the write's own site, counts nothing as
-// interrupted work, and its input is negatively acknowledged.
+// TestOrdinaryLaneWriteErrorCountsOnce holds the other side of
+// TestInterruptedApplicationIsRedeliveredNotAStop: an entity write that fails on the lane with no interruption
+// raises the error count Health reports by one, at the write's own site, counts nothing as interrupted work,
+// and its input is negatively acknowledged.
 func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, entities, _, _ := interruptedWorkComponent(t)

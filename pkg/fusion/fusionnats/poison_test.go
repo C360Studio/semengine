@@ -49,7 +49,7 @@ type poisonWire struct {
 
 func (w *poisonWire) RequestClassified(_ context.Context, subject string, data []byte, _ time.Duration) ([]byte, error) {
 	switch subject {
-	case subjectPrefix:
+	case subjectPrefixIDs:
 		return w.prefixReply, nil
 	case subjectBatch:
 		return w.batchReply, w.batchErr
@@ -156,7 +156,7 @@ func (prefixLens) Hydrate(context.Context, *fusion.Entity) (*message.StorageRefe
 // error, rather than failing the call.
 func TestAllSeedsPoisonedDefer(t *testing.T) {
 	w := &poisonWire{
-		prefixReply: mustJSON(t, graph.PrefixQueryResponse{Entities: []graph.EntityState{{ID: seedA}, {ID: seedB}}}),
+		prefixReply: mustJSON(t, graph.PrefixIDsResponse{IDs: []string{seedA, seedB}, Total: 2}),
 		batchErr:    resetRefusal(),
 		entityErr:   map[string]error{seedA: resetRefusal(), seedB: resetRefusal()},
 	}
@@ -268,7 +268,7 @@ func TestBatchFaultNotReadAlone(t *testing.T) {
 
 // TestPoisonFallbackOneSeedCancelled holds that a context ended while the only
 // per-ID request is in flight is returned, not hidden by its reset refusal
-// being listed (#580).
+// being listed.
 func TestPoisonFallbackOneSeedCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -279,8 +279,8 @@ func TestPoisonFallbackOneSeedCancelled(t *testing.T) {
 }
 
 // TestPoisonFallbackFinalSeedCancelled holds that a context ended while the
-// last per-ID request is in flight is returned, whether that request is
-// refused for poison or not found (#580).
+// last per-ID request is in flight is returned, whether that request is refused
+// for poison or not found.
 func TestPoisonFallbackFinalSeedCancelled(t *testing.T) {
 	notFound := errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, errors.New("not found"))
 	for name, refusal := range map[string]error{"reset": resetRefusal(), "not found": notFound} {

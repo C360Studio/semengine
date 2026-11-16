@@ -1,11 +1,10 @@
 //go:build integration
 
-// Integration tests for the SemStreams ADR-072 keyed-ingest redelivery guard's DURABLE
-// tier against a real NATS KV bucket. The in-memory tier is unit-tested in
-// keyed_ingest_test.go; here we pin the property that makes the guard correct
-// across a process restart and cache eviction (round-4 findings B2/B3): the
-// durable stamp catches a stale redelivery even when the in-memory tier has
-// lost the entry.
+// Integration tests for the SemStreams ADR-072 keyed-ingest redelivery guard's
+// DURABLE tier against a real NATS KV bucket. The in-memory tier is unit-tested
+// in keyed_ingest_test.go; here we pin the property that makes the guard
+// correct across a process restart and cache eviction: the durable stamp
+// catches a stale redelivery even when the in-memory tier has lost the entry.
 
 package graphingest
 
@@ -24,14 +23,13 @@ import (
 )
 
 // TestIntegration_IngestGuardBucket_ReconcilesTTLBucketAtAcquisition pins the
-// SemStreams ADR-072 B2/B3 durability guarantee at boot, in its catalog-seam form: the
-// durable guard bucket is no-eviction correctness state, so if a stale/foreign
-// deploy pre-created GRAPH_INGEST_APPLIED_SEQ with a TTL, graph-ingest's seam
-// acquisition STRIPS the retention in place (self-heal, no stored stamp lost)
-// and Start proceeds on a clean bucket — a strictly stronger posture than the
-// retired at-creation assert, which could only fail boot and leave the dirt.
-// (An UNSTRIPPABLE retention still fails Start closed; that arm is pinned at
-// the seam's unit level in natsclient.)
+// SemStreams ADR-072 durability guarantee at boot, in its catalog-seam form: the
+// durable guard bucket is no-eviction correctness state, so if a stale/foreign deploy
+// pre-created GRAPH_INGEST_APPLIED_SEQ with a TTL, graph-ingest's seam acquisition
+// STRIPS the retention in place (self-heal, no stored stamp lost) and Start proceeds
+// on a clean bucket, rather than failing boot and leaving the dirt. (An UNSTRIPPABLE
+// retention still fails Start closed; that arm is pinned at the seam's unit level in
+// natsclient.)
 func TestIntegration_IngestGuardBucket_ReconcilesTTLBucketAtAcquisition(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -119,10 +117,11 @@ func TestIntegration_KeyedIngest_PublishedEntityIngestsThroughPool(t *testing.T)
 	assert.True(t, found, "the published triple must be present after pool ingestion")
 }
 
-// TestIntegration_IngestGuard_DurableSurvivesRestart pins B2/B3: after the
-// in-memory tier is wiped (a restart, or a high-cardinality LRU eviction), a
-// redelivery of an older sequence is still judged stale via the durable tier,
-// so it cannot overwrite the newer write through the arrival-order merge.
+// TestIntegration_IngestGuard_DurableSurvivesRestart pins the durable tier:
+// after the in-memory tier is wiped (a restart, or a high-cardinality LRU
+// eviction), a redelivery of an older sequence is still judged stale via the
+// durable tier, so it cannot overwrite the newer write through the
+// arrival-order merge.
 func TestIntegration_IngestGuard_DurableSurvivesRestart(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -158,10 +157,10 @@ func TestIntegration_IngestGuard_DurableSurvivesRestart(t *testing.T) {
 	assert.False(t, stale, "a newer sequence after restart is a fresh update, not stale")
 }
 
-// TestIntegration_IngestGuard_DurablePerStreamIndependence pins the round-2 fix
-// at the durable level: the guard compares sequences only WITHIN a stream, so a
-// valid low-sequence message from a second stream is not silenced by a high
-// sequence already applied from another stream.
+// TestIntegration_IngestGuard_DurablePerStreamIndependence pins per-stream
+// independence at the durable level: the guard compares sequences only WITHIN a
+// stream, so a valid low-sequence message from a second stream is not silenced
+// by a high sequence already applied from another stream.
 func TestIntegration_IngestGuard_DurablePerStreamIndependence(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

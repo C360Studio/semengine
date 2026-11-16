@@ -1,4 +1,4 @@
 // Package payloadfixture holds payload-registry fixtures for tests: an empty registry, a registry
-// built from chosen registration functions, and a schema-less stub type. It is the pin's
-// payloadregistry/testing.go, moved into the harness because it imports testing (task 2.8).
+// built from chosen registration functions, and a schema-less stub type. It lives in the harness,
+// not in payloadregistry, because it imports testing and production code imports no test package.
 package payloadfixture

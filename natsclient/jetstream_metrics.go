@@ -20,8 +20,8 @@ type jetstreamMetrics struct {
 	streamState    *prometheus.GaugeVec // Stream state (1=active, 0=inactive)
 
 	// Consumer state metrics
-	// Each gauge is set from the server's current consumer state on each poll (design D9), never
-	// added to: some of these values fall (pending, and redelivered messages once acknowledged).
+	// Each gauge is set from the server's current consumer state on each poll, never added to:
+	// some of these values fall (pending, and redelivered messages once acknowledged).
 	consumerPending     *prometheus.GaugeVec // Pending messages by consumer
 	consumerDelivered   *prometheus.GaugeVec // Stream sequence last delivered (Delivered.Stream)
 	consumerAcked       *prometheus.GaugeVec // Stream sequence of the ack floor (AckFloor.Stream)
@@ -33,8 +33,8 @@ type jetstreamMetrics struct {
 	// Operation errors
 	errors *prometheus.CounterVec // JetStream operation errors
 
-	// Refusals the server reports on the connection, by reason (design D1, #169). They are not
-	// JetStream operation errors: a refused SUB or PUB on a core connection is neither.
+	// Refusals the server reports on the connection, by reason. They are not JetStream
+	// operation errors: a refused SUB or PUB on a core connection is neither.
 	serverRefusals *prometheus.CounterVec
 
 	// Tracked resources (only what we create/use)
@@ -143,8 +143,7 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 	}
 
 	// Register all metrics through metric.RegisterOrGet and keep the collector it returns: a
-	// second client on the same registry then writes to the canonical collector, not an orphan
-	// (design D9).
+	// second client on the same registry then writes to the canonical collector, not an orphan.
 	var err error
 	// The third argument is the registry key, the handle Unregister takes; it is not the metric
 	// name, which is the collector's own (Namespace_Subsystem_Name above).
@@ -317,8 +316,8 @@ func (m *jetstreamMetrics) updateStats(ctx context.Context) {
 		info, err := consumer.handle.Info(ctx)
 		if err != nil {
 			// The consumer may be deleted or unreachable. Its gauges are set from the server's current
-			// state (design D9), so they are deleted rather than left holding the last poll's values
-			// as if current; the failure is counted each poll and logged once per transition, as the
+			// state, so they are deleted rather than left holding the last poll's values as if
+			// current; the failure is counted each poll and logged once per transition, as the
 			// policy loop below does. A later successful poll sets them again.
 			m.mu.Lock()
 			if m.consumers[key] == consumer {

@@ -186,15 +186,20 @@ func (mf *MetricsForwarder) cleanup(ctx context.Context) error {
 	if mf.runCancel != nil {
 		mf.runCancel()
 	}
+	var loopErr error
 	if mf.loopDone != nil {
 		select {
 		case <-mf.loopDone:
 		case <-ctx.Done():
-			return fmt.Errorf("wait for metrics forwarder loop: %w", ctx.Err())
+			loopErr = fmt.Errorf("wait for metrics forwarder loop: %w", ctx.Err())
 		}
 	}
+	var baseErr error
 	if err := mf.BaseService.Stop(ctx); err != nil {
-		return fmt.Errorf("stop metrics forwarder base service: %w", err)
+		baseErr = fmt.Errorf("stop metrics forwarder base service: %w", err)
+	}
+	if err := errors.Join(loopErr, baseErr); err != nil {
+		return err
 	}
 	mf.logger.Info("metrics forwarder stopped")
 	return nil

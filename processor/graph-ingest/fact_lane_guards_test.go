@@ -114,7 +114,7 @@ func TestDistinctSortedSubjects(t *testing.T) {
 	assert.Equal(t, []string{"a", "b", "c"}, got)
 }
 
-// --- §5 StorageRef extraction (consumer half) ---
+// --- StorageRef extraction (consumer half) ---
 
 func TestStorageRefExtraction_ConsumerLiftsRefOntoEntity(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)

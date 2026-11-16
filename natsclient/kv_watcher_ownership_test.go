@@ -97,7 +97,7 @@ var filteredListings = []filteredListing{
 	{"FilteredKeys", "diag.>", func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error) {
 		return FilteredKeys(ctx, bucket, pattern)
 	}},
-	// KVStore.Keys lists the whole bucket, the filter ">" (#533).
+	// KVStore.Keys lists the whole bucket, the filter ">".
 	{"Keys", ">", func(ctx context.Context, bucket jetstream.KeyValue, _ string) ([]string, error) {
 		return (&Client{}).NewKVStore(bucket).Keys(ctx)
 	}},
@@ -111,7 +111,7 @@ func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 }
 
 func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filteredListing) {
-	// R1a: the listing arms the 5 s terminal drain window (filteredWatcherDrainTimeout), KeysByFilter
+	// The listing arms the 5 s terminal drain window (filteredWatcherDrainTimeout), KeysByFilter
 	// also the store's 5 s operation deadline (DefaultKVOptions), and the joins below carry 10 s limits.
 	// On the bubble's clock none of them can expire unless every goroutine is blocked, so a slow
 	// host cannot turn a correct listing into a timeout.
@@ -275,7 +275,7 @@ func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 
 func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredListing) {
 	t.Run("snapshot_success_discards_post_marker", func(t *testing.T) {
-		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
+		// The listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil, ownershipEntry{key: "diag.later"})
@@ -290,7 +290,7 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 		})
 	})
 	t.Run("premature_close", func(t *testing.T) {
-		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
+		// The listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			watcher := closedOnStopWatcher(ownershipEntry{key: "partial"})
@@ -307,11 +307,11 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 	})
 	// spec: transport-client / A filtered listing stops its watcher before returning
 	t.Run("stop_error_after_complete_snapshot", func(t *testing.T) {
-		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
+		// The listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			// A denied consumer delete fails Stop after a complete snapshot; nats.go's Keys
-			// ignores that error, and so do the listings (owner, #533).
+			// ignores that error, and so do the listings: the snapshot they return is complete.
 			stopFailure := errors.New("native unsubscribe failed")
 			watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil)
 			watcher.stopFn = func() error { close(watcher.updates); return stopFailure }
@@ -325,7 +325,7 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 		})
 	})
 	t.Run("already_terminal_stop_requires_closure", func(t *testing.T) {
-		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
+		// The listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			watcher := closedOnStopWatcher(nil)
@@ -348,7 +348,7 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 //
 // spec: transport-client / The key listings complete the same way
 func TestKVStoreKeysListsEachKeyOnceSorted(t *testing.T) {
-	// R1a: the listing arms the 5 s terminal drain window and the store's 5 s deadline; on the
+	// The listing arms the 5 s terminal drain window and the store's 5 s deadline; on the
 	// bubble's clock neither can expire before the assertions, however slow the host.
 	synctest.Test(t, func(t *testing.T) {
 		watcher := closedOnStopWatcher(
@@ -390,7 +390,7 @@ func TestKVStoreFilteredNoWatcherPrecedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// R1a: KeysByFilter arms the store's 5 s operation deadline, and with no watcher it reads
+			// KeysByFilter arms the store's 5 s operation deadline, and with no watcher it reads
 			// ctx.Err() first. On the bubble's clock that deadline cannot expire before this case's
 			// assertions, however slow the host.
 			synctest.Test(t, func(t *testing.T) {

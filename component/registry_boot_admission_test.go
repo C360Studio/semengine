@@ -247,8 +247,7 @@ func TestRegistryAdmitsComponentsOnDistinctOrSharedResources(t *testing.T) {
 
 // TestRegistryRefusesOneComponentClaimingAnAddressTwice: a socket that both
 // reads and writes is one port, so two ports of one component on one exclusive
-// address are refused, through Declare and through CreateComponent (owner
-// ruling, #324 comment 6278113073).
+// address are refused, through Declare and through CreateComponent.
 func TestRegistryRefusesOneComponentClaimingAnAddressTwice(t *testing.T) {
 	const sameText = "resource conflict: component 'gateway' claims tcp:0.0.0.0:8080, " +
 		"held by another of its ports as tcp:0.0.0.0:8080"
@@ -376,8 +375,10 @@ func requireInvalidRefusal(t *testing.T, err error, want string) {
 
 // TestRegistryRefusesNetworkClaimsThatCannotBothBind: two listeners that
 // cannot both bind are refused, whichever comes first and within one
-// component (owner rulings, #328 and comment 6290643374; probe in
-// openspec/changes/archive/2026-10-20-one-network-address-clash/notes/probe.md).
+// component. Which pairs cannot both bind was measured with Go 1.26.9 on
+// macOS 26.5.2 and Linux 7.0.14 (not promised). A pair is refused on every
+// system when either measured system refuses the second bind; macOS binds a
+// TCP wildcard beside a specific host, Linux does not.
 func TestRegistryRefusesNetworkClaimsThatCannotBothBind(t *testing.T) {
 	rows := []networkClaimRow{
 		{"R1 http and websocket on one TCP port",

@@ -17,7 +17,7 @@ import (
 )
 
 // TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient is the
-// load-bearing proof of design decision 3: the inventory reports the ACCOUNT,
+// load-bearing proof that the inventory reports the ACCOUNT,
 // not this client's memory of it.
 //
 // The setup is the falsifiable part. Every resource is created through a

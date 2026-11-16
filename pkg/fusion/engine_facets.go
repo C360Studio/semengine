@@ -5,11 +5,11 @@ import (
 	"slices"
 )
 
-// Engine-computed Paths/Impact facets (ADR-062 gh#409). These are the outgoing/
+// Engine-computed Paths/Impact facets (ADR-062). These are the outgoing/
 // incoming siblings of the relations facet the engine already owns: same bounded
 // RetrievalClient.Neighbors walk, generalized across lenses so a Want{Paths} or
-// Want{Impact} is honored the way WantRelations is — retiring the per-consumer
-// impact extensions (semsource's source/fusion/impact).
+// Want{Impact} is honored the way WantRelations is, and no consumer needs an
+// impact walk of its own.
 
 // Path is a bounded outgoing relation walk from a seed, rendered as a sequence
 // of human names (never entity IDs), carried on Response.Paths. Truncated marks a
@@ -78,7 +78,7 @@ func (e *Engine) computeImpact(ctx context.Context, seeds []*Entity, lens Lens, 
 			}
 			for _, ed := range edges {
 				// Re-guard by predicate rather than trusting Neighbors to have
-				// filtered: keeps per-facet exclusion (gh#475) robust to any
+				// filtered: keeps per-facet exclusion robust to any
 				// RetrievalClient impl, not just the one that filters (mirrors
 				// how relations re-guards via its role map).
 				if !slices.Contains(preds, ed.Predicate) {

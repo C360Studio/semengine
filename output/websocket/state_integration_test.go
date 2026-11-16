@@ -297,7 +297,7 @@ func TestAppliedStateLifecycleSuite(t *testing.T) {
 
 // TestAppliedStateSnapshotThenChanges: a late client receives a put of the entity written before
 // it connected, carrying the stored bytes and the KV write time, then synced at that revision, then
-// a put of the second entity and a delete of the first (design D2, D4; output-websocket spec,
+// a put of the second entity and a delete of the first (output-websocket spec,
 // "Applied state is a snapshot, a marker, then changes").
 func TestAppliedStateSnapshotThenChanges(t *testing.T) {
 	client := fixtureClient(t)
@@ -339,8 +339,8 @@ func TestAppliedStateSnapshotThenChanges(t *testing.T) {
 // TestAppliedStateConverges: back to back, one key is put twice, a second put then deleted, and a
 // third put, poisoned and put again; a client connected before the burst and one attached in the
 // middle of it each fold their frames to the bucket read back, with each key's revisions rising
-// and its last frame at its last write, whichever coalescing window each write fell in (design D2,
-// "Tests"; output-websocket spec, "Applied state converges to the current state").
+// and its last frame at its last write, whichever coalescing window each write fell in
+// (output-websocket spec, "Applied state converges to the current state").
 func TestAppliedStateConverges(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
@@ -369,7 +369,7 @@ func TestAppliedStateConverges(t *testing.T) {
 
 // TestNotReadyRefusesUpgrade: while ENTITY_STATES does not exist, an upgrade gets 503 naming why
 // and Health is degraded; once the bucket exists and a view has caught up, an upgrade succeeds and
-// the client receives synced (design D2, D3; output-websocket spec, "No stream before the view is
+// the client receives synced (output-websocket spec, "No stream before the view is
 // caught up").
 func TestNotReadyRefusesUpgrade(t *testing.T) {
 	client := fixtureClient(t)
@@ -390,8 +390,7 @@ func TestNotReadyRefusesUpgrade(t *testing.T) {
 
 // TestPoisonedValueIsAnnounced: a value that does not decode is announced as poisoned with its
 // revision and graph_state_reset_required, in the snapshot of a client that connects after it and
-// as a change to a client already connected; a later valid write heals the key with a put (design
-// D2, D4; graphview G6).
+// as a change to a client already connected; a later valid write heals the key with a put.
 func TestPoisonedValueIsAnnounced(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
@@ -424,7 +423,7 @@ func TestPoisonedValueIsAnnounced(t *testing.T) {
 // TestWatchLossClosesAndRecovers: deleting ENTITY_STATES loses the view's watch: a connected client
 // is closed with 1013, Health is degraded and upgrades get 503 naming the loss, until the bucket
 // exists again and a new view has caught up; a client then connecting gets a fresh snapshot, which
-// holds only what the new bucket holds (design D2, D3; output-websocket spec, "No stream before the
+// holds only what the new bucket holds (output-websocket spec, "No stream before the
 // view is caught up").
 func TestWatchLossClosesAndRecovers(t *testing.T) {
 	client := fixtureClient(t)
@@ -469,7 +468,7 @@ func TestWatchLossClosesAndRecovers(t *testing.T) {
 
 // TestWatchLossStopsSnapshotDelivery: a watch lost while a client is still receiving its snapshot
 // ends the snapshot there. The client is closed with 1013 and is never sent the lost view's synced
-// once Health reports the loss (design D2, D9; output-websocket spec, "No stream before the view is
+// once Health reports the loss (output-websocket spec, "No stream before the view is
 // caught up"). Frames already in the socket buffers may still arrive after the loss; synced, the
 // snapshot's last frame, is too far behind them to arrive unless the writer kept sending.
 func TestWatchLossStopsSnapshotDelivery(t *testing.T) {
@@ -565,7 +564,7 @@ func TestWatchLossStopsSnapshotDelivery(t *testing.T) {
 // of writes to the same keys; once the stalled client's changes have merged, the merge is counted
 // in changes_coalesced_total and logged once in the minute, naming client_behind, the listener and
 // that the latest write still arrives. The stalled client, reading again, folds to the bucket read
-// back (design D2, "Declared drops"; output-websocket spec, "A slow client never slows another").
+// back (output-websocket spec, "A slow client never slows another").
 func stalledAppliedState(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)

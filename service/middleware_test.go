@@ -14,10 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The pin's five TestManager_* tests read the private middleware slice and drove the private
-// buildHTTPHandler on a recorder. Here they register middleware through UseHTTPMiddleware, start
-// the manager, and request a service's route on the main listener, so the wiring from the
-// registered list to the served handler is what they prove (ADR-030; design D6).
+// The TestManager_* tests register middleware through UseHTTPMiddleware, start the manager, and
+// request a service's route on the main listener, so the wiring from the registered list to the
+// served handler is what they prove (ADR-030).
 
 // recordingMiddleware appends a label to the trace slice on entry
 // and exit. Lets tests assert outermost-first ordering by reading
@@ -202,8 +201,7 @@ func newProbeManager(t *testing.T, deps *Dependencies, status int) *Manager {
 }
 
 // TestManager_UseHTTPMiddleware_AppendsBeforeBoot: middleware registered by several calls before
-// StartAll is appended in call order, the first outermost (pin middleware_test.go:128, which
-// counted the private slice).
+// StartAll is appended in call order, the first outermost.
 func TestManager_UseHTTPMiddleware_AppendsBeforeBoot(t *testing.T) {
 	var trace lockedTrace
 	manager := newProbeManager(t, createTestServiceDependencies(), http.StatusOK)
@@ -216,8 +214,7 @@ func TestManager_UseHTTPMiddleware_AppendsBeforeBoot(t *testing.T) {
 }
 
 // TestManager_UseHTTPMiddleware_IgnoredAfterServerStarts: middleware registered after the main
-// listener started is not built and never runs, and the call logs a Warn (pin :143, which set the
-// private server field to fake a start).
+// listener started is not built and never runs, and the call logs a Warn.
 //
 // spec: operator-surface / Products wrap every route through one middleware seam
 func TestManager_UseHTTPMiddleware_IgnoredAfterServerStarts(t *testing.T) {
@@ -241,7 +238,7 @@ func TestManager_UseHTTPMiddleware_IgnoredAfterServerStarts(t *testing.T) {
 }
 
 // TestManager_UseHTTPMiddleware_EmptyAndNilArgsAreNoOps: calls with no middleware change nothing,
-// and nil entries are skipped (pin :177).
+// and nil entries are skipped.
 func TestManager_UseHTTPMiddleware_EmptyAndNilArgsAreNoOps(t *testing.T) {
 	var trace lockedTrace
 	manager := newProbeManager(t, createTestServiceDependencies(), http.StatusOK)
@@ -256,7 +253,7 @@ func TestManager_UseHTTPMiddleware_EmptyAndNilArgsAreNoOps(t *testing.T) {
 
 // TestManager_BuildHTTPHandler_AppliesRegisteredMiddleware: a request to a service's route on the
 // main listener runs through the registered middleware, the first registered outermost: the
-// wired-path guard that the served handler is the chained one (pin :190).
+// wired-path guard that the served handler is the chained one.
 //
 // spec: operator-surface / Products wrap every route through one middleware seam
 func TestManager_BuildHTTPHandler_AppliesRegisteredMiddleware(t *testing.T) {
@@ -270,7 +267,7 @@ func TestManager_BuildHTTPHandler_AppliesRegisteredMiddleware(t *testing.T) {
 }
 
 // TestManager_BuildHTTPHandler_PassesThroughWhenNoMiddleware: with no middleware a service's route
-// answers unchanged (pin :236).
+// answers unchanged.
 func TestManager_BuildHTTPHandler_PassesThroughWhenNoMiddleware(t *testing.T) {
 	manager := newProbeManager(t, createTestServiceDependencies(), http.StatusTeapot)
 	startTestManager(t, manager)

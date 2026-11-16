@@ -51,8 +51,8 @@ var structuralGateTestType = message.Type{Domain: "test", Category: "mutation", 
 // seedStructuralGateEntity creates a conforming entity and returns its stored
 // baseline state (triples may include framework-injected ones) and the KV
 // revision it was read at, so tests assert "unchanged" against what the store
-// actually holds post-seed. The KV revision is the one revision (design D15,
-// #99): it stands where the pin compared EntityState.Version.
+// actually holds post-seed. The KV revision is the one revision: an entity
+// carries no version of its own.
 func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) (*graph.EntityState, uint64) {
 	t.Helper()
 	ctx := context.Background()
@@ -72,10 +72,9 @@ func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) (*
 
 // TestValidateTriplePredicates_FailClosed_RejectsClassified pins the
 // always-fail-closed contract: the gate rejects a non-3-part predicate with the
-// classified structural code. No bypass configuration exists (the observe-only
-// escape hatch prototyped during enforce-structural-invariants was removed
-// pre-release as provably inert — the authoritative persistence seam rejects
-// unconditionally, so the hatch could only swap the caller-visible error code).
+// classified structural code. No bypass configuration exists: the
+// authoritative persistence seam rejects unconditionally, so an observe-only
+// bypass could only swap the caller-visible error code.
 func TestValidateTriplePredicates_FailClosed_RejectsClassified(t *testing.T) {
 	triples := []message.Triple{
 		{Subject: structuralGateEntity, Predicate: "agent.role", Object: "researcher"}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
@@ -95,8 +94,8 @@ func TestValidateTriplePredicates_ValidPredicate_Untouched(t *testing.T) {
 
 	triples := []message.Triple{
 		{Subject: structuralGateEntity, Predicate: "sensor.temperature.celsius", Object: 22.5},
-		// SemStreams gh#519 collision guard: a valid 3-part predicate whose last segment is
-		// literally "value" MUST pass (it is a real predicate, not a suffix).
+		// Collision guard: a valid 3-part predicate whose last segment is literally "value"
+		// MUST pass (it is a real predicate, not a suffix).
 		{Subject: structuralGateEntity, Predicate: "sensorml.capability.value", Object: "50m"},
 	}
 	err := validateTriplePredicates(triples)
@@ -161,8 +160,8 @@ func TestHandleCanonicalAppend_InvalidPredicate_FailClosedNothingPersisted(t *te
 	assert.Contains(t, logged, graph.ErrorCodeInvalidRequest, "the Warn must name the reason")
 }
 
-// TestHandleCanonicalAppend_InvalidPredicate_WholeBatchRejected pins D2's
-// reject-the-whole-mutation decision on the batch lane: one malformed predicate
+// TestHandleCanonicalAppend_InvalidPredicate_WholeBatchRejected pins the
+// reject-the-whole-mutation rule on the batch lane: one malformed predicate
 // rejects the ENTIRE batch — the conforming triple in the same batch must NOT
 // be persisted either.
 func TestHandleCanonicalAppend_InvalidPredicate_WholeBatchRejected(t *testing.T) {
@@ -305,11 +304,11 @@ func TestIngestEntity_InvalidPredicate_NothingPersisted(t *testing.T) {
 	assert.True(t, errors.Is(getErr, natsclient.ErrKVKeyNotFound))
 }
 
-// TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact is the regression
-// guard: a fully-conforming mutation passes the structural gate and persists
-// with the existing merge semantics intact (append on the entity, KV revision
-// advanced, prior triples preserved). Includes the SemStreams gh#519 collision case: a real
-// 3-part predicate ending in the literal segment "value".
+// TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact is the regression guard: a
+// fully-conforming mutation passes the structural gate and persists with the existing merge
+// semantics intact (append on the entity, KV revision advanced, prior triples preserved).
+// Includes the "value" collision case: a real 3-part predicate ending in the literal
+// segment "value".
 func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) {
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	ctx := context.Background()

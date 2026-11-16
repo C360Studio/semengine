@@ -100,10 +100,10 @@ func (sc *SafeConfig) Update(cfg *Config) error {
 
 // Mutate atomically applies a read-modify-write to the configuration. It holds
 // the write lock across the WHOLE clone → mutate → validate → swap sequence, so
-// two concurrent mutations cannot lose one another's change (gh#515). Without
-// this, a caller doing Get() (a clone) → mutate → Update() races another doing
-// the same: each starts from the same base and the second swap clobbers the
-// first. -race does not flag it — each Get/Update is individually locked; the
+// two concurrent mutations cannot lose one another's change. Without this, a
+// caller doing Get() (a clone) → mutate → Update() races another doing the
+// same: each starts from the same base and the second swap clobbers the first.
+// -race does not flag it — each Get/Update is individually locked; the
 // atomicity violation is at the compound level.
 //
 // fn receives a private deep copy it may mutate freely; returning a non-nil error
@@ -250,10 +250,10 @@ func (c *Config) ValidateDocument() error {
 
 	// Validate stream declarations: the backing-stream prohibition, and the
 	// bounds contract every ordinary stream owes. This runs here, and not only
-	// in the provisioner, because `semstreams --validate` prints
-	// "✓ Configuration is valid" and exits BEFORE streams are ensured
-	// (internal/boot/run.go) — so without it a config that hard-fails boot
-	// would be greenlit by the very tool an operator uses to avoid that.
+	// in the provisioner, because an operator's validation run reports a
+	// configuration valid before any stream is ensured — so without it a
+	// config that hard-fails boot would be greenlit by the very check an
+	// operator uses to avoid that.
 	// Resolution is pure and I/O-free precisely so it can run here, which is
 	// also what lets the port-derived lane be checked at validation rather than
 	// only at boot.
@@ -582,9 +582,9 @@ func (l *Loader) applyEnvOverrides(cfg *Config) {
 	}
 }
 
-// unappliedNATSEnv are the NATS credential overrides the pin applied and
-// SemEngine does not yet: no field carries them until boot wires the client
-// (#74). A set one fails the load rather than being dropped.
+// unappliedNATSEnv are NATS credential overrides SemEngine does not apply yet:
+// no field carries them until boot wires the client. A set one fails the load
+// rather than being dropped.
 var unappliedNATSEnv = []string{"_NATS_USERNAME", "_NATS_PASSWORD", "_NATS_TOKEN"}
 
 // rejectUnappliedEnv fails the load when an unapplied credential variable is
@@ -654,11 +654,11 @@ func validateDeclaredAuthorityPair(org, id string) error {
 
 // validateAuthorityPair bounds an EFFECTIVE platform.org + platform.id so every
 // framework identity family fits under the canonical 256-byte entity-ID bound
-// (ADR-102 amends ADR-076 d2; ruled O-14). The budget is derived from the
-// framework's own family table, never configured by the operator, and the
-// second check is by observation rather than arithmetic: the binding family's
-// identity is composed under the pair and must validate, which also refuses an
-// org or id that is not one canonical entity-ID segment.
+// (ADR-102, amending ADR-076). The budget is derived from the framework's own
+// family table, never configured by the operator, and the second check is by
+// observation rather than arithmetic: the binding family's identity is composed
+// under the pair and must validate, which also refuses an org or id that is not
+// one canonical entity-ID segment.
 //
 // Effective means "the pair this deployment actually mints under": the minted
 // identifier, an adopted platform_identity record's, or the running
@@ -705,10 +705,10 @@ func rejectRemovedPlatformFields(raw map[string]any) error {
 }
 
 // unappliedNATSKeys and unappliedJetStreamKeys are settings nothing in
-// SemEngine applies yet (#74). encoding/json would drop them silently once
-// their fields are gone, so a document that sets one, whatever its value, is
-// refused, naming the key. The boot change that builds the NATS client adds
-// each back with its wiring.
+// SemEngine applies yet. encoding/json would drop them silently, since no field
+// carries them, so a document that sets one, whatever its value, is refused,
+// naming the key. Each is accepted again once the code that builds the NATS
+// client applies it.
 var (
 	unappliedNATSKeys      = []string{"username", "password", "token", "tls", "max_reconnects", "reconnect_wait"}
 	unappliedJetStreamKeys = []string{"domain", "retention_policy", "replication_factor"}
@@ -737,8 +737,8 @@ func rejectUnappliedNATSKeys(raw map[string]any) error {
 // rejectCaseVariantKeys fails the load when a key differs from the name of the
 // struct field it decodes into only in letter case, naming both spellings.
 // encoding/json would match such a key to the field, and the merge with the
-// defaults would then drop or apply it depending on what the defaults hold
-// (#325). Map keys are names a deployment chooses and are not checked; nor are
+// defaults would then drop or apply it depending on what the defaults hold.
+// Map keys are names a deployment chooses and are not checked; nor are
 // json.RawMessage and map[string]any payloads, which their owners decode.
 func rejectCaseVariantKeys(raw map[string]any) error {
 	return keycase.Check(raw, reflect.TypeFor[Config](), "")

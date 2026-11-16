@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The pin's MergeTriples cases, for statements with one (empty) source: the
-// replace rule keeps them.
+// Merge cases for statements with one (empty) source: the replace rule keeps
+// them.
 func TestReplaceBySourceKeepsMergeCases(t *testing.T) {
 	t.Run("newer overrides existing property", func(t *testing.T) {
 		existing := []message.Triple{

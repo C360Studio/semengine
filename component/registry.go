@@ -30,14 +30,15 @@ type Factory func(rawConfig json.RawMessage, deps Dependencies) (Discoverable, e
 type PortDeclarer func(rawConfig json.RawMessage, instanceName string) (PortConfig, error)
 
 // Dependency identifiers used by Registration.Dependencies. Components
-// declare these at registration to opt into framework-driven behavior
-// (e.g., restart when a named runtime dependency changes). Kept as
-// typed constants so refactors are compiler-checked.
+// declare these at registration to state which boot dependencies they
+// consume; nothing reads the declaration, and every component receives
+// Dependencies.ModelRegistry, the registry selected at boot. Kept as typed
+// constants so refactors are compiler-checked.
 const (
-	// DepModelRegistry signals that a component consumes
-	// Dependencies.ModelRegistry at construction or run time. Components
-	// that declare this consume the model registry selected at boot.
-	// Later model_registry writes require process restart.
+	// DepModelRegistry states that a component consumes
+	// Dependencies.ModelRegistry at construction or run time, the model
+	// registry selected at boot. Later model_registry writes require process
+	// restart.
 	DepModelRegistry = "model-registry"
 )
 
@@ -251,7 +252,7 @@ func (r *Registry) prepareComponent(
 	if err != nil {
 		return preparedComponent{}, errs.Wrap(err, "Registry", operation, "capture declaration")
 	}
-	// P1 parity: the static declaration must equal what the constructed
+	// Parity: the static declaration must equal what the constructed
 	// component reports, port for port. A disagreement is a lying declarer or
 	// a drifted constructor; either fails admission here, naming the factory,
 	// the instance, and the first differing port.
@@ -629,7 +630,7 @@ func captureComponentDeclaration(
 }
 
 // checkSelfClash refuses two exclusive claims of one component that clash: a
-// socket that both reads and writes is one port, not two (#324, #328).
+// socket that both reads and writes is one port, not two.
 func checkSelfClash(instanceName string, inputFacts, outputFacts []PortFacts) error {
 	claims := exclusiveClaims(inputFacts, outputFacts)
 	for i, claim := range claims {
@@ -750,10 +751,5 @@ func clonePortFacts(facts PortFacts) PortFacts {
 	return clone
 }
 
-// Note: Component registration functions have been removed.
-// Components now use explicit Register(*Registry) methods for registration.
-//
-// Payload registration moved to the payloadregistry package
-// (alongside PayloadRegistration, PayloadRegistry, the global
-// singleton, and Register/Create/Build helpers). Migration is a
-// straightforward import-path swap; the surface is preserved.
+// Components register through their package's Register(*Registry); payload
+// types register in payloadregistry.

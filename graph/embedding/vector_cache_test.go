@@ -41,11 +41,18 @@ func (f *feedKV) send(entry jetstream.KeyValueEntry) { f.watcher.updates <- entr
 // lose closes the watch's update channel under a live Run.
 func (f *feedKV) lose() { _ = f.watcher.Stop() }
 
+// testIdentity is the identity the test caches run under and their generated records name,
+// whatever each vector's length: these tests are about which records the cache keeps, not
+// about widths.
+var testIdentity = EmbedderIdentity{Type: "t", Model: "m", Dimensions: 2}
+
+func cacheIdentity() EmbedderIdentity { return testIdentity }
+
 // runCache starts a VectorCache over index on its own goroutine and returns it with a stop
 // function that ends Run's context and returns Run's error, and Run's result channel.
 func runCache(t *testing.T, index jetstream.KeyValue) (*VectorCache, func() error, <-chan error) {
 	t.Helper()
-	cache := NewVectorCache(newTestStorage(t, index, newMemKV()))
+	cache := NewVectorCache(newTestStorage(t, index, newMemKV()), cacheIdentity)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- cache.Run(ctx) }()
@@ -55,7 +62,7 @@ func runCache(t *testing.T, index jetstream.KeyValue) (*VectorCache, func() erro
 // generatedEntry is a put of a generated record for id with vector.
 func generatedEntry(t *testing.T, id string, vector ...float32) jetstream.KeyValueEntry {
 	t.Helper()
-	data, err := json.Marshal(&Record{EntityID: id, Vector: vector, Status: StatusGenerated})
+	data, err := json.Marshal(&Record{EntityID: id, Vector: vector, EmbedderType: testIdentity.Type, Model: testIdentity.Model, Dimensions: testIdentity.Dimensions, Status: StatusGenerated})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +87,7 @@ func ids(scored []ScoredEntity) []string {
 // watch.
 func TestVectorCacheRunRefusesNilContext(t *testing.T) {
 	kv := newFeedKV()
-	cache := NewVectorCache(newTestStorage(t, kv, newMemKV()))
+	cache := NewVectorCache(newTestStorage(t, kv, newMemKV()), cacheIdentity)
 	err := cache.Run(nil)
 	if !errs.IsInvalid(err) {
 		t.Fatalf("Run(nil) = %v; want an invalid-input error", err)
@@ -162,7 +169,7 @@ func TestVectorCacheNotAuthoritative(t *testing.T) {
 	}
 
 	t.Run("before any Run", func(t *testing.T) {
-		refused(t, NewVectorCache(newTestStorage(t, newFeedKV(), newMemKV())), "before any Run")
+		refused(t, NewVectorCache(newTestStorage(t, newFeedKV(), newMemKV()), cacheIdentity), "before any Run")
 	})
 
 	t.Run("before the snapshot", func(t *testing.T) {
@@ -297,6 +304,68 @@ func TestVectorCacheFollowsRecordStatus(t *testing.T) {
 	})
 }
 
+// TestVectorCacheKeepsOnlyItsEmbeddersVectors: a cache scores only the vectors made under the
+// running embedder's identity, read at each call, so a mixed index, as during regeneration after
+// a restart under another embedder, never scores a vector made under another type, model, width
+// or text cap, whatever it would score. A record another identity wrote over one of the running
+// identity's leaves, one the running identity regenerated enters, and while the running width is
+// unresolved nothing is scored; once it resolves, its own vectors are.
+func TestVectorCacheKeepsOnlyItsEmbeddersVectors(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		running := EmbedderIdentity{Type: "provider-B", Model: "model-B", Dimensions: 2, MaxTextLen: 100}
+		var resolved atomic.Bool
+		identity := func() EmbedderIdentity {
+			id := running
+			if !resolved.Load() {
+				id.Dimensions = 0 // an embedder that has not learned its width yet
+			}
+			return id
+		}
+		kv := newFeedKV()
+		cache := NewVectorCache(newTestStorage(t, kv, newMemKV()), identity)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- cache.Run(ctx) }()
+		put := func(id string, made EmbedderIdentity) {
+			data, err := json.Marshal(&Record{EntityID: id, Vector: []float32{0, 1}, EmbedderType: made.Type,
+				Model: made.Model, Dimensions: made.Dimensions, MaxTextLen: made.MaxTextLen, Status: StatusGenerated})
+			if err != nil {
+				t.Fatal(err)
+			}
+			kv.send(&memKVEntry{key: id, value: data, op: jetstream.KeyValuePut})
+		}
+		with := func(change func(*EmbedderIdentity)) EmbedderIdentity {
+			id := running
+			change(&id)
+			return id
+		}
+		put("o.p.s.d.t.a", running)                                                     // its own: scored
+		put("o.p.s.d.t.b", with(func(id *EmbedderIdentity) { id.Type = "provider-A" })) // another type
+		put("o.p.s.d.t.c", with(func(id *EmbedderIdentity) { id.Model = "model-A" }))   // another model
+		put("o.p.s.d.t.d", with(func(id *EmbedderIdentity) { id.Dimensions = 3 }))      // another width
+		put("o.p.s.d.t.e", with(func(id *EmbedderIdentity) { id.MaxTextLen = 50 }))     // another text cap
+		put("o.p.s.d.t.f", running)                                                     // its own, then overwritten
+		put("o.p.s.d.t.g", with(func(id *EmbedderIdentity) { id.Model = "model-A" }))   // another's, then regenerated
+		kv.send(nil)
+		put("o.p.s.d.t.f", with(func(id *EmbedderIdentity) { id.Model = "model-A" }))
+		put("o.p.s.d.t.g", running)
+		synctest.Wait()
+		got, unreadable, err := cache.FindSimilar("", []float32{0, 1}, nil, 10)
+		if err != nil || unreadable != 0 || len(got) != 0 {
+			t.Fatalf("FindSimilar while the width is unresolved = %v, %d, %v; want none, 0, nil", ids(got), unreadable, err)
+		}
+		resolved.Store(true)
+		got, unreadable, err = cache.FindSimilar("", []float32{0, 1}, nil, 10)
+		if err != nil || unreadable != 0 || !slices.Equal(ids(got), []string{"o.p.s.d.t.a", "o.p.s.d.t.g"}) {
+			t.Fatalf("FindSimilar = %v, %d, %v; want [o.p.s.d.t.a o.p.s.d.t.g], 0, nil", ids(got), unreadable, err)
+		}
+		cancel()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v; want context.Canceled", err)
+		}
+	})
+}
+
 // warmCache runs a cache inside the current bubble over the generated vectors given and
 // returns it once the snapshot has been applied, with its stop function.
 func warmCache(t *testing.T, vectors map[string][]float32) (*VectorCache, func() error) {
@@ -365,7 +434,7 @@ func TestFindSimilarOrderAndLimit(t *testing.T) {
 	})
 }
 
-// TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity (pin: similarity_determinism_test.go):
+// TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity:
 // over many calls the top-k of an all-equal-similarity corpus is the same, and is the k
 // lexicographically smallest IDs.
 func TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity(t *testing.T) {
@@ -396,7 +465,7 @@ func TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity(t *testing.T) {
 	})
 }
 
-// TestFindSimilarFromCache_ScopeFilter (pin: storage_scope_test.go) guards ADR-071: keep is
+// TestFindSimilarFromCache_ScopeFilter guards ADR-071: keep is
 // applied before scoring on the cache path, so a scoped search returns only in-scope IDs; a
 // nil keep scores every cached entity.
 func TestFindSimilarFromCache_ScopeFilter(t *testing.T) {
@@ -476,7 +545,7 @@ func TestFindSimilarReadsOneMoment(t *testing.T) {
 	})
 }
 
-// TestVectorCacheInvalidationLinearizesWithActiveRead (pin: storage_cache_health_test.go): a
+// TestVectorCacheInvalidationLinearizesWithActiveRead: a
 // FindSimilar whose read was made while the cache answered returns that answer even when Run
 // stops and returns before the call does, and Run does not wait for the call; once Run has
 // returned, a new FindSimilar is refused.

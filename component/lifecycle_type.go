@@ -59,7 +59,7 @@ func (l *Lifecycle) Initialize() error {
 // cleanup runs after a partial start as well as a complete one, so it must tolerate handles that
 // were never acquired. It must not panic: a cleanup that panics leaves the guard's state behind
 // it, so a later Stop cannot try again. The shell inherits that limitation from
-// internal/lifecycleguard (#309).
+// internal/lifecycleguard.
 func (l *Lifecycle) Start(ctx context.Context, start, cleanup func(context.Context) error) error {
 	l.mu.Lock()
 	initialized := l.initialized
@@ -83,9 +83,11 @@ func (l *Lifecycle) Start(ctx context.Context, start, cleanup func(context.Conte
 	})
 }
 
-// Stop is lifecycleguard's Stop: it runs the cleanup Start was given and returns its result. Stop
-// before Start returns nil and uses up the shell, a Stop after a successful cleanup is a no-op,
-// and a cleanup that fails stays pending for the next Stop.
+// Stop is lifecycleguard's Stop: it runs the cleanup Start was given even when ctx has already
+// ended (clearing running status before cleanup begins) so teardown always initiates and ctx bounds
+// only waits. Stop before Start returns nil and uses up the shell, a Stop after a successful
+// cleanup is a no-op, a synchronous nil cleanup under an ended ctx marks the shell terminal while
+// returning ctx.Err(), and a cleanup that fails stays pending for the next Stop.
 func (l *Lifecycle) Stop(ctx context.Context) error {
 	return l.guard.Stop(ctx)
 }

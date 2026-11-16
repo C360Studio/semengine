@@ -217,9 +217,9 @@ func spyOnDownstream(t *testing.T, client *natsclient.Client, subject string) fu
 	}
 }
 
-// TestCountsReadOnePage: counting beside real graph-ingest, a request is one prefix request and nothing
-// else, at the maximum limit, with the request's cursor sent unchanged and its min_revision not sent at
-// all (spec, "Counting the requests"; design D4, D5).
+// TestCountsReadOnePage: counting beside real graph-ingest, a request is one prefix request and
+// nothing else, at the maximum limit, with the request's cursor sent unchanged and its min_revision
+// not sent at all (spec, "Counting the requests").
 func TestCountsReadOnePage(t *testing.T) {
 	stack := startStack(t)
 	stack.create(t, drone1)
@@ -308,9 +308,9 @@ func TestCountsRefuseABrokenPage(t *testing.T) {
 	requireSameJSON(t, got, `{"prefix":"c360.test","total_entities":1,"entities_scanned":1,"truncated":false,"children":[{"prefix":"c360.test.query","count":1}]}`)
 }
 
-// TestHierarchyStatsOrdersChildren: by count descending, then prefix, written in another order. Twenty
-// ties, as with six a missing tie-break passed two runs in three (notes/4.2.md). Go promises no map
-// order, so this detection is a measure, not a proof.
+// TestHierarchyStatsOrdersChildren: by count descending, then prefix, written in another order.
+// Twenty ties, as with six a missing tie-break passed two runs in three when measured. Go promises
+// no map order, so this detection is a measure, not a proof.
 func TestHierarchyStatsOrdersChildren(t *testing.T) {
 	stack := startStack(t)
 	stack.create(t, countedGroup+".z.2")
@@ -348,7 +348,7 @@ func TestHierarchyStatsOrdersChildren(t *testing.T) {
 
 // TestHierarchyStatsIgnoresMinRevision: the verb reads no index, so it has nothing to refuse and no
 // indexed_revision to answer with; a revision past any the graph holds answers bare, with the same
-// counts (spec, "An answer that read only the authority"; design D7).
+// counts (spec, "An answer that read only the authority").
 func TestHierarchyStatsIgnoresMinRevision(t *testing.T) {
 	stack := startStack(t)
 	stack.create(t, drone1)

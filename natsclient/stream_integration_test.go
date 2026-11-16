@@ -360,9 +360,9 @@ func TestIntegration_ConsumeStreamWithConfig_DeliverPolicies(t *testing.T) {
 			require.NoError(t, consumeErr)
 			defer drainNativeConsume(t, handle)
 
-			// The consumer exists on the server once ConsumeStreamWithConfig has
-			// returned, so its deliver policy has already fixed its start: the pin's
-			// 100 ms "ready" delay waited for nothing.
+			// The consumer exists on the server once ConsumeStreamWithConfig
+			// has returned, so its deliver policy has already fixed its start:
+			// a "ready" delay here would wait for nothing.
 
 			// Publish messages after consumer
 			for i := 0; i < tc.publishAfter; i++ {
@@ -372,7 +372,7 @@ func TestIntegration_ConsumeStreamWithConfig_DeliverPolicies(t *testing.T) {
 
 			// Processing is over once the server holds nothing for the consumer to
 			// deliver or to wait for an ack on, and the handler has counted at least
-			// the minimum. The pin waited 500 ms instead.
+			// the minimum; that observed state, not a fixed wait, ends the wait.
 			consumer, err := js.Consumer(ctx, streamName, cfg.ConsumerName)
 			require.NoError(t, err)
 			awaitCtx, cancelAwait := context.WithTimeout(ctx, failureBound)
@@ -707,11 +707,10 @@ func TestIntegration_PublishToStreamWithAck_NotConnected(t *testing.T) {
 
 // TestIntegration_DefaultStreamConfig tests default configuration values.
 //
-// The bounds are asserted ABSENT deliberately. This used to return MaxAge 7 days
-// with MaxBytes unset — the exact silent framework default the bounds requirement
-// removed from the configuration path, handing out a retention window nobody chose
-// and no size ceiling at all. A caller that auto-creates now states its own bounds
-// or the seam refuses the creation.
+// The bounds are asserted ABSENT deliberately. A silent framework default, such as
+// MaxAge 7 days with MaxBytes unset, would hand out a retention window nobody chose
+// and no size ceiling at all. A caller that auto-creates states its own bounds or
+// the seam refuses the creation.
 func TestIntegration_DefaultStreamConfig(t *testing.T) {
 	cfg := DefaultStreamConfig()
 
@@ -722,8 +721,9 @@ func TestIntegration_DefaultStreamConfig(t *testing.T) {
 	assert.Zero(t, cfg.MaxBytes, "and no default size ceiling")
 }
 
-// awaitCount waits until counter reaches at least want, the event the pin's
-// sleeps before a count assertion stood in for (design D8 R1b).
+// awaitCount waits until counter reaches at least want: the event that orders a
+// count assertion after the writes it counts, where a sleep would order
+// nothing.
 func awaitCount(t *testing.T, counter *atomic.Int32, want int32) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), failureBound)

@@ -1,11 +1,10 @@
 package graphingest
 
-// Statement metadata on the stream lane (design D15, #98; task 4.8): a Graphable payload's
-// statement without a Source or Timestamp takes the message envelope's, a message whose
-// envelope cannot supply a needed value is refused as poison, a message carrying a reserved
-// source is refused as poison, and so is a message carrying no statement. Each test drives the
-// input lane Start builds for the entity_stream port, with a real keyed ingest pool behind
-// it.
+// Statement metadata on the stream lane: a Graphable payload's statement without a Source or
+// Timestamp takes the message envelope's, a message whose envelope cannot supply a needed
+// value is refused as poison, a message carrying a reserved source is refused as poison, and
+// so is a message carrying no statement. Each test drives the input lane Start builds for the
+// entity_stream port, with a real keyed ingest pool behind it.
 
 import (
 	"bytes"
@@ -345,9 +344,9 @@ func TestStreamLaneRefusesReservedSource(t *testing.T) {
 }
 
 // TestStreamLaneRefusesEmptyArrival: a stream message that carries no statement gives the
-// statements graph-ingest derives no time to take (owner ruling, #91 comment 6066791396), so it
-// is refused as poison, counted, and nothing of it is stored: neither a birth nor an existing
-// entity's message type or storage reference.
+// statements graph-ingest derives no time to take, so it is refused as poison, counted, and
+// nothing of it is stored: neither a birth nor an existing entity's message type or storage
+// reference.
 func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 	created := time.UnixMilli(1_790_000_000_000)
 

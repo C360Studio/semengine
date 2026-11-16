@@ -13,6 +13,10 @@
 >   `semantic` forwards the request bytes unchanged. The fusion wiring is in the tree: `fusion.Request.Scope` reaches
 >   `RetrievalClient.Resolve` (`pkg/fusion`, change 5 PR C), and `pkg/fusion/fusionnats` sends it as the `semantic`
 >   request's `scope` on an `nl` resolve, left out when empty (change 5 PR D).
+> - Since change `setup-04b-04-removal-keywords` (PR B), `pkg/fusion/fusionnats` sends an `nl` resolve to graph-lexical's
+>   word search (`graph.lexical.query.search`) instead of `semantic`, with the `scope` list in
+>   `graph.LexicalSearchRequest`, left out when empty. The decision holds unchanged: scope filters where the seeds are
+>   found, now in the word index, which applies it before the limit. The answer's provenance is `lexical`.
 > - The compatibility note below ("an un-migrated server silently ignores `scope`") no longer holds here: the
 >   responder decodes strictly, so a request with a key it does not define is refused `invalid_request`, and a
 >   malformed `scope` prefix is refused the same way (`processor/graph-embedding/MIGRATION.md`).

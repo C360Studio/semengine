@@ -304,7 +304,7 @@ func (s *ManagerIntegrationSuite) TestKVStore_OptimisticLocking() {
 	s.NoError(err)
 }
 
-// TestRuntimeComponentAdd_AppliesAndReconciles (gh#388) proves PutComponentToKV
+// TestRuntimeComponentAdd_AppliesAndReconciles proves PutComponentToKV
 // applies the component to the in-memory config synchronously AND drives a
 // components.* notification, so a runtime add reconciles without PushToKV.
 func (s *ManagerIntegrationSuite) TestRuntimeComponentAdd_AppliesAndReconciles() {
@@ -325,7 +325,7 @@ func (s *ManagerIntegrationSuite) TestRuntimeComponentAdd_AppliesAndReconciles()
 	s.True(ok, "notified config must carry the added component")
 }
 
-// TestRuntimeComponentRemove_AppliesAndReconciles (gh#388) proves
+// TestRuntimeComponentRemove_AppliesAndReconciles proves
 // DeleteComponentFromKV removes the component from the in-memory config
 // synchronously AND drives a components.* notification, so a runtime remove
 // reconciles (teardown) without PushToKV.
@@ -351,11 +351,11 @@ func (s *ManagerIntegrationSuite) TestRuntimeComponentRemove_AppliesAndReconcile
 	s.False(ok, "notified config must not carry the removed component")
 }
 
-// TestRuntimeComponentAddRemove_ConcurrentNoLostUpdate is the gh#515 regression at
-// the Manager level: many concurrent PutComponentToKV (adds) interleaved with
-// DeleteComponentFromKV (removes) must not drop one another's in-memory change.
-// Both paths funnel through updateConfig → SafeConfig.Mutate, which serializes the
-// read-modify-write. The old lock-free Get→mutate→Update would lose writes here
+// TestRuntimeComponentAddRemove_ConcurrentNoLostUpdate, at the Manager level: many
+// concurrent PutComponentToKV (adds) interleaved with DeleteComponentFromKV
+// (removes) must not drop one another's in-memory change. Both paths funnel
+// through updateConfig → SafeConfig.Mutate, which serializes the
+// read-modify-write. A lock-free Get→mutate→Update would lose writes here
 // (and -race would not flag it — the atomicity violation is compound-level), so
 // this asserts on the surviving set, not via -race.
 func (s *ManagerIntegrationSuite) TestRuntimeComponentAddRemove_ConcurrentNoLostUpdate() {
@@ -464,10 +464,9 @@ func TestConfigManagerStartupVersionArbitration(t *testing.T) {
 	}
 }
 
-// TestKVSelectionReplacesServicesAndComponents replaces the pin's
-// TestConfigManagerKVSelectionReplacesOnlyServices, which encoded #17: when arbitration selects the
-// bucket, its components.* entries replace the file's components exactly as its services.* entries
-// replace the file's services (design D3).
+// TestKVSelectionReplacesServicesAndComponents: when arbitration selects the bucket, its
+// components.* entries replace the file's components exactly as its services.* entries replace the
+// file's services.
 //
 // spec: config-manager / Version arbitration selects one source for services and components
 func TestKVSelectionReplacesServicesAndComponents(t *testing.T) {
@@ -519,13 +518,12 @@ func putConfigValue(t *testing.T, ctx context.Context, manager *Manager, key str
 	require.NoError(t, err)
 }
 
-// TestBucketIsNamedByTheDeclaredPair is the gh#459 regression, flipped by
-// #1188. Two sem* apps on one NATS server used to share the fixed-name
-// configuration bucket, and the second to boot either adopted the first's
-// components or, once the gh#459 guard existed, was refused. Now each declared
-// pair names its own bucket: both apps start, neither sees the other's
-// configuration, and nothing is refused because there is nothing left to
-// catch. A clone declaring the same pair shares its bucket and its authority.
+// TestBucketIsNamedByTheDeclaredPair: two sem* apps on one NATS server sharing
+// one fixed-name configuration bucket: the second app to boot would adopt the
+// first's components. Each declared pair names its own bucket instead: both
+// apps start, neither sees the other's configuration, and nothing is refused
+// because there is nothing to catch. A clone declaring the same pair shares its
+// bucket and its authority.
 //
 // spec: config-manager / The configuration bucket is named by the declared authority pair
 func TestBucketIsNamedByTheDeclaredPair(t *testing.T) {
@@ -648,11 +646,11 @@ func TestPutKeepsANewerRevisionTheWatcherApplied(t *testing.T) {
 // TestDeleteExcludesAWatcherApplyMidTransition proves that no watcher apply
 // runs between DeleteComponentFromKV's bucket delete and its in-memory removal,
 // so a later put of the same key the watcher applies is never erased by the
-// delete's memory update (PR #329 Codex re-review). The test holds the
-// configuration's write lock, which parks the delete after its bucket write and
-// before its memory update. A watcher apply attempted then must wait: the
-// applied-revision lock is held by the delete. Once released, the later put
-// applies after the delete, and the delete's own, older event is stale.
+// delete's memory update. The test holds the configuration's write lock, which
+// parks the delete after its bucket write and before its memory update. A
+// watcher apply attempted then must wait: the applied-revision lock is held by
+// the delete. Once released, the later put applies after the delete, and the
+// delete's own, older event is stale.
 func TestDeleteExcludesAWatcherApplyMidTransition(t *testing.T) {
 	tc := fixtureClient(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)

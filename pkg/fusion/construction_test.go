@@ -16,8 +16,8 @@ import (
 	"github.com/c360studio/semengine/storage"
 )
 
-// Tests for design D5 (construction, metrics, nil context) and D4's declared
-// skip (one Warn line per facet per call, and the skipped-read counter).
+// Tests for construction, metrics and the nil context, and for the declared skip
+// (one Warn line per facet per call, and the skipped-read counter).
 
 func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
@@ -197,8 +197,8 @@ func TestSkippedReadLoggedAndCounted(t *testing.T) {
 }
 
 // TestBodyFailureLogged: each body-failure path writes exactly one Warn line
-// naming the node's handle, the bounded reason and the error (design D5: "A body
-// failure also logs"); a hydrated body and a body-less entity write none.
+// naming the node's handle, the bounded reason and the error; a hydrated body and
+// a body-less entity write none.
 func TestBodyFailureLogged(t *testing.T) {
 	const id = "acme.ops.code.repo.symbol.Doc"
 	req := fusion.Request{Query: "q", Want: []fusion.Want{fusion.WantBody}}

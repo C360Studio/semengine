@@ -15,8 +15,8 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// coherenceRequestTimeout bounds each request below. The pin used 5s; docs/testing.md
-// asks a failure bound in a test against a broker for at least ten seconds.
+// coherenceRequestTimeout bounds each request below: docs/testing.md asks a failure
+// bound in a test against a broker for at least ten seconds.
 const coherenceRequestTimeout = 10 * time.Second
 
 // queryEntityViaPrefix reads a single entity back through the cached
@@ -38,12 +38,13 @@ func queryEntityViaPrefix(t *testing.T, ctx context.Context, nc *natsclient.Clie
 	return nil
 }
 
-// TestIntegration_CacheCoherence_AppendVisibleAfterPrefixRead is the
-// regression lock for the read-after-write gap the gated-DAG executor surfaced:
-// the entity-query cache (30s TTL) was NOT invalidated by the NATS mutation
-// handlers, so a query within the TTL after an append
-// returned the pre-write entity. The executor read a unit's claim marker as
-// absent right after committing it and re-dispatched on every pass.
+// TestIntegration_CacheCoherence_AppendVisibleAfterPrefixRead holds
+// read-after-write coherence for the entity-query cache (30s TTL): the NATS
+// mutation handlers invalidate it, so a query within the TTL after an append
+// returns the written entity. A cache the handlers did not invalidate would
+// return the pre-write entity, and a caller such as a gated-DAG executor would
+// read a unit's claim marker as absent right after committing it and
+// re-dispatch on every pass.
 func TestIntegration_CacheCoherence_AppendVisibleAfterPrefixRead(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

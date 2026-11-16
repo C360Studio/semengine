@@ -13,17 +13,16 @@ import (
 // the JetStream consumers, the request subscriptions, the status loop, the status
 // publisher, the entity cache and the consumers bound for readiness.
 //
-// The guard's own state is not listed: the guard has no read-out (design D22), and every
-// call on it either changes its state or returns before reading it. The suite's checks
-// observe it through Start and Stop, as design D13 states it.
+// The guard's own state is not listed: the guard has no read-out, and every call on it
+// either changes its state or returns before reading it. The suite's checks observe it
+// through Start and Stop.
 //
 // Calls counts the consumers a started Component holds ("consumer bind") and the Drain
 // calls cleanup has issued on them ("consumer drain", each binding's drainIssued): after a
-// Start that returned nil, suiteOwner.Start keeps the Component's bindings, which cleanup marks in
-// place
-// (storage/objectstore reads drainIssued the same way). The handles are not wrapped:
-// cleanup waits for them through natsclient's WaitConsumerHandlers, which refuses a handle
-// its client did not return (#441). A failed Start's binds and its rollback's drains are
+// Start that returned nil, suiteOwner.Start keeps the Component's bindings, which cleanup
+// marks in place (storage/objectstore reads drainIssued the same way). The handles are not
+// wrapped: cleanup waits for them through natsclient's WaitConsumerHandlers, which refuses
+// a handle its client did not return. A failed Start's binds and its rollback's drains are
 // not counted. No production code calls Stop on a consumer handle, so none is counted.
 // Request subscriptions, the pool's Shutdown and the cache's Close are not counted; their
 // handles are listed under Unresolved until a cleanup succeeds.

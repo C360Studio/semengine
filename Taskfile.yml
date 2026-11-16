@@ -192,4 +192,4 @@ tasks:
   verify:
     desc: Run every gate cheapest first with per-step timings; fail if tracked files change
     cmds:
-      - scripts/verify.sh
+      - scripts/verify.sh {{.CLI_ARGS}}

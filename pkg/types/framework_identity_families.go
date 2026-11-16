@@ -5,7 +5,7 @@ package types
 // fixed-width hash in the instance position). The table is the single home for
 // those families' prefixes — builders compose their identity from it so the
 // authority-pair budget at configuration load is derived, never hand-copied
-// (ADR-102 amends ADR-076 d2; ruled O-14).
+// (ADR-102).
 type FrameworkIdentityFamily struct {
 	// Name is the stable family name used in configuration-load errors.
 	Name string
@@ -28,11 +28,11 @@ var frameworkIdentityFamilies = [...]FrameworkIdentityFamily{
 	{Name: "web-observation", System: "web", Domain: "agent", Type: "observation", InstanceBytes: 16},
 }
 
-// RuleAlertIdentityFamily is the ADR-076 rule alert family under the
+// RuleAlertIdentityFamily is the SemStreams ADR-076 rule alert family under the
 // deployment's own authority.
 func RuleAlertIdentityFamily() FrameworkIdentityFamily { return frameworkIdentityFamilies[0] }
 
-// RuleTriggerIdentityFamily is the ADR-076 rule trigger family under the
+// RuleTriggerIdentityFamily is the SemStreams ADR-076 rule trigger family under the
 // deployment's own authority; the longest fixed suffix today.
 func RuleTriggerIdentityFamily() FrameworkIdentityFamily { return frameworkIdentityFamilies[1] }
 

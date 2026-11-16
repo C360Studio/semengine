@@ -1,14 +1,13 @@
-// Package prochost hosts a helper process for process-kill proofs (openspec change
-// setup-04a-01-floor, capability process-host). A helper is a function in the test binary: the
-// test binary re-executes itself with an environment marker that selects it, so no runtime binary
-// is built. The child runs in its own process group with stdout and stderr in files under the test's
-// temporary directory, and the test can signal, pause, resume, kill and wait for it. No helper
-// outlives its test: Start registers a cleanup that kills the group, joins the child and, when the
-// test has failed, writes the child's output to the test log. A helper also ends when its test
-// process ends without that cleanup (killed, interrupted, crashed); #208 is the failure this code
-// exists for (see Helper). A helper's stdin is reserved for this, and a helper stopped by Pause is
-// not promised to end until it is resumed. Test-only: contract test T-B1 refuses any production
-// import.
+// Package prochost hosts a helper process for process-kill proofs (capability process-host). A
+// helper is a function in the test binary: the test binary re-executes itself with an environment
+// marker that selects it, so no runtime binary is built. The child runs in its own process group
+// with stdout and stderr in files under the test's temporary directory, and the test can signal,
+// pause, resume, kill and wait for it. No helper outlives its test: Start registers a cleanup that
+// kills the group, joins the child and, when the test has failed, writes the child's output to the
+// test log. A helper also ends when its test process ends without that cleanup (killed,
+// interrupted, crashed); #208 is the failure this code exists for (see Helper). A helper's stdin is
+// reserved for this, and a helper stopped by Pause is not promised to end until it is resumed.
+// Test-only: the contract test TestImportGraph refuses any production import.
 //
 // A helper that must stay up waits for SIGTERM (signal.Notify, then receive), never on a bare
 // select{}: the repository refuses one, and SIGTERM is how a test ends a helper cleanly.

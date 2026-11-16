@@ -11,13 +11,8 @@ import (
 	"github.com/c360studio/semengine/storage"
 )
 
-// The store registration tests, from the pin's component_manager_storeregistry_test.go:1-271
-// (design D3, "Stores"). The pin built struct-literal managers and set a component's state, or
-// its storeProvided tracking, by hand before calling registerProvidedStores; here the manager
-// comes from NewComponentManager with the providers composed, and which stores a provider
-// registered is read from the store registry. The pin's TestRegisterProvidedStores_SkipsWhenNotLive
-// (:96-106) is not carried: its liveness guard existed only for a Stop that cancels a Start in
-// flight, which the port's Stop cannot do (sweep C5; design D2, Q-A option A).
+// The store registration tests. The manager comes from NewComponentManager with the providers
+// composed, and which stores a provider registered is read from the store registry.
 
 // fakeStreamable is a minimal StreamableStore for manager-wiring tests.
 type fakeStreamable struct{ id string }

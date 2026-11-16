@@ -10,9 +10,9 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// Ruling K (#91 comment 6062681355): a configuration with no ports key takes
-// DefaultConfig's ports; a ports block that is present is used as written, with no
-// merge; Validate only checks, and the ingest-lane clamp is ApplyDefaults'.
+// A configuration with no ports key takes DefaultConfig's ports; a ports block that is
+// present is used as written, with no merge; Validate only checks, and the ingest-lane
+// clamp is ApplyDefaults'.
 
 // createFromJSON builds graph-ingest through CreateGraphIngest from raw, as a
 // composition root would.

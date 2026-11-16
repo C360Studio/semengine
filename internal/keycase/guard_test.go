@@ -13,12 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPayloadTypesReachOnlyShapesTheLetterCaseCheckWalks guards the walk's limits
-// (setup-04a-03-boot-service-manager design D5; moved from config's
-// TestConfigReachesOnlyShapesTheLetterCaseWalkerHandles): keycase.Check does not
-// handle field promotion from embedded structs, keys inside slices or arrays, or a
-// type that decodes or encodes itself. If a payload type it checks ever reaches one,
-// this fails, so the walk is extended before the rule silently stops covering it.
+// TestPayloadTypesReachOnlyShapesTheLetterCaseCheckWalks guards the walk's limits:
+// keycase.Check does not handle field promotion from embedded structs, keys inside
+// slices or arrays, or a type that decodes or encodes itself. If a payload type it
+// checks ever reaches one, this fails, so the walk is extended before the rule
+// silently stops covering it.
 func TestPayloadTypesReachOnlyShapesTheLetterCaseCheckWalks(t *testing.T) {
 	for _, typ := range []reflect.Type{
 		reflect.TypeFor[config.Config](),

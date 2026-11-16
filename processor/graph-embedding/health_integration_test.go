@@ -15,9 +15,8 @@ import (
 )
 
 // TestHealthIgnoresErrorCount: ErrorCount counts once per entity entering the failed set and once
-// per latched reset, as graph-index counts (processor/graph-index/index.go:240-249), and never
-// lowers Healthy (design D6; ADR-109 Decision 2). The pin's Health was not healthy while its error
-// count was above zero (pin component.go:567). Here a failed entity read lowers Healthy, naming the
+// per latched reset, as graph-index counts (processor/graph-index/index.go markEntityFailed), and
+// never lowers Healthy (ADR-109 Decision 2). Here a failed entity read lowers Healthy, naming the
 // unresolved write, and counts once however often the repair lane fails it again; once the repair
 // lane converges the entity Health reads running and healthy with the failure still counted. A
 // Worker failure counts once on entry, not again while the entity is failed, not when it is older
@@ -87,8 +86,8 @@ func TestHealthIgnoresErrorCount(t *testing.T) {
 	}
 }
 
-// statusSubject is the pin's status verb (pin query.go:39), spelled here only to show nothing
-// answers it: the verb is not carried (design D6; ADR-083), and a reader reads graph-embedding's
+// statusSubject is a status verb's subject, spelled here only to show nothing answers it:
+// graph-embedding has no status verb (ADR-083), and a reader reads graph-embedding's
 // GRAPH_STATUS key instead.
 const statusSubject = "graph.embedding.query.status"
 
@@ -97,7 +96,7 @@ const statusSubject = "graph.embedding.query.status"
 const requestBound = time.Hour
 
 // TestNoStatusVerb: the verb table declares no status verb for graph-embedding, and a running
-// graph-embedding answers nothing on the pin's status subject (design D6; ADR-083, ADR-109 D3).
+// graph-embedding answers nothing on statusSubject (ADR-083, ADR-109 Decision 3).
 func TestNoStatusVerb(t *testing.T) {
 	for _, verb := range graph.QueryVerbs() {
 		if verb.Responder == graph.ResponderGraphEmbedding && (verb.Name == "status" || verb.Subject == statusSubject) {

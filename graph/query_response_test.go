@@ -7,10 +7,9 @@ import (
 	"time"
 )
 
-// TestQueryResponseCarriesIndexedRevisionAndProducer holds the reply envelope of design
-// D6 (ingest-kernel D18): a successful reply carries its data, the revision it reflects,
-// the component that produced it and when, under exactly the four JSON keys a caller
-// decodes.
+// TestQueryResponseCarriesIndexedRevisionAndProducer holds the reply envelope: a
+// successful reply carries its data, the revision it reflects, the component that
+// produced it and when, under exactly the four JSON keys a caller decodes.
 func TestQueryResponseCarriesIndexedRevisionAndProducer(t *testing.T) {
 	before := time.Now()
 	resp, err := NewQueryResponse("graph-index", 42, []string{"a", "b"})
@@ -76,7 +75,7 @@ func TestQueryResponseCarriesIndexedRevisionAndProducer(t *testing.T) {
 }
 
 // TestNewQueryResponseRefusesEmptyProducer: a reply that does not name its producer
-// cannot be attributed, so the constructor refuses it rather than sending one (D18).
+// cannot be attributed, so the constructor refuses it rather than sending one.
 func TestNewQueryResponseRefusesEmptyProducer(t *testing.T) {
 	resp, err := NewQueryResponse("", 7, "data")
 	if err == nil {

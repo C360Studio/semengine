@@ -76,7 +76,7 @@ func (c *BreakerConfig) applyDefaults() {
 // thundering-herd reopening of a sick endpoint. A probe that has not
 // reported within one Cooldown of being admitted counts as lost, and
 // the next IsHealthy caller takes the slot, so a dropped request
-// cannot hold the endpoint half-open for ever (#114). EndpointStatus
+// cannot hold the endpoint half-open for ever. EndpointStatus
 // and EndpointStats reserve nothing.
 //
 // Safe for concurrent use across many goroutines targeting the same
@@ -139,7 +139,7 @@ func (b *RollingWindowBreaker) IsHealthy(endpoint string) bool {
 	case StatusClosed:
 		return true
 	case StatusHalfOpen:
-		// A probe older than one Cooldown counts as lost (#114).
+		// A probe older than one Cooldown counts as lost.
 		if st.probeInFlight && now.Sub(st.probeAdmittedAt) < b.cfg.Cooldown {
 			return false
 		}

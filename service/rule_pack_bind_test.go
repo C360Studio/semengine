@@ -14,7 +14,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// Rule-pack binding (design D6; the pin's rule_pack_bind.go had no test of its own). A composition
+// Rule-pack binding. A composition
 // root calls ConfigureRulePackMutations after ConfigureFromServices and before StartAll: it finds
 // the admitted components that implement ProjectionBinder, checks every pack before it injects
 // anything, and hands each pack that declares contracts one mutation client of its own. The

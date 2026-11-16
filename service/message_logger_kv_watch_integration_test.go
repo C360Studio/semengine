@@ -28,16 +28,15 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// The KV watch route against a real bucket (design D2's streams, D4, owner rulings Q1(b) and
-// Q1(e); D7 U-f). Each test builds the logger through U-a's helper over the shared server, starts
-// it, and requests the watch through the logger's own mux registration.
+// The KV watch route against a real bucket. Each test builds the logger through the shared helper
+// over the shared server, starts it, and requests the watch through the logger's own mux
+// registration.
 
 // watchLoggerConfig monitors one explicit subject, so the logger starts without registry
 // declarations; the watch reads no configuration.
 const watchLoggerConfig = `{"monitor_subjects":["watch.logger"]}`
 
-// watchDropWarn is the Warn record the watch writes when its buffer is full (pin
-// message_logger_kv_watch.go:294; design D4, "the Warn line stays").
+// watchDropWarn is the Warn record the watch writes when its buffer is full.
 const watchDropWarn = "KV watch buffer full, dropping event"
 
 // watchBound bounds every wait on a watch response; a stream still open at the bound fails the
@@ -176,8 +175,8 @@ func requireConnected(t *testing.T, r *bufio.Reader, bucket string) {
 
 // TestKVWatchStreamsInitialValuesThenChanges: the watch sends connected, then every key's current
 // value, then initial_sync_complete, then each later change, and names each entry's operation as
-// NATS records it (Q1(b)). The second key's first write is the bucket's revision 2, which the pin
-// called "update"; a non-JSON value travels as a JSON string. Initial values are matched by key,
+// NATS records it. The second key's first write is the bucket's revision 2 and is still a put, not
+// an update; a non-JSON value travels as a JSON string. Initial values are matched by key,
 // not by order.
 //
 // spec: operator-surface / The message logger's KV watch streams a bucket's values and changes
@@ -236,7 +235,7 @@ func TestKVWatchStreamsInitialValuesThenChanges(t *testing.T) {
 }
 
 // TestKVWatchRejectsInvalidFilter: a pattern outside the NATS KV filter grammar answers 400 naming
-// it and opens nothing; the pin accepted a space and refused a final '>' (design D4, M17). A final
+// it and opens nothing, a pattern with a space among them. A final
 // '>' is accepted and reaches the watcher: only the matching key is sent.
 //
 // spec: operator-surface / The message logger's KV watch streams a bucket's values and changes
@@ -278,7 +277,7 @@ func TestKVWatchRejectsInvalidFilter(t *testing.T) {
 	assert.Equal(t, "initial_sync_complete", data.Operation, "b.y is outside a.> and must not be sent: %+v", data)
 }
 
-// TestKVWatchMissingBucketIs404 (owner ruling Q1(e)): watching a bucket that does not exist
+// TestKVWatchMissingBucketIs404: watching a bucket that does not exist
 // answers 404 before any stream begins, and creates no bucket.
 //
 // spec: operator-surface / The message logger's KV watch streams a bucket's values and changes
@@ -296,7 +295,7 @@ func TestKVWatchMissingBucketIs404(t *testing.T) {
 	assert.ErrorIs(t, err, jetstream.ErrBucketNotFound, "the watch created the bucket")
 }
 
-// TestKVWatchAfterStopIs503 (design D2, "Reads during and after Stop"): a watch requested after
+// TestKVWatchAfterStopIs503: a watch requested after
 // Stop answers 503 and opens no stream.
 //
 // spec: operator-surface / The message logger's KV watch streams a bucket's values and changes
@@ -315,7 +314,7 @@ func TestKVWatchAfterStopIs503(t *testing.T) {
 	assert.Empty(t, (&messageLoggerOwner{ml: ml}).Observe().Unresolved)
 }
 
-// TestMessageLoggerStopEndsOpenWatchStreams (design D2, Stop step 3): with one watch open, Stop
+// TestMessageLoggerStopEndsOpenWatchStreams: with one watch open, Stop
 // under a 10 s bound returns nil, the stream's body ends before the request's own 10 s deadline,
 // and the logger holds no open stream. Under a Stop that leaves streams open, either Stop returns
 // its context's error or the body read fails at the request's deadline.
@@ -345,7 +344,7 @@ func TestMessageLoggerStopEndsOpenWatchStreams(t *testing.T) {
 
 // blockingResponseWriter is a client that does not read: an http.ResponseWriter and
 // http.Flusher whose Write blocks until the test releases it, then records what is written. It
-// sits outside the logger, so the logger carries no hook for it (design D4, M26).
+// sits outside the logger, so the logger carries no hook for it.
 type blockingResponseWriter struct {
 	header      http.Header
 	release     chan struct{}
@@ -380,12 +379,12 @@ func (w *blockingResponseWriter) written() []byte {
 	return bytes.Clone(w.body.Bytes())
 }
 
-// TestKVWatchFallingBehindEndsStream (design D4, M26): a watch whose client falls behind ends,
+// TestKVWatchFallingBehindEndsStream: a watch whose client falls behind ends,
 // rather than dropping events and then claiming the initial values are complete. 150 keys are put
 // before the watch opens; the stream is held at its first write, so its 100-event buffer fills
 // and a later event does not fit. After the drop's Warn, the writer is released: the events
-// already buffered are sent, then one error event, and the response ends. Under the pin's
-// drop-and-continue the stream sends initial_sync_complete, which fails the assertion, not the
+// already buffered are sent, then one error event, and the response ends. A stream that
+// dropped and continued would send initial_sync_complete, which fails the assertion, not the
 // bound.
 //
 // spec: operator-surface / A KV watch that falls behind ends
@@ -436,12 +435,12 @@ func TestKVWatchFallingBehindEndsStream(t *testing.T) {
 	}
 	assert.Less(t, changes, keys, "a dropped event's gap must end the stream")
 	// A drop means the 100-event buffer was full; those buffered events are still sent, and at most
-	// one more was in the stream's hands (design D4).
+	// one more was in the stream's hands.
 	assert.GreaterOrEqual(t, changes, 100, "events buffered before the drop were not sent")
 	assert.LessOrEqual(t, changes, 101)
 }
 
-// TestKVWatchFallingBehindLeavesNoWatchDelivery (#461): a watch stream that ends by falling behind
+// TestKVWatchFallingBehindLeavesNoWatchDelivery: a watch stream that ends by falling behind
 // leaves no nats.go watch delivery running after its handler returns. 600 keys are put, more than
 // the stream's 100-event buffer and nats.go's 256-entry updates buffer together (nats.go v1.55.0,
 // jetstream/kv.go WatchFiltered). The client does not read, so the reader falls behind; its drop

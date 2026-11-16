@@ -23,10 +23,10 @@ func readyTestClient(ctx context.Context, t *testing.T) *Client {
 }
 
 // A responder that subscribes AFTER the reader starts must still be found: this
-// is the cold-start race gated-dag hit (gh#420). A single-shot short request
-// would fail; the readiness read retries within its budget and succeeds once the
-// responder is up. RequestReady was dropped as dead surface (task 3.7a); these
-// tests call requestMsgReady, which it wrapped and RequestReadyClassified calls.
+// is the cold-start race between a service and its first reader. A single-shot
+// short request would fail; the readiness read retries within its budget and
+// succeeds once the responder is up. These tests call requestMsgReady, which
+// RequestReadyClassified calls.
 func TestIntegration_RequestReady_ResponderAppearsLate(t *testing.T) {
 	ctx := context.Background()
 	client := readyTestClient(ctx, t)
@@ -34,7 +34,7 @@ func TestIntegration_RequestReady_ResponderAppearsLate(t *testing.T) {
 
 	// A monitor that never replies sees the first attempt; the responder subscribes
 	// only after that, so the first attempt can only time out and success proves the
-	// loop RETRIED. The pin subscribed the responder after a 700 ms sleep instead.
+	// loop RETRIED, which a sleep before subscribing could not prove.
 	// The monitor unsubscribes once it has seen the first attempt: its unread
 	// messages would otherwise hold the client's drain open at Close.
 	monitor, err := client.GetConnection().SubscribeSync(subject)
@@ -61,7 +61,7 @@ func TestIntegration_RequestReady_ResponderAppearsLate(t *testing.T) {
 
 	start := time.Now()
 	// probe 300ms, budget 60s (generous): far above failureBound, so converging on the responder
-	// and reaching the cap stay apart on a slow host (design D8 R1b; the pin's budget was 10 s).
+	// and reaching the cap stay apart on a slow host.
 	resp, err := client.requestMsgReady(ctx, subject, []byte("ping"), 300*time.Millisecond, 60*time.Second)
 	elapsed := time.Since(start)
 
@@ -73,15 +73,14 @@ func TestIntegration_RequestReady_ResponderAppearsLate(t *testing.T) {
 }
 
 // No responder ever appears: the read must surface an error BOUNDED by the
-// budget, not hang to a full per-attempt query timeout (the gh#420 30s hang).
+// budget, not hang to a full per-attempt query timeout.
 func TestIntegration_RequestReady_NeverReady_BoundedByBudget(t *testing.T) {
 	ctx := context.Background()
 	client := readyTestClient(ctx, t)
 
 	start := time.Now()
 	// The per-attempt query timeout is 60 s, far above failureBound, so a read bounded by the
-	// 1 s budget and one that runs to a full query timeout stay apart on a slow host (design D8
-	// R1b; the pin's query timeout was 300 ms and its ceiling 3 s).
+	// 1 s budget and one that runs to a full query timeout stay apart on a slow host.
 	_, err := client.requestMsgReady(ctx, "test.ready.absent", []byte("ping"), 60*time.Second, 1*time.Second)
 	elapsed := time.Since(start)
 
@@ -124,7 +123,7 @@ func TestIntegration_RequestReadyClassified_HandlerErrorStopsLoop(t *testing.T) 
 	start := time.Now()
 	// Budget is large; if the loop wrongly retried the handler error it would burn
 	// the whole budget. It must return promptly because a reply WAS received.
-	// The budget is 60 s, far above failureBound (design D8 R1b; the pin's was 10 s).
+	// The budget is 60 s, far above failureBound.
 	_, err = client.RequestReadyClassified(ctx, subject, []byte("ping"), 300*time.Millisecond, 60*time.Second)
 	elapsed := time.Since(start)
 

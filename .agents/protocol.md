@@ -283,15 +283,16 @@ on optional maintenance.
 
 ## Verification
 
-Two workflows report the checks the ruleset on `main` requires. In `ci.yml`, `verify` runs `task verify`, the same
-commands as a local run, and `required` (`Required`) fails if `verify` failed, is missing, or was skipped or cancelled.
-`merge-check.yml` (`Merge check`) runs `scripts/merge-check.sh`, which is `ateam review gate`: it fails unless the rules
-on `main` require `Required` and `Merge check` with an up-to-date head, fails a code pull request that is not a draft
-unless its attestation lines and review record satisfy "Cross-agent review", and fails while a known flake is open that
-the pull request does not close. It reads GitHub, so it is not part of `task verify`. Run locally,
-`task merge:check -- <n>` checks that the rules on `main` require `Required` alone unless `ATEAM_REQUIRED_CHECKS` is set
-(`ATEAM_REQUIRED_CHECKS='Required,Merge check'` checks both, as the workflow does). Gate selection and evidence
-recording are in [preflight](skills/preflight/SKILL.md).
+Two workflows report the checks the ruleset on `main` requires. In `ci.yml`, two jobs run `task verify` in parallel,
+`checks` (`Checks`, `task verify -- checks`) and `integration` (`Integration`, `task verify -- integration`), which
+together run the same steps as a local `task verify`, and `required` (`Required`) fails if either failed, is missing, or
+was skipped or cancelled. `merge-check.yml` (`Merge check`) runs `scripts/merge-check.sh`, which is `ateam review gate`:
+it fails unless the rules on `main` require `Required` and `Merge check` with an up-to-date head, fails a code pull
+request that is not a draft unless its attestation lines and review record satisfy "Cross-agent review", and fails while
+a known flake is open that the pull request does not close. It reads GitHub, so it is not part of `task verify`. Run
+locally, `task merge:check -- <n>` checks that the rules on `main` require `Required` alone unless
+`ATEAM_REQUIRED_CHECKS` is set (`ATEAM_REQUIRED_CHECKS='Required,Merge check'` checks both, as the workflow does). Gate
+selection and evidence recording are in [preflight](skills/preflight/SKILL.md).
 
 ateam's default test-to-spec attribution, a `// spec: openspec/specs/<cap>/spec.md#Requirement: ...` line on every Go
 `Test`, `Fuzz` and `Example` checked by `ateam test-spec`, is deferred until

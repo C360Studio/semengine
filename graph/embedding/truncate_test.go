@@ -103,11 +103,9 @@ func TestGetSourceText_Truncation(t *testing.T) {
 	}
 }
 
-// TestGetSourceText_ZeroCapMeansDefault (design D7, changed): a cap of 0 means 8,000 runes on
-// the inline lane, as on the offloaded one. At the pin the inline lane read 0 as unlimited
-// (the pin's TestGetSourceText_NoTruncation_WhenZero). 2,000 repeats of "abcd " are 10,000
-// runes; the 8,000-rune cut ends on the space after the 1,600th word, and the word-boundary
-// rule drops that space.
+// TestGetSourceText_ZeroCapMeansDefault: a cap of 0 means 8,000 runes on the inline lane, as
+// on the offloaded one. 2,000 repeats of "abcd " are 10,000 runes; the 8,000-rune cut ends on
+// the space after the 1,600th word, and the word-boundary rule drops that space.
 func TestGetSourceText_ZeroCapMeansDefault(t *testing.T) {
 	w := &Worker{maxSourceTextLen: 0}
 
@@ -182,8 +180,8 @@ func TestFetchTextFromStorage_StreamsLimitedBytes(t *testing.T) {
 		t.Fatalf("fetchTextFromStorage error: %v", err)
 	}
 
-	// The offloaded lane now truncates through the shared rune-safe routine, so it
-	// honors the word boundary (the old byte-cut returned exactly 100). The cap is in
+	// The offloaded lane truncates through the shared rune-safe routine, so it honors
+	// the word boundary (a byte cut would return exactly 100). The cap is in
 	// CHARACTERS, so at most 100 runes, and never more than the cap.
 	if got := utf8.RuneCountInString(text); got > 100 {
 		t.Errorf("expected at most 100 runes, got %d", got)
@@ -278,14 +276,14 @@ func TestGetSourceText_StorageRef_UsesStreaming(t *testing.T) {
 	}
 }
 
-// TestGetSourceText_OffloadedWithIdentity_ConcatenatesIdentityFirst pins the D1
-// re-branch (#601): an offloaded record (StorageRef != nil) that ALSO carries inline
+// TestGetSourceText_OffloadedWithIdentity_ConcatenatesIdentityFirst pins identity-first
+// on the offloaded lane: an offloaded record (StorageRef != nil) that ALSO carries inline
 // identity text (in IdentityText) must embed the identity AHEAD of the fetched body, in
 // one vector, and MUST still fetch the body — it does not treat the identity as the whole
-// text and drop the body. This is the exact behavior the pre-fix mutually-exclusive
-// `if SourceText / else if StorageRef` got wrong (identity-only, body silently dropped).
-// On an offloaded record the identity travels in IdentityText, a field DISTINCT from
-// SourceText, so a pre-#635 worker stays body-safe (#635 retro F1).
+// text and drop the body, as a mutually-exclusive `if SourceText / else if StorageRef`
+// would (identity-only, body silently dropped). On an offloaded record the identity
+// travels in IdentityText, a field DISTINCT from SourceText, so a worker that treats a
+// non-empty SourceText as the whole text still fetches the body.
 func TestGetSourceText_OffloadedWithIdentity_ConcatenatesIdentityFirst(t *testing.T) {
 	store := &mockStreamableStore{
 		data: map[string][]byte{

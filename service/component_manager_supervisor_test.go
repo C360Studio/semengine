@@ -14,8 +14,8 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// The supervisor's tests new in this port (design D4): the health publisher counts the publish it
-// could not make, and a failed Start launches no publisher.
+// The supervisor's tests: the health publisher counts the publish it could not make, and a failed
+// Start launches no publisher.
 
 // healthPublishErrors is the error count's labels for a health publish the component manager
 // could not make.
@@ -25,7 +25,7 @@ var healthPublishErrors = map[string]string{"service": "component-manager", "typ
 // publisher's publish for each admitted component fails once when Start returns and again every 5
 // seconds; each failure increments semengine_errors_total{service="component-manager",
 // type="health_publish"} and logs at Debug naming the subject, the loop goes on, and nothing is
-// published after Stop (design D4). The bubble's fake clock makes each count exact.
+// published after Stop. The bubble's fake clock makes each count exact.
 //
 // spec: service-lifecycle / Component health is published and its drops counted
 func TestComponentHealthPublishFailureIsCounted(t *testing.T) {
@@ -62,9 +62,9 @@ func TestComponentHealthPublishFailureIsCounted(t *testing.T) {
 
 // TestComponentManagerStopWaitsForInProgressHealthCallback: a Stop that begins while the health
 // publisher is inside a component's Health() does not return until that call returns, and then
-// returns nil (design D4; Codex review on PR #421). The component's Health() signals its entry and
+// returns nil. The component's Health() signals its entry and
 // waits on a channel the test owns. The client is unconnected (newUnconnectedClient), so no
-// nats.go connection runs in the bubble (#156).
+// nats.go connection runs in the bubble (one would need a test process of its own).
 //
 // spec: service-lifecycle / Component health is published and its drops counted
 func TestComponentManagerStopWaitsForInProgressHealthCallback(t *testing.T) {
@@ -122,9 +122,8 @@ func (b *blockingHealthComponent) Health() component.HealthStatus {
 
 // TestComponentManagerFailedStartLaunchesNoPublisher: a Start that fails, here because a
 // component's Start fails, leaves no supervisor behind: no health was published, and the done
-// channel is nil or closed (design D4). The pin failed Start on a struct-literal manager it had not
-// initialized; the bubble would also fail the test if any goroutine the Start launched were left
-// running.
+// channel is nil or closed. The bubble would also fail the test if any goroutine the Start launched
+// were left running.
 //
 // spec: service-lifecycle / Component health is published and its drops counted
 func TestComponentManagerFailedStartLaunchesNoPublisher(t *testing.T) {

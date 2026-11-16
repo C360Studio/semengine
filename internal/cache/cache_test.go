@@ -126,7 +126,7 @@ func testClearOperation(t *testing.T, cache Cache[string]) {
 
 // testSuite runs common cache tests across all implementations. Each subtest builds its cache
 // inside a synctest bubble, so a TTL or hybrid cache's cleanup goroutine runs on the bubble's fake
-// clock and must be ended by Close before the bubble returns (design D8, R1a).
+// clock and must be ended by Close before the bubble returns.
 func testSuite(t *testing.T, createCache func() Cache[string]) {
 	t.Run("BasicOperations", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
@@ -524,9 +524,10 @@ func TestStatistics(t *testing.T) {
 
 // TestConcurrentSetDeleteStatsCurrentSizeMatchesSize proves that after concurrent Set and Delete
 // bursts settle across all four strategies, stats.CurrentSize() always equals int64(cache.Size()),
-// and stats.MaxSize() is at least stats.CurrentSize(). Before #220, simpleCache and ttlCache
-// released c.mu before calling c.stats.UpdateSize(size), so an earlier mutation's UpdateSize could
-// overwrite a later mutation's UpdateSize out of order.
+// and stats.MaxSize() is at least stats.CurrentSize(). It is meant to catch simpleCache or
+// ttlCache releasing c.mu before c.stats.UpdateSize(size), a race it hits by chance, not on every
+// run: an earlier mutation's UpdateSize could then overwrite a later mutation's UpdateSize out of
+// order.
 func TestConcurrentSetDeleteStatsCurrentSizeMatchesSize(t *testing.T) {
 	const (
 		rounds  = 250
@@ -608,7 +609,7 @@ func TestStatisticsConcurrentUpdateSizeTracksMax(t *testing.T) {
 }
 
 // TestConcurrentSameKeyGetSet proves that concurrent Get and Set on the same key across all four
-// strategies return coherent values without data races on entry value or expiration fields (#233).
+// strategies return coherent values without data races on entry value or expiration fields.
 func TestConcurrentSameKeyGetSet(t *testing.T) {
 	strategies := []Config{
 		{Enabled: true, Strategy: StrategySimple},

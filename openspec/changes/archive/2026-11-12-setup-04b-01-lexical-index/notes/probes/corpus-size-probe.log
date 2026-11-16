@@ -1,0 +1,7 @@
+go test ./graph/embedding -run TestCorpusSize -v -count=1   (commit 2853486d, a scratch copy from git archive, with
+  retrieval-probe.go.txt beside corpus-size-probe.go.txt; go1.26.11 darwin/arm64, Apple M3 Pro; 2026-11-12)
+
+2000 sections: 2640433 bytes as JSON lines, 971374 bytes gzipped; 668 sections cite an issue or pull request number
+
+Sections as the retrieval probe cuts them (heading, body of 30 words or more, cut at 4,000 bytes), shuffled with
+seed 1, first 2,000; "cite" matches #NN or longer.

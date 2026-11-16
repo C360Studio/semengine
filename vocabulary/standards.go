@@ -6,7 +6,7 @@ package vocabulary
 // Use these in PredicateMetadata.StandardIRI to indicate semantic equivalence
 // with established vocabularies.
 //
-// NOTE: SemStreams uses dotted notation internally (e.g., "semantic.identity.alias")
+// NOTE: SemEngine uses dotted notation internally (e.g., "semantic.identity.alias")
 // for NATS stream query compatibility. These IRIs are for documentation, export,
 // and interoperability purposes. Processors can translate between formats if needed.
 //

@@ -1,5 +1,7 @@
 // Package embedding turns the text of graph entities into vectors, stores them, and finds the
-// nearest ones. It needs no external provider: its embedder, BM25Embedder, runs in the process.
+// nearest ones. It holds no embedder of its own: a product supplies one, so it imports no
+// embedding provider. The HTTP client for a provider such as semembed is the separate package
+// graph/embedding/httpembedder.
 //
 // Embedding is two hops. Hop 1 is a component outside this package that writes one pending
 // record per entity revision to the EMBEDDING_INDEX bucket (Storage.SavePendingGuarded). Hop 2 is
@@ -10,9 +12,8 @@
 // # Parts
 //
 // Embedder is the interface an embedding source implements, for documents (Generate) and for
-// search queries (GenerateQuery). BM25Embedder is the tier-0 implementation: it hashes terms
-// into a fixed number of dimensions and weights them with BM25, so it matches shared words, not
-// meaning. A product that wants neural vectors supplies its own Embedder.
+// search queries (GenerateQuery). The package has no implementation: a product supplies its own,
+// such as a client of an embedding service.
 //
 // Storage reads and writes two NATS KV buckets: EMBEDDING_INDEX, one record per entity, and
 // EMBEDDING_DEDUP, one vector per content key so identical text is embedded once. Every
@@ -48,9 +49,4 @@
 // Callbacks for different entities are unordered. The package promises nothing about the order
 // the watch delivers entries in; the revision checks in Storage are what keep an older save from
 // replacing a newer generated record.
-//
-// # Where this differs from SemStreams
-//
-// The package is a port of SemStreams' graph/embedding without its HTTP embedder. The changes
-// are listed in the admission ledger row for graph/embedding.
 package embedding

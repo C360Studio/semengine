@@ -88,10 +88,12 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// harness is a running graph-embedding built from JSON through CreateGraphEmbedding, with the
-// ENTITY_STATES write handle the test uses in graph-ingest's place.
+// harness is a running graph-embedding built from JSON through the factory RegisterWithEmbedder
+// adds, as a product builds it, with the ENTITY_STATES write handle the test uses in graph-ingest's
+// place. source builds the component's embedders.
 type harness struct {
 	c       *Component
+	source  *embedderSource
 	f       *follower.Follower
 	states  jetstream.KeyValue
 	client  *natsclient.Client
@@ -112,20 +114,27 @@ func ensureEntityStates(t *testing.T, client *natsclient.Client) jetstream.KeyVa
 // its own, logging to the returned buffer. stores is the store registry, nil for none.
 func newEmbedding(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry) *harness {
 	t.Helper()
+	return newEmbeddingFrom(t, client, raw, stores, &embedderSource{})
+}
+
+// newEmbeddingFrom is newEmbedding with the embedders source builds.
+func newEmbeddingFrom(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry,
+	source *embedderSource) *harness {
+	t.Helper()
 	logs := &logBuffer{}
 	metrics := metric.NewMetricsRegistry()
-	built, err := CreateGraphEmbedding(json.RawMessage(raw), component.Dependencies{
+	built, err := productFactory(t, source)(json.RawMessage(raw), component.Dependencies{
 		NATSClient: client, MetricsRegistry: metrics, StoreRegistry: stores,
 		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	if err != nil {
-		t.Fatalf("CreateGraphEmbedding: %v", err)
+		t.Fatalf("build graph-embedding: %v", err)
 	}
 	c := built.(*Component)
 	if err := c.Initialize(); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	return &harness{c: c, client: client, logs: logs, metrics: metrics}
+	return &harness{c: c, source: source, client: client, logs: logs, metrics: metrics}
 }
 
 // startEmbedding ensures ENTITY_STATES, builds graph-embedding from raw and starts it; the test's
@@ -233,7 +242,7 @@ func (h *harness) awaitPending(t *testing.T, id string, rev uint64) *embedding.R
 
 // TestReadinessWaitsForHopTwo: a revision whose pending record is written is not caught up until
 // the Worker reports its terminal outcome (graph-embedding spec, "A pending record is not caught
-// up"; design D1). A's body is offloaded to a store that holds the Worker's read until the test
+// up"). A's body is offloaded to a store that holds the Worker's read until the test
 // releases it, so A stays pending at hop 2 while B, inline, is embedded. Hop 1 runs serially on
 // the follower's goroutine, so B's record being generated means hop 1 has returned for A:
 // whatever it would complete for A is completed by then.
@@ -258,9 +267,9 @@ func TestReadinessWaitsForHopTwo(t *testing.T) {
 }
 
 // TestConfiguredTextSuffixesSelectText: hop 1 embeds the values of the predicates text_suffixes
-// names, and only those: a predicate only the defaults name (".title") is left out (design D4;
-// Codex review C2 on PR #550). The Worker has one lane, held on an earlier entity's body read, so
-// the record stays pending for the test to read.
+// names, and only those: a predicate only the defaults name (".title") is left out. The Worker
+// has one lane, held on an earlier entity's body read, so the record stays pending for the test
+// to read.
 func TestConfiguredTextSuffixesSelectText(t *testing.T) {
 	store := newGatedStore()
 	h := startEmbedding(t, fixtureClient(t), `{"text_suffixes": [".signature"], "workers": 1}`, store.stores(t))
@@ -287,7 +296,7 @@ func holdWorker(t *testing.T, h *harness, store *gatedStore) {
 
 // TestHopOneEndsTextlessAndDeletedRevisions: a revision with no text and a tombstone end at hop 1,
 // each removing the entity's record, so the floor reaches them with no terminal outcome from the
-// Worker (design D1).
+// Worker.
 func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 	a := entityID(1)
@@ -320,7 +329,7 @@ func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 
 // TestRestartCompletesGeneratedRevision: after a restart the follower replays ENTITY_STATES, and a
 // revision whose generated record already stands ends at hop 1, since SavePendingGuarded keeps
-// the generated record (pin #722 B2), so the floor reaches it with no terminal outcome from the
+// the generated record, so the floor reaches it with no terminal outcome from the
 // Worker; otherwise the replayed revision would hold the floor, and bootstrap, below it for good.
 // Hop 1 runs serially on the follower's goroutine and the watch delivers in revision order, so
 // B's record, written after the restart, being stored means hop 1 has returned for A's replay.
@@ -349,13 +358,11 @@ func TestRestartCompletesGeneratedRevision(t *testing.T) {
 
 // TestCoalescedRevisionsComplete: with coalesce_ms above zero, revisions of one entity collapse
 // into one pending record at the revision read, and completing it drains every lower delivered
-// revision of the entity (design D1; pin
-// derived_state_convergence_integration_test.go:TestIntegration_CoalescedLane_TombstoneConverges).
-// The coalescer applies batches one after another, so B's record, written after A's last
-// revision was read, orders the floor read after A's batch. A watch that opens after both of A's
-// writes delivers only the second, so a first entity's revision is awaited before them: the
-// watch is then live and delivers each of A's revisions. A's and B's bodies are offloaded to a
-// store that holds the Worker's read of each until the test releases it.
+// revision of the entity. The coalescer applies batches one after another, so B's record, written
+// after A's last revision was read, orders the floor read after A's batch. A watch that opens
+// after both of A's writes delivers only the second, so a first entity's revision is awaited
+// before them: the watch is then live and delivers each of A's revisions. A's and B's bodies are
+// offloaded to a store that holds the Worker's read of each until the test releases it.
 func TestCoalescedRevisionsComplete(t *testing.T) {
 	store := newGatedStore()
 	h := startEmbedding(t, fixtureClient(t), `{"coalesce_ms": 20}`, store.stores(t))
@@ -395,11 +402,10 @@ func TestCoalescedRevisionsComplete(t *testing.T) {
 
 // TestStorageRefLaneEmbedsIdentityThenBody: an entity whose body is offloaded to a registered
 // store is queued on the offloaded lane, its inline identity text in the record for hop 2 to embed
-// ahead of the fetched body and no source text (design D5; ADR-063; pin
-// offloaded_identity_integration_test.go:TestIntegration_OffloadedEntityEmbedsIdentityAlongsideBody).
-// Hop 2's join of the two is graph/embedding's (offloaded_identity_test.go). An entity whose store
-// is not registered is embedded from its inline text, and the excluded body is declared: counted
-// for each entity and warned about once. The Worker has one lane, held on an earlier entity's
+// ahead of the fetched body and no source text (ADR-063). Hop 2's join of the two is
+// graph/embedding's (offloaded_identity_test.go). An entity whose store is not registered is
+// embedded from its inline text, and the excluded body is declared: counted for each entity and
+// warned about once. The Worker has one lane, held on an earlier entity's
 // body read, so every record stays pending for the test to read.
 func TestStorageRefLaneEmbedsIdentityThenBody(t *testing.T) {
 	store := newGatedStore()
@@ -472,6 +478,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if o.c.worked != nil {
 		held = append(held, "worker")
 	}
+	if o.c.embedder != nil {
+		held = append(held, "embedder")
+	}
 	return lifecycletest.Observation{Unresolved: held}
 }
 
@@ -504,7 +513,7 @@ func TestGraphEmbeddingLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"run cancel", "coalescer", "feeds", "repair lane", "worker"}
+		want := []string{"run cancel", "coalescer", "feeds", "repair lane", "worker", "embedder"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}
@@ -535,14 +544,14 @@ func TestStartContextEndStopsNothing(t *testing.T) {
 	}
 }
 
-// TestRecreatedRevisionWaitsForWorker (#555; Codex's final review of PR #550, F1): on the
-// coalesced lane a batch that reads an entity absent completes only the revisions delivered before
-// its read, so a re-creation the follower observes during that read stays outstanding until its
-// own terminal outcome. The test runs a batch's reconcileEntity with its ENTITY_STATES read held
-// once the read has found the entity absent, and re-creates the entity meanwhile: the await on
-// DataFlow's message count, which deliver counts after the watermark observes the revision,
-// orders the release, and so the completion, after that observation. The Worker is held on the
-// re-created entity's body, so its record stays pending and the floor must stay below it.
+// TestRecreatedRevisionWaitsForWorker: on the coalesced lane a batch that reads an entity absent
+// completes only the revisions delivered before its read, so a re-creation the follower observes
+// during that read stays outstanding until its own terminal outcome. The test runs a batch's
+// reconcileEntity with its ENTITY_STATES read held once the read has found the entity absent, and
+// re-creates the entity meanwhile: the await on DataFlow's message count, which deliver counts
+// after the watermark observes the revision, orders the release, and so the completion, after that
+// observation. The Worker is held on the re-created entity's body, so its record stays pending and
+// the floor must stay below it.
 func TestRecreatedRevisionWaitsForWorker(t *testing.T) {
 	store := newGatedStore()
 	// The coalescer never fires within the test, so the reconciles below are the only readers.
@@ -600,4 +609,40 @@ func (r *heldReader) Get(ctx context.Context, key string) (jetstream.KeyValueEnt
 		<-r.release
 	})
 	return entry, err
+}
+
+// TestStopWithEndedContextInitiatesTeardownAndRetries checks that Stop handed an already-expired
+// context still initiates subscription drains, cancels the run context so feeds/repairs/worker/cache
+// exit, and initiates coalescer shutdown, returning DeadlineExceeded while keeping handles so a
+// retry Stop with a live context joins cleanly.
+func TestStopWithEndedContextInitiatesTeardownAndRetries(t *testing.T) {
+	client := fixtureClient(t)
+	h := startEmbedding(t, client, `{"coalesce_ms": 50}`, nil)
+	feeds, repairs, worked, cached := h.c.feeds, h.c.repairs, h.c.worked, h.c.cached
+
+	expired, cancelExpired := context.WithDeadline(t.Context(), time.Unix(1, 0))
+	defer cancelExpired()
+	if err := h.c.Stop(expired); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop(expired) = %v, want context.DeadlineExceeded", err)
+	}
+	if status := h.c.Health().Status; status != "stopped" {
+		t.Fatalf("Health().Status after Stop(expired) = %q, want stopped", status)
+	}
+
+	waitBound, cancelWait := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancelWait()
+	for name, done := range map[string]<-chan struct{}{
+		"feeds": feeds, "repairs": repairs, "worked": worked, "cached": cached,
+	} {
+		select {
+		case <-done:
+		case <-waitBound.Done():
+			t.Fatalf("Stop(expired) did not cancel runCtx: %s goroutine still running", name)
+		}
+	}
+
+	stopComponent(t, h.c)
+	if h.c.subscriptions != nil || h.c.coalescer != nil || h.c.runCancel != nil {
+		t.Fatalf("handles still retained after retry Stop: subs=%v coalescer=%v", h.c.subscriptions, h.c.coalescer)
+	}
 }

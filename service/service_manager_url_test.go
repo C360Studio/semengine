@@ -12,7 +12,8 @@ import (
 	"github.com/c360studio/semengine/component"
 )
 
-// TestObservedManagerHTTPURLReachesTheManager is #372's regression. The manager binds its main
+// TestObservedManagerHTTPURLReachesTheManager guards the URL the tests build for the manager. The
+// manager binds its main
 // listener on every address (":port"). On macOS a second socket may then bind 127.0.0.1 on the
 // same port and takes every connection made to 127.0.0.1, so a URL built from 127.0.0.1 can reach
 // another server (a concurrent package's httptest server, for one). The test plants such a

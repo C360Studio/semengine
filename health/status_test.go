@@ -114,11 +114,10 @@ func TestFromComponentHealth(t *testing.T) {
 				Uptime:     time.Second,
 			},
 			wantStatus:  "unhealthy",
-			wantMessage: "Component unhealthy", // fallback message (Q3, #318 comment 6271710866)
+			wantMessage: "Component unhealthy", // fallback message
 		},
 		{
-			// Healthy=false is unhealthy whatever the component's own word says
-			// (owner ruling, #318 comment 6271450376).
+			// Healthy=false is unhealthy whatever the component's own word says.
 			name:          "component reporting itself degraded",
 			componentName: "poisoned-component",
 			componentHealth: component.HealthStatus{

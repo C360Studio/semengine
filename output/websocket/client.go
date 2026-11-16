@@ -17,10 +17,10 @@ import (
 
 const (
 	// clientQueueFrames is how many frames wait for one client's writer; a frame queued while it is
-	// full drops the oldest (design D2, the stalled-client row).
+	// full drops the oldest.
 	clientQueueFrames = 256
-	// writeWait bounds each write to a client, as the pin's (websocket.go:1743 at 8b99efe9): a
-	// client whose write is blocked that long is closed.
+	// writeWait bounds each write to a client: a client whose write is blocked that long is
+	// closed.
 	writeWait = 10 * time.Second
 	// closeWait bounds the close frame Stop sends: a client that cannot take it that soon is closed
 	// without it.
@@ -34,7 +34,7 @@ type client struct {
 
 	// Applied state only: snapshot is the frames sent first, and sub the changes after them. The
 	// writer takes a batch from sub only once it has written the one before, so while a client is
-	// behind, its later changes merge per key in the view (design D2). The writer clears snapshot
+	// behind, its later changes merge per key in the view. The writer clears snapshot
 	// once it is sent, so a connection does not keep the view's values from when it attached.
 	snapshot frames
 	sub      *stateSubscription
@@ -111,8 +111,8 @@ func (c *output) serveUpgrade(w http.ResponseWriter, r *http.Request) {
 	var snapshot frames
 	var sub *stateSubscription
 	if c.settings.subject == "" {
-		// Attach before the upgrade, so a view that is not caught up is answered with 503 naming why
-		// (design D2, D3). The subscription ends with the request, or when this handler returns.
+		// Attach before the upgrade, so a view that is not caught up is answered with 503 naming why.
+		// The subscription ends with the request, or when this handler returns.
 		state, attached, notReady := c.subscribeState(r.Context())
 		if attached == nil {
 			http.Error(w, notReady, http.StatusServiceUnavailable)
@@ -149,9 +149,9 @@ func (c *output) serveUpgrade(w http.ResponseWriter, r *http.Request) {
 
 // read discards every frame the client sends until a read fails. The read deadline starts at twice
 // ping_interval and each pong extends it by as much, so a client that answers pings stays connected
-// however long it sends nothing, and one that answers none is closed (design D2, S18). Probe P1 on
-// PR #592: at gorilla/websocket v1.5.3, a pong that does not extend the deadline leaves the read to
-// time out with pongs received; TestQuietClientStaysConnected fails without the extension.
+// however long it sends nothing, and one that answers none is closed. At gorilla/websocket
+// v1.5.3, a pong that does not extend the deadline leaves the read to time out with pongs
+// received; TestQuietClientStaysConnected fails without the extension.
 func (c *output) read(cl *client) {
 	deadline := 2 * c.settings.pingInterval
 	// Setting a deadline fails only on a closed connection, whose next read fails and ends the loop.
@@ -290,7 +290,7 @@ func (c *output) sendClose(cl *client) {
 }
 
 // sendEnded closes an applied-state client whose subscription ended: with 1013 when the view's watch
-// was lost, so the client reconnects for a fresh snapshot once a new view has caught up (design D2),
+// was lost, so the client reconnects for a fresh snapshot once a new view has caught up,
 // and as a stop otherwise. Stop ends the view only after every client has returned, so a client
 // whose subscription ended for any other reason is one whose request has ended.
 func (c *output) sendEnded(cl *client) {

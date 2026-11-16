@@ -192,6 +192,8 @@ when each "stays" has a supported basis.
   accepted commitment, or demonstrated defect still requires the smallest complete correction and its proof.
 - A doc that breaks the owner's documentation rule (technical-writer contract, rule 9: human-dev friendly, no
   jargon, no marketing) is a review finding.
+- Port history in a comment, test comment, or doc line the change adds or edits is a review finding; scope and
+  exceptions are in the developer contract, "Comments and docs". Lines the change does not touch are not a finding.
 - Confirm checked tasks are fully complete as worded. Split mixed tasks instead of treating partial evidence as done.
 - A task that asserts a post-merge fact ("CI green", "merged", "merge-ready"), or that waits on a step after the
   archive commit (the archive check, undraft, the final CI run), is a finding: it cannot be ticked before the archive
@@ -455,7 +457,8 @@ is the first bullet below.
 - Every issue this change filed passes the protocol's **File** ritual: its content is a defect in code in this
   repository (carried, ported or written here), or architectural; it is not a residual of a decision the change
   itself made, a consequence a ruling already states, or an unmeasured cost. A residual filed as an issue is a
-  finding; the remedy is relocation into a doc comment or `design.md`. A filed defect is never that finding: a defect
+  finding; the remedy is relocation into `design.md`, or into a doc comment that gives the reason in plain words.
+  A filed defect is never that finding: a defect
   is code that behaves wrongly, not a loose end of the change's own decision. A defect the change found in code in
   this repository, did not fix, and did not file as an issue (named only in a comment, a note or a review request) is
   a finding; the remedy is filing it (owner ruling of 2026-10-13, #212).

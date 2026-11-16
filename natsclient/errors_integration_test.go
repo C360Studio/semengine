@@ -18,11 +18,10 @@ import (
 	"github.com/c360studio/semengine/pkg/retry"
 )
 
-// TestIntegration_RequestClassified_RoundTripPreservesClass is the
-// load-bearing gh#93 contract: a handler that returns
-// errs.WrapInvalid(...) MUST surface to the caller as a classified
-// error where errs.IsInvalid(err) == true. This is the regression
-// net that catches Phase 1 wire-format gaps.
+// TestIntegration_RequestClassified_RoundTripPreservesClass is the load-bearing
+// classified-reply contract: a handler that returns errs.WrapInvalid(...) MUST
+// surface to the caller as a classified error where errs.IsInvalid(err) ==
+// true. This is the regression net that catches wire-format gaps.
 func TestIntegration_RequestClassified_RoundTripPreservesClass(t *testing.T) {
 	ctx := context.Background()
 
@@ -60,7 +59,7 @@ func TestIntegration_RequestClassified_RoundTripPreservesClass(t *testing.T) {
 			wantInMsg:  "kv permanently unreachable",
 		},
 		{
-			// An unclassified error is fatal (owner ruling 1, #167 comment 6191970843).
+			// An unclassified error is fatal.
 			name:       "unclassified_plain_error_defaults_fatal",
 			handlerErr: errors.New("marshal failed"),
 			isFatal:    true,
@@ -105,9 +104,8 @@ func TestIntegration_RequestClassified_RoundTripPreservesClass(t *testing.T) {
 	}
 }
 
-// ADR-060 PR-D removed TestIntegration_LegacyBodyPrefix_StillReadable: the
-// legacy "error: " body shape is gone. A handler failure is now the
-// {message, detail} envelope + X-Status header (covered by the unit-level
+// Under ADR-060 a handler failure is the {message, detail} envelope + X-Status
+// header, never an "error: " body prefix (covered by the unit-level
 // TestRespondError_RoundTrip and the header-classified tests above).
 
 // TestIntegration_RequestClassified_SuccessPath confirms the
@@ -138,13 +136,11 @@ func TestIntegration_RequestClassified_SuccessPath(t *testing.T) {
 	}
 }
 
-// TestIntegration_RequestWithRetryClassified_RoundTripPreservesClass
-// is the gh#192 matrix-gap-closure regression net. Mirrors the
-// RequestClassified case table but drives through the retry-aware
-// entry point — proves the retry loop preserves the classified
-// contract instead of returning the legacy text-body shape (which
-// is the Footgun semteams shipped a `json.Valid` workaround for in
-// cmd/semteams/tools/addsource/executor.go).
+// TestIntegration_RequestWithRetryClassified_RoundTripPreservesClass is the
+// retry-aware entry point's regression net. Mirrors the RequestClassified case
+// table but drives through the retry-aware entry point — proves the retry loop
+// preserves the classified contract instead of returning a plain text body,
+// which a caller cannot classify and would have to sniff.
 func TestIntegration_RequestWithRetryClassified_RoundTripPreservesClass(t *testing.T) {
 	ctx := context.Background()
 

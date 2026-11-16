@@ -7,8 +7,7 @@ import (
 
 // TestCacheUsableAfterClose proves that Close stops only background work: every implementation
 // NewFromConfig builds answers Get, Set and Delete after Close exactly as it did before. graph-ingest
-// relies on this when a query that loaded the cache handle before Stop cleared it runs after Close
-// (design D7 of setup-04a-04-graph-roots-processor-shell, #306).
+// relies on this when a query that loaded the cache handle before Stop cleared it runs after Close.
 //
 // spec: graph-ingest-recovery / The entity cache stays usable through Stop (scenario: A cache after Close)
 func TestCacheUsableAfterClose(t *testing.T) {

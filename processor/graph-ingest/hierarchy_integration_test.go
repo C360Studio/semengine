@@ -45,13 +45,12 @@ func TestComponent_HierarchyInference_ConfigDefaults(t *testing.T) {
 	assert.False(t, customConfig.EnableHierarchy, "ApplyDefaults should keep hierarchy disabled")
 }
 
-// TestComponent_HierarchyContainerDeletedIsBornAgain holds #130 and design D21
-// through the real bucket: the inference keeps no record of which containers
-// exist, so after a type's container is deleted through graph-ingest's own
-// delete, the next birth of that type creates the container again and is born
-// with its container edge. At the pin a cache answered for the deleted
-// container, the inverse edge was refused for an absent subject, and the entity
-// was born without hierarchy.
+// TestComponent_HierarchyContainerDeletedIsBornAgain, through the real bucket:
+// the inference keeps no record of which containers exist, so after a type's
+// container is deleted through graph-ingest's own delete, the next birth of
+// that type creates the container again and is born with its container edge. A
+// record of existing containers would answer for the deleted one, and the
+// container would not be created again.
 func TestComponent_HierarchyContainerDeletedIsBornAgain(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -112,8 +111,8 @@ func TestComponent_HierarchyContainerDeletedIsBornAgain(t *testing.T) {
 // ====================================================================================
 
 // createTestComponentWithHierarchyConfig creates a test component with specified
-// hierarchy setting, on a fixture broker of the test's own with the ENTITY stream
-// (design D3).
+// hierarchy setting, on a fixture broker of the test's own with the ENTITY
+// stream.
 func createTestComponentWithHierarchyConfig(t *testing.T, enableHierarchy bool) *Component {
 	t.Helper()
 
@@ -121,9 +120,9 @@ func createTestComponentWithHierarchyConfig(t *testing.T, enableHierarchy bool) 
 }
 
 // createHierarchyComponentOnClient builds a graph-ingest component over an
-// ALREADY-RUNNING NATS server, so a test can construct a second component over
-// the same store — the restart shape SemStreams gh#713 reports, where a fresh process
-// re-registers unchanged entities against a graph that already holds them.
+// ALREADY-RUNNING NATS server, so a test can construct a second component over the
+// same store — the restart shape where a fresh process re-registers unchanged
+// entities against a graph that already holds them.
 func createHierarchyComponentOnClient(t *testing.T, natsClient *natsclient.Client, enableHierarchy bool) *Component {
 	t.Helper()
 

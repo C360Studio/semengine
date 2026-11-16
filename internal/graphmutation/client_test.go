@@ -143,9 +143,9 @@ func clientWrites() []clientWrite {
 
 // TestClientReportsRefusalBeforeSendingAsUnavailable: natsclient returns ErrNotConnected only
 // before its one send (natsclient/request.go, RequestWithHeaders), so the client reports it as
-// unavailable, not committed, with the sentinel still reachable (design
-// D1, #268). The real never-connected natsclient.Client shows the production requester returns
-// the sentinel this way; it dials nothing.
+// unavailable, not committed, with the sentinel still reachable. The real never-connected
+// natsclient.Client shows the production requester returns the sentinel this way; it dials
+// nothing.
 func TestClientReportsRefusalBeforeSendingAsUnavailable(t *testing.T) {
 	assertUnavailable := func(t *testing.T, err error, operation Operation, sentinel error) {
 		t.Helper()
@@ -186,7 +186,7 @@ func TestClientReportsRefusalBeforeSendingAsUnavailable(t *testing.T) {
 }
 
 // assertInvalidRequest checks that err is the client's own refusal before sending: class invalid,
-// code invalid_request (design D2), so projection reads it as not committed.
+// code invalid_request, so projection reads it as not committed.
 func assertInvalidRequest(t *testing.T, err error) {
 	t.Helper()
 	var classified *semerrs.ClassifiedError
@@ -198,7 +198,7 @@ func assertInvalidRequest(t *testing.T, err error) {
 
 // Each method is an exported boundary that returns an error, so a nil context is refused there,
 // before any request (developer contract, "Context ownership"), as the client's own refusal:
-// invalid, code invalid_request (design D2).
+// invalid, code invalid_request.
 func TestClientRefusesNilContext(t *testing.T) {
 	var nilCtx context.Context
 	for _, write := range clientWrites() {
@@ -218,7 +218,7 @@ func TestClientRefusesNilContext(t *testing.T) {
 
 // TestClientRefusesUnencodableAndEntitylessRequests: a request the client cannot send (a nil
 // client, a value encoding/json refuses, a create with no entity) is refused before sending as
-// invalid with code invalid_request, and no request goes out (design D2, #268, #137 item a).
+// invalid with code invalid_request, and no request goes out.
 func TestClientRefusesUnencodableAndEntitylessRequests(t *testing.T) {
 	t.Run("nil client", func(t *testing.T) {
 		var client *Client

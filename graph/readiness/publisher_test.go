@@ -199,7 +199,7 @@ func newTestPublisher(t *testing.T, writer StatusWriter, key string) *Publisher 
 }
 
 // TestPublishRefusesNilContext: a nil context is refused with an error before any write,
-// never a panic in the tick loop (readiness-nil-context D1).
+// never a panic in the tick loop.
 func TestPublishRefusesNilContext(t *testing.T) {
 	var nilCtx context.Context
 	tests := []struct {

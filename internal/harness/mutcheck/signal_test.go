@@ -16,7 +16,7 @@ import (
 // exits, neither the stand-in go nor its helper is running, the exit status is non-zero, no
 // verdict was printed, and the planted module is unchanged. The program is built with the
 // inherited environment, so an outer check's overlay reaches it, and run with -overlay removed
-// from GOFLAGS, so that it does not refuse (design D11, "The self-check").
+// from GOFLAGS, so that it does not refuse.
 func TestSIGTERMStopsEveryProcess(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "mutcheck")
 	build := exec.CommandContext(t.Context(), "go", "build", "-o", bin, ".")

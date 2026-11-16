@@ -11,7 +11,7 @@ import (
 )
 
 // Each number in a decoded core.json.v1 payload is a json.Number holding the literal as written,
-// including literals float64 cannot hold (Codex F41). The expected values are written here by
+// including literals float64 cannot hold. The expected values are written here by
 // hand, not computed by any decoder, so this table is the independent check the fuzz targets'
 // differential oracle is not.
 func TestGenericJSONKeepsNumberLiteral(t *testing.T) {

@@ -4,9 +4,8 @@ This file is a **reference contract**: the requirements for entity identity as S
 unchanged from the SemStreams commit SemEngine is extracted from (`8b99efe9`, called "the pin" below). It is not a
 statement of what SemEngine's code does today. Most requirements describe packages SemEngine has not ported yet.
 When the code a requirement describes is ported, that requirement moves into a capability spec under
-`openspec/specs/`, which holds only requirements checked against the code in this repository (owner ruling on
-[#72](https://github.com/C360Studio/semengine/issues/72), 2026-10-03). Until then, read it as the target the ported
-code must meet.
+`openspec/specs/`, which holds only requirements checked against the code in this repository. Until then, read it
+as the target the ported code must meet.
 
 The requirement headings are kept word for word because tests cite them; some are longer than the heading length the
 repository's lint allows, so this file raises that limit for itself.
@@ -701,7 +700,7 @@ First, form alone confers no isolation: what a party may DO with a token it hold
 admission gate, which checks existence and ownership at every seam that attaches to a loop — and those checks are
 correctness and accident-prevention guards, not authorization, because caller identity on that plane is asserted by
 the caller. A multi-tenant deployment MUST NOT rely on loop tokens, or on that gate, for isolation between mutually
-untrusted parties; authorization is a separate contract (epic #1205). Second, the backstop against adopting a token
+untrusted parties; authorization is a separate contract. Second, the backstop against adopting a token
 this deployment did not mint is `agentrun.Mint`'s origin-entity-ID mismatch refusal, not the form predicate.
 
 Every seam that accepts a supplied loop token enforces the form refusal with a classified invalid error — a

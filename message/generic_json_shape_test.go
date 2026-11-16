@@ -17,10 +17,9 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The owner's ruling on #9 (comment 5972117486, with comment 5972208367 for time.Time):
 // GenericJSONPayload.Data holds JSON-shaped values only: map[string]any, []any, string, a Go
 // number, json.Number, bool and nil. Encoding refuses any other value with an error naming its
-// type and path, and any string or key that is not valid UTF-8 (#9 comment 5970334875).
+// type and path, and any string or key that is not valid UTF-8.
 
 // requireRefused asserts that the payload, alone and in its envelope, is refused with an
 // invalid-data error whose text holds each of want.
@@ -47,8 +46,8 @@ type celsius float64
 
 type fields map[string]any
 
-// Codex's F15 probes (PR #48 comment 5970889953): a named key type with JSON and text methods,
-// a byte-element text method, and a text method whose result changes between calls.
+// Key and text-method cases: a named key type with JSON and text methods, a byte-element text
+// method, and a text method whose result changes between calls.
 type jsonKey string
 
 func (jsonKey) MarshalJSON() ([]byte, error) { return []byte(`"fixed"`), nil }
@@ -71,7 +70,7 @@ func (v *changingText) MarshalText() ([]byte, error) {
 	return []byte{0xff}, nil
 }
 
-// Codex's F16 probes: a shadowed embedded field and ambiguous promoted fields.
+// Embedding cases: a shadowed embedded field and ambiguous promoted fields.
 type inner struct{ Name string }
 type selected struct {
 	inner
@@ -84,7 +83,7 @@ type ambiguous struct {
 	right
 }
 
-// embeddedCycle is Codex's self-embedding probe; refusing it by kind means no walk into it.
+// embeddedCycle embeds itself; refusing it by kind means no walk into it.
 type embeddedCycle struct{ *embeddedCycle }
 
 func TestGenericJSONRefusesValuesThatAreNotJSONShaped(t *testing.T) {
@@ -256,9 +255,9 @@ func TestGenericJSONRefusesInvalidUTF8AtDepth(t *testing.T) {
 }
 
 // Validate refuses, with an invalid-data error naming the same path, what the encoding's shape check
-// refuses (D3; message-codec "Validate runs the shape check"): a value that is not JSON-shaped, a
-// map or list that contains itself, and a string or key that is not valid UTF-8, each at depth. A
-// NaN or an infinity passes Validate and is refused only by encoding (owner question 5).
+// refuses (message-codec "Validate runs the shape check"): a value that is not JSON-shaped, a map
+// or list that contains itself, and a string or key that is not valid UTF-8, each at depth. A NaN
+// or an infinity is a Go number by shape, so it passes Validate and is refused only by encoding.
 func TestGenericJSONValidateRefusesWhatTheShapeCheckRefuses(t *testing.T) {
 	self := map[string]any{"ok": 1}
 	self["self"] = self

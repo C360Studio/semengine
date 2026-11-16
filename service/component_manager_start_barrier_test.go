@@ -14,12 +14,9 @@ import (
 	"github.com/c360studio/semengine/storage"
 )
 
-// The phase tests, from the pin's component_manager_start_barrier_test.go:1-389. The pin built
-// struct-literal managers and marked them initialized by hand; here every manager comes from
-// NewComponentManager (newTestComponentManager), and the tests assert what Start, Stop and
-// GetComponentStatus return and what the components and the store registry saw (design D2, D7).
-// The pin's TestPerformDetailedHealthCheck_ReportsFailedComponent (:390-425) moved to
-// component_manager_state_test.go as TestComponentManagerHealthNamesEveryFailedComponent.
+// The phase tests. Every manager comes from NewComponentManager (newTestComponentManager), and the
+// tests assert what Start, Stop and GetComponentStatus return and what the components and the
+// store registry saw.
 
 // barrierTestComponent is a lifecycle component whose Start the phase tests script: it can fail
 // with a fixed error, or block until the test releases a gate. startReturned is closed as the
@@ -79,7 +76,7 @@ func barrierComposedProvider(p *barrierStoreProvider) testComponent {
 }
 
 // barrierStopOnCleanup stops cm when the test ends, under a fresh bounded context, and expects
-// nil: Stop after a Start whose rollback succeeded, or after none, returns nil (design D2).
+// nil: Stop after a Start whose rollback succeeded, or after none, returns nil.
 func barrierStopOnCleanup(t *testing.T, cm *ComponentManager) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -350,9 +347,9 @@ func (p *stopOrderProvider) ProvidedStores() map[string]storage.StreamableStore 
 }
 
 // TestComponentManagerStopsInReverseStartOrderByPhaseThenName: within a phase the start order is
-// recorded by name (sweep C4), providers before the rest, so Stop visits the consumers by name
+// recorded by name, providers before the rest, so Stop visits the consumers by name
 // descending and then the providers by name descending, whatever order the configuration's map
-// yields (design D2). The provider names sort after the consumer names, so an order by name alone,
+// yields. The provider names sort after the consumer names, so an order by name alone,
 // ignoring the phases, fails too.
 func TestComponentManagerStopsInReverseStartOrderByPhaseThenName(t *testing.T) {
 	log := &stopOrderLog{}

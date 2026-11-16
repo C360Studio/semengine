@@ -12,10 +12,9 @@ import (
 // HierarchyContainerMessageType returns the message.Type graph-ingest stamps on
 // the hierarchy container entities it births — key "graph.hierarchy_container.v1".
 // Registered by RegisterPayloads, which a consumer or test calls on its payload
-// registry, with floor control (ADR-103, O-16 (a)): the framework's own
+// registry, with floor control (SemStreams ADR-103): the framework's own
 // in-process writer passes the same registered-type gate as every other birth.
-// Transitional until gh606 retires containers; the registration retires with
-// them.
+// It is transitional: the registration retires with the hierarchy containers.
 func HierarchyContainerMessageType() message.Type {
 	return message.Type{
 		Domain:   "graph",

@@ -57,10 +57,10 @@ func (c *pausingConn) Close() error {
 	return err
 }
 
-// TestServerRefusesRequestAfterStopReportedCompletion (Codex review of PR #48, comment
-// 5959412053, finding 1): a request whose connection goroutine passed net/http's shutdown check
-// but had not reached the handler when Stop reported completion must never start collection.
-// Stop closes admission; the late request is refused without running the handler.
+// TestServerRefusesRequestAfterStopReportedCompletion: a request whose connection goroutine
+// passed net/http's shutdown check but had not reached the handler when Stop reported completion
+// must never start collection. Stop closes admission; the late request is refused without running
+// the handler.
 func TestServerRefusesRequestAfterStopReportedCompletion(t *testing.T) {
 	registry := NewMetricsRegistry()
 	collector := newExitingCollector()

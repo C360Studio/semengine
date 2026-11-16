@@ -3,7 +3,7 @@ package config
 import "testing"
 
 // TestJetStreamLimitExceeds exercises the gap-detection predicate
-// behind VerifyJetStreamLimits's per-field Warn branch (#101). Pure
+// behind VerifyJetStreamLimits's per-field Warn branch. Pure
 // function over int64 pairs so the full truth table is unit-testable
 // without booting a NATS server.
 func TestJetStreamLimitExceeds(t *testing.T) {

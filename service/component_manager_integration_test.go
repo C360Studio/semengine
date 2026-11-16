@@ -15,19 +15,15 @@ import (
 	"github.com/c360studio/semengine/config"
 )
 
-// The component manager's tests against a live NATS server, from the pin's
-// component_manager_integration_test.go. The pin's package was service_test; these are in package
-// service so they reach the package's shared server through fixtureClient (#195). The pin's
-// Initialize, IsInitialized and IsStarted are gone (design D1): construction builds the
-// composition, and what the tests read is what the constructor, Start and Stop report. The
-// helpers that build a manager over a started config.Manager are the boot findings tests'
+// The component manager's tests against a live NATS server. They are in package service so they
+// reach the package's shared server through fixtureClient. Construction builds the composition, and
+// what the tests read is what the constructor, Start and Stop report. The helpers that build a
+// manager over a started config.Manager are the boot findings tests'
 // (component_manager_boot_findings_integration_test.go).
 
-// TestNewComponentManagerCreatesEnabledComponents replaces the pin's
-// TestComponentManagerInitializeCreatesComponents: NewComponentManager builds every enabled
-// component of the configuration, and only those. The pin composed the real udp and robotics
-// factories from a process-wide registry and accepted whatever it found; here each instance's
-// factory is the test's own and counts its calls.
+// TestNewComponentManagerCreatesEnabledComponents: NewComponentManager builds every enabled
+// component of the configuration, and only those. Each instance's factory is the test's own and
+// counts its calls.
 //
 // spec: service-lifecycle / The component manager composes the boot set once
 func TestNewComponentManagerCreatesEnabledComponents(t *testing.T) {
@@ -111,7 +107,7 @@ func TestServiceManagerMandatoryService(t *testing.T) {
 
 	// createTestServiceManager binds port 0; ConfigureFromServices would default the main
 	// port to 8080, a fixed port. No service is configured, so the registry's metrics
-	// constructor is not called, as the pin's explicit metrics opt-out arranged.
+	// constructor is not called.
 	manager := createTestServiceManager(ManagerConfig{}, deps)
 	require.NoError(t, RegisterAll(manager.registry))
 	startTestManager(t, manager)

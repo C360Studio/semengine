@@ -98,9 +98,9 @@ func TestSubscriptionDrainExternallyUnsubscribedIsSuccessfulAndRepeatable(t *tes
 	require.Equal(t, int32(1), native.drainCalls.Load(), "native Drain on an unsubscribed sub is a nil no-op")
 }
 
-// TestSubscriptionDrainRefusesNilContext is task 4.3 (transport-client, "Nil Drain context"):
+// TestSubscriptionDrainRefusesNilContext proves transport-client's "Nil Drain context":
 // Drain(nil) returns an error naming the nil context and never reaches the native subscription,
-// so no server call is made. The pin refuses a nil context the same way but has no test of it.
+// so no server call is made.
 func TestSubscriptionDrainRefusesNilContext(t *testing.T) {
 	native := newFakeNativeSubscription()
 	sub := newSubscription(native, nil)

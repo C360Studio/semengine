@@ -18,8 +18,8 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// startPrefixTestComponent and seedPrefixEntity, at the pin in this file (:22-68), are in
-// fixture_integration_test.go, where stage 3b moved them with their first readers.
+// startPrefixTestComponent and seedPrefixEntity are in
+// fixture_integration_test.go.
 
 // TestIntegration_PrefixQuery_PaginationCoverage drives the registered
 // graph.ingest.query.prefix handler end-to-end via NATS request/reply and
@@ -122,8 +122,6 @@ func TestIntegration_PrefixQuery_ErrorClassification(t *testing.T) {
 // an in-memory KV seam so it can hold a value larger than the broker carrier;
 // the responder itself uses the real connected NATS MaxPayload observation.
 func TestIntegration_PrefixQuery_IndivisibleEntityTooLarge(t *testing.T) {
-	// The pin ran this test under context.Background(); it runs under the test's
-	// bounded context, as the other tests in this file do.
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
 	client := newFixtureClient(t)
@@ -145,7 +143,7 @@ func TestIntegration_PrefixQuery_IndivisibleEntityTooLarge(t *testing.T) {
 		UpdatedAt: time.Now(),
 	}
 	require.NoError(t, comp.CreateEntity(ctx, entity))
-	// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+	// The test stands in for a Start that completed, so the handlers serve.
 	comp.startCompleted.Store(true)
 	require.NoError(t, comp.setupQueryHandlers(ctx))
 	require.NoError(t, client.GetConnection().Flush())

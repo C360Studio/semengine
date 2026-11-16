@@ -4,7 +4,7 @@ The health report a service gives (`health.Status`), and two functions that buil
 `Aggregate` rolls several reports into one, and `FromComponentHealth` turns a component's own report
 (`component.HealthStatus`) into a `health.Status`.
 
-The package is a port of SemStreams' `health` at the pin `8b99efe9`; `docs/admission-ledger.yaml` (row `health`)
+The package is a port of SemStreams' `health`; `docs/admission-ledger.yaml` (row `health`)
 records what was kept, what was dropped and what changed. It holds no state between calls, runs no goroutine and
 does no I/O.
 
@@ -56,12 +56,11 @@ list gives `healthy`. The result's `SubStatuses` is a copy of the input list.
 `FromComponentHealth(name, ch)`:
 
 - The word comes from `ch.Healthy` alone: `true` gives `healthy`, `false` gives `unhealthy`. The component's own
-  `ch.Status` is not read, so a component that reports itself `degraded` with `Healthy` false becomes `unhealthy`
-  (owner ruling, PR #318 comment 6271450376).
+  `ch.Status` is not read, so a component that reports itself `degraded` with `Healthy` false becomes `unhealthy`.
 - `Healthy` is `ch.Healthy`.
 - `Metrics` carries `ch.Uptime`, `ch.ErrorCount` and `ch.LastCheck` (as `LastActivity`).
 - `Message` is "Component healthy" or "Component unhealthy", following `ch.Healthy`, when `ch.LastError` is empty.
-  SemStreams wrote "Component healthy" in both cases; the owner ruled the fix (PR #318 comment 6271710866).
+  SemStreams wrote "Component healthy" in both cases.
 - Otherwise `Message` is `ch.LastError` with likely secrets replaced.
 
 ### What the error text loses

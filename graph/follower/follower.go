@@ -2,9 +2,9 @@
 // one watch on it, replays the stored entities and then the live writes in delivery order, and
 // keeps the owner's readiness: the watermark of applied revisions, the bootstrap latch, the reset
 // latch, the lost-feed state, and the envelope it publishes to GRAPH_STATUS on every heartbeat
-// (ADR-108 D4). The owner, a plug-in, takes each entry through Config.Deliver and reports each
-// outcome back: Complete when a revision is applied, Config.Failed for its unresolved writes, Reset
-// when its state can no longer be trusted. graph-index is the first owner.
+// (ADR-108 Decision 4). The owner, a plug-in, takes each entry through Config.Deliver and reports
+// each outcome back: Complete when a revision is applied, Config.Failed for its unresolved writes,
+// Reset when its state can no longer be trusted. graph-index is the first owner.
 //
 // Limits, declared rather than promised:
 //
@@ -15,8 +15,8 @@
 //     time with the one Open read; a stream deleted and restored with that creation time inside one
 //     stall of the watch reads as the same stream, and the revisions it skipped are not declared.
 //   - How long a watch stalls after a reconnect, and when a deleted bucket closes it, is nats.go's
-//     timing (about 20 s at nats.go v1.54.0, PR #414 comments 6425769680 and 6426443564), not
-//     promised here.
+//     timing (about 20 s measured at nats.go v1.54.0; TestFollowerDeclaresLostFeed deletes the
+//     bucket), not promised here.
 package follower
 
 import (
@@ -52,8 +52,8 @@ type Entry struct {
 	Bytes    int  // the delivered value's length; 0 for a delete or purge marker
 	// Value is the value the watch delivered for Revision; nil for a delete or purge marker. It is
 	// valid only for the duration of Deliver: a plug-in that keeps it copies it. A plug-in that
-	// re-reads current truth at apply time does not apply Value (ADR-108 D4); one that applies it
-	// ignores a delivery at or below the revision it last applied for the key, since the watch's
+	// re-reads current truth at apply time does not apply Value (ADR-108 Decision 4); one that applies
+	// it ignores a delivery at or below the revision it last applied for the key, since the watch's
 	// order across keys is not promised and the follower only declares a revision out of order.
 	Value []byte
 }
@@ -88,13 +88,13 @@ type Config struct {
 }
 
 // degradedStuckAfter is how long the follower may go without a Complete call while behind before
-// the envelope reads degraded (ADR-066 §3 and §4, at 30 s for every plug-in by owner ruling (a1),
-// PR #550 comment 6721867279). Any completion counts, so one revision held while later ones finish
-// reads not ready but not degraded. It is a property of the envelope, not a Stuck state: a slow
-// replay is catch-up (ADR-109 D4).
+// the envelope reads degraded (ADR-066 §3 and §4, at 30 s for every plug-in by owner ruling). Any
+// completion counts, so one revision held while later ones finish reads not ready but not degraded.
+// It is a property of the envelope, not a Stuck state: a slow replay is catch-up (ADR-109 Decision
+// 4).
 const degradedStuckAfter = 30 * time.Second
 
-// resetRemedy is what an operator does about a latched reset, as graph-index said at the pin.
+// resetRemedy is what an operator does about a latched reset.
 const resetRemedy = "export if needed, clear the graph and index buckets, and reingest canonical sources"
 
 // Follower follows ENTITY_STATES for one plug-in. Build it with Open and run it with Run.
@@ -109,7 +109,7 @@ type Follower struct {
 	publisher *readiness.Publisher
 	gauges    *readiness.Gauges
 	watermark *revlag.Watermark
-	created   time.Time // the backing stream's creation time when Open bound it: its generation (#15)
+	created   time.Time // the backing stream's creation time when Open bound it: its generation
 
 	feedLost        atomic.Bool
 	reset           atomic.Pointer[graph.StateResetReason]
@@ -119,7 +119,7 @@ type Follower struct {
 
 	// statusMu serialises reads through status: up to nats.go v1.54.0, KV Status wrote the handle's
 	// stream-info cache unsynchronised, and QueryReady callers and the heartbeat share the handle
-	// (#417, TestFollowerConcurrentQueryReady). v1.55.0 stores that cache in an atomic.Pointer
+	// (TestFollowerConcurrentQueryReady). v1.55.0 stores that cache in an atomic.Pointer
 	// (jetstream/stream.go:499, read, not tested); the lock stays, since how nats.go guards it is
 	// not promised.
 	statusMu sync.Mutex
@@ -252,7 +252,7 @@ func (f *Follower) follow(ctx context.Context) error {
 				if validating {
 					validating = false
 					// Every stored entity has been delivered, so the highest revision observed
-					// bounds them: it is the revision the initial build must reach (ADR-084 D2).
+					// bounds them: it is the revision the initial build must reach (ADR-084 decision 2).
 					f.bootstrapTarget.Store(f.watermark.Observed())
 					f.snapshotDone.Store(true)
 				}
@@ -271,7 +271,7 @@ var errWatchDeliveryOpen = kvwatch.ErrDeliveryOpen
 
 // stopWatch stops the ENTITY_STATES watch and drains its delivery until it closes, for at most
 // watchDrainBudget after the watcher's own Stop returns (kvwatch.Stop, which says why the drain and the
-// bound are needed, #418 and #454).
+// bound are needed).
 func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 	if err := kvwatch.Stop(ctx, watcher); err != nil {
 		return fmt.Errorf("follower: stop the ENTITY_STATES watch: %w", err)
@@ -285,7 +285,7 @@ func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, validating bool) {
 	// entry.Created() is the KV commit time. staleness_ms is now minus the commit time of the oldest
 	// delivered write not yet applied, or of the newest delivered one when none is in flight (ADR-083
-	// D3, amended by #408).
+	// decision 3, as amended).
 	if err := f.watermark.Observe(entry.Revision(), entry.Key(), entry.Created()); err != nil {
 		// The watch broke the ascending order the floor rests on, so the floor can no longer be
 		// trusted. Delivering the entry anyway keeps the plug-in's view of the write; the lost feed
@@ -313,8 +313,7 @@ func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, v
 	f.deliver(ctx, e)
 }
 
-// loseFeed declares the feed lost, once; it holds until the process restarts (PR #414 comment
-// 6426254115, item 2).
+// loseFeed declares the feed lost, once; it holds until the process restarts.
 func (f *Follower) loseFeed(cause string) {
 	if f.feedLost.CompareAndSwap(false, true) {
 		f.logger.Error("ENTITY_STATES feed lost; queries are refused until the process restarts",
@@ -360,7 +359,7 @@ func (f *Follower) Complete(key string, revision uint64) {
 }
 
 // Reset latches reason for the life of the process. The first reason holds; later calls change
-// nothing (ADR-074, ADR-084 D4).
+// nothing (ADR-074, ADR-084 decision 4).
 func (f *Follower) Reset(reason graph.StateResetReason) {
 	f.reset.CompareAndSwap(nil, &reason)
 }
@@ -402,11 +401,11 @@ func unresolved(n int64, reasons map[string]uint64) string {
 	return sentence + ": " + strings.Join(named, ", ")
 }
 
-// QueryReady says whether a query may be answered now (ADR-109 D1): nil, or a classified refusal.
-// A latched reset is fatal graph_state_reset_required; a lost feed, unresolved writes that withhold
-// queries (Config.Withhold) and an incomplete initial build are transient index_not_ready. Before
-// the initial build is complete the gate reads the envelope, which counts every unresolved write
-// (Config.Failed); once it is complete it answers nil at once.
+// QueryReady says whether a query may be answered now (ADR-109 Decision 1): nil, or a classified
+// refusal. A latched reset is fatal graph_state_reset_required; a lost feed, unresolved writes that
+// withhold queries (Config.Withhold) and an incomplete initial build are transient index_not_ready.
+// Before the initial build is complete the gate reads the envelope, which counts every unresolved
+// write (Config.Failed); once it is complete it answers nil at once.
 func (f *Follower) QueryReady(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errors.New("nil context"), "follower", "QueryReady", "check the context")
@@ -469,8 +468,9 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 	target, created, err := readStream(ctx, f.status)
 	f.statusMu.Unlock()
 	if err == nil && !created.Equal(f.created) {
-		// The bucket was deleted and created again: the watch, still open, reads nothing more
-		// (PR #414 comment 6426443564).
+		// The bucket was deleted and created again: the watch, still open, reads nothing more (seen at
+		// nats.go v1.54.0, not promised; the created check declares the loss either way).
+		// TestFollowerDeclaresLostFeed proves the declaration.
 		f.loseFeed("ENTITY_STATES was created again after the follower bound it")
 	}
 	if err != nil {
@@ -488,7 +488,7 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 // envelope is compute's projection once the target is read: ComputeIndexStatus over the floor
 // and the target, then the overrides only this producer can see, then the bootstrap latch.
 func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) graph.IndexStatusResponse {
-	// One Failed call, so the count and its reasons are from one moment (design D3).
+	// One Failed call, so the count and its reasons are from one moment.
 	failed, reasons := f.failed()
 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
 		Indexed:           indexed,
@@ -500,13 +500,13 @@ func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) 
 	if failed > 0 {
 		status.FailedReasons = reasons
 	}
-	// An authoritatively empty graph is ready once the snapshot is delivered, though ready needs a
-	// target above zero (pin gh#474).
+	// An authoritatively empty graph is ready once the snapshot is delivered, though
+	// ComputeIndexStatus's ready needs a target above zero.
 	if !status.Ready && target == 0 && f.snapshotDone.Load() {
 		status.Ready, status.State = true, graph.IndexStateReady
 	}
 	// Unresolved writes, or a feed that no longer delivers, make the index known-incomplete at any
-	// lag (ADR-082).
+	// lag (SemStreams ADR-082).
 	if failed > 0 || f.feedLost.Load() {
 		status.Ready, status.State = false, graph.IndexStateDegraded
 	}
@@ -519,7 +519,7 @@ func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) 
 }
 
 // readStream reads the backing stream once: its last sequence, the target, and its creation time,
-// the stream's generation (#15).
+// the stream's generation.
 func readStream(ctx context.Context, reader kvcatalog.CatalogReader) (lastSeq uint64, created time.Time, err error) {
 	s, err := reader.Status(ctx)
 	if err != nil {
@@ -534,10 +534,10 @@ func readStream(ctx context.Context, reader kvcatalog.CatalogReader) (lastSeq ui
 }
 
 // stalled is the stuck detector: the follower has been behind the target for degradedStuckAfter
-// with no Complete call (pin processor/graph-embedding/readiness.go:192-212). A caught-up reading
-// counts as progress too, so the 30 s start when the follower falls behind, not at the last
-// completion before it: the heartbeat reads at least every readiness.DefaultHeartbeat. An empty
-// graph is caught up only once the snapshot is delivered; before it, target 0 says nothing.
+// with no Complete call. A caught-up reading counts as progress too, so the 30 s start when the
+// follower falls behind, not at the last completion before it: the heartbeat reads at least every
+// readiness.DefaultHeartbeat. An empty graph is caught up only once the snapshot is delivered;
+// before it, target 0 says nothing.
 func (f *Follower) stalled(indexed, target uint64) bool {
 	now := time.Now()
 	completions := f.completions.Load()

@@ -22,9 +22,10 @@ and no miss. Any other error from `Resolve` or `Entities` SHALL be returned as t
 ### Requirement: A fatal seed read fails the call
 
 When `Resolve` or `Entities` returns an error `errs.IsFatal` reports, such as `graph_state_reset_required` from a
-prefix resolve, `Fuse` SHALL return that error and no response. `Fuse` SHALL refuse a nil context. A poisoned seed
-does not reach `Fuse` as an error from `fusionnats`, which lists it as unhydrated (requirement "A poisoned seed is
-unhydrated, not a failed read").
+reset, `Fuse` SHALL return that error and no response. `Fuse` SHALL refuse a nil context. A poisoned seed does not
+reach `Fuse` as an error from `fusionnats`, which lists it as unhydrated (requirement "A poisoned seed is
+unhydrated, not a failed read"). Nor does a damaged entity under a resolved prefix (requirement "A prefix resolve
+lists IDs, then reads them").
 
 #### Scenario: A reset while hydrating seeds
 
@@ -63,26 +64,6 @@ Every response SHALL carry `contract_version` `"2"` and no `index` key, and `def
 
 - **WHEN** a response is marshalled to JSON
 - **THEN** `contract_version` is `"2"` and the object has no `index` key (`TestContractVersionIsTwo`)
-
-### Requirement: A word-search answer reports what it could not read
-
-Every response built after a natural-language `Resolve` answered SHALL carry that reply's `unreadable_records` and
-`failed_records`, each omitted when 0. Responses after a symbol or prefix resolve SHALL omit both.
-
-#### Scenario: A failed embedding beside the nodes
-
-- **WHEN** an NL resolve returns seeds with `failed_records` 1
-- **THEN** the response carries `failed_records` 1 beside its nodes (`TestNLAnswerCarriesSearchCounts`)
-
-#### Scenario: A miss while records were unreadable
-
-- **WHEN** an NL resolve returns no seeds with `unreadable_records` 3
-- **THEN** the miss response carries `unreadable_records` 3 (`TestNLMissCarriesSearchCounts`)
-
-#### Scenario: A symbol resolve
-
-- **WHEN** the lens picks symbol mode
-- **THEN** the response has neither key (`TestSymbolAnswerOmitsCounts`)
 
 ### Requirement: Edges are ordered before any cap
 
@@ -261,18 +242,19 @@ engine only as a reply's `index_not_ready`.
 
 ### Requirement: Subjects come from the verb table
 
-Each request SHALL go to the subject of its graph-query row in `graph.QueryVerbs()`. When the table lacks a row the
-client uses, construction SHALL be refused with an error naming the verb.
+Each request SHALL go to the subject of its row in `graph.QueryVerbs()`: graph-lexical's `search` row for an NL
+resolve and graph-query's rows for every other call. When the table lacks a row the client uses, construction SHALL
+be refused with an error naming the verb.
 
 #### Scenario: Subjects from the table
 
 - **WHEN** each `RetrievalClient` method is called on a recording requester
-- **THEN** each request's subject is its graph-query row's subject (`TestSubjectsComeFromVerbTable`)
+- **THEN** each request's subject is its row's subject (`TestSubjectsComeFromVerbTable`)
 
 #### Scenario: A missing row
 
-- **WHEN** the verb lookup is given a table without the `batch` row
-- **THEN** it refuses, naming `batch` (`TestVerbLookupNamesMissingRow`)
+- **WHEN** the verb lookup is given a table without the `batch` row, or without graph-lexical's `search` row
+- **THEN** it refuses, naming the missing verb (`TestVerbLookupNamesMissingRow`)
 
 ### Requirement: Replies are decoded as their row declares
 
@@ -303,14 +285,14 @@ with a reason, and SHALL send no request for zero IDs.
 
 ### Requirement: A word search passes on what it could not read
 
-An NL `Resolve` SHALL copy the search reply's `unreadable_records` and `failed_records` into the `Resolution`; a
-symbol or prefix `Resolve` SHALL leave both 0.
+An NL `Resolve` SHALL copy the word index reply's `bodies_not_indexed` and `excluded` into the `Resolution`; a symbol
+or prefix `Resolve` SHALL leave both empty.
 
 #### Scenario: Word-search counts
 
-- **WHEN** the semantic reply reports 2 unreadable and 1 failed record
-- **THEN** the `Resolution` carries 2 and 1, and a symbol or prefix resolve carries 0 and 0
-  (`TestSemanticCountsReachResolution`)
+- **WHEN** the word index reply reports 2 bodies not indexed and the excluded word `race`
+- **THEN** the `Resolution` carries 2 and `["race"]`, and a symbol or prefix resolve carries 0 and none
+  (`TestWordIndexCountsReachResolution`)
 
 ### Requirement: A poisoned seed is unhydrated, not a failed read
 
@@ -355,3 +337,84 @@ start no `entity` request.
 - **WHEN** the batch reply, or a per-ID reply, fails the client's own stored-value check
 - **THEN** `Entities` returns that refusal, and after a refused batch reply sends no `entity` request
   (`TestOwnValidationNotRetried`)
+
+### Requirement: A prefix resolve lists IDs, then reads them
+
+`fusionnats`' prefix `Resolve` SHALL send the query as `prefix`, with the resolve limit, to graph-query's
+`prefixIDs` row. It SHALL refuse the resolve when `graph.ValidateDecodedEntityIDs` refuses a listed ID, and SHALL
+return one seed per listed ID, in listed order, with no score. A damaged entity under the prefix therefore reaches
+hydration as a seed.
+
+#### Scenario: A damaged entity under the prefix
+
+- **WHEN** a real graph-ingest holds two entities and one damaged value under a prefix, and `Fuse` runs a prefix lens
+  over it
+- **THEN** the response holds the two entities and lists the damaged one in `unhydrated` with reason `error`
+  (`TestDamagedEntityUnderPrefixOverRealResponders`)
+
+#### Scenario: The listing's subject
+
+- **WHEN** `Resolve` runs in prefix mode on a recording requester
+- **THEN** it sends one request, to the subject of graph-query's `prefixIDs` row, and returns the listed IDs as seeds
+  in order
+
+### Requirement: An NL answer reports what the word index left out
+
+Every response built after a natural-language `Resolve` answered SHALL carry that reply's `bodies_not_indexed` and
+`excluded`, each omitted when 0 or empty. Responses after a symbol or prefix resolve SHALL omit both.
+
+#### Scenario: Entities found by their inline text only
+
+- **WHEN** an NL resolve returns seeds with `bodies_not_indexed` 2 and `excluded` `["race"]`
+- **THEN** the response carries both beside its nodes (`TestNLAnswerCarriesWordIndexCounts`)
+
+#### Scenario: A miss with excluded words
+
+- **WHEN** an NL resolve returns no seeds with `excluded` `["race"]`
+- **THEN** the miss response carries `excluded` `["race"]` (`TestNLAnswerCarriesWordIndexCounts`)
+
+#### Scenario: A symbol resolve
+
+- **WHEN** the lens picks symbol mode
+- **THEN** the response has neither key (`TestSymbolAnswerOmitsCounts`)
+
+### Requirement: An NL answer says the word index found its seeds
+
+`ProvenanceForMode` SHALL map `nl` to `lexical`, `symbol` and `prefix` to `deterministic`, and any other mode to
+`embedding`, and every response SHALL carry the provenance of its lens's mode.
+
+#### Scenario: Each mode's provenance
+
+- **WHEN** `ProvenanceForMode` is called with `nl`, `symbol`, `prefix` and an unknown mode
+- **THEN** it returns `lexical`, `deterministic`, `deterministic` and `embedding` (`TestProvenanceForMode`)
+
+### Requirement: An NL resolve asks the word index
+
+An NL `Resolve` SHALL send one `graph.LexicalSearchRequest` holding the query, the limit and the scope (left out when
+empty) to graph-lexical's `search` row of `graph.QueryVerbs()`, and SHALL return the hits as seeds in the reply's
+order, each with its score as the mode's own score.
+
+The question SHALL pass unchanged, so the word index's query rules apply, and its refusals SHALL reach the caller
+with their class, code and detail.
+
+#### Scenario: Seeds from the word index
+
+- **WHEN** an NL resolve is answered with three hits
+- **THEN** the one request went to `graph.lexical.query.search` with the query, limit and scope, and the seeds are
+  the three hits in order with their scores (`TestNLResolveAsksTheWordIndex`)
+
+#### Scenario: A question the word index refuses
+
+- **WHEN** an NL question holds a syntax the word index refuses, such as `name:retry`
+- **THEN** `Fuse` returns the word index's refusal, class invalid, code `invalid_request`
+  (`TestNLWordIndexRefusalReturned`)
+
+#### Scenario: The word index is not ready
+
+- **WHEN** the word index refuses an NL resolve transient `index_not_ready`
+- **THEN** `Fuse` answers `deferred` with `defer_reason` `index_not_ready` (`TestNLIndexNotReadyDefers`)
+
+#### Scenario: No word index composed
+
+- **WHEN** nothing serves `graph.lexical.query.search`
+- **THEN** an NL `Fuse` returns a transient `internal` error naming that subject (`TestNLResolveWithoutWordIndex`)

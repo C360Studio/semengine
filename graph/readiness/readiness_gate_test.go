@@ -7,9 +7,9 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// The gate is the single home for readiness semantics (ADR-084 D1), so these tests pin
-// the properties every adopter depends on. ADR-084 collapsed four consumer MODES into
-// two orthogonal questions; this change deleted the second one, leaving exactly one:
+// The gate is the single home for readiness semantics (ADR-084 decision 1), so these
+// tests pin the properties every adopter depends on. The gate asks exactly one question
+// (ADR-085 decision 1):
 //
 //   - HEALTH — fresh status ∧ interpretable state ∧ no hard stop ∧ bootstrapped.
 //
@@ -17,9 +17,8 @@ import (
 // to influence it:
 //
 //   - each of the four defer reasons fires on its own condition, and only on it;
-//   - an unbootstrapped producer defers even when it looks merely "behind" (the
-//     SemStreams gh#474 cutover window, which is the reason the bit is on the wire at
-//     all);
+//   - an unbootstrapped producer defers even when it looks merely "behind" (a format
+//     cutover window, which is the reason the bit is on the wire at all);
 //   - view age never gates anything, at any magnitude, in either encoding;
 //   - coverage (Ready) neither licenses nor withholds — it is absent from the gate.
 
@@ -47,33 +46,31 @@ func TestEvaluateReadinessGate(t *testing.T) {
 			reading: Reading{Status: healthy(true, 0), Fresh: true},
 		},
 		{
-			// The inverse of the retired "lag defers under exact" row. Lag on a healthy,
-			// bootstrapped index is a property of the ANSWER, not a fault: only "still
-			// building" and "broken" justify withholding. Community detection — the last
-			// consumer that ever declared a view-age tolerance — is the safest possible
-			// reader of a stale view (periodic, idempotent, overwritten next cycle).
+			// Lag on a healthy, bootstrapped index is a property of the ANSWER, not a
+			// fault: only "still building" and "broken" justify withholding. Community
+			// detection is the safest possible reader of a stale view (periodic,
+			// idempotent, overwritten next cycle).
 			name:    "lag proceeds",
 			reading: Reading{Status: healthy(false, 200), Fresh: true},
 		},
 		{
-			// The inverse of the retired "over the bound defers" row: there is no bound.
+			// There is no view-age bound.
 			name:    "a minute-old view proceeds",
 			reading: Reading{Status: healthy(false, 60_000), Fresh: true},
 		},
 		{
-			// The inverse of the retired "absent staleness never satisfies a bound" row.
-			// StalenessMs == 0 on a not-ready envelope is still the PRESENCE encoding —
-			// the producer could not compute an age — but an uncomputable age no longer
-			// blocks anything, because nothing consults the age. It is reported, and a
-			// consumer that surfaces it carries the encoding with it.
+			// StalenessMs == 0 on a not-ready envelope is the PRESENCE encoding — the
+			// producer could not compute an age — but an uncomputable age blocks nothing,
+			// because nothing consults the age. It is reported, and a consumer that
+			// surfaces it carries the encoding with it.
 			name:    "an uncomputable view age proceeds",
 			reading: Reading{Status: healthy(false, 0), Fresh: true},
 		},
 		{
 			name: "an unbootstrapped index defers",
-			// The SemStreams gh#474 cutover: State=building with a plausible lag, but the keyset
-			// is half-materialised. This is the one "not yet" the gate still enforces,
-			// and the reason the bit had to reach the wire.
+			// A format cutover: State=building with a plausible lag, but the keyset is
+			// half-materialised. This is the one "not yet" the gate enforces, and the
+			// reason the bit is on the wire.
 			reading: Reading{
 				Status: graph.IndexStatusResponse{State: graph.IndexStateBuilding, TargetRevision: 500, StalenessMs: 10},
 				Fresh:  true,
@@ -82,10 +79,9 @@ func TestEvaluateReadinessGate(t *testing.T) {
 		},
 		{
 			name: "an authoritatively empty graph proceeds",
-			// 0/0 after enumeration is a COMPLETED build (SemStreams gh#474 Codex #5). The
-			// producer encodes it as Ready at TargetRevision 0; a gate that deferred
-			// on target==0 would reject every query against a fresh empty deployment
-			// forever.
+			// 0/0 after enumeration is a COMPLETED build. The producer encodes it as
+			// Ready at TargetRevision 0; a gate that deferred on target==0 would reject
+			// every query against a fresh empty deployment forever.
 			reading: Reading{
 				Status: graph.IndexStatusResponse{Ready: true, State: graph.IndexStateReady, BootstrapComplete: true},
 				Fresh:  true,
@@ -130,12 +126,10 @@ func TestEvaluateReadinessGate(t *testing.T) {
 	}
 }
 
-// TestEvaluateReadinessGate_ViewAgeNeverGates is the load-bearing pin of this change,
-// and it is the inverse of every row the freshness table used to hold. No StalenessMs —
-// zero, one, absurd, or the uint64 ceiling that used to wrap NEGATIVE through
-// time.Duration and needed an overflow guard — can change a health verdict, in either
-// direction. The arithmetic that guard protected is gone because the comparison is
-// gone: there is nothing left to fail open.
+// TestEvaluateReadinessGate_ViewAgeNeverGates is the load-bearing pin of the health-only
+// gate. No StalenessMs — zero, one, absurd, or the uint64 ceiling, which would wrap
+// NEGATIVE through time.Duration — can change a health verdict, in either direction.
+// The gate never compares a view age, so there is no arithmetic to fail open.
 //
 // This is what "gate on health; REPORT freshness" means mechanically. A stale view
 // yields a stale ANSWER carrying its own age (graph.IndexStatusResponse.StalenessMs, stamped
@@ -174,8 +168,8 @@ func TestEvaluateReadinessGate_ViewAgeNeverGates(t *testing.T) {
 // TestEvaluateReadinessGate_UnknownStatusNeverProceeds proves the fail-closed
 // transport rule survives the collapse: a status the consumer cannot vouch for is a
 // TRANSPORT fact, evaluated before any index state, so no envelope contents however
-// healthy-looking license proceeding on it (SemStreams gh#590: a status RTT timing out
-// behind the firehose logged identically to a genuine not-ready).
+// healthy-looking license proceeding on it (a status round trip timing out behind the
+// firehose must not log identically to a genuine not-ready).
 func TestEvaluateReadinessGate_UnknownStatusNeverProceeds(t *testing.T) {
 	for _, s := range []graph.IndexStatusResponse{
 		{Ready: true, State: graph.IndexStateReady, BootstrapComplete: true},
@@ -190,10 +184,9 @@ func TestEvaluateReadinessGate_UnknownStatusNeverProceeds(t *testing.T) {
 }
 
 // TestEvaluateReadinessGate_CoverageNeitherLicensesNorWithholds pins Ready's total
-// absence from the gate. Before ADR-084 the two directions were fused into one Ready
-// bool, and that is what made ordinary lag look like a correctness problem; the
-// freshness parameter then kept half of it alive as an opt-in. Now the bit is inert
-// here: flipping it changes NO verdict, healthy or not. A caller that genuinely needs
+// absence from the gate. Fusing both directions into one Ready bool makes ordinary lag
+// look like a correctness problem (ADR-084), so the bit is inert here: flipping it
+// changes NO verdict, healthy or not. A caller that genuinely needs
 // read-your-writes compares its own revision against IndexedRevision itself.
 func TestEvaluateReadinessGate_CoverageNeitherLicensesNorWithholds(t *testing.T) {
 	states := []struct {
@@ -223,11 +216,11 @@ func TestEvaluateReadinessGate_CoverageNeitherLicensesNorWithholds(t *testing.T)
 	}
 }
 
-// TestEvaluateReadinessGate_UnrecognizedStateFailsClosed pins the allow-list. The gate
-// used to check only for degraded/reset_required, so a blank or future State read as
-// "not a hard stop, therefore healthy" and proceeded — a fail-OPEN on exactly the field
-// ADR-084 made load-bearing when health replaced coverage, and now the ONLY thing
-// standing between a garbled envelope and a served answer.
+// TestEvaluateReadinessGate_UnrecognizedStateFailsClosed pins the allow-list. A gate
+// that checked only for degraded/reset_required would read a blank or future State as
+// "not a hard stop, therefore healthy" and proceed — a fail-OPEN on exactly the field
+// ADR-084 made load-bearing when health replaced coverage, and the ONLY thing standing
+// between a garbled envelope and a served answer.
 //
 // A blank State is reachable without any malice: an empty envelope, a partially written
 // key, or a consumer built against a newer producer that added a state.
@@ -309,8 +302,7 @@ func TestEvaluateReadinessGate_HealthOrderIsAttributable(t *testing.T) {
 // gate can emit must be one of the four declared constants: the graph-clustering
 // defer_total{reason} label set is enumerated from them, and countDefer silently DROPS
 // an unrecognized value rather than leak cardinality — so a fifth reason introduced
-// without updating that list would go uncounted, which is precisely the invisible-defer
-// shape SemStreams gh#590 cost three cycles on.
+// without updating that list would go uncounted: an invisible defer.
 func TestDeferReasons_AreTheClosedSet(t *testing.T) {
 	// Sourced from DeferReasons(), NOT a literal — this is the test that proves the
 	// canonical list and the gate agree, so hand-copying the names here would let both

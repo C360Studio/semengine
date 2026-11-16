@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -20,12 +21,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The component manager's Start and Stop, from the pin's lifecycle_context_contract_test.go:177-532
-// and the tests of ADR-113's option A (design D2, "The component's own Start context"). The pin's
-// tests built struct-literal managers and read their lifecycle fields; these build every manager
-// through NewComponentManager and assert what Start and Stop return, what GetComponentStatus reports
-// and what each component recorded (design D7). The pin's newControlledGenerationComponent,
-// newStartedSupervisorManager and rollbackStoreComponent had no caller and are not carried.
+// The component manager's Start and Stop under ADR-113: a component's Start gets the manager's
+// Start context. These tests build every manager through NewComponentManager and assert what Start
+// and Stop return, what GetComponentStatus reports and what each component recorded.
 
 // lifecycleCallLog records the name of each component whose Stop is called, in call order, across
 // the components of one test.
@@ -194,8 +192,7 @@ func requireComponentStates(t *testing.T, cm *ComponentManager, want component.S
 }
 
 // TestComponentStartContextIsTheManagersStartContext: a component's Start gets the context the
-// manager's Start got, which the manager never ends (design D2, Q-A option A; ADR-113). It replaces
-// the pin's per-component child context, which the manager cancelled in Stop.
+// manager's Start got, which the manager never ends (ADR-113).
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestComponentStartContextIsTheManagersStartContext(t *testing.T) {
@@ -241,10 +238,8 @@ func TestComponentStartContextIsTheManagersStartContext(t *testing.T) {
 
 // TestStopDuringStartWaitsForComponentStarts: a Stop that arrives while a component's Start is in
 // flight waits for every Start to return, ends no Start context, and then stops each component once
-// in reverse start order (design D2, Q-A option A). It replaces the pin's
-// TestComponentManagerStopDuringStartCancelsAndPreventsLateStoreCommit, whose Stop cancelled the
-// Starts in flight. The synctest bubble makes "Stop has not returned" exact: synctest.Wait returns
-// only once the Stop goroutine is blocked.
+// in reverse start order. The synctest bubble makes "Stop has not returned" exact: synctest.Wait
+// returns only once the Stop goroutine is blocked.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestStopDuringStartWaitsForComponentStarts(t *testing.T) {
@@ -289,8 +284,7 @@ func TestStopDuringStartWaitsForComponentStarts(t *testing.T) {
 
 // TestStopDuringAFailingStartStopsWhatTheRollbackLeft: a Stop waits for a held Start that then
 // fails; the failed Start rolls back first, inside Start, with one component's rollback Stop armed
-// to fail once, and the waiting Stop then stops only what the rollback left (design D2, Q-A option
-// A).
+// to fail once, and the waiting Stop then stops only what the rollback left.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestStopDuringAFailingStartStopsWhatTheRollbackLeft(t *testing.T) {
@@ -343,7 +337,7 @@ func TestStopDuringAFailingStartStopsWhatTheRollbackLeft(t *testing.T) {
 
 // TestStopRetriesOnlyComponentsThatDidNotStop: a Stop that fails leaves for the next Stop every
 // component whose Stop failed or was not reached because the Stop context ended, and never calls
-// again a component whose Stop returned nil (design D2; sweep C6). Start order is by name, so the
+// again a component whose Stop returned nil. Start order is by name, so the
 // Stop order is retry-c, retry-b, retry-a; retry-b's first Stop ends the Stop context and fails.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
@@ -396,10 +390,9 @@ func TestStopRetriesOnlyComponentsThatDidNotStop(t *testing.T) {
 		"a Stop after one that returned nil called a component")
 }
 
-// TestComponentManagerCallsComponentStopBeforeRuntimeCancellation, flipped by Q-A option A (design
-// D7): the component's Stop runs while its Start context is live, as at the pin, and the manager's
-// Stop no longer ends that context afterwards. A repeated Stop calls nothing, and a Start after Stop
-// is refused.
+// TestComponentManagerCallsComponentStopBeforeRuntimeCancellation: the component's Stop runs while
+// its Start context is live, and the manager's Stop does not end that context afterwards. A
+// repeated Stop calls nothing, and a Start after Stop is refused.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestComponentManagerCallsComponentStopBeforeRuntimeCancellation(t *testing.T) {
@@ -418,10 +411,9 @@ func TestComponentManagerCallsComponentStopBeforeRuntimeCancellation(t *testing.
 	require.Equal(t, int64(1), c.starts.Load(), "a refused Start started the component")
 }
 
-// TestComponentManagerFailedStartRollsBackSynchronouslyAndDoesNotReplay, flipped by Q-A option A
-// (design D7): the failed Start's rollback has stopped the component by the time Start returns, its
-// Stop sees the Start context still live (the pin's saw it cancelled), and a later Stop does not run
-// the rollback again.
+// TestComponentManagerFailedStartRollsBackSynchronouslyAndDoesNotReplay: the failed Start's
+// rollback has stopped the component by the time Start returns, its Stop sees the Start context
+// still live, and a later Stop does not run the rollback again.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestComponentManagerFailedStartRollsBackSynchronouslyAndDoesNotReplay(t *testing.T) {
@@ -440,8 +432,8 @@ func TestComponentManagerFailedStartRollsBackSynchronouslyAndDoesNotReplay(t *te
 
 // TestComponentManagerFailedStartCleanupFailureRetainsAuthorityForLaterStop: a failed Start whose
 // rollback Stop fails returns both errors and leaves that component for the next Stop, which stops
-// it and returns nil; a Start in between is refused (design D2; lifecycle-suite, "Failed start whose
-// own cleanup fails"). The pin read cleanupPending and lifecycleTerminal; this reads outcomes.
+// it and returns nil; a Start in between is refused (lifecycle-suite, "Failed start whose own
+// cleanup fails").
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestComponentManagerFailedStartCleanupFailureRetainsAuthorityForLaterStop(t *testing.T) {
@@ -474,7 +466,7 @@ func TestComponentManagerFailedStartCleanupFailureRetainsAuthorityForLaterStop(t
 
 // TestComponentManagerRunningStopDeregistersStoreBeforeLiveChildStop: a running provider's stores
 // leave the store registry before its Stop is called, and its Start context is still live then
-// (design D2-D3; Q-A option A: the pin cancelled it after the Stop).
+// (ADR-113).
 //
 // spec: service-lifecycle / Providers start before consumers and own their stores
 func TestComponentManagerRunningStopDeregistersStoreBeforeLiveChildStop(t *testing.T) {
@@ -500,4 +492,168 @@ func TestComponentManagerRunningStopDeregistersStoreBeforeLiveChildStop(t *testi
 
 	require.NoError(t, cm.Stop(stopContext(t)))
 	require.Equal(t, int64(1), provider.stops.Load(), "a Stop after one that returned nil called the provider")
+}
+
+// shellLifecycleComponent is a LifecycleComponent built around component.Lifecycle for testing
+// ComponentManager's interaction with real Guard/Lifecycle owners when Stop's deadline expires.
+type shellLifecycleComponent struct {
+	baseDiscoverable
+	name                 string
+	lifecycle            component.Lifecycle
+	holdCleanup          bool
+	releaseCleanupCancel context.CancelFunc
+	releaseWorker        chan struct{}
+	workerDone           chan struct{}
+	storeRegistry        *storeregistry.Registry
+	provideStore         bool
+
+	cleanups           atomic.Int64
+	storeGoneAtCleanup atomic.Bool
+}
+
+func newShellLifecycleComponent(name string, holdCleanup, provideStore bool) *shellLifecycleComponent {
+	return &shellLifecycleComponent{
+		name:          name,
+		holdCleanup:   holdCleanup,
+		provideStore:  provideStore,
+		releaseWorker: make(chan struct{}),
+		workerDone:    make(chan struct{}),
+	}
+}
+
+func (c *shellLifecycleComponent) Initialize() error { return c.lifecycle.Initialize() }
+
+func (c *shellLifecycleComponent) Start(ctx context.Context) error {
+	return c.lifecycle.Start(ctx, func(ctx context.Context) error {
+		runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		c.releaseCleanupCancel = cancel
+		if !c.holdCleanup {
+			close(c.workerDone)
+			return nil
+		}
+		go func() {
+			defer close(c.workerDone)
+			<-runCtx.Done()
+			<-c.releaseWorker
+		}()
+		return nil
+	}, func(ctx context.Context) error {
+		c.cleanups.Add(1)
+		if c.provideStore && c.storeRegistry != nil {
+			_, registered := c.storeRegistry.Streamable(c.name)
+			c.storeGoneAtCleanup.Store(!registered)
+		}
+		if c.releaseCleanupCancel != nil {
+			c.releaseCleanupCancel()
+		}
+		if !c.holdCleanup {
+			return nil
+		}
+		select {
+		case <-c.workerDone:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+}
+
+func (c *shellLifecycleComponent) Stop(ctx context.Context) error  { return c.lifecycle.Stop(ctx) }
+func (c *shellLifecycleComponent) Health() component.HealthStatus  { return c.lifecycle.Health() }
+func (c *shellLifecycleComponent) DataFlow() component.FlowMetrics { return c.lifecycle.DataFlow() }
+
+func (c *shellLifecycleComponent) ProvidedStores() map[string]storage.StreamableStore {
+	if !c.provideStore {
+		return nil
+	}
+	return map[string]storage.StreamableStore{c.name: lifecycleTestStore{}}
+}
+
+// TestComponentManagerStopTimeoutStillStopsRemainingComponents: when one component exhausts Stop's
+// deadline, ComponentManager still deregisters provided stores and calls Stop(ctx) on every
+// remaining started component in reverse start order, and a live retry finishes unjoined work
+// without re-running cleanups that already completed.
+//
+// spec: service-lifecycle / The component manager's Stop is the only stop and waits for a Start in progress
+func TestComponentManagerStopTimeoutStillStopsRemainingComponents(t *testing.T) {
+	providerA := newShellLifecycleComponent("timeout-a", false, true)
+	consumerB := newShellLifecycleComponent("timeout-b", true, false)
+	consumerC := newShellLifecycleComponent("timeout-c", true, false)
+	releaseWorkers := func() {
+		select {
+		case <-consumerB.releaseWorker:
+		default:
+			close(consumerB.releaseWorker)
+		}
+		select {
+		case <-consumerC.releaseWorker:
+		default:
+			close(consumerC.releaseWorker)
+		}
+	}
+
+	registry := component.NewRegistry()
+	for _, item := range []*shellLifecycleComponent{providerA, consumerB, consumerC} {
+		comp := item
+		require.NoError(t, registry.Register(component.Registration{
+			Name: comp.name, Type: types.ComponentTypeProcessor,
+			Factory: func(_ json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
+				comp.storeRegistry = deps.StoreRegistry
+				if !comp.provideStore {
+					return struct {
+						component.LifecycleComponent
+					}{comp}, nil
+				}
+				return comp, nil
+			},
+			Ports: func(json.RawMessage, string) (component.PortConfig, error) {
+				return component.PortConfigFrom(nil, nil), nil
+			},
+		}))
+	}
+	built, err := NewComponentManager(nil,
+		testComponentDependencies(t, registry, providerA.name, consumerB.name, consumerC.name))
+	require.NoError(t, err)
+	cm := built.(*ComponentManager)
+	require.NoError(t, cm.Start(t.Context()))
+	t.Cleanup(func() {
+		releaseWorkers()
+		_ = cm.Stop(stopContext(t))
+	})
+
+	_, registered := providerA.storeRegistry.Streamable(providerA.name)
+	require.True(t, registered, "provider store must be registered after Start")
+
+	shortCtx, cancelShort := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancelShort()
+	err = cm.Stop(shortCtx)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	// Consumer C exhausted shortCtx; consumer B and provider A must STILL have had Stop initiated!
+	require.Equal(t, int64(1), consumerC.cleanups.Load(), "consumer C cleanup must run once")
+	require.Equal(t, int64(1), consumerB.cleanups.Load(), "consumer B cleanup must initiate despite expired ctx")
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "provider A cleanup must initiate despite expired ctx")
+	require.Equal(t, "stopped", consumerB.Health().Status, "consumer B shell must clear running status")
+	require.Equal(t, "stopped", providerA.Health().Status, "provider A shell must clear running status")
+	require.True(t, providerA.storeGoneAtCleanup.Load(), "provider store must be deregistered before provider cleanup")
+	_, registered = providerA.storeRegistry.Streamable(providerA.name)
+	require.False(t, registered, "provider store must no longer be registered after timed-out Stop")
+
+	// Release held consumers and retry Stop; providerA's cleanup returned nil on the first pass
+	// (becoming terminal while returning expired ctx's error), so retry must not re-run providerA's cleanup.
+	close(consumerB.releaseWorker)
+	close(consumerC.releaseWorker)
+
+	require.NoError(t, cm.Stop(stopContext(t)))
+	require.Equal(t, int64(2), consumerC.cleanups.Load(), "consumer C retry must finish join")
+	require.Equal(t, int64(2), consumerB.cleanups.Load(), "consumer B retry must finish join")
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "provider A finished cleanup must not re-run on retry")
+
+	require.NoError(t, cm.Stop(stopContext(t)))
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "terminal Stop must not re-run provider A cleanup")
+	statuses := cm.GetComponentStatus()
+	for _, name := range []string{providerA.name, consumerB.name, consumerC.name} {
+		require.Equal(t, component.StateStopped, statuses[name].State, "component %q", name)
+		require.NoError(t, statuses[name].LastError, "component %q", name)
+	}
 }

@@ -37,8 +37,8 @@ type Component struct {
 	// for graph-query. Start records them and cleanup clears them once it has drained them all.
 	subscriptions []*natsclient.Subscription
 
-	// labelPredicates is the label set, most salient first, from which the text search labels its
-	// matches (design D4). start sets it, before any handler is subscribed; handlers only read it.
+	// labelPredicates is the label set, most salient first, from which the searches label their
+	// matches. start sets it, before any handler is subscribed; handlers only read it.
 	labelPredicates []string
 
 	// communities is the view of COMMUNITY_INDEX localSearch and the text search read, nil while there is none. Only the
@@ -69,8 +69,8 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, error) 
 	var config Config
 	if len(rawConfig) > 0 {
 		// Strict decoding: a key Config does not define is refused, naming the key, where
-		// encoding/json would drop it, as the pin's did (design D7). A port definition decodes
-		// through its own UnmarshalJSON, which is strict too.
+		// encoding/json would drop it. A port definition decodes through its own UnmarshalJSON,
+		// which is strict too.
 		decoder := json.NewDecoder(bytes.NewReader(rawConfig))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&config); err != nil {
@@ -143,7 +143,7 @@ func (c *Component) OutputPorts() []component.Port {
 }
 
 // Health reports the shell's verdict (component.Lifecycle.Health). A missing or lost community view
-// is not in it: localSearch and the text search refuse per request instead (design D3).
+// is not in it: local and global search answer without records instead.
 func (c *Component) Health() component.HealthStatus {
 	return c.lifecycle.Health()
 }
@@ -165,9 +165,9 @@ func (c *Component) Initialize() error {
 // errors and a later Stop tries again. A component with no NATS client is refused first.
 //
 // Start neither waits for nor fails on a missing COMMUNITY_INDEX: until a view of it has caught up,
-// localSearch and the text search refuse index_not_ready and the other verbs answer (design D3). ctx bounds the
-// subscribing only and is not kept; the supervisor runs under the one run context, which Stop ends
-// (ADR-113).
+// local and global search answer with record_state not_ready, and the other verbs answer. ctx
+// bounds the subscribing only and is not kept; the supervisor runs under the one run context, which
+// Stop ends (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, "Component", "Start", "NATS client is required")
@@ -193,27 +193,22 @@ func (c *Component) start(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does nothing,
-// and a Stop whose context ends first returns that context's error and keeps what is left for the
-// next Stop.
+// and any non-nil Stop on a started component initiates every teardown step, bounds drain/join
+// waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *Component) Stop(ctx context.Context) error {
 	return c.lifecycle.Stop(ctx)
 }
 
-// cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a partial
-// start. It drains every subscription first: Drain returns once every running handler of that
-// subscription has returned. One handler that outlasts ctx does not keep the other verbs serving:
-// each drain is begun whatever the one before returned. Then it ends the run context and waits for
-// the supervisor, which returns after the view's Run has. A ctx that ends first returns its error
-// with the handles kept; the handles are cleared only once all of them are released, and a repeated
-// Drain rejoins the first. A supervisor whose view could not stop its watch is reported once, by the
-// Stop that joined it (#527).
+// cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
+// partial start. It initiates every subscription drain and ends the run context without returning
+// early on an earlier ctx error, then waits up to ctx for the community view supervisor. A ctx
+// that ends before all joins complete returns its error with the handles kept, and a repeated
+// Drain rejoins the first. A supervisor whose view could not stop its watch is reported once, by
+// the Stop that joined all handles.
 func (c *Component) cleanup(ctx context.Context) error {
-	var failures []error
+	var cleanupErr error
 	for _, sub := range c.subscriptions {
-		failures = append(failures, sub.Drain(ctx))
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
+		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
 	}
 	if c.runCancel != nil {
 		c.runCancel()
@@ -222,13 +217,15 @@ func (c *Component) cleanup(ctx context.Context) error {
 		select {
 		case <-c.supervised:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
+	}
+	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {
+		return err
 	}
 	// Read after supervised closed. A view that could not stop its watch is reported by this Stop
 	// only: the supervisor has returned and there is nothing to retry, so the handles are cleared
-	// and the next Stop returns nil (owner ruling Q4, #9 comment 6278986482: returning it again
-	// would fail every later Stop).
+	// and the next Stop returns nil: returning it again would fail every later Stop.
 	err := c.supervisorErr
 	c.subscriptions, c.runCancel, c.supervised, c.supervisorErr = nil, nil, nil, nil
 	if err != nil {

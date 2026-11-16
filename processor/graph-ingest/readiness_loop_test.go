@@ -33,8 +33,8 @@ func (w *recordingStatusWriter) times() []time.Time {
 	return append([]time.Time(nil), w.puts...)
 }
 
-// TestStatusMetricsLoopPublishesOnTheHeartbeat is the status loop's cadence (design D5),
-// proved without NATS in a synctest bubble: one publish when the loop starts, one per
+// TestStatusMetricsLoopPublishesOnTheHeartbeat is the status loop's cadence, proved
+// without NATS in a synctest bubble: one publish when the loop starts, one per
 // readiness.DefaultHeartbeat after it, and none once its context ends. The component is
 // built by the factory and binds no consumer, so a tick reads no backlog; its publisher
 // writes to a recording fake.

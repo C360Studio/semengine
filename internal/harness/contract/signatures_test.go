@@ -13,15 +13,12 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// The public-signature rule (harness-boundaries › "Public signatures name no internal type"; owner
-// rulings #9 comments 5953295358 and 5953477174): no exported identifier of a public package names
-// a type declared in an internal package of this module, directly or through anything a caller
-// outside the module reaches from it.
+// The public-signature rule (harness-boundaries › "Public signatures name no internal type"): no
+// exported identifier of a public package names a type declared in an internal package of this
+// module, directly or through anything a caller outside the module reaches from it.
 func TestPublicSignatures(t *testing.T) {
 	root := repoRoot(t)
 	violations, public := publicSignatureViolations(t, root)
-	// Until the floor's packages are ported the module has no public package, so this run checks
-	// nothing; section 3's ports are what it then holds to the rule.
 	t.Logf("public packages checked: %d", public)
 	requireNoViolations(t, "public signature", violations)
 }
@@ -399,12 +396,12 @@ func (w *signatureWalker) walk(typ types.Type, trail string) {
 	}
 }
 
-// The deployment-authority rule (#72 ruling A, comment 5969505488; check C1 of that ruling, placed
-// here as the failing-first proof for PR #48's surface audit): a deployment's org and platform
-// become an identity's first two positions only through the entity-ID family, so no production
-// package exports a second spelling of that authority. FederationMeta and its family, GlobalID and
-// vocabulary.EntityIRI were such spellings at the pin; an exported name containing one of these
-// words, in any non-test package of the module, internal and main packages included, fails.
+// The deployment-authority rule (harness-boundaries › "No exported name carries Federation,
+// GlobalID or EntityIRI"): a deployment's org and platform become an identity's first two positions
+// only through the entity-ID family, so no production package exports a second spelling of that
+// authority. FederationMeta and its family, GlobalID and vocabulary.EntityIRI are such spellings;
+// an exported name containing one of these words, in any non-test package of the module, internal
+// and main packages included, fails.
 var authorityNames = regexp.MustCompile(`Federation|GlobalID|EntityIRI`)
 
 func TestNoDeploymentAuthorityNames(t *testing.T) {
@@ -417,9 +414,8 @@ func TestNoDeploymentAuthorityNames(t *testing.T) {
 // in a public, an internal and a main package, and the same words where the rule does not apply.
 var authorityFixture = map[string]string{
 	"go.mod": "module example.com/fixture\n\ngo 1.26\n\nrequire example.com/dep v0.0.0\n\nreplace example.com/dep => ./dep\n",
-	// Aliases (Codex F11, PR #48 comment 5970321028): an alias's own name, and the members of the
-	// type it stands for, are checked; members of a type this module declares are reported once, at
-	// that declaration.
+	// Aliases: an alias's own name, and the members of the type it stands for, are checked; members
+	// of a type this module declares are reported once, at that declaration.
 	"pub/alias.go": `package pub
 
 import "example.com/dep"
@@ -499,7 +495,7 @@ func (Federated) entityIRI() string { return "" }
 func FederationTestHelper() {}
 `,
 	// The match is by declared name and case-sensitive: an exported name with the word in lower
-	// case only, a comment and a string literal are not reported (PR #73, task 3.1).
+	// case only, a comment and a string literal are not reported.
 	"pub/words.go": `package pub
 
 // BuildGlobalID, FederationMeta and EntityIRI in a comment are not names.
@@ -507,7 +503,7 @@ const Label = "BuildGlobalID FederationMeta EntityIRI"
 
 func Confederation() string { return Label }
 `,
-	// Members gained by embedding a struct (PR #73): promoted from outside the module, reported at
+	// Members gained by embedding a struct: promoted from outside the module, reported at
 	// the embedder, a pointer-receiver method included; declared by the module, once, where declared.
 	"pub/embed.go": `package pub
 
@@ -545,10 +541,10 @@ type Shadow struct {
 	"cross/b/b.go":            "package b\n\ntype Base struct{}\n\nfunc (Base) GlobalID() string { return \"\" }\n",
 	"internal/inner/inner.go": "package inner\n\nfunc NewFederationMeta() {}\n",
 	"cmd/tool/main.go":        "package main\n\nfunc EntityIRI() {}\n\nfunc main() {}\n",
-	// Members promoted from an instantiated generic type (Codex F5, PR #73 comment 6019262509; issue
-	// #87). An instantiation has its own copy of every method and interface method, and of each field
-	// whose type uses the type parameter: one the module declares is reported once, at the generic
-	// declaration; one declared outside the module, at each type that embeds an instance.
+	// Members promoted from an instantiated generic type. An instantiation has its own copy of every
+	// method and interface method, and of each field whose type uses the type parameter: one the
+	// module declares is reported once, at the generic declaration; one declared outside the module,
+	// at each type that embeds an instance.
 	"pub/generic.go": `package pub
 
 import "example.com/dep"
@@ -629,8 +625,8 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 		// dep.Record's members are declared outside the module, so the alias's line is reported.
 		at("pub/alias.go:20", "pub.Record.FederationOrigin"),
 		at("pub/alias.go:20", "pub.Record.GlobalID"),
-		// Inherited interface methods (Codex F3, PR #73 comment 6018394100): one declared outside the
-		// module is reported at the embedder; one the module declares, once, at its declaration.
+		// Inherited interface methods: one declared outside the module is reported at the embedder;
+		// one the module declares, once, at its declaration.
 		at("pub/alias.go:26", "pub.Exposed.GlobalID"),
 		at("pub/alias.go:29", "pub.Inner.GlobalID"),
 		at("pub/alias.go:35", "pub.Wraps.GlobalID"),
@@ -644,7 +640,7 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 		at("pub/embed.go:26", "pub.Shadow.FederationOrigin"),
 		at("pub/embed.go:27", "pub.Shadow.GlobalID"),
 		at("cross/b/b.go:5", "cross/b.Base.GlobalID"),
-		// Generic instantiations (issue #87): Derived, Boxed and IntGetter add nothing; dep.G's
+		// Generic instantiations: Derived, Boxed and IntGetter add nothing; dep.G's
 		// method is reported at each embedder.
 		at("pub/generic.go:7", "pub.Base.GlobalID"),
 		at("pub/generic.go:11", "pub.Box.GlobalID"),

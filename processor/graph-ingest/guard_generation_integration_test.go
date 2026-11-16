@@ -63,11 +63,11 @@ func waitSettled(ctx context.Context, t *testing.T, f *natsfixture.Fixture, seq 
 	}, 20*time.Second, 20*time.Millisecond, "graph-ingest did not acknowledge the inputs up to sequence %d", seq)
 }
 
-// TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences holds graph-ingest-recovery,
-// "Stream recreated with lower sequences" (design D8 row #15, task 4.3), the shape SemSource SETUP 03A
-// reproduced: a memory input stream, the applied-sequence bucket retained across a broker restart,
-// and the current source re-ingested into the recreated stream at sequences lower than the recorded
-// ones. The re-ingested relationships and content are applied, and an entity query returns them.
+// TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences holds graph-ingest-recovery, "Stream
+// recreated with lower sequences", the shape semsource reproduced: a memory input stream, the
+// applied-sequence bucket retained across a broker restart, and the current source re-ingested into
+// the recreated stream at sequences lower than the recorded ones. The re-ingested relationships and
+// content are applied, and an entity query returns them.
 func TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancelOperation()

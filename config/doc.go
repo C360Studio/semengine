@@ -22,10 +22,10 @@
 // key it leaves out keeps the default; objects merge key by key.
 //
 // Write every key exactly as the README shows it. A key that differs from a
-// declared key only in letter case fails the load, naming the right spelling
-// (#325). Names a deployment chooses (component, service, stream,
-// archival and model registry names) are not checked, and a component's or
-// service's config payload belongs to its owner, which decodes it.
+// declared key only in letter case fails the load, naming the right spelling.
+// Names a deployment chooses (component, service, stream, archival and model
+// registry names) are not checked, and a component's or service's config
+// payload belongs to its owner, which decodes it.
 //
 // Loading fails, returning no Config, when the document:
 //   - is not exactly one JSON object (null is refused too), is larger than
@@ -39,7 +39,7 @@
 //     nats.reconnect_wait, nats.jetstream.domain,
 //     nats.jetstream.retention_policy or nats.jetstream.replication_factor.
 //     These are refused when present, whatever their value and in any letter
-//     case, so a setting an operator wrote is never silently ignored (#74);
+//     case, so a setting an operator wrote is never silently ignored;
 //   - has a key that differs from a declared key only in letter case, such as
 //     "NATS" or nats "URLs": the error names the key as written and as
 //     declared, for example "config key nats.URLs must be written nats.urls".
@@ -89,10 +89,11 @@
 // nothing (ADR-113): the watches run until Stop.
 //
 // Stop(ctx) closes every channel the Manager handed out, stops every watch and
-// waits for the Manager's goroutines. It returns nil only once all of that is
-// done. If ctx ends first it returns ctx's error, and a later Stop tries again.
-// A ctx that has already ended stops nothing, so a caller on its shutdown path
-// passes a fresh bounded context, not its ended signal context:
+// waits for the Manager's goroutines. It refuses a nil ctx; any non-nil ctx
+// (live or already ended) initiates teardown at once and bounds only the join
+// wait, returning nil once all goroutines exit or ctx's error if ctx ended
+// first so a later Stop tries again. Pass a fresh bounded context on shutdown
+// so watches have a graceful drain budget:
 //
 //	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 //	defer cancel()

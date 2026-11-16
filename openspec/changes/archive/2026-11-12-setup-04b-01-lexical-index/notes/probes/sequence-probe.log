@@ -1,0 +1,11 @@
+go build -o lexmem2 . && ./lexmem2 <entities> <tokens per entity> <nopos|seq>
+  (sequence-probe.go.txt as main.go in a module outside the tree: memory-probe.go.txt with one more layout, "seq",
+  where each entity keeps its full word sequence as term numbers, repeats included, and postings hold no positions;
+  go1.26.4 darwin/arm64, Apple M3 Pro, 12 cores, 36 GB; 2026-11-12)
+
+n=1000000 tokens=20 layout=nopos terms=468765 postings=18460172 heap=471.1MB per-entity=471B build=3.649s (3.6us/entity)
+n=1000000 tokens=20 layout=seq terms=468765 postings=18460172 heap=472.3MB per-entity=472B build=3.86s (3.9us/entity)
+n=1000000 tokens=120 layout=seq terms=499998 postings=92745066 heap=1590.7MB per-entity=1590B build=19.46s (19.5us/entity)
+
+Compare memory-probe.log: 1000000 x 120 nopos 1495B per entity; with positions in postings 1186B (20 tokens) and
+5239-5473B (120 tokens, measured at 100000 and 300000).

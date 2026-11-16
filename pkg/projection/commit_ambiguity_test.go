@@ -16,12 +16,12 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-// These tests are the typed client's half of projection-mutation's "Commit ambiguity is preserved"
-// (task 4.1, #20; task 4.16). graph-ingest refuses an invalid request, a revision conflict, an
-// entity not found or present, and a stored value it cannot read before it writes, each with its
-// own code; any other classified reply, an invalid one included, can follow a write whose outcome
-// the bucket did not confirm. The wire is a double, so each reply is the one the test names;
-// processor/graph-ingest's TestIntegration_TypedClientPreservesCommitAmbiguity and
+// These tests are the typed client's half of projection-mutation's "Commit ambiguity is preserved".
+// graph-ingest refuses an invalid request, a revision conflict, an entity not found or present, and
+// a stored value it cannot read before it writes, each with its own code; any other classified
+// reply, an invalid one included, can follow a write whose outcome the bucket did not confirm. The
+// wire is a double, so each reply is the one the test names; processor/graph-ingest's
+// TestIntegration_TypedClientPreservesCommitAmbiguity and
 // TestIntegration_OversizedResponseAfterCommitIsCommitUnknown drive the same path over a broker.
 
 // responseTooLarge is the code of natsclient's reply in place of a success response larger than
@@ -113,7 +113,7 @@ func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
 				// A reply's detail travels with its code (errs.Classified inherits both or neither).
 				reply.Detail = map[string]any{"entity_id": projectionTestEntity}
 			}
-			// A commit-unknown error is fatal whatever the reply's class (design D2); a refusal
+			// A commit-unknown error is fatal whatever the reply's class; a refusal
 			// before the write keeps the reply's class.
 			wantClass := test.class
 			if test.want == CommitUnknown {
@@ -150,8 +150,7 @@ func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
 	}
 }
 
-// assertCommitUnknownIsFatal checks how errs reads a commit-unknown error: never retryable
-// (design D2).
+// assertCommitUnknownIsFatal checks how errs reads a commit-unknown error: never retryable.
 func assertCommitUnknownIsFatal(t *testing.T, operation MutationOperation, err error) {
 	t.Helper()
 	if errs.IsTransient(err) || !errs.IsFatal(err) || errs.Classify(err) != errs.ErrorFatal {
@@ -174,10 +173,10 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 		kind MutationErrorKind
 	}{
 		{"no responders", nil, nats.ErrNoResponders, nats.ErrNoResponders, CommitNotCommitted, MutationUnavailable},
-		// Design D1 (#268): natsclient returns this only before its one send, so nothing was written.
+		// natsclient returns this only before its one send, so nothing was written.
 		{"not connected", nil, natsclient.ErrNotConnected, natsclient.ErrNotConnected, CommitNotCommitted, MutationUnavailable},
 		{"timeout after possible delivery", nil, nats.ErrTimeout, nats.ErrTimeout, CommitUnknown, MutationCommitUnknown},
-		// Design D1: nothing was sent, so nothing was written and a retry is safe; errors.Is still
+		// Nothing was sent, so nothing was written and a retry is safe; errors.Is still
 		// tells it apart from a missing responder. The wire's error must never be reached.
 		{"context ended before send", ended, errors.New("the wire must not be reached"), context.Canceled,
 			CommitNotCommitted, MutationUnavailable},
@@ -191,7 +190,7 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 			outcomes, requester := eachWriteWithContext(ctx, t, test.fail)
 			for operation, outcome := range outcomes {
 				if test.ctx != nil && operation == MutationOperationReconcile {
-					// Reconcile reads before it writes; its read is the other test's (inventory § 7, D-1).
+					// Reconcile reads before it writes; its read is TestReconcileReadFailureIsNotCommitted's.
 					continue
 				}
 				var mutationErr *MutationError
@@ -205,7 +204,7 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 					t.Errorf("%s: errors.Is does not reach %v: %v", operation, test.is, outcome.err)
 				}
 				if test.want != CommitUnknown {
-					// Design D3: no responder took the request, or it was never sent, so nothing was
+					// No responder took the request, or it was never sent, so nothing was
 					// written and a retry is safe. Only the Class field is promised; the raw
 					// nats.ErrNoResponders underneath stays unclassified.
 					if mutationErr.Class != errs.ErrorTransient {
@@ -271,7 +270,7 @@ func TestAppendSubjectFailureAfterPossibleWriteIsCommitUnknown(t *testing.T) {
 }
 
 // A create reply that names another entity proves nothing about the request's entity, which may
-// have been written: commit-unknown and fatal (design D4; the wire client refuses the reply).
+// have been written: commit-unknown and fatal (the wire client refuses the reply).
 func TestCreateReplyNamingAnotherEntityIsCommitUnknown(t *testing.T) {
 	contract := projectionTestContract(t)
 	other := projectionTestState()
@@ -299,7 +298,7 @@ func TestCreateReplyNamingAnotherEntityIsCommitUnknown(t *testing.T) {
 
 // A read writes nothing, so every failure of Reconcile's exact read is not committed: a
 // classified reply, and an unclassified error such as a timeout or a client that is not
-// connected (#267, design D1).
+// connected.
 func TestReconcileReadFailureIsNotCommitted(t *testing.T) {
 	tests := []struct {
 		name string

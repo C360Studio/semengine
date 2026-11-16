@@ -1,17 +1,14 @@
 //go:build integration
 
-// SemStreams gh#713 regression: a graph-ingest restart against an existing graph must not
-// append already-present triples or advance entity revisions when nothing in
-// the world changed.
+// A graph-ingest restart against an existing graph must not append
+// already-present triples or advance entity revisions when nothing in the world
+// changed.
 //
-// createEntity calls AddToContainers UNCONDITIONALLY (ingest.go, before the
-// KV write), so a re-registration of an already-present ID runs the inference
-// again before the atomic Create returns natsclient.ErrKVKeyExists.
-// mergeEntityOnLane (the pin's MergeEntity, design D6), by contrast, gates
-// hierarchy behind an absence probe. At the pin that inference committed
-// container-inverse edges as side effects, which is what re-fired on the request
-// lane; since ruling M (#91 comment 6080973822) it writes nothing to a container
-// that exists, so the replay must move nothing at all.
+// createEntity calls AddToContainers UNCONDITIONALLY (ingest.go, before the KV
+// write), so a re-registration of an already-present ID runs the inference again
+// before the atomic Create returns natsclient.ErrKVKeyExists. mergeEntityOnLane,
+// by contrast, gates hierarchy behind an absence probe. The inference writes
+// nothing to a container that exists, so the replay must move nothing at all.
 //
 // A test that only re-submits triples through add_batch never reaches that
 // path, so this test replays through CreateEntity — the same conflict path a
@@ -35,8 +32,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// replayEntityIDs are three entities of one type, the shape SemStreams gh#713 measured on
-// the model registry (containers 6->9, endpoints 4->6 / 3->5 / 2->4).
+// replayEntityIDs are three entities of one type.
 var replayEntityIDs = []string{
 	"c360.platform.robotics.mav1.drone.replay001",
 	"c360.platform.robotics.mav1.drone.replay002",
@@ -70,9 +66,7 @@ func replayEntity(id string) *graph.EntityState {
 }
 
 // entitySnapshot is everything a replay must leave untouched: the KV revision
-// and the exact multiset of stored triple identities. The pin also compared
-// EntityState.Version; design D15 removes it, and the exact KV revision
-// compared below is the fence it stood beside.
+// and the exact multiset of stored triple identities.
 type entitySnapshot struct {
 	revision uint64
 	triples  []string
@@ -148,11 +142,9 @@ func TestComponent_HierarchyReplay_UnchangedEntitiesAdvanceNoRevision(t *testing
 	// component has not been asked to do anything), so this is a quiescent read.
 	before := snapshotStore(t, ctx, replay)
 
-	// Seed sanity — WITHOUT these the comparison below could pass vacuously on
-	// an empty or degenerate store. These are the counts SemStreams gh#713's arithmetic
-	// depends on: 3 entities + 3 containers. No container holds a `contains`
-	// edge (ruling M, #91 comment 6080973822) and no entity a sibling edge
-	// (ruling G, #91 comment 6062681355).
+	// Seed sanity — WITHOUT these the comparison below could pass vacuously on an empty
+	// or degenerate store. These are the counts the replay depends on: 3 entities + 3
+	// containers. No container holds a `contains` edge and no entity a sibling edge.
 	require.Len(t, before, len(replayEntityIDs)+len(replayContainerIDs),
 		"seed must have produced 3 entities and 3 containers")
 	contains := []string{vocabulary.HierarchyTypeContains, vocabulary.HierarchySystemContains, vocabulary.HierarchyDomainContains}
@@ -189,9 +181,9 @@ func TestComponent_HierarchyReplay_UnchangedEntitiesAdvanceNoRevision(t *testing
 	require.Equal(t, len(replayEntityIDs)+len(replayContainerIDs), compared,
 		"every seeded key must have been compared — a skipped comparison proves nothing")
 
-	// Task 6.3: a re-registration re-derives no container edge, so the replay
-	// suppresses nothing; the suppressed-duplicates counter, whose one lane is
-	// append, holds no series.
+	// A re-registration re-derives no container edge, so the replay suppresses
+	// nothing; the suppressed-duplicates counter, whose one lane is append,
+	// holds no series.
 	assert.Zero(t, testutil.CollectAndCount(replay.duplicateTriplesSuppressed),
 		"the replay must suppress nothing on any lane: it re-derives no container edge")
 }

@@ -236,10 +236,10 @@ func TestMarshalFittingPrefixPageRejectsFirstIndivisibleEntity(t *testing.T) {
 	assert.Equal(t, maxPayload, classified.Detail["max_payload"])
 }
 
-// TestMarshalFittingPrefixPageMeasuresAnEmptyPageAsSent: an empty page is fitted at the
-// bytes the reply carries. A group with no keys sends "entities":null, a page whose keys were
-// all deleted mid-read sends "entities":[]; one byte under either reply is refused as
-// response_too_large naming those bytes, never the fatal fitting invariant (#521).
+// TestMarshalFittingPrefixPageMeasuresAnEmptyPageAsSent: an empty page is fitted at the bytes
+// the reply carries. A group with no keys sends "entities":null, a page whose keys were all
+// deleted mid-read sends "entities":[]; one byte under either reply is refused as
+// response_too_large naming those bytes, never the fatal fitting invariant.
 func TestMarshalFittingPrefixPageMeasuresAnEmptyPageAsSent(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
@@ -574,9 +574,9 @@ func TestDecodeCursorInvalid(t *testing.T) {
 
 // spec: graph-transport-boundary / A prefix page names its total
 //
-// nats.go key listings can repeat a key under concurrent overwrites (#512). The listing here names
-// the middle entity twice; the page serves it once and total counts it once. The oracle is the set
-// of IDs the test stored.
+// nats.go does not promise a key listing names each key once under concurrent overwrites. The
+// listing here names the middle entity twice; the page serves it once and total counts it once.
+// The oracle is the set of IDs the test stored.
 func TestHandleQueryPrefix_RepeatedListedKeyServedOnce(t *testing.T) {
 	comp, bucket := createTestComponentWithMockKVBucket(t, withAuthority("org", "ops"))
 

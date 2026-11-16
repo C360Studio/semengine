@@ -1,0 +1,95 @@
+# scale-probe, run 2026-11-13, go1.26.11 darwin/arm64, Apple M3 Pro, 12 cores, 36 GB
+# harness: scale-probe.go.txt copied to graph/lexical/scale_test.go
+# before: graph/lexical/index.go at f8bdf8b71e03ce2481fa1a3eae1b9c3d4c257f62 (tree at 70fe3bfef458a2564d1d01e2787d3caf268dc4bc)
+# after: the word-number layout, the commit carrying this file
+# commands:
+#   SCALE_COPIES=25 go test -run '^TestScale$' -count=1 -v ./graph/lexical/
+#   SCALE_COPIES=16 SCALE_BODY_BYTES=800 go test -run '^TestScale$' -count=1 -v ./graph/lexical/
+
+## before
+# run 1: SCALE_COPIES=25
+    scale_test.go:90: go=go1.26.11 entities=50000 name B/entity=34 body B/entity=1162 held words/entity=157 distinct words=8335
+    scale_test.go:92: heap=474.5 MB index B/entity=9489 B/held word=60.2 build=2.443s (20464 entities/s)
+    scale_test.go:109: "retry" matched=2475 630µs/query
+    scale_test.go:109: "graph query status" matched=25525 7.9ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=36725 11.96ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=40100 14.03ms/query
+# run 2: SCALE_COPIES=25
+    scale_test.go:90: go=go1.26.11 entities=50000 name B/entity=34 body B/entity=1162 held words/entity=157 distinct words=8335
+    scale_test.go:92: heap=474.4 MB index B/entity=9487 B/held word=60.2 build=2.388s (20934 entities/s)
+    scale_test.go:109: "retry" matched=2475 650µs/query
+    scale_test.go:109: "graph query status" matched=25525 7.88ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=36725 11.82ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=40100 13.86ms/query
+# run 3: SCALE_COPIES=25
+    scale_test.go:90: go=go1.26.11 entities=50000 name B/entity=34 body B/entity=1162 held words/entity=157 distinct words=8335
+    scale_test.go:92: heap=474.4 MB index B/entity=9488 B/held word=60.2 build=2.41s (20744 entities/s)
+    scale_test.go:109: "retry" matched=2475 660µs/query
+    scale_test.go:109: "graph query status" matched=25525 7.87ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=36725 11.79ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=40100 14.16ms/query
+# run 1: SCALE_COPIES=16 SCALE_BODY_BYTES=800
+    scale_test.go:90: go=go1.26.11 entities=32000 name B/entity=34 body B/entity=606 held words/entity=84 distinct words=6394
+    scale_test.go:92: heap=178.3 MB index B/entity=5571 B/held word=66.1 build=875ms (36587 entities/s)
+    scale_test.go:109: "retry" matched=1088 270µs/query
+    scale_test.go:109: "graph query status" matched=14416 4.33ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=21072 6.56ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=24368 7.49ms/query
+# run 2: SCALE_COPIES=16 SCALE_BODY_BYTES=800
+    scale_test.go:90: go=go1.26.11 entities=32000 name B/entity=34 body B/entity=606 held words/entity=84 distinct words=6394
+    scale_test.go:92: heap=178.2 MB index B/entity=5569 B/held word=66.0 build=944ms (33902 entities/s)
+    scale_test.go:109: "retry" matched=1088 290µs/query
+    scale_test.go:109: "graph query status" matched=14416 4.98ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=21072 7.67ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=24368 8.83ms/query
+# run 3: SCALE_COPIES=16 SCALE_BODY_BYTES=800
+    scale_test.go:90: go=go1.26.11 entities=32000 name B/entity=34 body B/entity=606 held words/entity=84 distinct words=6394
+    scale_test.go:92: heap=178.3 MB index B/entity=5573 B/held word=66.1 build=879ms (36411 entities/s)
+    scale_test.go:109: "retry" matched=1088 290µs/query
+    scale_test.go:109: "graph query status" matched=14416 4.67ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=21072 6.72ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=24368 7.66ms/query
+
+## after
+# run 1: SCALE_COPIES=25
+    scale_test.go:90: go=go1.26.11 entities=50000 name B/entity=34 body B/entity=1162 held words/entity=157 distinct words=8335
+    scale_test.go:92: heap=109.8 MB index B/entity=2195 B/held word=13.9 build=2.185s (22880 entities/s)
+    scale_test.go:109: "retry" matched=2475 590µs/query
+    scale_test.go:109: "graph query status" matched=25525 7.35ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=36725 11.66ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=40100 12.94ms/query
+# run 2: SCALE_COPIES=25
+    scale_test.go:90: go=go1.26.11 entities=50000 name B/entity=34 body B/entity=1162 held words/entity=157 distinct words=8335
+    scale_test.go:92: heap=109.7 MB index B/entity=2194 B/held word=13.9 build=2.3s (21735 entities/s)
+    scale_test.go:109: "retry" matched=2475 610µs/query
+    scale_test.go:109: "graph query status" matched=25525 7.22ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=36725 11.61ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=40100 11.89ms/query
+# run 3: SCALE_COPIES=25
+    scale_test.go:90: go=go1.26.11 entities=50000 name B/entity=34 body B/entity=1162 held words/entity=157 distinct words=8335
+    scale_test.go:92: heap=109.9 MB index B/entity=2197 B/held word=13.9 build=2.227s (22451 entities/s)
+    scale_test.go:109: "retry" matched=2475 610µs/query
+    scale_test.go:109: "graph query status" matched=25525 7.16ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=36725 10.67ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=40100 12.73ms/query
+# run 1: SCALE_COPIES=16 SCALE_BODY_BYTES=800
+    scale_test.go:90: go=go1.26.11 entities=32000 name B/entity=34 body B/entity=606 held words/entity=84 distinct words=6394
+    scale_test.go:92: heap=43.8 MB index B/entity=1369 B/held word=16.2 build=757ms (42256 entities/s)
+    scale_test.go:109: "retry" matched=1088 260µs/query
+    scale_test.go:109: "graph query status" matched=14416 3.88ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=21072 5.72ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=24368 6.7ms/query
+# run 2: SCALE_COPIES=16 SCALE_BODY_BYTES=800
+    scale_test.go:90: go=go1.26.11 entities=32000 name B/entity=34 body B/entity=606 held words/entity=84 distinct words=6394
+    scale_test.go:92: heap=43.8 MB index B/entity=1370 B/held word=16.2 build=757ms (42289 entities/s)
+    scale_test.go:109: "retry" matched=1088 260µs/query
+    scale_test.go:109: "graph query status" matched=14416 4ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=21072 5.88ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=24368 6.85ms/query
+# run 3: SCALE_COPIES=16 SCALE_BODY_BYTES=800
+    scale_test.go:90: go=go1.26.11 entities=32000 name B/entity=34 body B/entity=606 held words/entity=84 distinct words=6394
+    scale_test.go:92: heap=43.8 MB index B/entity=1369 B/held word=16.2 build=755ms (42392 entities/s)
+    scale_test.go:109: "retry" matched=1088 250µs/query
+    scale_test.go:109: "graph query status" matched=14416 3.9ms/query
+    scale_test.go:109: "how does the test harness start nats" matched=21072 5.83ms/query
+    scale_test.go:109: "entity index lifecycle component service test" matched=24368 7.03ms/query

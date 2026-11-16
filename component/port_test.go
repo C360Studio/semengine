@@ -995,15 +995,12 @@ func TestResolveSubject(t *testing.T) {
 	}
 }
 
-// TestPortDefinition_UnmarshalJSON_JetStreamConfig is the load-bearing
-// regression test for the beta.55 hotfix: a JSON-loaded PortDefinition
-// must place a JetStreamPort struct into Config (not a map[string]any),
-// otherwise every consumer-config field declared in YAML/JSON is
-// silently dropped before applyJetStreamConsumerConfig.
-//
-// The semspec repro (2026-05-07) showed AckWait/HeartbeatInterval/
-// MaxDeliver/DeliverPolicy all reaching zero values at runtime even
-// though they were declared in the port's `config` block.
+// TestPortDefinition_UnmarshalJSON_JetStreamConfig: a JSON-loaded
+// PortDefinition must place a JetStreamPort struct into Config (not a
+// map[string]any), otherwise every consumer-config field declared in
+// YAML/JSON is silently dropped before applyJetStreamConsumerConfig, and
+// AckWait/HeartbeatInterval/MaxDeliver/DeliverPolicy reach zero values at
+// runtime even though they were declared in the port's `config` block.
 func TestPortDefinition_UnmarshalJSON_JetStreamConfig(t *testing.T) {
 	raw := []byte(`{
 		"name": "agent.request",
@@ -1054,9 +1051,9 @@ func TestPortDefinition_UnmarshalJSON_JetStreamConfig(t *testing.T) {
 }
 
 // TestPortDefinition_UnmarshalJSON_RoundTripsToConsumerConfig closes the
-// loop by going JSON → PortDefinition → Port → ConsumerConfig — the path every
-// agentic-model / agentic-tools consumer uses at runtime. This is the
-// end-to-end test that would have caught the beta.54 ship-to-runtime gap.
+// loop by going JSON → PortDefinition → Port → ConsumerConfig — the path a
+// consumer uses at runtime. It catches a declared field that decodes but
+// never reaches the runtime consumer configuration.
 func TestPortDefinition_UnmarshalJSON_RoundTripsToConsumerConfig(t *testing.T) {
 	raw := []byte(`{
 		"name": "agent.request",
@@ -1133,10 +1130,9 @@ func TestResolvePortPreservesAckWaitAndHeartbeat(t *testing.T) {
 // time.Duration on ConsumerConfig. Empty values produce the zero duration so
 // callers can apply their per-component default; invalid values are rejected.
 //
-// This is the load-bearing surface for semspec ADR-? — a single AckWait
-// per consumer/port lets paid-LLM deployments tune ack_wait above their
-// longest endpoint.RequestTimeout without forking the agentic-model
-// component (semstreams beta.53 audit identified this gap).
+// This is the load-bearing surface for a single AckWait per consumer/port:
+// it lets paid-LLM deployments tune ack_wait above their longest
+// endpoint.RequestTimeout without forking the consuming component.
 func TestGetConsumerConfig_AckWaitAndHeartbeat(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -1220,15 +1216,13 @@ func TestGetConsumerConfig_AckWaitAndHeartbeat(t *testing.T) {
 	}
 }
 
-// TestPort_UnmarshalJSON_RoundTripsToTypedConfig closes the audit-discovered
-// test gap on Port (component/port.go:78). The pre-existing
-// TestPortJSONSerialization marshals a Go-constructed Port to JSON and
-// inspects via map[string]any — it never asserts that
-// `json.Unmarshal(raw, &Port{})` produces a Port whose Config field
-// satisfies the typed assertion `port.Config.(SpecificPortType)`. That's
-// exactly the assertion shape that would catch a beta.54-class regression
-// (Port.UnmarshalJSON breaking type-discrimination silently). Mirrors the
-// PortDefinition coverage from PR #42 / beta.55.
+// TestPort_UnmarshalJSON_RoundTripsToTypedConfig closes a test gap on Port
+// (component/port.go:78). TestPortJSONSerialization marshals a
+// Go-constructed Port to JSON and inspects via map[string]any — it never
+// asserts that `json.Unmarshal(raw, &Port{})` produces a Port whose Config
+// field satisfies the typed assertion `port.Config.(SpecificPortType)`.
+// That's exactly the assertion shape that would catch Port.UnmarshalJSON
+// breaking type-discrimination silently.
 //
 // The runtime port and declaration use the same config.kind envelope.
 func TestPort_UnmarshalJSON_RoundTripsToTypedConfig(t *testing.T) {

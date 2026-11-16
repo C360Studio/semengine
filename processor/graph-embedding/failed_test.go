@@ -11,7 +11,7 @@ import (
 	"github.com/c360studio/semengine/graph/embedding"
 )
 
-// The reference model of the failed map, written from design D3 and the graph-embedding spec
+// The reference model of the failed map, written from the graph-embedding spec
 // ("The failed map never moves backwards"), not from failed.go: per entity, its latest terminal
 // outcome, success or failure, with the failure's reason, or a stranded failure (no source
 // revision). The rules:
@@ -20,7 +20,7 @@ import (
 //     stranded failure is never replaced or cleared by the Worker.
 //   - The Worker's drain of an unreadable record (a success at ^uint64(0), graph/embedding
 //     worker.go) names no source revision, so it is no latest outcome: the entity is forgotten,
-//     as the pin deletes it (pin component.go:1152), unless its failure is stranded.
+//     unless its failure is stranded.
 //   - Hop 1's own failure (delete_failed, pending_write_failed, entity_read_failed) with no
 //     revision is stranded; with one it is kept at or above the latest outcome, and it replaces a
 //     stranded one ("a read that succeeds while the following pending write fails re-marks").
@@ -29,7 +29,7 @@ import (
 //     ended revision otherwise counts as a success, as the Worker's; a written pending record
 //     changes nothing else.
 //   - An absent entity whose record is removed has no failure, but its latest outcome's revision
-//     stays (review R1 at stop 2): a Worker failure for an older revision can still arrive after
+//     stays: a Worker failure for an older revision can still arrive after
 //     the absence, and it is not counted. A stranded failure keeps the revision of the outcome it
 //     replaced, so the fence survives it too. A fence at ^uint64(0) names no revision, and an
 //     entity with no outcome has none: either is forgotten.
@@ -249,15 +249,14 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "succeeded", key: "a", revision: 4},
 		{kind: "succeeded", key: "a", revision: 5},
 	},
-	// Found by the generated run at seed 24 (notes/2.4.md): stranded is hop 1's having no
-	// revision, not the value of one.
+	// Found by a generated run: stranded is hop 1's having no revision, not the value of one.
 	"a Worker failure at the highest revision is not stranded": {
 		{kind: "worker failed", key: "a", revision: strandedRevision, reason: "timeout"},
 		{kind: "hop 1 failed", key: "a", revision: 0, reason: embedding.ReasonDeleteFailed},
 		{kind: "succeeded", key: "a", revision: strandedRevision},
 	},
-	// Review finding H1 at stop 2 (notes/2.4.md): a drain stored as a success at the highest
-	// revision hid every later failure of the entity.
+	// A drain stored as a success at the highest revision would hide every later failure of
+	// the entity.
 	"a drain forgets an entity that is not stranded": {
 		{kind: "worker failed", key: "a", revision: 3, reason: "timeout"},
 		{kind: "succeeded", key: "a", revision: strandedRevision}, // the Worker's drain of an unreadable record
@@ -266,7 +265,7 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "succeeded", key: "b", revision: strandedRevision},
 		{kind: "worker failed", key: "b", revision: 2, reason: "timeout"},
 	},
-	// Review finding R1 at stop 2 (notes/2.4.md): the Worker's failure at 4 is stored, its
+	// The Worker's failure at 4 is stored, its
 	// callback still to come; the tombstone at 5 ends the entity, a batch extracted before it
 	// reads the entity absent, and then the failure's callback arrives.
 	"an absence keeps the fence against an older failure": {
@@ -305,7 +304,7 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "succeeded", key: "a", revision: 2},
 		{kind: "seed"},
 	},
-	// Review finding M1 at stop 3 (notes/2.5.md): an entity is counted once when it enters the
+	// An entity is counted once when it enters the
 	// failed set, not on each failure while it is failed, and not on a failure that is refused.
 	"an entity enters the failed set once": {
 		{kind: "hop 1 failed", key: "a", revision: strandedRevision, reason: embedding.ReasonEntityReadFailed},
@@ -325,7 +324,7 @@ var failedWitnesses = map[string][]failedOp{
 }
 
 // TestFailedMapHistoryMatchesModel: every history of Worker outcomes, hop 1 failures and
-// convergences, and a Start seed leaves the failed map showing what the model of design D3 says:
+// convergences, and a Start seed leaves the failed map showing what the model says:
 // the count and reasons the follower publishes, and the entities the repair lane retries. The
 // named witnesses run first; the generated histories draw revisions 0 to 3 and stranded, so
 // below, at and above a held revision are each one draw apart, over three entities.

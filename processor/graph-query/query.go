@@ -18,16 +18,17 @@ import (
 // queryHandler answers one verb's request; natsclient.Client.SubscribeForRequests takes it.
 type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 
-// queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its handler.
-// A forward answers from the row it names here by responder and name, since semantic forwards to
-// search (design D1), and entityByAlias, relationships, pathSearch, hierarchyStats, summary,
-// localSearch and globalSearch from the rows they name, so a row that is gone leaves its verb with no
-// handler, and Start fails naming it.
+// queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its
+// handler. A forward answers from the row it names here by responder and name, since semantic
+// forwards to search, and entityByAlias, relationships, pathSearch, hierarchyStats, summary,
+// localSearch and globalSearch from the rows they name, so a row that is gone leaves its verb with
+// no handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
 		"entity":    {graph.ResponderGraphIngest, "entity"},
 		"batch":     {graph.ResponderGraphIngest, "batch"},
 		"prefix":    {graph.ResponderGraphIngest, "prefix"},
+		"prefixIDs": {graph.ResponderGraphIngest, "prefixIDs"},
 		"byName":    {graph.ResponderGraphIndex, "byName"},
 		"predicate": {graph.ResponderGraphIndex, "predicate"},
 		"semantic":  {graph.ResponderGraphEmbedding, "search"},
@@ -37,7 +38,13 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	}
 	handlers := make(map[string]queryHandler, len(forwards))
 	for verb, downstream := range forwards {
-		if subject := subjectOf(downstream.responder, downstream.name); subject != "" {
+		subject := subjectOf(downstream.responder, downstream.name)
+		if subject == "" {
+			continue
+		}
+		if downstream.responder == graph.ResponderGraphEmbedding && !c.config.EmbeddingEnabled {
+			handlers[verb] = c.notEnabled(verb)
+		} else {
 			handlers[verb] = c.forward(subject)
 		}
 	}
@@ -50,17 +57,19 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		handlers["relationships"] = c.relationships(outgoing, incoming)
 	}
 	prefix := subjectOf(graph.ResponderGraphIngest, "prefix")
+	lexical, batch := subjectOf(graph.ResponderGraphLexical, "search"), subjectOf(graph.ResponderGraphIngest, "batch")
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
-		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
-		if alias != "" && temporal != "" && spatial != "" && prefix != "" {
+		if alias != "" && lexical != "" && batch != "" {
 			subjects := globalSearchSubjects{
-				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
-				prefix: prefix,
+				lexical: lexical, batch: batch, alias: alias, entity: entity, outgoing: outgoing, incoming: incoming,
 			}
-			// searchGraph answers as globalSearch, counted and logged under its own name; the pin's
-			// semantic fallback is not carried (design D7).
 			handlers["globalSearch"] = c.globalSearch("globalSearch", subjects)
+			// searchGraph answers as globalSearch, counted and logged under its own name; when the
+			// composition runs graph-embedding it merges the word list with the embedding search's.
+			if c.config.EmbeddingEnabled {
+				subjects.semantic = subjectOf(graph.ResponderGraphEmbedding, "search")
+			}
 			handlers["searchGraph"] = c.globalSearch("searchGraph", subjects)
 		}
 	}
@@ -69,9 +78,9 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		if predicateList := subjectOf(graph.ResponderGraphIndex, "predicateList"); predicateList != "" {
 			handlers["summary"] = c.summary(predicateList, prefix)
 		}
-		if entity != "" {
-			handlers["localSearch"] = c.localSearch(entity, prefix)
-		}
+	}
+	if lexical != "" && batch != "" {
+		handlers["localSearch"] = c.localSearch(lexical, batch)
 	}
 	return handlers
 }
@@ -122,8 +131,8 @@ func (c *Component) subscribeQueries(ctx context.Context) error {
 }
 
 // forward answers a verb from subject without reading the request or the reply: their bytes pass
-// unchanged, so a field graph-query does not know reaches the responder and min_revision reaches the
-// index (design D2). It keeps neither once it has returned.
+// unchanged, so a field graph-query does not know reaches the responder and min_revision reaches
+// the index. It keeps neither once it has returned.
 //
 // Every request counts as one input. Only a request with no answer counts as an error, which ask
 // does: a responder's refusal is an answer, and the forward did its work, as a refused graph-ingest
@@ -132,6 +141,18 @@ func (c *Component) forward(subject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))
 		return c.ask(ctx, subject, data)
+	}
+}
+
+// notEnabled answers verb when embedding_enabled is false: the composition runs no graph-embedding,
+// so every request is refused invalid not_enabled, naming the verb, and nothing is sent. The
+// request counts as one input and no error: the refusal is a fact about the composition, not a
+// failure of graph-query.
+func (c *Component) notEnabled(verb string) queryHandler {
+	return func(_ context.Context, data []byte) ([]byte, error) {
+		c.lifecycle.CountInput(len(data))
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeNotEnabled,
+			fmt.Errorf("%s is not enabled: graph-query's embedding_enabled is false", verb))
 	}
 }
 
@@ -144,20 +165,30 @@ func (c *Component) forward(subject string) queryHandler {
 // subject, and counts as an error.
 //
 // The timeout and the handler's context end the wait for the reply. Neither ends a wait for the
-// connection's write lock, so a broker that has stopped reading can hold the call past both (ADR-112,
-// "Time": P13, P14, P17).
+// connection's write lock, so a broker that has stopped reading can hold the call past both
+// (ADR-112, "Time", measured at nats.go v1.54.0 and v1.55.0).
 func (c *Component) ask(ctx context.Context, subject string, data []byte) ([]byte, error) {
-	timeout := time.Duration(c.config.QueryTimeoutMs) * time.Millisecond
-	reply, err := c.natsClient.RequestClassified(ctx, subject, data, timeout)
-	if err == nil {
-		return reply, nil
+	reply, err := c.natsClient.RequestClassified(ctx, subject, data, c.queryTimeout())
+	if err != nil {
+		return nil, c.requestFailed(subject, err)
 	}
+	return reply, nil
+}
+
+// queryTimeout is the deadline on the reply to each downstream request, query_timeout_ms.
+func (c *Component) queryTimeout() time.Duration {
+	return time.Duration(c.config.QueryTimeoutMs) * time.Millisecond
+}
+
+// requestFailed is a failed request to subject as ask returns it: a responder's refusal as it
+// arrived, or else, counted as an error, a transient internal refusal naming the subject.
+func (c *Component) requestFailed(subject string, err error) error {
 	var refusal *errs.ClassifiedError
 	if errors.As(err, &refusal) {
-		return nil, err
+		return err
 	}
 	c.lifecycle.CountError()
-	return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, fmt.Errorf("request to %s: %w", subject, err))
+	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, fmt.Errorf("request to %s: %w", subject, err))
 }
 
 // entityByAlias resolves the alias, sending the request's bytes unchanged to the alias verb, then
@@ -194,17 +225,17 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 }
 
 // entityNotFound is the answer to a reference that names no entity, for entityByAlias and a global
-// search named start alike (design D7).
+// search named start alike.
 func entityNotFound(reference string) error {
 	return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", reference))
 }
 
 // resolveReference is the one rule an entity reference is read by, for entityByAlias and global
-// search (design D3): it asks the alias verb with aliasRequest, whose alias is reference; a holder
-// wins, else a reference that is a valid entity ID is itself, else it names no entity and the ID is
-// "". The revision is the alias reply's. Every refusal of the alias verb returns as it arrived,
-// alias_ambiguous, index_not_ready, internal and revision_not_reached among them (ADR-114): the pin's
-// resolver read each as "no holder" (pin:entity_resolver.go). There is no suffix lookup (#405).
+// search: it asks the alias verb with aliasRequest, whose alias is reference; a holder wins, else a
+// reference that is a valid entity ID is itself, else it names no entity and the ID is "". The
+// revision is the alias reply's. Every refusal of the alias verb returns as it arrived,
+// alias_ambiguous, index_not_ready, internal and revision_not_reached among them (ADR-114), never
+// as "no holder". There is no suffix lookup.
 func (c *Component) resolveReference(ctx context.Context, aliasSubject string, aliasRequest []byte, reference string) (string, uint64, error) {
 	raw, err := c.ask(ctx, aliasSubject, aliasRequest)
 	if err != nil {
@@ -233,10 +264,11 @@ func (c *Component) readEntity(ctx context.Context, entitySubject, id string) ([
 	return c.ask(ctx, entitySubject, request)
 }
 
-// relationships answers an entity's links in the one direction asked for, sending the request's bytes
-// unchanged to that direction's verb, so min_revision and any field graph-query does not know reach
-// the index. Any other direction, or none, is refused before a request goes out: the pin read each as
-// outgoing, which silently gave half the links. Counted as entityByAlias is.
+// relationships answers an entity's links in the one direction asked for, sending the request's
+// bytes unchanged to that direction's verb, so min_revision and any field graph-query does not know
+// reach the index. Any other direction, or none, is refused before a request goes out: reading it
+// as outgoing would silently answer another question, half the links for "both" or none. Counted
+// as entityByAlias is.
 func (c *Component) relationships(outgoingSubject, incomingSubject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))

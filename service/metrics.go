@@ -42,7 +42,7 @@ type Metrics struct {
 
 	// testListener, when set by a test, is the listener the server serves on:
 	// metric.NewServer maps port 0 to 9090, so no configuration asks for a
-	// kernel-picked port (setup-04a-03-boot-service-manager design D4, S9).
+	// kernel-picked port.
 	testListener net.Listener
 }
 
@@ -149,7 +149,7 @@ func (m *Metrics) start(ctx context.Context) error {
 // error and a later Stop tries again. A Stop while another runs is refused as
 // transient.
 func (m *Metrics) Stop(ctx context.Context) error {
-	if ctx != nil && ctx.Err() == nil {
+	if ctx != nil {
 		m.mu.Lock()
 		m.lifecycleCalled = true
 		m.mu.Unlock()

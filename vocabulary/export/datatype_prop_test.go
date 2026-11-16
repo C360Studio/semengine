@@ -250,7 +250,7 @@ func TestPropDeclaredDateTimeNeverFabricatesAnInstant(t *testing.T) {
 
 // TestDateTimeObservationPreservesFractionalSeconds verifies that an undeclared
 // time.Time value with nonzero nanoseconds also preserves fractional seconds
-// when classified by Go type observation (#239).
+// when classified by Go type observation.
 func TestDateTimeObservationPreservesFractionalSeconds(t *testing.T) {
 	instant := time.Date(2026, 10, 14, 12, 0, 0, 123456789, time.UTC)
 	triple := message.Triple{

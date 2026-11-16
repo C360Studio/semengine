@@ -1,6 +1,6 @@
 package embedding
 
-// Derived-write/read failure reasons (#625). They classify entries in
+// Derived-write/read failure reasons. They classify entries in
 // graph-embedding's PROCESS-LOCAL current-failed map when a hop-1 derived write
 // or authoritative read fails — a failed EMBEDDING_INDEX delete, a failed
 // pending write, a failed ENTITY_STATES read — so those failures surface as
@@ -20,8 +20,8 @@ const (
 	// and queryable until repair converges it.
 	ReasonDeleteFailed = "delete_failed"
 	// ReasonPendingWriteFailed marks an entity whose hop-1 pending write
-	// (SavePendingGuarded) failed; the revision stays uncompleted
-	// (#613 F2) and repair re-queues from authoritative state.
+	// (SavePendingGuarded) failed; the revision stays uncompleted and repair
+	// re-queues from authoritative state.
 	ReasonPendingWriteFailed = "pending_write_failed"
 	// ReasonEntityReadFailed marks an entity whose authoritative ENTITY_STATES
 	// read failed transiently during a reconcile; repair re-reads until the

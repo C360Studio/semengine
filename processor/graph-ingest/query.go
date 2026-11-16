@@ -29,14 +29,15 @@ const defaultMaxConcurrent = 10
 // its handler.
 func (c *Component) queryHandlers() map[string]func(context.Context, []byte) ([]byte, error) {
 	return map[string]func(context.Context, []byte) ([]byte, error){
-		"entity": c.handleQueryEntityNATS,
-		"batch":  c.handleQueryBatchNATS,
-		"prefix": c.handleQueryPrefixNATS,
+		"entity":    c.handleQueryEntityNATS,
+		"batch":     c.handleQueryBatchNATS,
+		"prefix":    c.handleQueryPrefixNATS,
+		"prefixIDs": c.handleQueryPrefixIDsNATS,
 	}
 }
 
 // setupQueryHandlers subscribes to the subject of every verb the table in graph declares
-// for graph-ingest, and to nothing else (design D20). A declared verb with no handler
+// for graph-ingest, and to nothing else. A declared verb with no handler
 // here fails Start: serving fewer verbs than the table declares would leave callers
 // with no responder for a subject they were told is served.
 func (c *Component) setupQueryHandlers(ctx context.Context) error {
@@ -122,14 +123,10 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 
 	// Fetch entities with bounded concurrency and cache.
 	//
-	// Timed because this handler's budget and its CALLER's budget are set
-	// independently and were inverted: graph-query's loadEntities abandons the
-	// request at its QueryTimeout (default 5s) while this handler is allowed
-	// 10s, so a batch taking 5–10s is charged to the caller as an opaque
-	// "context deadline exceeded" that no server-side log records at all. That
-	// is how SemStreams gh#830 presented — an intermittent e2e failure with nothing on the
-	// responder side to look at. Same reasoning as reportBatchMissing below:
-	// the symptom reaches the user several hops from the fact.
+	// Timed because this handler's 10 s budget and its caller's deadline are set
+	// independently: a caller that gives up first sees an opaque "context deadline
+	// exceeded" that no server-side log records. Same reasoning as reportBatchMissing
+	// below: the symptom reaches the user several hops from the fact.
 	fetchStart := time.Now()
 	entities, missing, err := c.fetchEntitiesConcurrent(ctx, req.IDs, defaultMaxConcurrent)
 	fetchElapsed := time.Since(fetchStart)
@@ -166,11 +163,10 @@ func batchMissingReason(id string) graph.MissingReason {
 	return graph.MissingNotFound
 }
 
-// reportBatchMissing makes partial hydration observable. It is the SemStreams gh#597 soak
-// instrumentation: the open question there is whether a dropped ID's KV read was
-// genuinely not-found at the moment of failure, and until now nothing recorded that a
-// batch came back short at all — the symptom reached the user as a missing search
-// result several hops away.
+// reportBatchMissing makes partial hydration observable: it records whether a dropped
+// ID's KV read was genuinely not-found at the moment of failure, and that a batch came
+// back short at all, which otherwise reaches the user as a missing search result
+// several hops away.
 //
 // The log carries the IDs (bounded) because "which one" is the whole question; the
 // counter carries only counts, since entity IDs are an unbounded label space.
@@ -179,7 +175,7 @@ func (c *Component) reportBatchMissing(requested, missing []string) {
 		return
 	}
 	// Counted by the SAME reason the wire reports, not a blanket not_found: the
-	// empty-ID case added alongside this counter is reported as `error`, and a
+	// empty-ID case is reported as `error`, and a
 	// metric that disagrees with the response is worse than no metric.
 	byReason := make(map[graph.MissingReason]int, 2)
 	for _, id := range missing {
@@ -192,11 +188,11 @@ func (c *Component) reportBatchMissing(requested, missing []string) {
 	if len(logged) > maxLoggedMissingIDs {
 		logged = logged[:maxLoggedMissingIDs]
 	}
-	// Debug, not Warn: with reads now serving under lag (ADR-084), a semantic index
+	// Debug, not Warn: with reads serving under lag (ADR-084), a semantic index
 	// ranking an entity whose ENTITY_STATES write has not landed yet is ordinary
 	// operation, and warning on it would train operators to ignore the line. The
 	// COUNTER above is the alertable signal — it has a rate, which is what
-	// distinguishes normal churn from the SemStreams gh#597 pathology.
+	// distinguishes normal churn from IDs dropped in bulk.
 	c.logger.Debug("batch entity query did not hydrate every requested ID",
 		"requested", len(requested),
 		"missing", len(missing),
@@ -237,94 +233,16 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Parse the typed request. An omitted cursor denotes the first page.
-	var req graph.PrefixQueryRequest
-	if err := json.Unmarshal(data, &req); err != nil {
-		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid request: %w", err))
+	listing, err := c.listPrefixKeys(ctx, data)
+	if err != nil {
+		return nil, err
 	}
-	if req.Prefix != "" && req.Pattern != "" {
-		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest,
-			errors.New("invalid request: prefix and pattern are mutually exclusive"))
-	}
-	if req.Prefix != "" {
-		if err := semtypes.ValidateEntityIDPrefix(req.Prefix); err != nil {
-			return nil, err
-		}
-	}
-	if req.Pattern != "" {
-		if err := semtypes.ValidateEntityIDPattern(req.Pattern); err != nil {
-			return nil, err
-		}
-	}
-
-	// A limit of zero or less, or over the maximum, means the maximum.
-	limit := req.Limit
-	if limit <= 0 || limit > graph.MaxPrefixQueryLimit {
-		limit = graph.MaxPrefixQueryLimit
-	}
-
-	var (
-		keys []string
-		err  error
-	)
-	if req.Pattern != "" {
-		keys, err = c.entityBucket.KeysByFilter(ctx, req.Pattern)
-		if err != nil {
-			return nil, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
-		}
-	} else {
-		// Build prefix for server-side filtering.
-		prefixDot := req.Prefix
-		if req.Prefix != "" {
-			prefixDot = req.Prefix + "."
-		}
-
-		// Use server-side prefix filtering instead of loading all keys.
-		keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)
-		if err != nil {
-			return nil, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
-		}
-
-		// Also check exact match for full entity ID queries (6-part IDs
-		// where KeysByPrefix("org.plat.dom.sys.type.inst.") finds nothing).
-		if req.Prefix != "" && len(keys) == 0 {
-			if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
-				keys = []string{req.Prefix}
-			} else if !natsclient.IsKVNotFoundError(getErr) {
-				return nil, rejectInternal(fmt.Errorf("failed to check exact entity key: %w", getErr))
-			}
-		}
-	}
-
-	// MANDATORY: sort before cursor application — cursor is meaningless
-	// without a deterministic key order. Compact then drops repeated keys (a nats.go
-	// listing can repeat one under concurrent overwrites, #512), so an entity is served
-	// at most once and total counts distinct keys.
-	sort.Strings(keys)
-	keys = slices.Compact(keys)
-
-	// The reply's total is the listing as listed, whichever page this request reads.
-	total := len(keys)
-
-	// Apply cursor: advance past keys up to and including lastKey.
-	if req.Cursor != "" {
-		lastKey, decodeErr := decodeCursor(req.Cursor)
-		if decodeErr != nil {
-			return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid cursor: %w", decodeErr))
-		}
-		// SearchStrings finds first index where keys[i] >= lastKey.
-		idx := sort.SearchStrings(keys, lastKey)
-		// Advance past any key equal to lastKey (inclusive skip).
-		for idx < len(keys) && keys[idx] == lastKey {
-			idx++
-		}
-		keys = keys[idx:]
-	}
+	keys := listing.keys
 
 	// Slice the page — we'll potentially trim further by byte budget below.
 	pageKeys := keys
-	if len(pageKeys) > limit {
-		pageKeys = pageKeys[:limit]
+	if len(pageKeys) > listing.limit {
+		pageKeys = pageKeys[:listing.limit]
 	}
 
 	// Fetch full entities with bounded concurrency and cache. Missing IDs are
@@ -352,7 +270,204 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 		followingBoundary = pageKeys[len(pageKeys)-1]
 	}
 
-	return marshalFittingPrefixPage(entities, total, followingBoundary, maxPayload)
+	return marshalFittingPrefixPage(entities, listing.total, followingBoundary, maxPayload)
+}
+
+// prefixListing is what the prefix and prefixIDs verbs share before any stored value is read:
+// the keys the request selects, sorted, each once, and past its cursor; the number of distinct
+// keys listed; and the request's limit with the maximum applied.
+type prefixListing struct {
+	keys  []string
+	total int
+	limit int
+}
+
+// listPrefixKeys decodes and checks a PrefixQueryRequest and lists the keys it selects. It reads
+// no stored value: an exact six-part prefix with nothing under it is only checked for existence.
+func (c *Component) listPrefixKeys(ctx context.Context, data []byte) (prefixListing, error) {
+	// Parse the typed request. An omitted cursor denotes the first page.
+	var req graph.PrefixQueryRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return prefixListing{}, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid request: %w", err))
+	}
+	if req.Prefix != "" && req.Pattern != "" {
+		return prefixListing{}, rejectInvalid(graph.ErrorCodeInvalidRequest,
+			errors.New("invalid request: prefix and pattern are mutually exclusive"))
+	}
+	if req.Prefix != "" {
+		if err := semtypes.ValidateEntityIDPrefix(req.Prefix); err != nil {
+			return prefixListing{}, err
+		}
+	}
+	if req.Pattern != "" {
+		if err := semtypes.ValidateEntityIDPattern(req.Pattern); err != nil {
+			return prefixListing{}, err
+		}
+	}
+
+	// A limit of zero or less, or over the maximum, means the maximum.
+	limit := req.Limit
+	if limit <= 0 || limit > graph.MaxPrefixQueryLimit {
+		limit = graph.MaxPrefixQueryLimit
+	}
+
+	var (
+		keys []string
+		err  error
+	)
+	if req.Pattern != "" {
+		keys, err = c.entityBucket.KeysByFilter(ctx, req.Pattern)
+		if err != nil {
+			return prefixListing{}, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
+		}
+	} else {
+		// Build prefix for server-side filtering.
+		prefixDot := req.Prefix
+		if req.Prefix != "" {
+			prefixDot = req.Prefix + "."
+		}
+
+		// Use server-side prefix filtering instead of loading all keys.
+		keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)
+		if err != nil {
+			return prefixListing{}, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
+		}
+
+		// Also check exact match for full entity ID queries (6-part IDs
+		// where KeysByPrefix("org.plat.dom.sys.type.inst.") finds nothing).
+		if req.Prefix != "" && len(keys) == 0 {
+			if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
+				keys = []string{req.Prefix}
+			} else if !natsclient.IsKVNotFoundError(getErr) {
+				return prefixListing{}, rejectInternal(fmt.Errorf("failed to check exact entity key: %w", getErr))
+			}
+		}
+	}
+
+	// MANDATORY: sort before cursor application — cursor is meaningless
+	// without a deterministic key order. Compact then drops repeated keys (nats.go does
+	// not promise a listing names each key once under concurrent overwrites), so an entity is served
+	// at most once and total counts distinct keys.
+	sort.Strings(keys)
+	keys = slices.Compact(keys)
+
+	// The reply's total is the listing as listed, whichever page this request reads.
+	total := len(keys)
+
+	// Apply cursor: advance past keys up to and including lastKey.
+	if req.Cursor != "" {
+		lastKey, decodeErr := decodeCursor(req.Cursor)
+		if decodeErr != nil {
+			return prefixListing{}, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid cursor: %w", decodeErr))
+		}
+		// SearchStrings finds first index where keys[i] >= lastKey.
+		idx := sort.SearchStrings(keys, lastKey)
+		// Advance past any key equal to lastKey (inclusive skip).
+		for idx < len(keys) && keys[idx] == lastKey {
+			idx++
+		}
+		keys = keys[idx:]
+	}
+	return prefixListing{keys: keys, total: total, limit: limit}, nil
+}
+
+// handleQueryPrefixIDsNATS lists the IDs a PrefixQueryRequest selects, paged as the prefix
+// verb pages, and answers a graph.PrefixIDsResponse. It reads no entity, so a damaged stored
+// value is listed like any other key and is not recorded: a caller can find it and read the
+// rest around it, while the prefix verb keeps refusing the whole page.
+func (c *Component) handleQueryPrefixIDsNATS(ctx context.Context, data []byte) ([]byte, error) {
+	maxPayload, err := c.natsClient.MaxPayload()
+	if err != nil {
+		return nil, rejectInternal(fmt.Errorf("observe NATS max payload: %w", err))
+	}
+	return c.handleQueryPrefixIDsWithMaxPayload(ctx, data, maxPayload)
+}
+
+func (c *Component) handleQueryPrefixIDsWithMaxPayload(
+	ctx context.Context,
+	data []byte,
+	maxPayload int64,
+) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	listing, err := c.listPrefixKeys(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+	page := listing.keys[:min(len(listing.keys), listing.limit)]
+	return marshalFittingPrefixIDsPage(page, len(page) < len(listing.keys), listing.total, maxPayload)
+}
+
+// marshalFittingPrefixIDsPage encodes the longest leading run of ids whose whole reply fits
+// maxPayload. A page ending before the last of ids, or followed by keys past the limit (more),
+// carries its last ID as the cursor. A longer run can fit where a shorter one does not, because
+// only a page with keys after it carries a cursor, so every length is measured.
+func marshalFittingPrefixIDsPage(ids []string, more bool, total int, maxPayload int64) ([]byte, error) {
+	cursorAt := func(count int) string {
+		if count > 0 && (count < len(ids) || more) {
+			return encodeCursor(ids[count-1])
+		}
+		return ""
+	}
+	// sizeWith is the length json.Marshal gives a graph.PrefixIDsResponse whose ids encode to
+	// idsBytes (brackets and commas included) and whose cursor is cursor: the fields in
+	// declaration order, next_cursor left out when empty. A cursor is base64url, which JSON
+	// quotes without escaping.
+	sizeWith := func(idsBytes int64, cursor string) int64 {
+		size := int64(len(`{"ids":`)) + idsBytes + int64(len(`,"total":`)+len(strconv.Itoa(total))+len(`}`))
+		if cursor != "" {
+			size += int64(len(`,"next_cursor":""`) + len(cursor))
+		}
+		return size
+	}
+
+	idsBytes := int64(len(`[]`))
+	best, bestCursor := -1, ""
+	firstReply := sizeWith(idsBytes, "")
+	if len(ids) == 0 && firstReply <= maxPayload {
+		best = 0
+	}
+	for count := 1; count <= len(ids); count++ {
+		encoded, _ := json.Marshal(ids[count-1]) // a string always encodes
+		idsBytes += int64(len(encoded))
+		if count > 1 {
+			idsBytes++ // comma between IDs
+		}
+		cursor := cursorAt(count)
+		size := sizeWith(idsBytes, cursor)
+		if count == 1 {
+			firstReply = size
+		}
+		if size <= maxPayload {
+			best, bestCursor = count, cursor
+		}
+	}
+	if best < 0 {
+		return nil, rejectInvalidDetail(
+			natsclient.ErrorCodeResponseTooLarge,
+			map[string]any{
+				"response_bytes": firstReply,
+				"max_payload":    maxPayload,
+			},
+			errors.New("prefix ID listing: the first ID exceeds active NATS maximum payload"),
+		)
+	}
+
+	pageIDs := ids[:best]
+	if pageIDs == nil {
+		pageIDs = []string{} // an empty page encodes as [], never null
+	}
+	encoded, err := json.Marshal(graph.PrefixIDsResponse{IDs: pageIDs, Total: total, NextCursor: bestCursor})
+	if err != nil {
+		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+			fmt.Errorf("marshal prefix ID response: %w", err))
+	}
+	if int64(len(encoded)) > maxPayload {
+		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+			fmt.Errorf("prefix ID response fitting invariant: encoded %d bytes exceeds max payload %d", len(encoded), maxPayload))
+	}
+	return encoded, nil
 }
 
 // marshalFittingPrefixPage returns the largest sorted entity prefix whose
@@ -390,7 +505,7 @@ func marshalFittingPrefixPage(
 	encodedSize := func(count int, cursor string) (int64, error) {
 		size := int64(len(`{"entities":[`) + len(`],"total":`) + len(strconv.Itoa(total)) + len(`}`))
 		if entities == nil {
-			// A group with no keys encodes its page as null, not [] (#521).
+			// A group with no keys encodes its page as null, not [].
 			size += int64(len(`null`) - len(`[]`))
 		}
 		for i := 0; i < count; i++ {
@@ -475,7 +590,7 @@ func classifyEntityQueryError(err error) error {
 // caller cannot recover the second set from the first: the entity slice is ordered
 // cache-hits-then-misses, so it carries no correspondence to the requested order, and a
 // caller diffing the sets would have to re-derive what this function already knew. That
-// gap is the SemStreams gh#597 drop path — a requested ID silently absent from a shorter list.
+// gap is the drop path — a requested ID silently absent from a shorter list.
 //
 // Order remains non-deterministic by contract; callers that need request order restore
 // it themselves (fusionnats.Entities does, because fusion ranks by position).
@@ -556,14 +671,14 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 			gen0 := c.loadEntityCacheGen(entityID)
 
 			// readEntity records poison at the failing revision, so a single
-			// batch attempt inventories EVERY poisoned entity it touched (D5),
-			// and clears a stale record on a valid read (D3c).
+			// batch attempt inventories EVERY poisoned entity it touched,
+			// and clears a stale record on a valid read (clear path (c)).
 			entity, _, err := c.readEntity(ctx, entityID)
 			if err != nil {
 				if natsclient.IsKVNotFoundError(err) {
 					// Not an error — this ID simply is not in the bucket. It is
 					// REPORTED rather than dropped so the caller can tell a short
-					// list from a partial one (SemStreams gh#597).
+					// list from a partial one.
 					results[idx].notFound = true
 				} else {
 					results[idx].err = err
@@ -587,11 +702,11 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 	}
 
 	// Phase 3: Merge cached + fetched results. Poison fails the WHOLE read with one
-	// typed error naming every poisoned entity encountered in this attempt (design D5),
+	// typed error naming every poisoned entity encountered in this attempt,
 	// and never a B-only response that hides A's poison.
 	//
 	// A not-found ID is different in kind: it does not fail the call, it is collected
-	// and REPORTED. Partiality was never the bug — invisibility was.
+	// and REPORTED. Partiality is acceptable; invisibility is not.
 	var poisoned []*graph.StateContractError
 	var firstOtherErr error
 	missing := invalid
@@ -630,7 +745,7 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 // graph_state_reset_required naming every poisoned entity (bounded list),
 // wrapping one typed cause so errors.As(*graph.StateContractError) is
 // preserved across the seam. Kills the one-repair-per-round-trip discovery
-// loop (design D5).
+// loop.
 func aggregateEntityPoisonError(poisoned []*graph.StateContractError) error {
 	ids := make([]string, 0, len(poisoned))
 	for _, p := range poisoned {
@@ -709,7 +824,7 @@ func (c *Component) invalidateEntityCacheEntry(id string) {
 // entityCacheHandle reads the entity cache handle once, under mu. A caller uses the copy
 // it got: release may close and clear the handle meanwhile, and a closed cache still
 // serves Get, Set and Delete (cache.Cache's Close), so a use during or after Stop is
-// safe (#306). Nil when the cache is disabled or released.
+// safe. Nil when the cache is disabled or released.
 func (c *Component) entityCacheHandle() cache.Cache[graph.EntityState] {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

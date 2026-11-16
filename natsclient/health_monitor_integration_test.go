@@ -12,7 +12,7 @@ import (
 
 // TestHealthMonitorTickReturnsStatusAndClose proves that a health tick writes the status and that
 // Close then returns: the tick calls Status() while it holds mu (client.go, startHealthMonitoring),
-// so a Status() that took mu would hang the tick and every later Close (design D2). The test marks
+// so a Status() that took mu would hang the tick and every later Close. The test marks
 // a healthy connection Disconnected itself, as kv_key_contract_integration_test.go stores private
 // state; only a tick writes Connected back on a healthy connection.
 //

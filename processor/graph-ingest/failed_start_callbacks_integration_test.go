@@ -2,12 +2,12 @@
 
 package graphingest
 
-// Checkpoint 3 B2 (PR #93): natsclient can run a callback during an acquisition that then
-// fails and returns no handle, so a failed Start's rollback has nothing to drain or join for
-// it. A request handler refuses before Start completes (graph-transport-boundary,
-// "graph-ingest refuses request work until Start completes"); a real request reaches it
-// while a real Start is held, then is served once Start completes. A stream input that
-// reaches its lane after the rollback is Nak'd (TestInputLaneNaksAfterFailedStartRollback).
+// natsclient can run a callback during an acquisition that then fails and returns no
+// handle, so a failed Start's rollback has nothing to drain or join for it. A request
+// handler refuses before Start completes (graph-transport-boundary, "graph-ingest refuses
+// request work until Start completes"); a real request reaches it while a real Start is
+// held, then is served once Start completes. A stream input that reaches its lane after
+// the rollback is Nak'd (TestInputLaneNaksAfterFailedStartRollback).
 
 import (
 	"context"
@@ -31,13 +31,13 @@ const failedStartEntityID = "c360.platform.robotics.gcs.drone.b2"
 
 // TestRequestBeforeStartCompletesIsRefused holds graph-transport-boundary, "graph-ingest
 // refuses request work until Start completes", scenarios "A query before Start completes"
-// and "A mutation before Start completes" (fix-301 design D2, "Not-started refusal").
-// graph-ingest's logger handler pauses Start's goroutine on the record its query or
-// mutation setup logs once those subscriptions are registered, before Start completes. A
-// real request on the paused component's subject is refused with a transient error with no
-// code whose message is errs.ErrNotStarted's (the sentinel does not cross the wire; the
-// requester sees the class, code and message), and does no work. The pause is then
-// released, Start completes, and the same request is served.
+// and "A mutation before Start completes". graph-ingest's logger handler pauses Start's
+// goroutine on the record its query or mutation setup logs once those subscriptions are
+// registered, before Start completes. A real request on the paused component's subject is
+// refused with a transient error with no code whose message is errs.ErrNotStarted's (the
+// sentinel does not cross the wire; the requester sees the class, code and message), and
+// does no work. The pause is then released, Start completes, and the same request is
+// served.
 func TestRequestBeforeStartCompletesIsRefused(t *testing.T) {
 	cases := []struct {
 		name string

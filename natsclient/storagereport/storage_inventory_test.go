@@ -233,7 +233,7 @@ func TestStorageInventory_Attribution(t *testing.T) {
 	}
 
 	var inv StorageInventory
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -290,7 +290,7 @@ func TestStorageInventory_Attribution(t *testing.T) {
 // must not have to wade through every ordinary stream in the account.
 func TestStorageInventory_AttributionStatesNeverCollapse(t *testing.T) {
 	var inv StorageInventory
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -349,7 +349,7 @@ func TestStorageInventory_AttributionStatesNeverCollapse(t *testing.T) {
 // that exists to catch a retained bucket-to-owner map: remove a bucket from the
 // catalog and the NEXT collection must report it unattributed.
 func TestStorageInventory_AttributionFollowsCatalogNotACopy(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -471,7 +471,7 @@ func TestNewCapacity_ThreeStatesNeverCollapse(t *testing.T) {
 // the account-limit comparison later depends on: memory and file are separate
 // tiers and must never be conflated.
 func TestStorageInventory_StorageTierIsReadNotGuessed(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -501,7 +501,7 @@ func TestStorageInventory_StorageTierIsReadNotGuessed(t *testing.T) {
 // operator needs the storage view most.
 func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 	var inv StorageInventory
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -560,7 +560,7 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 // complete. The name listing carries a resource the info listing does not, and
 // the inventory must be strictly larger than the info listing alone.
 func TestStorageInventory_InfoListingOnlyWouldOmitTheUnreadable(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -588,7 +588,7 @@ func TestStorageInventory_InfoListingOnlyWouldOmitTheUnreadable(t *testing.T) {
 // for being offline. An account past one page with an offline stream therefore
 // serves OVERLAPPING pages, and the same resource arrives twice.
 func TestStorageInventory_DeduplicatesOverlappingPages(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -620,7 +620,7 @@ func TestStorageInventory_DeduplicatesOverlappingPages(t *testing.T) {
 // resolves is strictly better than a silent omission that never does — but it
 // must actually resolve.
 func TestStorageInventory_TransientPhantomResolvesOnNextCollection(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -663,7 +663,7 @@ func TestStorageInventory_TransientPhantomResolvesOnNextCollection(t *testing.T)
 // inventory cannot claim completeness, so the collection degrades to last-good
 // exactly as an info-listing failure does.
 func TestStorageInventory_NameListingFailureFailsTheCollection(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -713,7 +713,7 @@ func TestStorageInventory_NamelessEntryFailsTheCollection(t *testing.T) {
 		{"entry with an empty name", streamInfo("", jetstream.FileStorage, 0, 0)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+			// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 			// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 			// correct collection.
 			synctest.Test(t, func(t *testing.T) {
@@ -784,7 +784,7 @@ func TestStorageInventory_LatestBeforeFirstCollectionIsNotHealthy(t *testing.T) 
 // masks the aliasing. Reintroducing spare capacity would make the append
 // dangerous too, but the element write catches the aliasing either way.
 func TestStorageInventory_LatestReturnsAnIndependentSlice(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -820,7 +820,7 @@ func TestStorageInventory_LatestReturnsAnIndependentSlice(t *testing.T) {
 // truncate the inventory, and the reported timestamp must stay the one the good
 // data was actually collected at.
 func TestStorageInventory_DegradesToLastGoodWithTimestamp(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -876,7 +876,7 @@ func TestStorageInventory_DegradesToLastGoodWithTimestamp(t *testing.T) {
 // the process is stopping is not evidence about storage, so it must not stamp
 // "context canceled" onto an otherwise good inventory.
 func TestStorageInventory_ShutdownDoesNotStampTheLastGoodResult(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -904,7 +904,7 @@ func TestStorageInventory_ShutdownDoesNotStampTheLastGoodResult(t *testing.T) {
 // hazard: a listing that errors PART WAY through has already yielded rows, and
 // publishing them would report a subset of the account as if it were all of it.
 func TestStorageInventory_PartialListingIsNeverPublished(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -947,7 +947,7 @@ func TestStorageInventory_PartialListingIsNeverPublished(t *testing.T) {
 // collector's own configured timeout, not the caller's context, so an unbounded
 // caller context cannot make collection unbounded.
 func TestStorageInventory_CollectionIsBoundedByTimeout(t *testing.T) {
-	// R1a: the collection timeout and the limit below run on the bubble's clock, so the limit
+	// The collection timeout and the limit below run on the bubble's clock, so the limit
 	// expires only when the configured timeout does not bound the collection.
 	synctest.Test(t, func(t *testing.T) {
 		hold := make(chan struct{})
@@ -983,7 +983,7 @@ func TestStorageInventory_CollectionIsBoundedByTimeout(t *testing.T) {
 // a worse bug than the blindness it fixes, so the read path must never sit behind
 // the collection's I/O.
 func TestStorageInventory_LatestNeverWaitsOnCollection(t *testing.T) {
-	// R1a: the collection timeout and the limit below run on the bubble's clock, so the limit
+	// The collection timeout and the limit below run on the bubble's clock, so the limit
 	// expires only when Latest() waits on the held collection. A Latest() that waits on a
 	// sync.Mutex is not durably blocked, so the bubble's clock cannot reach the limit and that
 	// defect fails the test at the go test timeout instead.
@@ -1042,7 +1042,7 @@ func TestStorageInventory_LatestNeverWaitsOnCollection(t *testing.T) {
 // finishing last would publish the older reading and walk CollectedAt backwards,
 // so a report could get LESS fresh over time.
 func TestStorageInventory_ConcurrentCollectionsPublishInOrder(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -1077,7 +1077,7 @@ func TestStorageInventory_ConcurrentCollectionsPublishInOrder(t *testing.T) {
 // TestStorageInventory_RunCollectsOnItsInterval proves collection is
 // interval-driven and that the first sample does not wait a full interval.
 func TestStorageInventory_RunCollectsOnItsInterval(t *testing.T) {
-	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
 	// limit expires only when Run never ticks or never returns.
 	synctest.Test(t, func(t *testing.T) {
 		lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
@@ -1111,12 +1111,12 @@ func TestStorageInventory_RunCollectsOnItsInterval(t *testing.T) {
 	})
 }
 
-// TestStorageInventory_NamesTheProducingProcess covers the design's "every
-// process polling account-wide multiplies cost by deployment size" note: a
+// TestStorageInventory_NamesTheProducingProcess covers a cost of account-wide
+// polling, that every polling process multiplies it by deployment size: a
 // report that does not say who produced it cannot be reconciled across a fleet,
 // so the field is never empty.
 func TestStorageInventory_NamesTheProducingProcess(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -1138,7 +1138,7 @@ func TestStorageInventory_NamesTheProducingProcess(t *testing.T) {
 // diffable across collections: neither listing's page order is a contract, and
 // the reconciliation walks a map.
 func TestStorageInventory_ResourcesAreDeterministicallyOrdered(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -1166,7 +1166,7 @@ func TestStorageInventory_ResourcesAreDeterministicallyOrdered(t *testing.T) {
 // does not capture a JetStream context at construction: a collector built before
 // the client connects must start working once it does.
 func TestStorageInventory_ListerSourceResolvedPerCollection(t *testing.T) {
-	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// Collect arms the collector's own timeout, and the fake walk stops when it expires. On
 	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {

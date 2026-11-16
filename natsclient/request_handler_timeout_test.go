@@ -6,10 +6,10 @@ import (
 )
 
 // The per-message request-handler context timeout (applied inside
-// SubscribeForRequests) was a hardcoded 30s. Slow LLM handlers on the
-// globalSearch path (8B answer synthesis) exceed it and get cancelled
-// mid-generation. These tests pin the configurable replacement: default
-// stays 30s (unchanged for CI), the env var can raise it.
+// SubscribeForRequests) is configurable: a slow handler, such as one that
+// waits on a model's generation, can need more than the 30s default and would
+// otherwise be cancelled mid-work. These tests pin the default of 30s and that
+// the env var can raise it.
 
 func TestRequestHandlerTimeout_DefaultIs30s(t *testing.T) {
 	c, err := NewClient("nats://unused")

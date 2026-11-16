@@ -408,7 +408,7 @@ func TestRefusalsNameNoInternalFunction(t *testing.T) {
 // and a request output alike ("q", on svc.q); b's request output "r" on svc.*
 // reaches both: as a requester of a's input, and as a peer of a's output (two
 // outputs on matching subjects). They are two ports, so they are two edges;
-// keyed without the direction (#346) the second was merged into the first.
+// keyed without the direction, the second would be merged into the first.
 func TestRequestEdgesKeepSameNamedLanesApart(t *testing.T) {
 	request := func(name string, direction component.Direction, subject string) component.Port {
 		return component.Port{Name: name, Direction: direction, Config: component.NATSRequestPort{Subject: subject}}

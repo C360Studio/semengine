@@ -59,13 +59,13 @@ func (d *heldDocument) UnmarshalJSON(data []byte) error {
 }
 
 // TestStopJoinsHandlerAfterConnectionLoss: a Stop never returns nil while an input handler still
-// runs, even after the broker went away for good while the handler was mid-write (#439). The
-// client does not reconnect, so the broker's restart closes its connection; on the JetStream
-// input the consume loop's native Closed() then reports the end while the handler is still held
-// (natsclient/stream.go:421-427, #83), which the test checks before it stops. A Stop whose context
-// ends first returns that error and keeps the inputs for a later Stop; once the handler returns,
-// a later Stop returns nil and holds nothing (lifecycle-suite, retained handles). The core-NATS
-// input proves the same through Subscription.Drain.
+// runs, even after the broker went away for good while the handler was mid-write. The client does
+// not reconnect, so the broker's restart closes its connection; on the JetStream input the consume
+// loop's native Closed() then reports the end while the handler is still held
+// (natsclient/stream.go:421-427), which the test checks before it stops. A Stop whose context ends
+// first returns that error and keeps the inputs for a later Stop; once the handler returns, a later
+// Stop returns nil and holds nothing (lifecycle-suite, retained handles). The core-NATS input
+// proves the same through Subscription.Drain.
 func TestStopJoinsHandlerAfterConnectionLoss(t *testing.T) {
 	for _, lane := range []struct {
 		name, raw, subject string
@@ -190,7 +190,7 @@ func TestStopJoinsHandlerAfterConnectionLoss(t *testing.T) {
 
 // TestJetStreamInputAckWaitReachesConsumer: a JetStream input's declared ack_wait is the durable
 // consumer's AckWait on the server, and an input that declares none gets natsclient's 30 seconds
-// (natsclient/stream.go:897-900) (#438).
+// (natsclient/stream.go:897-900).
 func TestJetStreamInputAckWaitReachesConsumer(t *testing.T) {
 	for _, tc := range []struct {
 		name, declared string

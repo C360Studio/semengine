@@ -7,21 +7,19 @@ import (
 	"testing"
 )
 
-// TestQueryVerbsDeclareEachRespondersVerbs holds design D20: graph-ingest answers
-// exactly entity, batch and prefix on graph.ingest.query.*, and each entry
-// names its subject and responder. There is no suffix verb (design D19).
-// graph-index's eight verbs follow on graph.index.query.* (change 4, design
-// D6), the subjects the SemStreams pin's graph-index subscribed to
-// (pin:processor/graph-index/query.go:31-80). graph-query's forwards follow on
-// graph.query.* (design D1), with the derived-index verbs four of them forward
-// to (step 2, design D1); no other entry exists.
+// TestQueryVerbsDeclareEachRespondersVerbs: graph-ingest answers exactly
+// entity, batch, prefix and prefixIDs on graph.ingest.query.*, and each entry names its
+// subject and responder. There is no suffix verb. graph-index's eight verbs
+// follow on graph.index.query.*. graph-query's forwards follow on
+// graph.query.*, with the derived-index verbs four of them forward to, and
+// graph-lexical's search on graph.lexical.query.*; no other entry exists.
 func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	// The marks are literals per verb, read from what each handler replies with
 	// (graph-transport-boundary, "The verb table declares each reply's shape"):
 	// graph-ingest's replies are bare, graph-index's are enveloped, a forward
 	// answers as the verb it forwards to, and the two verbs graph-query composes
-	// from an index reply are enveloped (design D1). The derived-index verbs have no
-	// handler in the tree yet; their marks are design D1's of step 2.
+	// from an index reply are enveloped. The spatial and temporal verbs have no
+	// handler in the tree yet; their marks are the shapes the table declares for them.
 	want := []QueryVerb{
 		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
@@ -29,6 +27,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: false, Reply: reflect.TypeFor[EntityBatchResponse]()},
 		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: "graph-ingest",
 			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "prefixIDs", Subject: "graph.ingest.query.prefixIDs", Responder: "graph-ingest",
+			Enveloped: false, Reply: reflect.TypeFor[PrefixIDsResponse]()},
 		{Name: "outgoing", Subject: "graph.index.query.outgoing", Responder: "graph-index",
 			Enveloped: true, Reply: reflect.TypeFor[OutgoingRelationshipsData]()},
 		{Name: "incoming", Subject: "graph.index.query.incoming", Responder: "graph-index",
@@ -53,12 +53,16 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: true, Reply: reflect.TypeFor[SpatialData]()},
 		{Name: "range", Subject: "graph.temporal.query.range", Responder: "graph-index-temporal",
 			Enveloped: true, Reply: reflect.TypeFor[TemporalData]()},
+		{Name: "search", Subject: "graph.lexical.query.search", Responder: "graph-lexical",
+			Enveloped: true, Reply: reflect.TypeFor[LexicalSearchData]()},
 		{Name: "entity", Subject: "graph.query.entity", Responder: "graph-query",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "batch", Subject: "graph.query.batch", Responder: "graph-query",
 			Enveloped: false, Reply: reflect.TypeFor[EntityBatchResponse]()},
 		{Name: "prefix", Subject: "graph.query.prefix", Responder: "graph-query",
 			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "prefixIDs", Subject: "graph.query.prefixIDs", Responder: "graph-query",
+			Enveloped: false, Reply: reflect.TypeFor[PrefixIDsResponse]()},
 		{Name: "byName", Subject: "graph.query.byName", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
 		{Name: "predicate", Subject: "graph.query.predicate", Responder: "graph-query",
@@ -94,9 +98,9 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			ResponderGraphIngest, ResponderGraphIndex, ResponderGraphQuery)
 	}
 	if ResponderGraphEmbedding != "graph-embedding" || ResponderGraphIndexSpatial != "graph-index-spatial" ||
-		ResponderGraphIndexTemporal != "graph-index-temporal" {
-		t.Fatalf("responders = %q, %q, %q; want graph-embedding, graph-index-spatial, graph-index-temporal",
-			ResponderGraphEmbedding, ResponderGraphIndexSpatial, ResponderGraphIndexTemporal)
+		ResponderGraphIndexTemporal != "graph-index-temporal" || ResponderGraphLexical != "graph-lexical" {
+		t.Fatalf("responders = %q, %q, %q, %q; want graph-embedding, graph-index-spatial, graph-index-temporal, graph-lexical",
+			ResponderGraphEmbedding, ResponderGraphIndexSpatial, ResponderGraphIndexTemporal, ResponderGraphLexical)
 	}
 
 	got := QueryVerbs()
@@ -111,7 +115,7 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	}
 }
 
-// TestPredicateRequestWireNames holds the keys graph-index's predicate verb has always read, and that
+// TestPredicateRequestWireNames holds the keys graph-index's predicate verb reads, and that
 // an empty value still arrives as a value: a nil Value means no value filter.
 func TestPredicateRequestWireNames(t *testing.T) {
 	empty := ""
@@ -170,7 +174,7 @@ func TestPathSearchWireNames(t *testing.T) {
 }
 
 // TestQueryWireNames holds the spellings callers and responders meet on the wire:
-// a relationships row (design D5) and min_revision with its refusal code (design D3).
+// a relationships row and min_revision with its refusal code.
 func TestQueryWireNames(t *testing.T) {
 	row, err := json.Marshal(RelationshipEdge{Predicate: "test.rel.knows", FromEntityID: "from", ToEntityID: "to"})
 	if err != nil {
@@ -201,5 +205,8 @@ func TestQueryWireNames(t *testing.T) {
 
 	if ErrorCodeRevisionNotReached != "revision_not_reached" {
 		t.Fatalf("ErrorCodeRevisionNotReached = %q, want revision_not_reached", ErrorCodeRevisionNotReached)
+	}
+	if ErrorCodeNotEnabled != "not_enabled" {
+		t.Fatalf("ErrorCodeNotEnabled = %q, want not_enabled", ErrorCodeNotEnabled)
 	}
 }

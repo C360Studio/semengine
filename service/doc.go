@@ -16,15 +16,6 @@
 // MaybeStartPProf, WireGraphRuntime and the OpenAPI registry, plus the
 // service-configuration and schema helpers the service manager reads.
 //
-// This package is ported from SemStreams in seven pull requests. The first
-// carried BaseService and the shared files; the second Manager and Metrics; the
-// third ComponentManager, the service that owns the components (see the
-// component manager section); the fourth MessageLogger (see the message logger
-// section); the fifth StorageObservabilityService (see the storage observability
-// section); the sixth HeartbeatService and MetricsForwarder (see the heartbeat
-// and metrics forwarder sections); the seventh, the last, LogForwarder (see the
-// log forwarder section).
-//
 // # Embedding BaseService
 //
 // A service embeds the *BaseService that NewBaseServiceWithOptions builds from
@@ -50,12 +41,12 @@
 // new one to start again. Ending ctx after Start returned stops nothing; Stop
 // is the only stop (ADR-113).
 //
-// Stop(ctx) reports StatusStopping, starts no further health check, and
-// returns nil once the health goroutine has exited, leaving StatusStopped and
-// IsHealthy false. If ctx ends while it waits, Stop returns ctx's error and a
-// later Stop waits again. A ctx that has already ended stops nothing: Stop
-// returns its error at once and the service keeps running. So give Stop a
-// fresh bounded context, never the signal context that is ending the program:
+// Stop(ctx) refuses a nil ctx. On a started service any non-nil ctx (live or
+// already ended) initiates teardown: it reports StatusStopping, cancels the
+// health monitor's run context, and bounds only the wait for the goroutine to
+// exit, returning nil once joined (leaving StatusStopped and IsHealthy false)
+// or ctx's error if ctx ended first so a later Stop waits again. Pass Stop a
+// fresh bounded context so the goroutine has time to join cleanly:
 //
 //	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 //	defer cancel()
@@ -63,9 +54,9 @@
 //		logger.Warn("rule-config stop", "error", err)
 //	}
 //
-// A Stop after one that returned nil returns nil. A Stop while another Stop is
-// still waiting is refused as a transient error. Stop before Start returns nil,
-// and the service then refuses to start.
+// A Stop after one that joined everything returns nil for any non-nil ctx. A
+// Stop while another Stop is still waiting is refused as a transient error.
+// Stop before Start returns nil, and the service then refuses to start.
 //
 // The health check fails when the function set by SetHealthCheck returns an
 // error, or when the NATS client from WithNATS is not healthy. IsHealthy is
@@ -139,16 +130,16 @@
 // flight; if ctx ends first it closes every connection still open and returns
 // ctx's error, and a later StopAll waits again for the handlers that are still
 // running. So a service that serves a long-lived response, such as a stream,
-// must end it in its own Stop. A StopAll given a context that has already ended
-// stops nothing, so give it a fresh bounded context, never the signal context
-// that is ending the program. A service whose Stop returns errs.ErrAlreadyStopped
-// counts as stopped; any other failure is returned naming the service, and the
-// next StopAll runs the whole stop again.
+// must end it in its own Stop. StopAll refuses a nil context; any non-nil
+// context (live or already ended) initiates teardown across every started
+// service and listener, using ctx only to bound waits. A service whose Stop
+// returns errs.ErrAlreadyStopped counts as stopped; any other failure is
+// returned naming the service, and the next StopAll runs the whole stop again.
 //
 // UseHTTPMiddleware wraps every route the main listener serves, the startup
 // routes as well as the full set, outermost first. It must be called before
 // StartAll; a later call is ignored with a Warn. The dedicated health listener
-// takes no middleware, and the framework supplies none (SemStreams ADR-030,
+// takes no middleware, and the framework supplies none (ADR-030,
 // docs/adr/030-http-middleware-and-identity-pattern.md).
 //
 // StartHealthListener(ctx, port) binds a second listener that serves only
@@ -160,7 +151,7 @@
 // Boot seals the composition: a change to the services section of the
 // configuration after StartAll is desired state for the next boot and starts,
 // stops or reconfigures nothing, and /services reports it as restart_required
-// (SemStreams ADR-094, docs/adr/094-boot-only-composition-and-observable-rule-activation.md).
+// (ADR-094, docs/adr/094-boot-only-composition-and-observable-rule-activation.md).
 //
 // # The routes
 //
@@ -214,7 +205,7 @@
 //
 // NewComponentManager reads the boot configuration once; later writes to it are
 // desired state for the next boot and change nothing in the running set
-// (SemStreams ADR-094 and ADR-096, docs/adr). It builds each enabled component
+// (ADR-094 and ADR-096, docs/adr). It builds each enabled component
 // through Registry.CreateComponent in instance-name order, checks the whole set
 // with composition.Analyze, and seals the registry (ADR-100). It returns an
 // error, and no service, when the Manager or ComponentRegistry is missing, when
@@ -243,15 +234,16 @@
 // failing ones included, in reverse start order. If the rollback fails too, the
 // next Stop runs it again.
 //
-// Stop(ctx) is the only stop. It refuses a nil ctx; given an ended ctx it
-// returns that error and stops nothing. Before any Start it returns nil and a
-// later Start is refused. Otherwise it marks the stop begun (/readyz answers
-// 503 NOT READY from then), stops each started component with ctx in reverse
-// start order (just before a provider's own Stop it removes that provider's
-// stores from the store registry), then ends the manager's own loops and its
-// base service, and returns nil only once all are released. A component whose Stop failed, or was not reached because ctx ended,
-// is stopped again by the next Stop; one whose Stop returned nil is not called
-// again. A Stop while another runs is refused as transient. A Stop that arrives
+// Stop(ctx) is the only stop. It refuses a nil ctx; any non-nil ctx (live or
+// already ended) initiates teardown and uses ctx only to bound waits. Before
+// any Start it returns nil and a later Start is refused. Otherwise it marks the
+// stop begun (/readyz answers 503 NOT READY from then), stops each started
+// component with ctx in reverse start order (removing each provider's stores
+// from the store registry before its Stop, even when ctx has already ended),
+// then ends the manager's own loops and its base service, and returns nil only
+// once all are released. A component whose Stop failed (including one cut short
+// by ctx) is stopped again by the next Stop; one whose Stop returned nil is not
+// called again. A Stop while another runs is refused as transient. A Stop that arrives
 // while Start is running waits for every component's Start to return, or
 // returns its own context's error first; a caller cuts a slow boot short only
 // by ending the context it gave Start.
@@ -259,8 +251,8 @@
 // GetComponentHealth, GetComponentStatus, the /components routes and the
 // manager's health check wait on no lock and not on Start or Stop. Each asks the
 // component itself, so a request during or after Stop gets whatever the
-// component answers then; SemStreams kept such requests away from a stopping
-// component and this manager does not. A component author holds the line in
+// component answers then; the manager does not keep such requests away from a
+// stopping component. A component author holds the line in
 // component.LifecycleComponent: Health, DataFlow and DebugStatus may be called
 // at any time and return without waiting for Start or Stop. The tree enforces
 // it for graph-ingest only. The manager's own health is unhealthy while any
@@ -282,10 +274,10 @@
 // serves it as is, flowgraph serves its graph, and paths serves
 // composition.FlowPaths of that graph with counts of the answer.
 // BuildComponentTypeCatalog returns what types serves, for a
-// product that serves the catalog elsewhere. One declared difference: GET
+// product that serves the catalog elsewhere. One declared quirk: GET
 // /components/types/{id} for an unregistered type answers 404 with the body
-// {"error":"Component type <id> not found"} sent as text/plain, not JSON, as
-// SemStreams does; read the status code, not the text.
+// {"error":"Component type <id> not found"} sent as text/plain, not JSON; read
+// the status code, not the text.
 //
 // ConfigureRulePackMutations(manager) hands a reconciler to each rule
 // processor. A composition root must call it after ConfigureFromServices and
@@ -348,10 +340,10 @@
 // subject_reconciliation_degraded true with subject_reconciliation_error, and
 // the logger's health check fails naming the subjects, so IsHealthy turns false
 // and /readyz answers not ready; health checks run every 30 seconds, so each
-// change shows within one interval. Stop is the only stop: it ends the retry,
-// drains every subscription so a message being handled is stored, ends every
-// open KV watch stream and stops the base service. It refuses a nil ctx and,
-// given an ended ctx, returns that error and stops nothing; if ctx ends first
+// change shows within one interval. Stop is the only stop: it refuses a nil ctx,
+// and on any non-nil ctx (live or already ended) fences new KV watches, ends
+// the retry, initiates every subscription drain, closes open KV watch streams,
+// and stops the base service, using ctx only to bound waits; if ctx ends first
 // the next Stop finishes the rest.
 //
 // A message that decodes as a typed envelope is stored under its type name and
@@ -394,12 +386,9 @@
 // entity.
 //
 // It is report-only. It rejects no write, throttles no component, fails no
-// readiness or health check and applies no retention because of pressure; the
-// pin's storage observability spec defers capacity admission until four
-// conditions hold (the report runs in production, the projection is checked
-// against outcome on at least three real resources, no critical state clears
-// without an operator, and the rejection path classifies transient and NAKs),
-// and a consumer that wants backpressure reads the report and decides itself.
+// readiness or health check and applies no retention because of pressure. The
+// service does no capacity admission: a consumer that wants backpressure reads
+// the report and decides for itself.
 //
 // It is off unless the configuration enables it: ResolveServiceConfigs does not
 // add it. RegisterAll registers its constructor, NewStorageObservabilityService,
@@ -433,8 +422,7 @@
 // when anything was evaluated), account (once an account row was read) and
 // every published row in resources, unfiltered.
 //
-// The 19 metrics are named semengine_storage_*, where the SemStreams pin used
-// semstreams_storage_*. A value that was not measured has no series, and a
+// The 19 metrics are named semengine_storage_*. A value that was not measured has no series, and a
 // series is deleted when its value goes away. configs/prometheus/rules holds
 // example alert rules over these names; the engine does not load them. See
 // service/README.md for the full list.
@@ -471,7 +459,7 @@
 //
 // LogForwarder forwards nothing yet: no log handler in this module publishes
 // logs to NATS, and pkg/logging and the boot wiring that would install one are
-// not ported. It checks its settings, runs the base service's lifecycle and, at
+// not in this module. It checks its settings, runs the base service's lifecycle and, at
 // Start, writes one record at Warn saying so, with the resolved min_level
 // (DEBUG, INFO, WARN or ERROR, default INFO) and exclude_sources (the
 // configured source prefixes, trimmed and de-duplicated, with nothing added).
@@ -502,7 +490,7 @@
 // bind failure is logged at Warn on logger and returns nil, because profiling
 // is a debug aid, never a reason to fail the boot. It is not a Service: the
 // composition root calls it early, before NATS, so a slow boot can be
-// profiled (SemStreams ADR-058, docs/adr/058-boot-lifecycle-phases.md).
+// profiled (ADR-058, docs/adr/058-boot-lifecycle-phases.md).
 //
 // The composition root shuts it down on its exit path, after its services
 // have stopped. Shutdown on a nil *PProfServer returns nil, so this is safe

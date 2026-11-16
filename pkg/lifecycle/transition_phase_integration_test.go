@@ -18,7 +18,7 @@ import (
 // TestTransitionReplacesItsPhaseStatement drives a create and two transitions, under different
 // TransitionSources, through a real graph-ingest, and reads the entity back from ENTITY_STATES:
 // it holds one phase statement, the last phase, and that statement carries the manager's own
-// source, semengine-lifecycle, not the TransitionSource of either transition (design D15). The
+// source, semengine-lifecycle, not the TransitionSource of either transition. The
 // TransitionSource is the audit field's value, not the statement's source.
 func TestTransitionReplacesItsPhaseStatement(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)

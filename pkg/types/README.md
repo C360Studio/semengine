@@ -44,7 +44,7 @@ Six-part federated entity identifier in the canonical order org.platform.system.
 produced the entity, `domain.type` is a delegated taxonomy, `instance` is the leaf.
 
 The taxonomy vocabulary is **shared**: more than one producer may declare the same `domain`, and the framework
-permits it (owner ruling 2026-08-28, superseding #1095 O-5). Sharing `web` between two products collides nothing —
+permits it (owner ruling 2026-08-28). Sharing `web` between two products collides nothing —
 `system` at position 3 keeps `acme.prod.semsource.web.page.001` and `acme.prod.semdragon.web.doc.001` apart, and
 ADR-099 level 0 is source x taxonomy, so they are distinct communities. It is also what makes
 `org.platform.*.<domain>.*.*` useful: that pattern is "this taxonomy across every source", and it only has more than

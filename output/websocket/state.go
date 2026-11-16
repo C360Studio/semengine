@@ -23,7 +23,7 @@ import (
 // (processor/graph-query/community.go).
 const viewRecheck = 5 * time.Second
 
-// The applied-state readiness, the view supervisor's stuck state (design D3). appliedCatchingUp is
+// The applied-state readiness, the view supervisor's stuck state. appliedCatchingUp is
 // the zero value: no view has caught up since Start.
 const (
 	appliedCatchingUp int32 = iota
@@ -56,7 +56,7 @@ type stateSubscription = graphview.Subscription[storedState]
 // superviseView runs views of ENTITY_STATES until ctx, the run context, ends: it opens the bucket
 // through the catalog's reader, which never creates it, runs one view until it returns, waits
 // viewRecheck and opens again, as graph-query does for COMMUNITY_INDEX. A missing bucket and a lost
-// watch are the same case: upgrades are refused until a new view has caught up (design D3).
+// watch are the same case: upgrades are refused until a new view has caught up.
 //
 // Each failure is logged, at Warn when it is the first, differs from the last one logged, or follows
 // a view that opened, and at Debug otherwise. Once ctx ends it returns nil, or the error of the
@@ -124,7 +124,7 @@ func (c *output) runView(ctx context.Context) (bool, error) {
 }
 
 // decodeState is the view's decode: every key is an entity, and a value graph.UnmarshalEntityState
-// refuses poisons that key until a valid write replaces it (graphview G6). The stored bytes are
+// refuses poisons that key until a valid write replaces it. The stored bytes are
 // kept as they are, so a put frame carries what graph-ingest stored.
 func (c *output) decodeState(key string, value []byte, meta graphview.EntryMeta) (storedState, bool, error) {
 	c.lifecycle.CountInput(len(value))
@@ -137,7 +137,7 @@ func (c *output) decodeState(key string, value []byte, meta graphview.EntryMeta)
 }
 
 // countCoalesced is the view's fan-out hook: changes overwritten in a client's pending buffer before
-// its writer took them are counted and logged as client_behind (design D2, "Declared drops").
+// its writer took them are counted and logged as client_behind.
 // Merging inside the view's own window is the contract, and graphview does not count it.
 func (c *output) countCoalesced(overwritten, _ int) {
 	if overwritten == 0 {
@@ -190,7 +190,7 @@ func (c *output) notReady() string {
 // frames is a sequence of frames a writer sends one at a time, building each as it goes.
 type frames func() (frame []byte, ok bool)
 
-// snapshotFrames are a client's first frames (design D2): a put per entity, by key, a poisoned per
+// snapshotFrames are a client's first frames: a put per entity, by key, a poisoned per
 // poisoned key, by key, then synced at the snapshot's revision.
 func snapshotFrames(s graphview.Snapshot[storedState]) frames {
 	keys := slices.Sorted(maps.Keys(s.Entries))

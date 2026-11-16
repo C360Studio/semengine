@@ -17,7 +17,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// This file is graph-ingest's one write seam (design D15, #100): every write to the entity
+// This file is graph-ingest's one write seam (ADR-110): every write to the entity
 // bucket (ENTITY_STATES) is made here, one method per write mode, so the rule each mode applies
 // to a stored entity is read in one place. TestEntityWritesHaveOneSeam fails when the bucket is
 // written from any other file.
@@ -25,7 +25,7 @@ import (
 // After each commit a method here does the bookkeeping every write owes: it clears
 // the key's poison record at the revision it committed, or drops it on a delete, and invalidates
 // the key's entity-query cache entry, in that order, before it returns. A write that returns an
-// error may still have committed (#174), so after one a method here
+// error may still have committed, so after one a method here
 // does the bookkeeping that needs no revision instead (writeFailed). Callers keep their own
 // validation, authority checks, metrics and replies; a method here takes what its mode needs and
 // returns the revision it committed (where the caller uses it) and the bucket's error unwrapped,
@@ -38,17 +38,17 @@ import (
 //
 //   - create (createEntity): mutation create; in-process create (hierarchy containers).
 //   - replace (replaceEntity): the stream lane. A birth when the key is absent (refused when the
-//     lane's read before the hierarchy inference found the key; design D21), else
+//     lane's read before the hierarchy inference found the key), else
 //     graph.ReplaceBySource: each (predicate, source) set the arrival carries replaces the stored
 //     set of the same key, unless it is older, under the KV revision.
 //   - conditional replace (reconcileCandidate, then replaceEntityAtRevision): mutation reconcile,
 //     at the caller's expected revision.
-//   - append (appendEntityTriples): mutation append, its one lane (ruling M removed the
-//     in-process append). Identity is message.AppendIdentityKey, under the KV revision. An
+//   - append (appendEntityTriples): mutation append, its one lane; there is no
+//     in-process append. Identity is message.AppendIdentityKey, under the KV revision. An
 //     append that adds nothing writes nothing and is unchanged at the revision it read.
 //   - delete (deleteEntity): mutation delete, at the caller's expected revision.
 
-// requireStatementMetadata is the seam's statement-metadata rule (design D15, #98): every
+// requireStatementMetadata is the seam's statement-metadata rule (ADR-110 Decision 5): every
 // statement the seam stores has a non-empty Source and a non-zero Timestamp, and neither is
 // defaulted from the clock. It refuses the first of triples that lacks either as
 // invalid_request, naming the statement's index and the missing field.
@@ -66,7 +66,7 @@ import (
 //
 // The stream lane's merge and the append also apply it to their complete result (encodeMerge),
 // where a statement it refuses was kept from the stored value, so the refusal is the stored
-// value's (design D23; checkpoint 3 H3); the lanes' check is the one that names the caller's
+// value's; the lanes' check is the one that names the caller's
 // index.
 func requireStatementMetadata(triples []message.Triple) error {
 	if err := graph.ValidateStatementMetadata(triples); err != nil {
@@ -78,8 +78,8 @@ func requireStatementMetadata(triples []message.Triple) error {
 // requireOwnStatements is requireStatementMetadata for a write whose derived statements take
 // their time from its own: a create on the mutation and in-process lanes, and the stream lane's
 // merge. It also refuses a write that carries no statement: the statements graph-ingest derives
-// take the latest Timestamp among the write's own, so with none there is no time to give them
-// (design D15). On the stream lane extractEntityFromMessage has already refused such a message
+// take the latest Timestamp among the write's own, so with none there is no time to give them.
+// On the stream lane extractEntityFromMessage has already refused such a message
 // as poison, so the rule is a second line there.
 func requireOwnStatements(triples []message.Triple) error {
 	if len(triples) == 0 {
@@ -93,9 +93,9 @@ func requireOwnStatements(triples []message.Triple) error {
 // revision: the stream lane's replace and the append. candidate, the merge's complete result,
 // must pass the statement-metadata rule and then MarshalEntityState; nothing missing is filled
 // from the arrival or the clock. The statements the write brings have passed the rule at its lane,
-// so one that fails it here was kept from current (checkpoint 3 H3). Either refusal goes to
+// so one that fails it here was kept from current. Either refusal goes to
 // classifyStoredStateRMWError, which blames current and records it at revision when
-// decodeStoredEntity refuses it (design D23).
+// decodeStoredEntity refuses it.
 func (c *Component) encodeMerge(ctx context.Context, key string, current []byte, revision uint64, candidate *graph.EntityState) ([]byte, error) {
 	if err := requireStatementMetadata(candidate.Triples); err != nil {
 		return nil, c.classifyStoredStateRMWError(ctx, key, current, revision, err)
@@ -108,9 +108,9 @@ func (c *Component) encodeMerge(ctx context.Context, key string, current []byte,
 }
 
 // distinctStatements is a birth's statements with each one equal in every field to an earlier
-// one left out, the first kept, in order: within one write such statements count once (design
-// D15). Each birth applies it last, to the statements it encodes, after its lane has checked the
-// statements its caller gave, so a refusal still names the caller's index (checkpoint 3 H1). It
+// one left out, the first kept, in order: within one write such statements count once.
+// Each birth applies it last, to the statements it encodes, after its lane has checked the
+// statements its caller gave, so a refusal still names the caller's index. It
 // is the replace rule's own comparison: over no stored statement, graph.ReplaceBySource applies
 // every set the write carries and keeps each such statement once, so a birth and a later replace
 // with the same statements store the same ones.
@@ -139,19 +139,19 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // the caller read the key before the hierarchy inference and found the entity, so it ran no
 // inference; finding the key absent now means the entity was deleted in between, and a birth
 // would lack its hierarchy. Nothing is written and the error is classified transient: the
-// stream lane leaves the arrival unacknowledged, and its redelivery reads the key again (design
-// D21). Otherwise each (predicate, source) set of
+// stream lane leaves the arrival unacknowledged, and its redelivery reads the key again.
+// Otherwise each (predicate, source) set of
 // entity's statements replaces the stored set of the same key (graph.ReplaceBySource), except a
 // set older than the stored one, which is left out, counted on stale_sets_total and logged at
-// debug level once the write commits or is declined (design D15, "Timestamp orders a replace").
-// An arrival none of whose sets applies writes nothing over a profiled entity (design D23); over
+// debug level once the write commits or is declined (graph-entity-writes spec, "Timestamp orders a replace").
+// An arrival none of whose sets applies writes nothing over a profiled entity; over
 // an unprofiled one it writes once, to stamp the profile (SemStreams ADR-054). The bucket
 // re-runs the callback after a create conflict or a create no stream received, so the birth never
-// changes entity: a retry that finds the key present merges from the arrival as it came (#91,
-// PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. A
+// changes entity: a retry that finds the key present merges from the arrival as it came.
+// A profile it stamps carries at, the arrival's triggeringTime. A
 // stored value the seam's read check refuses (decodeStoredForWrite), or a merge the metadata check
 // or the write gate refuses for a statement kept from it (encodeMerge), writes nothing and is
-// recorded at the revision read (design D23). It returns the revision it committed, or 0 when it
+// recorded at the revision read. It returns the revision it committed, or 0 when it
 // wrote nothing.
 func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, readFound bool, at time.Time) (uint64, error) {
 	// stale is the last attempt's sets not applied as older: the one that committed or declined.
@@ -173,8 +173,8 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 			c.casRetries.Inc()
 		}
 		stale = nil
-		// First write: entity didn't exist (absence is revision 0, never an empty value; design
-		// D23). Apply hierarchy triples (deterministic-per-ID so safe to apply once on create),
+		// First write: entity didn't exist (absence is revision 0, never an empty value).
+		// Apply hierarchy triples (deterministic-per-ID so safe to apply once on create),
 		// then store each statement once.
 		if read == 0 {
 			if readFound {
@@ -205,7 +205,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// Hierarchy triples are NOT re-applied — they landed on the
 		// original create and would only produce duplicates here.
 		//
-		// SemStreams gh#562: the read check is the trusted decode plus the key check, on the
+		// The read check is the trusted decode plus the key check, on the
 		// per-key-serialized ingest hot path; the metadata check and MarshalEntityState below
 		// re-validate the merged candidate (encodeMerge), so a poisoned statement kept from the
 		// stored value still fails the write (classified via classifyStoredStateRMWError).
@@ -225,16 +225,16 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		}
 		// Each (predicate, source) set replaces the stored set of the same key whole; the
 		// predicate's statements from other sources, and predicates the arrival does not carry
-		// (e.g. lifecycle-managed ones, SemStreams gh#177), stay. A re-arrival of the same set replaces it,
-		// so a producer republishing an entity does not accumulate statements (SemStreams gh#466).
+		// (e.g. lifecycle-managed ones), stay. A re-arrival of the same set replaces it,
+		// so a producer republishing an entity does not accumulate statements.
 		// ReplaceBySource returns a new slice whenever newer is non-empty, and existing's own
 		// otherwise, so reconcileIndexingProfile's in-place filter below never writes into the
 		// arrival's statements.
 		replaced := graph.ReplaceBySource(existing.Triples, newer)
 		stale = replaced.Stale
 		// No set applies: the arrival's only statements were the profile, dropped above, or every
-		// set is older. It changes nothing on a profiled entity, so the write is declined (design
-		// D23, "Every set is older"; #150). A rewrite would bump the revision and re-fire the
+		// set is older. It changes nothing on a profiled entity, so the write is declined
+		// (graph-entity-writes spec, "Every set is older"). A rewrite would bump the revision and re-fire the
 		// ENTITY_STATES watchers for nothing. Each older set is still counted below.
 		if profiled && (len(newer) == 0 || everySetStale(newer, stale)) {
 			return nil, natsclient.ErrKVSkipWrite
@@ -274,7 +274,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 	if revision == 0 {
 		// The callback declined (UpdateWithRetryRead returns 0 only then) and nothing was
 		// written. A skip clears no poison record and invalidates no cache entry: the next
-		// valid read or commit clears a stale record (D3c).
+		// valid read or commit clears a stale record.
 		return 0, nil
 	}
 	c.committed(ctx, entity.ID, revision)
@@ -301,7 +301,7 @@ func everySetStale(arrival []message.Triple, stale []graph.StaleSet) bool {
 }
 
 // unmarshalEntityStateTrusted decodes stored ENTITY_STATES bytes WITHOUT
-// re-validating the canonical entity-state contract (SemStreams gh#562).
+// re-validating the canonical entity-state contract.
 //
 // It exists for graph-ingest's own read-modify-write reads — the CAS merge and
 // mutation closures — and is unexported so no other reader can reach it (SemStreams ADR-081).
@@ -327,7 +327,7 @@ func unmarshalEntityStateTrusted(data []byte, entity *graph.EntityState) error {
 	return nil
 }
 
-// decodeStoredForWrite is the write seam's read check (design D23; ADR-110 Decision 6) of current,
+// decodeStoredForWrite is the write seam's read check (ADR-110 Decision 6) of current,
 // a value stored under key and read at revision, which is nonzero: the trusted decode, then the
 // key check. Absence is revision 0, so an empty value here is unreadable, never a birth or an
 // absent entity. A value it refuses is recorded in the poison inventory at revision and returned
@@ -354,7 +354,7 @@ func (c *Component) decodeStoredForWrite(ctx context.Context, key string, curren
 // reconcileCandidate is the conditional replace's rule, applied to the state the caller read at
 // its expected revision: desired (with repeats counted once) replaces source's stored statements
 // of predicates whole, an empty desired set clears them, and the statements of predicates from
-// every other source stay (design D15). unchanged reports that source's stored statements of
+// every other source stay. unchanged reports that source's stored statements of
 // predicates already equal desired in every field, in which case nothing is to be written and
 // candidate is nil.
 func reconcileCandidate(current *graph.EntityState, source string, desired []message.Triple, predicates map[string]struct{}) (candidate *graph.EntityState, unchanged bool) {
@@ -395,7 +395,7 @@ type appendResult struct {
 // to subject's stored entity each of triples whose message.AppendIdentityKey is not stored yet.
 // The entity must exist: an absent subject fails with natsclient.ErrKVKeyNotFound. A stored
 // value is refused as replaceEntity refuses one, before any triple is compared with it. When
-// every triple is already stored the result is unchanged at the revision read (design D23). On
+// every triple is already stored the result is unchanged at the revision read. On
 // an error the result is the zero value.
 func (c *Component) appendEntityTriples(ctx context.Context, subject string, triples []message.Triple) (appendResult, error) {
 	// read and suppressed are assigned on each run of the callback, never accumulated, so they
@@ -409,11 +409,11 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 		if currentRevision == 0 {
 			// Must-exist (SemStreams ADR-055): a triple targeting an absent entity is
 			// rejected, not silently auto-vivified. Absence is revision 0, never an
-			// empty value (design D23). NonRetryable stops the CAS loop and surfaces
+			// empty value. NonRetryable stops the CAS loop and surfaces
 			// the sentinel for the handler to map.
 			return nil, retry.NonRetryable(natsclient.ErrKVKeyNotFound)
 		}
-		// SemStreams gh#562: the read check is the trusted decode plus the key check;
+		// The read check is the trusted decode plus the key check;
 		// the metadata check and MarshalEntityState below re-validate the final candidate.
 		entity, err := c.decodeStoredForWrite(ctx, subject, current, currentRevision)
 		if err != nil {
@@ -441,7 +441,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 			// TRUE no-op: decline the write. Returning `current` instead would be
 			// an identity rewrite (revision bump + ENTITY_STATES watcher re-fire),
 			// and a restart replaying its derived triples must be invisible
-			// downstream (SemStreams gh#713).
+			// downstream.
 			return nil, natsclient.ErrKVSkipWrite
 		}
 
@@ -457,7 +457,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 	if revision == 0 {
 		// The callback declined (UpdateWithRetryRead returns 0 only then) and nothing was
 		// written. A skip clears no poison record and invalidates no cache entry: the next
-		// valid read or commit clears a stale record (D3c).
+		// valid read or commit clears a stale record.
 		return appendResult{revision: read, outcome: graph.MutationUnchanged, suppressed: suppressed}, nil
 	}
 	c.committed(ctx, subject, revision)
@@ -479,7 +479,7 @@ func (c *Component) deleteEntity(ctx context.Context, entityID string, revision 
 
 // committed is the bookkeeping after a write that committed revision under entityID: the
 // write passed the MarshalEntityState gate, so a poison record at or below revision is stale
-// (clear path (b), D3b), and the next query must not be served the entry cached before it.
+// (clear path (b)), and the next query must not be served the entry cached before it.
 func (c *Component) committed(ctx context.Context, entityID string, revision uint64) {
 	c.clearEntityPoisonOnCommit(ctx, entityID, revision)
 	c.invalidateEntityCacheEntry(entityID)
@@ -487,12 +487,12 @@ func (c *Component) committed(ctx context.Context, entityID string, revision uin
 
 // writeFailed is the bookkeeping after a write to entityID that returned an error. The write may
 // have committed: natsclient does not promise that a write which returns an error stored nothing
-// (natsclient.KVStore.UpdateWithRetryRev), and a lost reply is one such case (#174). With no
+// (natsclient.KVStore.UpdateWithRetryRev), and a lost reply is one such case. With no
 // revision to clear against, it invalidates the key's entity-query cache entry, so the next query
 // reads the bucket, and re-checks a poison record the key holds against the key's current bytes
 // (verifyEntityPoisonRecord), so a delete or a valid write that stood clears it. It runs after
 // every error, not only those that may have committed: an invalidation is always safe, and the
-// re-check reads the bucket only for a key already recorded (design D1). With the inventory empty
+// re-check reads the bucket only for a key already recorded. With the inventory empty
 // the re-check costs one atomic load.
 func (c *Component) writeFailed(ctx context.Context, entityID string) {
 	if c.entityPoisonSize.Load() != 0 {

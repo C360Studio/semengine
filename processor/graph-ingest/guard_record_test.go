@@ -48,11 +48,11 @@ func guardRecordWork(id string, seq uint64, msg *keyedIngestTestMsg) ingestWork 
 	return ingestWork{entity: entity, msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: id, stream: guardRecordStream, seq: seq}
 }
 
-// TestCorruptGuardRecordIsRefused holds graph-ingest-recovery, "A record that cannot be decoded"
-// (design D21): a stored applied-sequence record graph-ingest cannot decode is refused. The input
-// is neither applied nor acknowledged, so it is delivered again; each refusal is counted, and the
-// key is logged once. Once the key is deleted the redelivery applies and is acknowledged. When the
-// same key is later corrupted again, that is a new refusal, logged again.
+// TestCorruptGuardRecordIsRefused holds graph-ingest-recovery, "A record that cannot be decoded":
+// a stored applied-sequence record graph-ingest cannot decode is refused. The input is neither
+// applied nor acknowledged, so it is delivered again; each refusal is counted, and the key is
+// logged once. Once the key is deleted the redelivery applies and is acknowledged. When the same
+// key is later corrupted again, that is a new refusal, logged again.
 func TestCorruptGuardRecordIsRefused(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"), withMetricsRegistry(registry))
@@ -169,9 +169,9 @@ func TestCorruptGuardRecordIsRefused(t *testing.T) {
 }
 
 // TestGuardRecordOfAnyOtherLengthIsRefused: graph-ingest writes its applied-sequence record as
-// sixteen bytes, the stream generation and the sequence (#15), so a record of any other length,
-// shorter or longer, cannot be decoded and is refused. The pin's eight-byte record, a sequence with
-// no generation, is among them; a longer one is not read by its first sixteen bytes.
+// sixteen bytes, the stream generation and the sequence, so a record of any other length, shorter
+// or longer, cannot be decoded and is refused. An eight-byte record, a sequence with no generation,
+// is among them; a longer one is not read by its first sixteen bytes.
 func TestGuardRecordOfAnyOtherLengthIsRefused(t *testing.T) {
 	for _, size := range []int{0, 8, 15, 17} {
 		registry := metric.NewMetricsRegistry()

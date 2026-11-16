@@ -63,7 +63,7 @@ func TestValidSubject(t *testing.T) {
 }
 
 // FuzzValidSubject checks ValidSubject against referenceValidSubject, the
-// grammar written out in this file (D3), and checks that a subject covers
+// grammar written out in this file, and checks that a subject covers
 // itself exactly when it is valid.
 func FuzzValidSubject(f *testing.F) {
 	for _, subject := range validSubjectCases {
@@ -84,8 +84,8 @@ func FuzzValidSubject(f *testing.F) {
 	})
 }
 
-// TestSubjectHelpersRefuseWhitespace is #368's reproduction, widened to form
-// feed: a malformed subject is covered by nothing and overlaps nothing.
+// TestSubjectHelpersRefuseWhitespace: a subject holding whitespace, form feed
+// included, is malformed, so it is covered by nothing and overlaps nothing.
 func TestSubjectHelpersRefuseWhitespace(t *testing.T) {
 	for _, ws := range subjectWhitespace {
 		subject := "a.foo" + ws + "bar"
@@ -112,10 +112,10 @@ var malformedSubjectCases = func() []string {
 	return cases
 }()
 
-// referenceValidSubject is the subject grammar stated in the design (D3),
-// written independently of the package's own check: one or more
-// `.`-separated tokens; each is `*`, `>` (last only), or a non-empty run with
-// no `*`, `>`, space, tab, line feed, carriage return or form feed.
+// referenceValidSubject is the subject grammar, written independently of the
+// package's own check: one or more `.`-separated tokens; each is `*`, `>` (last
+// only), or a non-empty run with no `*`, `>`, space, tab, line feed, carriage
+// return or form feed.
 func referenceValidSubject(subject string) bool {
 	tokens := strings.Split(subject, ".")
 	for index, token := range tokens {

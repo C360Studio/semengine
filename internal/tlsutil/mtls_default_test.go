@@ -16,8 +16,8 @@ import (
 // TestServerMTLSRequiresClientCertificateByDefault: with mTLS enabled, neither the optional
 // flag set nor a CN allowlist, a client with no certificate is refused and a client whose
 // certificate the client CA signed is served, in a real handshake on TLS 1.2 and on TLS 1.3.
-// Before owner ruling #9 comment 5994720412 item 4 the zero value of the pin's
-// RequireClientCert made client certificates optional, so the first client was served.
+// The zero value fails closed: a zero value that made client certificates optional would
+// serve the first client.
 func TestServerMTLSRequiresClientCertificateByDefault(t *testing.T) {
 	versions := []struct {
 		name    string

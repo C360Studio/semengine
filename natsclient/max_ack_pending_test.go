@@ -2,10 +2,10 @@ package natsclient
 
 import "testing"
 
-// TestBuildConsumerConfig_MaxAckPending covers the final hop that a prior review
-// found silently dropped -1 (unlimited): buildConsumerConfig must pass a non-zero
+// TestBuildConsumerConfig_MaxAckPending covers the final hop, where -1
+// (unlimited) is easy to drop silently: buildConsumerConfig must pass a non-zero
 // MaxAckPending (including -1) through to jetstream.ConsumerConfig, while 0 stays
-// unset so NATS applies its server default (gh#480).
+// unset so NATS applies its server default.
 func TestBuildConsumerConfig_MaxAckPending(t *testing.T) {
 	c := &Client{}
 	tests := []struct {

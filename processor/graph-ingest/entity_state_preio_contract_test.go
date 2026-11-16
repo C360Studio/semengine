@@ -72,10 +72,10 @@ func TestMutationEntityIdentityRejectionPrecedesKVIO(t *testing.T) {
 			},
 		},
 		{
-			// SemStreams gh#562 write-cost: pins MergeEntity's kept entity-ID-only
-			// preflight — the ID is the CAS key and the hierarchy-probe key,
-			// so a malformed root ID must reject before any KV I/O even
-			// though the full candidate pass moved to the write gate.
+			// Write cost: the merge lane keeps an entity-ID-only preflight — the
+			// ID is the CAS key and the hierarchy-probe key, so a malformed root
+			// ID must reject before any KV I/O even though the full candidate pass
+			// is the write gate's.
 			name: "merge entity malformed root ID",
 			run: func(component *Component) error {
 				return component.mergeEntityOnLane(context.Background(), malformedRootEntity, false)

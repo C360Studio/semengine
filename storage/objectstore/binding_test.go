@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// The binding-plan tests, carried from the pin's config_ports_test.go:23-148. Each builds the
-// Component through the factory from the JSON an operator writes; the pin built it from a Config
-// literal. Every configuration now carries the stored output an input needs (design D3).
+// The binding-plan tests. Each builds the Component through the factory from the JSON an operator
+// writes. Every configuration carries the stored output an input needs.
 
 // plannedConsumers builds the Component from inputs (port definitions as JSON) and returns the
 // durable consumer name its plan gives each JetStream input, by subject.
@@ -31,8 +30,7 @@ func jetStreamInput(name, stream, subject string) string {
 }
 
 // TestInputBindingPlanKeepsUniqueLegacyConsumerName: an input whose legacy consumer name collides
-// with no other keeps it, so a deployment's existing durable consumer is bound again (pin
-// TestObjectStoreInputBindingPlanPreservesUniqueLegacyConsumerName).
+// with no other keeps it, so a deployment's existing durable consumer is bound again.
 func TestInputBindingPlanKeepsUniqueLegacyConsumerName(t *testing.T) {
 	got := plannedConsumers(t, jetStreamInput("store_in", "MAPPED", "mapped.messages"))
 	if want := "objectstore-objectstore-mapped-messages"; got["mapped.messages"] != want {
@@ -42,8 +40,8 @@ func TestInputBindingPlanKeepsUniqueLegacyConsumerName(t *testing.T) {
 
 // TestInputBindingPlanDisambiguatesLegacyCollisionsStably: four subjects whose legacy names
 // collide on one stream each get a hashed name that depends on the subject only, not on the
-// port's name or order (pin TestObjectStoreInputBindingPlanDisambiguatesLegacyCollisionsStably).
-// The digests are the pin's literals.
+// port's name or order. The digests are fixed literals, so a change to what the hash covers,
+// which would rename a deployment's existing consumers, fails here.
 func TestInputBindingPlanDisambiguatesLegacyCollisionsStably(t *testing.T) {
 	forward := strings.Join([]string{
 		jetStreamInput("dot", "COLLIDE", "foo.bar"),
@@ -76,8 +74,7 @@ func TestInputBindingPlanDisambiguatesLegacyCollisionsStably(t *testing.T) {
 
 // TestInputBindingPlanRefusesExactDuplicates: two inputs bound to the same subject (core NATS) or
 // the same stream and subject (JetStream) are refused at construction, naming both ports in
-// sorted order, whatever order they were declared in (pin
-// TestObjectStoreInputBindingPlanRejectsExactDuplicatesDeterministically).
+// sorted order, whatever order they were declared in.
 func TestInputBindingPlanRefusesExactDuplicates(t *testing.T) {
 	for _, tc := range []struct{ name, inputs, want string }{
 		{
@@ -102,8 +99,7 @@ func TestInputBindingPlanRefusesExactDuplicates(t *testing.T) {
 }
 
 // TestInputBindingPlanRefusesOverlengthLegacyName: a subject whose legacy consumer name would be
-// longer than NATS allows is refused at construction, not at Start (pin
-// TestObjectStoreInputBindingPlanRejectsOverlengthLegacyName).
+// longer than NATS allows is refused at construction, not at Start.
 func TestInputBindingPlanRefusesOverlengthLegacyName(t *testing.T) {
 	inputs := jetStreamInput("long", "LONG", strings.Repeat("a", 240))
 	_, err := buildFromJSON(t, `{"ports": {"inputs": [`+inputs+`], "outputs": [`+storedOutput+`]}}`)

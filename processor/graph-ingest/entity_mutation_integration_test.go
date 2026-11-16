@@ -76,7 +76,6 @@ func TestIntegration_CanonicalMutationLifecycle(t *testing.T) {
 		EntityID: id, ExpectedRevision: appended.Results[0].KVRevision,
 	})
 	require.NoError(t, err)
-	// The pin deleted under context.Background(); the test's bounded ctx is in scope.
 	body, err = c.handleCanonicalDelete(ctx, deleteRequest)
 	require.NoError(t, err)
 	var deleted graph.DeleteEntityResponse

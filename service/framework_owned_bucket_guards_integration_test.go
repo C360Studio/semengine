@@ -23,11 +23,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// Boot through the service manager and a real component manager on a live server (pin
-// framework_owned_bucket_guards_integration_test.go; design D3, D7): a framework-owned bucket a
-// rival created dirty during this boot is reconciled inside its owner's Start, and a component
-// whose Start fails fails the boot, naming it. The pin's recording log handler is not carried:
-// no assertion read what it recorded.
+// Boot through the service manager and a real component manager on a live server: a
+// framework-owned bucket a rival created dirty during this boot is reconciled inside its owner's
+// Start, and a component whose Start fails fails the boot, naming it.
 
 // guardsBucketAdopter is a lifecycle component whose Start reproduces the create race inside
 // the boot: a rival's raw create of bucket (a foreign 7-day TTL and one stored key, no
@@ -134,7 +132,7 @@ func TestIntegration_StartAll_OwnerSeamReconcilesCreateRaceDirtInsideBoot(t *tes
 	registry := component.NewRegistry()
 	require.NoError(t, registry.Register(component.Registration{
 		Name: "bucket-adopter", Type: types.ComponentTypeProcessor,
-		// NewComponentManager runs the factory on the test goroutine (design D3).
+		// NewComponentManager runs the factory on the test goroutine.
 		Factory: func(_ json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
 			adopter = &guardsBucketAdopter{client: deps.NATSClient, bucket: graph.BucketEmbeddingIndex}
 			return adopter, nil
@@ -184,8 +182,7 @@ func TestIntegration_StartAll_OwnerSeamReconcilesCreateRaceDirtInsideBoot(t *tes
 // rolls back (held in the Stop of a service started before the component manager), /services on
 // the listener bound before any component started reports startup failed with one failed service
 // and one failed component. After StartAll returns, the component is stopped with no error left
-// on it and the listener is released. The pin read these from private fields (currentStartupSnapshot,
-// httpServer, httpUsed, httpTerminal); PR 2 dropped the last three.
+// on it and the listener is released.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestIntegration_StartAll_BootFailsClosedOnComponentStartFailure(t *testing.T) {

@@ -235,7 +235,7 @@ func mutableAddresses(v reflect.Value, path string, into map[uintptr]string) int
 // TestReportConsumer_AccountDeleteReachesObserver: a delete or purge of the account key,
 // when this process held an account row, tells the observer once, with the row it last
 // observed, and the snapshot stops reporting an account. A tombstone of an account the
-// process does not hold tells the observer nothing (#85).
+// process does not hold tells the observer nothing.
 func TestReportConsumer_AccountDeleteReachesObserver(t *testing.T) {
 	t.Run("a held account", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
@@ -284,7 +284,7 @@ func TestReportConsumer_AccountDeleteReachesObserver(t *testing.T) {
 // TestReportConsumer_ResyncRetractionReachesObserver: a replacement watch whose initial
 // values lack the account key, when this process held an account row, tells the
 // observer once, at the sync marker and not before it. An undecodable account value in
-// the initial values keeps the held row and tells the observer nothing (#85).
+// the initial values keeps the held row and tells the observer nothing.
 func TestReportConsumer_ResyncRetractionReachesObserver(t *testing.T) {
 	replace := func(t *testing.T, store *fakeWatchStore, observer *recordingObserver) (*fakeKeyWatcher, []AccountReport) {
 		t.Helper()

@@ -1,5 +1,5 @@
 // Package contract holds the projection contract data types and their shape
-// validation (ADR-103). It is a leaf — it imports only pkg/types and
+// validation (SemStreams ADR-103). It is a leaf — it imports only pkg/types and
 // vocabulary — so the payload registry can hold a registered type's contracts
 // without importing pkg/projection, which reaches graph, message, and
 // natsclient. pkg/projection re-exports every name here as an alias, so a

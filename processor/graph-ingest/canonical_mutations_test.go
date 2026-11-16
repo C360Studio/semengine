@@ -100,11 +100,11 @@ func TestCanonicalCreateHasNoHierarchyOrRelationshipSideEffects(t *testing.T) {
 	}
 }
 
-// TestMutationCreateBirthGetsNoHierarchy holds the pin's behavior (ruling B; graph-entity-writes,
-// "Birth on the mutation lane"): with hierarchy inference enabled and wired, an entity created
-// through a mutation request is stored with the request's statements and its indexing profile, and
-// with no hierarchy statement; no container is minted for it. An in-process birth on the same
-// component then gets hierarchy statements, which shows the inference was live for the first.
+// TestMutationCreateBirthGetsNoHierarchy (graph-entity-writes, "Birth on the mutation lane"): with
+// hierarchy inference enabled and wired, an entity created through a mutation request is stored
+// with the request's statements and its indexing profile, and with no hierarchy statement; no
+// container is minted for it. An in-process birth on the same component then gets hierarchy
+// statements, which shows the inference was live for the first.
 func TestMutationCreateBirthGetsNoHierarchy(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	c.config.EnableHierarchy = true
@@ -151,9 +151,8 @@ func TestMutationCreateBirthGetsNoHierarchy(t *testing.T) {
 	}
 }
 
-// TestCanonicalCreateRefusesTriplelessEntity: the pin accepted a create with no statement and
-// stamped its profile with the clock. Design D15 (design.md:769-771) refuses it: the profile takes
-// the latest time among the create's own statements, and with none there is no time to give.
+// TestCanonicalCreateRefusesTriplelessEntity: a create with no statement is refused. The profile
+// takes the latest time among the create's own statements, and with none there is no time to give.
 func TestCanonicalCreateRefusesTriplelessEntity(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 
@@ -285,8 +284,7 @@ func TestCanonicalReconcileCompetingCASAllowsOneWinner(t *testing.T) {
 
 // TestCanonicalReconcileFenceHoldsAgainstAWriteAfterItsRead: a reconcile at the revision the
 // handler read, after another writer has committed, is refused by the bucket's
-// compare-and-set and writes nothing (design D15, the conditional replace: "the caller's
-// expected revision").
+// compare-and-set and writes nothing.
 func TestCanonicalReconcileFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
@@ -305,10 +303,10 @@ func TestCanonicalReconcileFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
 }
 
 // TestCanonicalReconcileAtTheCallersRevision is the projection-mutation scenarios "Concurrent
-// update between read and reconcile" and "Unchanged revision" at graph-ingest (design D8, #19):
-// the caller read revision R, another writer committed R+1, and a reconcile at R is refused with
-// a revision conflict naming R and R+1 and changes nothing; a reconcile at the current revision
-// R+1 then applies at R+2.
+// update between read and reconcile" and "Unchanged revision" at graph-ingest: the caller read
+// revision R, another writer committed R+1, and a reconcile at R is refused with a revision
+// conflict naming R and R+1 and changes nothing; a reconcile at the current revision R+1 then
+// applies at R+2.
 func TestCanonicalReconcileAtTheCallersRevision(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	read := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
@@ -382,7 +380,6 @@ func TestCanonicalAppendRacesGraphableMergeWithoutLosingFacts(t *testing.T) {
 	go func() {
 		defer workers.Done()
 		<-start
-		// MergeEntity is gone; its body is mergeEntityOnLane (design D6).
 		errorsOut <- c.mergeEntityOnLane(context.Background(), &graph.EntityState{
 			ID:          canonicalEntityA,
 			MessageType: canonicalMutationEntity(canonicalEntityA).MessageType,
@@ -538,10 +535,10 @@ func TestCanonicalAppendReportsPartialAndDoesNotBirthAbsentSubject(t *testing.T)
 }
 
 // An append that adds nothing writes nothing and replies unchanged at the revision its
-// compare-and-set read (spec graph-entity-writes, "An append that adds nothing"; design D23),
-// also when the key is deleted after that read: the reply's revision is the read's, never a
-// second read's. The test plants the stored revision, so the expected reply does not come from
-// the code under test.
+// compare-and-set read (spec graph-entity-writes, "An append that adds nothing"), also when
+// the key is deleted after that read: the reply's revision is the read's, never a second
+// read's. The test plants the stored revision, so the expected reply does not come from the
+// code under test.
 func TestCanonicalAppendNoOpReportsTheRevisionItRead(t *testing.T) {
 	const plantedRevision = 41
 	held := canonicalTriple(canonicalEntityA, "test.state.value", "ready")
@@ -767,7 +764,7 @@ func TestCanonicalDeleteIsRevisionFenced(t *testing.T) {
 
 // TestCanonicalDeleteFenceHoldsAgainstAWriteAfterItsRead: a delete at the revision the
 // handler read, after another writer has committed, is refused by the bucket and deletes
-// nothing (design D15, delete: "the caller's expected revision").
+// nothing.
 func TestCanonicalDeleteFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
@@ -784,9 +781,9 @@ func TestCanonicalDeleteFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
 }
 
 // TestCanonicalMutationOutcomeLabelIsTheClassifiedCode: a refused canonical mutation is
-// counted under its classified code (ruling L, #91 comment 6062681355), driven through the
-// create route graph-ingest subscribes. The wanted labels are spelled out, not taken from
-// the constants the handler uses.
+// counted under its classified code, driven through the create route graph-ingest
+// subscribes. The wanted labels are spelled out, not taken from the constants the handler
+// uses.
 func TestCanonicalMutationOutcomeLabelIsTheClassifiedCode(t *testing.T) {
 	c := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	routes, err := c.canonicalMutationRoutes()

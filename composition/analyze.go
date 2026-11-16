@@ -17,8 +17,8 @@ import (
 // Analyze is the graph-level half of composition validation: it connects the
 // declarations, analyzes connectivity, stream requirements, and interface
 // contracts, and projects the graph. Validate runs it over declared
-// components; service's component manager, when it is ported, runs it at boot
-// over the admitted ones.
+// components; service's component manager runs it at boot over the admitted
+// ones.
 //
 // streams is the configuration's explicit `streams` block (nil when it has
 // none). Stream provisioning derives streams from JetStream OUTPUT ports and
@@ -136,7 +136,7 @@ func reservedSubjects() []string {
 }
 
 // reservedCaptureFindings reports each stream subject filter that overlaps a
-// reserved request subject (#16): a stream on such a filter would store the
+// reserved request subject: a stream on such a filter would store the
 // requests, which belong to their responders alone. The streams checked are
 // the ones provisioning creates from the composition: the explicit block,
 // named by key, and each JetStream output, named as provisioning names it (its
@@ -190,7 +190,7 @@ func reservedCaptureFindings(declarations []component.Declaration, streams confi
 }
 
 // malformedSubjectFindings reports each subject that fails the subject
-// grammar (#369): every subject of every NATS, NATS-request and JetStream
+// grammar: every subject of every NATS, NATS-request and JetStream
 // port, in both lanes, and of every explicit stream. A stream derived from a
 // JetStream output holds that port's subjects, so it is not checked again.
 // One finding per subject names where it is declared: the lane, port and
@@ -242,7 +242,7 @@ func malformedSubjectFindings(declarations []component.Declaration, streams conf
 	return findings
 }
 
-// requestConflictFindings reports a second responder on a declared verb (#106):
+// requestConflictFindings reports a second responder on a declared verb:
 // a NATS-request input overlapping a subject of graph.QueryVerbs() when its
 // factory is not that verb's responder, or when an instance of the responder
 // earlier in declarations, which arrive in instance-name order, already declares
@@ -420,7 +420,7 @@ func orphanedPortFinding(port flowgraph.OrphanedPort) Finding {
 func interfaceFindings(declarations []component.Declaration, graph *flowgraph.FlowGraph) []Finding {
 	// Port (instance, name and direction) → interface type. A component may
 	// name an input and an output alike, so the direction keeps the two
-	// lanes' contracts apart (#346).
+	// lanes' contracts apart.
 	contracts := make(map[flowgraph.ComponentPortRef]string)
 	for _, declaration := range declarations {
 		for index, port := range declaration.InputPorts {

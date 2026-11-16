@@ -19,15 +19,15 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Task 4.3 (enforce-structural-invariants): the structural rejection must reach
-// mutation-API callers as a CLASSIFIED error over the real NATS request/reply
-// wire — never silently decoded as a zero-valued success. These tests drive the
-// production chain end-to-end: SubscribeForRequests-registered handler →
-// meteredCanonicalMutation → validateTriplePredicates → natsclient.RespondError
+// The structural rejection must reach mutation-API callers as a CLASSIFIED
+// error over the real NATS request/reply wire — never silently decoded as a
+// zero-valued success. These tests drive the production chain end-to-end:
+// SubscribeForRequests-registered handler → meteredCanonicalMutation →
+// validateTriplePredicates → natsclient.RespondError
 // (X-Status/X-Error-Class/X-Error-Code headers + {message} body) →
 // ClassifyReply/RequestClassified on the caller side.
 //
-// Wire contract asserted (SemStreams ADR-060):
+// Wire contract asserted (ADR-060):
 //
 //	X-Status:      error
 //	X-Error-Class: invalid

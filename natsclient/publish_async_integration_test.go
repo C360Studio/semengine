@@ -17,7 +17,7 @@ import (
 // TestIntegration_PublishToStreamAsync_PipelinesAndDrains verifies the async
 // publish path: N messages enqueue without blocking on individual acks, every
 // returned future resolves via Ok() (no Err()), PublishAsyncComplete closes once
-// drained, PublishAsyncPending returns to 0, and all N are stored (gh#470).
+// drained, PublishAsyncPending returns to 0, and all N are stored.
 func TestIntegration_PublishToStreamAsync_PipelinesAndDrains(t *testing.T) {
 	ctx := context.Background()
 
@@ -194,8 +194,7 @@ func TestIntegration_PublishBatchToStream(t *testing.T) {
 
 // TestIntegration_PublishToStreamAsync_StampsTrace verifies the async path
 // preserves the synchronous path's trace invariant: a trace context is injected
-// (auto-generated when absent). Asserted on the raw consumed message headers. The
-// pin's message-ID half went with PublishToStreamAsyncWithMsgID (task 3.7a).
+// (auto-generated when absent). Asserted on the raw consumed message headers.
 func TestIntegration_PublishToStreamAsync_StampsTrace(t *testing.T) {
 	ctx := context.Background()
 
@@ -275,9 +274,8 @@ func TestIntegration_PublishBatchToStream_CtxCancel(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
-// jetStreamOf returns c's JetStream handle. Client.PublishAsyncComplete and
-// PublishAsyncPending were dropped as dead surface (task 3.7a); they forwarded to
-// this handle's own methods.
+// jetStreamOf returns c's JetStream handle, whose own PublishAsyncComplete and
+// PublishAsyncPending the async tests read: Client has no forwarders for them.
 func jetStreamOf(t *testing.T, c *Client) jetstream.JetStream {
 	t.Helper()
 	js, err := c.JetStream()
@@ -286,7 +284,8 @@ func jetStreamOf(t *testing.T, c *Client) jetstream.JetStream {
 }
 
 // awaitAsyncComplete waits until every async publish on c's handle is
-// acknowledged; the pin received from PublishAsyncComplete with no bound.
+// acknowledged. It sets no deadline of its own: go test -timeout is the one
+// deadline for work that must finish.
 func awaitAsyncComplete(t *testing.T, c *Client) {
 	t.Helper()
 	<-jetStreamOf(t, c).PublishAsyncComplete()

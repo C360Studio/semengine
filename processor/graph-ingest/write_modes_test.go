@@ -1,10 +1,9 @@
 package graphingest
 
-// The write modes through graph-ingest's lanes (design D15, #100 and #98; task 4.8;
-// graph-entity-writes, "One rule per write mode" and "Timestamp orders a replace"). Each test
-// writes through the lanes' production entries: the stream lane's inputLane.deliver, the canonical
-// mutation handlers, and the in-process create. The expected statements are written
-// out in each test, never computed by the rule under test.
+// The write modes through graph-ingest's lanes (graph-entity-writes, "One rule per write mode" and
+// "Timestamp orders a replace"). Each test writes through the lanes' production entries: the stream
+// lane's inputLane.deliver, the canonical mutation handlers, and the in-process create. The
+// expected statements are written out in each test, never computed by the rule under test.
 
 import (
 	"bytes"
@@ -162,8 +161,7 @@ func TestWriteModesAgreeAcrossLanes(t *testing.T) {
 		}
 	})
 
-	// Append has one lane, the mutation request: ruling M (#91 comment 6080973822) removed the
-	// in-process append.
+	// Append has one lane, the mutation request: there is no in-process append.
 	t.Run("append through the mutation lane", func(t *testing.T) {
 		lane := newWriteModesLane(t)
 		const viaMutation = "c360.test.write.append.mutation.001"
@@ -220,9 +218,9 @@ func heldStatement(tr message.Triple) string {
 // TestBirthCountsEqualStatementsOnce: a birth on each lane carries a statement twice, equal in
 // every field, and three that each differ from it in one field: Timestamp, Confidence, ExpiresAt.
 // The entity is born with the repeated statement once and the three beside it (graph-entity-writes,
-// "One rule per write mode": within one write, statements equal in every field count once;
-// checkpoint 3 H1, PR #93 comment 6099921473). On the stream lane the same arrival, sent again to
-// the entity it bore, leaves the same statements, so the birth and the replace agree.
+// "One rule per write mode": within one write, statements equal in every field count once). On the
+// stream lane the same arrival, sent again to the entity it bore, leaves the same statements, so
+// the birth and the replace agree.
 func TestBirthCountsEqualStatementsOnce(t *testing.T) {
 	expires := wmTime(1).Add(time.Hour)
 	statements := func(subject string) []message.Triple {

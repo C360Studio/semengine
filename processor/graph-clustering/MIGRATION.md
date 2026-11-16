@@ -15,8 +15,8 @@ are kept from `ENTITY_STATES` changes, never by rescanning, and nothing else is 
 Each of these fails when the component is created, naming the key or value, with a line saying what replaces it. Fix
 the configuration before the first start.
 
-- **`batch_size` is refused.** At the pin nothing read it. *Do:* delete the line. semboids sets it.
-- **`enable_llm` and `enhancement_workers` are refused.** Language-model community summaries are tier 2 (#485) and
+- **`batch_size` is refused.** In SemStreams nothing read it. *Do:* delete the line. semboids sets it.
+- **`enable_llm` and `enhancement_workers` are refused.** Language-model community summaries are tier 2 and
   not present; a record carries a one-line summary built from its counts. semsource always sends `enable_llm`.
   *Do:* delete the line.
 - **`min_community_size` and `max_iterations` are refused.** There is no label propagation, so nothing iterates and
@@ -25,10 +25,11 @@ the configuration before the first start.
   share a group. semsource may send `entity_id_edges`, and semboids sets it. *Do:* delete the line.
 - **`allow_ungated_reads` is refused.** The component reads no other index, so there is no readiness gate to bypass.
   *Do:* delete the line.
-- **`enable_anomaly_detection` and `anomaly_config` are refused.** Anomaly detection is not ported and will not be
-  (owner ruling, PR #582 comment 6768832111). *Do:* delete the lines.
-- **Any unknown key is refused**, naming it. The kept keys are `ports`, `detection_interval`, `startup_attempts` and
-  `startup_interval_ms`. A key in the wrong case (`BATCH_SIZE`) is refused as unknown, without the guidance line.
+- **`enable_anomaly_detection` and `anomaly_config` are refused.** Anomaly detection is not ported and will not be.
+  *Do:* delete the lines.
+- **Any unknown key is refused**, naming it. The kept keys are `ports`, `detection_interval`, `text_suffixes`,
+  `startup_attempts` and `startup_interval_ms`. A key in the wrong case (`BATCH_SIZE`) is refused as unknown,
+  without the guidance line.
 - **A bad `detection_interval` is refused.** The pin fell back to 30 seconds silently when it could not parse the
   value. Here `soon`, `30` (no unit), `0s` and `-1s` fail at creation, naming the key. *Do:* write a Go duration
   above zero, such as `30s` or `5m`, or leave the key out for `30s`.
@@ -50,8 +51,22 @@ Read these. Nothing errors.
   keywords and a few sample IDs, never a member list (see `graph/clustering/README.md`).
 - **semboids' two-community test will see one group per source.** Its spike builds two clusters from explicit edges
   and asserts two label-propagation communities (`internal/boidgraph/clustering_spike_integration_test.go`). Under
-  prefix grouping the edges do not count: the test sees one group per source prefix, so its expectation changes
-  (owner accepted the record break, 2026-10-31). *Do:* assert on the groups of the IDs you wrote.
+  prefix grouping the edges do not count: the test sees one group per source prefix, so its expectation changes.
+  *Do:* assert on the groups of the IDs you wrote.
+- **Keywords read only text.** SemStreams counted the words of every string value an entity held. Here keywords are
+  counted only from values whose predicates end in one of `text_suffixes`, the values graph-embedding reads; values
+  under other suffixes add nothing, and a group whose members hold no such value has no keywords and no representatives.
+  graph-lexical selects the same values under the same list, and also indexes registered label predicates and offloaded
+  bodies, which keywords do not read. *Do:* set `text_suffixes` to the list your graph-lexical uses, so keywords and
+  word search select the same values. SemSource adds `.signature` and `.comment` to the default list (for
+  graph-embedding); carry those two over too, or a function's signature and doc comment stop counting.
+- **Keywords are the words that set a group apart.** SemStreams' keywords were the words a group used most, so most
+  groups shared the same few (`not`, `that`, `graph`). Here each word is scored by how many of the group's members
+  hold it against how many of the whole graph's do, and a word every member with words holds is never a keyword: a
+  graph of one entity, or one whose members all hold the same words, has no keywords. A group is scored when its
+  record is written, so a group nobody touched keeps keywords scored against older counts until a restart.
+  *Do:* do not assert a group's keywords from its own members alone; hold an expectation on the whole graph, or
+  restart before reading.
 - **The readiness key counts what is held, not what is published.** `GRAPH_STATUS` under `graph-clustering` reports a
   revision indexed once the Maintainer has applied it, which is before the next tick writes it. A reader that needs a
   group's published state reads the record's `entity_revision`. *Do:* do not gate a read on `indexed_revision` for
@@ -78,7 +93,7 @@ Read these. Nothing errors.
 - The four `graph.clustering.query.*` verbs. Nothing in the consumers called them. Read `COMMUNITY_INDEX` through
   graph-query.
 - The readiness gate on graph-index and graph-embedding (ADR-082, ADR-085).
-- The enhancement and review workers, the summary store and language-model summaries (tier 2, #485, #488).
+- The enhancement and review workers, the summary store and language-model summaries (tier 2).
 - Label propagation and the edge providers (ADR-099).
 - Anomaly detection and its storage and handlers: never ported.
 - The indexing-profile check: ADR-054 is not ported.

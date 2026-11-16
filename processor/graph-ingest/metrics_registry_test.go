@@ -75,10 +75,10 @@ func suppressedOnLane(families map[string]*dto.MetricFamily, lane dedupLane) (fl
 	return 0, false
 }
 
-// TestGraphIngestMetricsRegisterOnItsRegistry: two components built on two registries
-// each put their series on their own registry, a write through one component is gathered
-// only from its registry, and Prometheus' global registry gathers none of them (design D4;
-// metric-registry, "Two registries, two components").
+// TestGraphIngestMetricsRegisterOnItsRegistry: two components built on two registries each
+// put their series on their own registry, a write through one component is gathered only
+// from its registry, and Prometheus' global registry gathers none of them
+// (metric-registry, "Two registries, two components").
 func TestGraphIngestMetricsRegisterOnItsRegistry(t *testing.T) {
 	registryA, registryB := metric.NewMetricsRegistry(), metric.NewMetricsRegistry()
 	componentA, err := newUnstartedGraphIngest(t, registryA, nil)
@@ -127,8 +127,7 @@ func TestGraphIngestMetricsRegisterOnItsRegistry(t *testing.T) {
 
 // TestGraphIngestNilRegistryRegistersNothing: a component built with no metrics registry
 // takes writes and registers its collectors nowhere, so Prometheus' global registry
-// gathers none of its series (design D4; metric-registry, "A component built without a
-// registry").
+// gathers none of its series (metric-registry, "A component built without a registry").
 func TestGraphIngestNilRegistryRegistersNothing(t *testing.T) {
 	c, err := newUnstartedGraphIngest(t, nil, nil)
 	if err != nil {

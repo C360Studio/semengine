@@ -82,7 +82,7 @@ func TestRetainedStateIsReported(t *testing.T) {
 	}
 }
 
-// A1: retained state is a compile-time requirement of every owner the checks accept. An optional
+// Retained state is a compile-time requirement of every owner the checks accept. An optional
 // interface discovered at run time is the silent-skip shape: an owner without it would compile and
 // fail every completion check on a technicality, or worse, be skipped.
 func TestOwnerRequiresObserve(t *testing.T) {

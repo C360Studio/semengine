@@ -120,8 +120,8 @@ func TestLoader_Defaults(t *testing.T) {
 	// assert.Equal(t, "messages", cfg.ObjectStore.BucketName) // default bucket
 }
 
-// Test environment variable overrides. The NATS credential overrides the pin
-// applied are refused until boot wires them (TestLoad_RefusesNATSCredentialEnv).
+// Test environment variable overrides. The NATS credential overrides are
+// refused until boot wires them (TestLoad_RefusesNATSCredentialEnv).
 func TestLoader_EnvOverrides(t *testing.T) {
 	t.Setenv("SEMENGINE_PLATFORM_ID", "env-platform")
 
@@ -224,8 +224,7 @@ func TestLoader_Validation(t *testing.T) {
 }
 
 // Test components configuration
-// TODO: Update this test for new ComponentConfigs structure
-// The old structure with Components.Enabled is obsolete
+// TODO: test Components, the map of ComponentConfig keyed by instance name.
 /*
 func TestConfig_Components(t *testing.T) {
 	// OLD FORMAT - NO LONGER SUPPORTED
@@ -280,7 +279,7 @@ func writeAndLoadAuthorityPair(t *testing.T, org, id string) error {
 }
 
 // TestConfigRejectsOversizedAuthorityPair pins the configuration-load bound on
-// a DECLARED authority pair (ADR-102 amends ADR-076 d2, O-14): len(org)+len(id)
+// a DECLARED authority pair (ADR-102, amending ADR-076): len(org)+len(id)
 // may not exceed the budget derived from the longest fixed-suffix framework
 // family — 170 bytes while the rule trigger family binds — LESS the seven bytes
 // of the entropy suffix the framework mints onto platform.id (ADR-104), so 163

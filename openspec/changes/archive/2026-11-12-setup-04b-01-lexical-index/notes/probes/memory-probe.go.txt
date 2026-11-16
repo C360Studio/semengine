@@ -1,0 +1,98 @@
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"runtime"
+	"strconv"
+	"time"
+)
+
+type posting struct {
+	doc uint32
+	tf  uint16
+}
+
+type index struct {
+	ids      []string
+	docOf    map[string]uint32
+	lens     []uint16
+	terms    map[string]uint32 // word -> term id
+	words    []string
+	post     [][]posting
+	pos      [][][]uint16 // per term, per posting, positions (only when withPos)
+	forward  [][]uint32   // per doc, its distinct term ids (needed for delete/replace)
+	withPos  bool
+}
+
+func heap() uint64 {
+	runtime.GC(); runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.HeapAlloc
+}
+
+func main() {
+	n, _ := strconv.Atoi(os.Args[1])
+	toks, _ := strconv.Atoi(os.Args[2])
+	withPos := os.Args[3] == "pos"
+	vocab := 500000
+	r := rand.New(rand.NewSource(1))
+	z := rand.NewZipf(r, 1.1, 2, uint64(vocab-1))
+	vocabWords := make([]string, vocab)
+	for i := range vocabWords {
+		vocabWords[i] = "w" + strconv.FormatInt(int64(i)*7919, 36) + "x"
+	}
+	base := heap()
+	ix := &index{docOf: map[string]uint32{}, terms: map[string]uint32{}, withPos: withPos}
+	start := time.Now()
+	doc := make([]string, toks)
+	for d := 0; d < n; d++ {
+		id := fmt.Sprintf("c360.semsource.golang.semsource.function.%016x", r.Uint64())
+		for i := range doc {
+			doc[i] = vocabWords[z.Uint64()]
+		}
+		di := uint32(len(ix.ids))
+		ix.ids = append(ix.ids, id)
+		ix.docOf[id] = di
+		ix.lens = append(ix.lens, uint16(toks))
+		tf := map[uint32][]uint16{}
+		order := []uint32{}
+		for p, w := range doc {
+			t, ok := ix.terms[w]
+			if !ok {
+				t = uint32(len(ix.words))
+				ix.terms[w] = t
+				ix.words = append(ix.words, w)
+				ix.post = append(ix.post, nil)
+				if withPos {
+					ix.pos = append(ix.pos, nil)
+				}
+			}
+			if _, seen := tf[t]; !seen {
+				order = append(order, t)
+			}
+			tf[t] = append(tf[t], uint16(p))
+		}
+		fw := make([]uint32, 0, len(order))
+		for _, t := range order {
+			ix.post[t] = append(ix.post[t], posting{di, uint16(len(tf[t]))})
+			if withPos {
+				ix.pos[t] = append(ix.pos[t], tf[t])
+			}
+			fw = append(fw, t)
+		}
+		ix.forward = append(ix.forward, fw)
+	}
+	build := time.Since(start)
+	used := heap() - base
+	var npost int
+	for _, p := range ix.post {
+		npost += len(p)
+	}
+	fmt.Printf("n=%d tokens=%d positions=%v terms=%d postings=%d heap=%.1fMB per-entity=%dB build=%v (%.1fus/entity)\n",
+		n, toks, withPos, len(ix.words), npost, float64(used)/1e6, used/uint64(n), build.Round(time.Millisecond), float64(build.Microseconds())/float64(n))
+	runtime.KeepAlive(ix)
+	runtime.KeepAlive(vocabWords)
+}

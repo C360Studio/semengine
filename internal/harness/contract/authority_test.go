@@ -13,14 +13,14 @@ import (
 // authorityRule is the requirement every authority violation names.
 const authorityRule = "(harness-boundaries › No second spelling of deployment authority)"
 
-// TestNoSecondAuthorityFieldSensitivity plants the fixture of design D3 (change
-// authority-one-spelling) in a temporary module: each field the rule forbids must be named by file,
-// line and struct type, each field it allows must be silent, and the count must be exact. The
-// expected lines are written from the requirement's scenarios 3 and 4, not from the check.
+// TestNoSecondAuthorityFieldSensitivity plants a fixture in a temporary module: each field the rule
+// forbids must be named by file, line and struct type, each field it allows must be silent, and the
+// count must be exact. The expected lines are written from the requirement's scenarios 3 and 4, not
+// from the check.
 func TestNoSecondAuthorityFieldSensitivity(t *testing.T) {
 	root, _ := writeTree(t, map[string]string{
 		"go.mod": "module example.com/fixture\n\ngo 1.26\n",
-		// The pin's graph/inference.HierarchyConfig shape, plus lowercase fields that pass.
+		// A config struct with exported Org and Platform fields, plus lowercase fields that pass.
 		"graph/inference/hierarchy.go": `package inference
 
 type HierarchyConfig struct {
@@ -39,7 +39,7 @@ type TestOnly struct {
 	Org string
 }
 `,
-		// The pin's graph/llm.EntityParts shape.
+		// An identity-parts struct with exported Org and Platform fields.
 		"graph/llm/prompt_types.go": `package llm
 
 type EntityParts struct {
@@ -215,9 +215,9 @@ type Claim struct {
 
 // authorityOwnerPackages and authorityOwnerFields mirror, by exact string, the exceptions the
 // harness-boundaries requirement "No second spelling of deployment authority" lists; the list is the
-// spec's, and a new entry needs a spec change first (design D4). Paths are relative to the module
-// path read from go.mod, so a fixture module is excepted the same way this one is. A field's type is
-// never consulted: the carrier is excepted field by field (#72 comment 5969757891).
+// spec's, and a new entry needs a spec change first. Paths are relative to the module path read
+// from go.mod, so a fixture module is excepted the same way this one is. A field's type is never
+// consulted: the carrier is excepted field by field.
 var authorityOwnerPackages = map[string]string{
 	"pkg/types":    "the source: the entity identity's positions",
 	"pkg/platform": "the source: the platform configuration",

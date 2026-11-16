@@ -38,8 +38,7 @@ func TestGetAllCommunitiesRefusesNilContext(t *testing.T) {
 	}
 }
 
-// TestCommunityKey: a record's key is its level, a dot, and its group ID (pin
-// storage.go:518-520).
+// TestCommunityKey: a record's key is its level, a dot, and its group ID.
 func TestCommunityKey(t *testing.T) {
 	if got, want := communityKey(2, "acme.dep1"), "2.acme.dep1"; got != want {
 		t.Fatalf("communityKey = %q, want %q", got, want)
@@ -95,6 +94,8 @@ func TestDecodeCommunity(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	id := "acme.dep1.src.docs.note.n1"
 	mustUpsert(t, m, id, 7, "alpha")
+	// Another deployment's entity, so alpha is not held by every member with words.
+	mustUpsert(t, m, "acme.dep2.src.docs.note.n1", 1, "other")
 	m.BootstrapDone()
 	mustTick(t, m)
 

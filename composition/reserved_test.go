@@ -14,10 +14,10 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// TestValidateRefusesStreamCapturingReservedSubject holds the composition share of #16: a stream
-// whose subject filter shares a concrete subject with a request subject graph-ingest serves, or
-// with the graph mutation family, would store those requests, so the composition is refused. The
-// expected messages are written out here, not built from the implementation's format.
+// TestValidateRefusesStreamCapturingReservedSubject: a stream whose subject filter shares a
+// concrete subject with a request subject graph-ingest serves, or with the graph mutation family,
+// would store those requests, so the composition is refused. The expected messages are written out
+// here, not built from the implementation's format.
 func TestValidateRefusesStreamCapturingReservedSubject(t *testing.T) {
 	registry := fakeRegistry(t,
 		fakeSpec{name: "crossing", typ: "output", outputs: []component.PortDefinition{jetStreamOut("out", "", "*.mutation.create")}},
@@ -131,11 +131,13 @@ func TestValidateDoesNotRefuseNeighbouringSubjects(t *testing.T) {
 	}
 }
 
-// enumerationTokens is the alphabet of the generated check (design "Generated checks"): every token
-// of graph-ingest's and the mutation family's reserved subjects, graph-index's tokens up to its first
-// verb, and z, a token no reserved subject has. graph-index's later verbs, graph-query's and the
-// derived-index verbs are left out because each token widens the enumeration by a power of five (these
-// six took the check from 6 s to 93 s); reservedInAlphabet says why the alphabet is enough.
+// enumerationTokens is the alphabet of the generated check: every token
+// of the mutation family's reserved subjects, every token of graph-ingest's verbs except prefixIDs,
+// graph-index's tokens up to its first verb, and z, a token no reserved subject has. prefixIDs, graph-index's later
+// verbs, graph-query's and the derived-index verbs are left out because each token widens the
+// enumeration by a power of five (six such tokens took the check from 6 s to 93 s); prefixIDs is
+// reached as entity is, since the two differ only in their last token. reservedInAlphabet says why
+// the alphabet is enough.
 var enumerationTokens = []string{"graph", "ingest", "query", "mutation", "entity", "batch", "prefix", "index", "outgoing", "z"}
 
 // TestReservedSubjectOverlapMatchesEnumeration checks every filter of one to four tokens over the

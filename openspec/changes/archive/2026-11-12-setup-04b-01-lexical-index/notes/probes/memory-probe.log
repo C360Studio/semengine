@@ -1,0 +1,18 @@
+go build -o lexmem . && ./lexmem <entities> <tokens per entity> <pos|nopos>
+  (memory-probe.go.txt copied to main.go in a module outside the tree; go1.26.4 darwin/arm64, Apple M3 Pro, 12 cores,
+  36 GB; 2026-11-12)
+
+n=100000 tokens=20 positions=false terms=195111 postings=1846132 heap=57.5MB per-entity=575B build=385ms (3.9us/entity)
+n=300000 tokens=20 positions=false terms=336409 postings=5538655 heap=155.4MB per-entity=517B build=1.216s (4.1us/entity)
+n=100000 tokens=20 positions=true terms=195111 postings=1846132 heap=133.8MB per-entity=1338B build=513ms (5.1us/entity)
+n=300000 tokens=20 positions=true terms=336409 postings=5538655 heap=374.7MB per-entity=1248B build=1.553s (5.2us/entity)
+n=100000 tokens=120 positions=false terms=423764 postings=9274840 heap=178.0MB per-entity=1779B build=2.098s (21.0us/entity)
+n=300000 tokens=120 positions=false terms=493739 postings=27823255 heap=487.8MB per-entity=1625B build=5.916s (19.7us/entity)
+n=100000 tokens=120 positions=true terms=423764 postings=9274840 heap=547.4MB per-entity=5473B build=2.217s (22.2us/entity)
+n=300000 tokens=120 positions=true terms=493739 postings=27823255 heap=1571.9MB per-entity=5239B build=7.185s (23.9us/entity)
+n=1000000 tokens=20 positions=false terms=468765 postings=18460172 heap=471.3MB per-entity=471B build=3.551s (3.6us/entity)
+n=1000000 tokens=20 positions=true terms=468765 postings=18460172 heap=1187.0MB per-entity=1186B build=4.454s (4.5us/entity)
+n=1000000 tokens=120 positions=false terms=499998 postings=92745066 heap=1495.6MB per-entity=1495B build=27.762s (27.8us/entity)
+
+Not run: 1000000 x 120 with positions (extrapolated in inventory.md section 8).
+heap excludes the 500,000 generated word strings, allocated before the baseline (memory-probe.go.txt:43-47).

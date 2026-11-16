@@ -53,7 +53,7 @@ it. A query that worked because nothing checked it fails now, loudly. The route 
   it mounts this gateway at `/graph-gateway`. Point the UI's one `trajectory` call (`ui/src/lib/services/agentApi.ts`)
   at that route.
 - **Introspection** (`__schema`, `__type`) is refused with HTTP 400; `__typename` answers. The only caller found is a
-  SemTeams test that semteams #406 deletes. Read `schema.graphql` for the schema.
+  SemTeams test that SemTeams is deleting. Read `schema.graphql` for the schema.
 - The other 14 SemStreams operations, the `/mcp` route and the playground are not served.
 
 ## Configuration changes (stop boot)

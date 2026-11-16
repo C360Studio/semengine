@@ -1,6 +1,6 @@
 // Package toolcheck holds the tests of SemEngine's own tooling: the scripts, Taskfile.yml and the
-// CI workflow (openspec change fix-416-tool-test-gating). They moved out of package contract so a
-// change that touches none of the files they read need not run them (#416).
+// CI workflow. They live outside package contract so a change that touches none of the files they
+// read need not run them.
 //
 // The trigger paths are scripts/, internal/harness/, .github/, Taskfile.yml, go.mod, go.sum,
 // docs/admission-ledger.yaml, service/base.go, service/service_manager.go,

@@ -69,7 +69,7 @@ func TestSafeConfig_ThreadSafety(t *testing.T) {
 	}
 
 	// A deadlock here is caught by go test's own timeout, which prints every goroutine's stack; a
-	// fixed limit of this test's own failed a slow run with no deadlock (#499).
+	// fixed limit of this test's own would fail a slow run that has no deadlock.
 	wg.Wait()
 	close(errors)
 	for err := range errors {
@@ -230,9 +230,9 @@ func TestConfigClone(t *testing.T) {
 	}
 }
 
-// TestSafeConfig_MutateNoLostUpdate is the gh#515 regression: many goroutines
-// each add a distinct component via Mutate concurrently, and every one must
-// survive. The old Get()→mutate→Update() pattern (lock released between the read
+// TestSafeConfig_MutateNoLostUpdate: many goroutines each add a distinct
+// component via Mutate concurrently, and every one must survive. A
+// Get()→mutate→Update() pattern (lock released between the read
 // and the swap) drops updates under this interleaving — and -race does NOT flag
 // it, because each individual Get/Update is locked; the atomicity violation is at
 // the compound level. So this asserts on the surviving count, not via -race.

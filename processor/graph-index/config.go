@@ -15,7 +15,7 @@ import (
 const maxWorkers = 16
 
 // Config holds configuration for graph-index component. Decoding is strict: a key it
-// does not define, batch_size among them, is refused (design D9).
+// does not define, batch_size among them, is refused.
 type Config struct {
 	Ports *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
 	// Workers is the index lane count, 1 to 16; 0 means the default, 1 (semsource sends 0
@@ -42,7 +42,7 @@ func (c *Config) Validate() error {
 
 	// graph-index reads one fixed source: the follower watches every key of ENTITY_STATES,
 	// latest values only. An input declaring another kind, bucket, key filter or history
-	// would advertise a feed nothing reads, so it is refused (#424).
+	// would advertise a feed nothing reads, so it is refused.
 	for _, definition := range c.Ports.Inputs {
 		input, err := definition.Resolve(component.DirectionInput)
 		if err != nil {
@@ -121,8 +121,7 @@ func (c *Config) ApplyDefaults() {
 		c.StartupInterval = 500 // 500ms
 	}
 	// A configuration with no ports takes DefaultConfig's; a ports block that is
-	// present is used as written, never merged with the defaults (ruling K, #91 comment
-	// 6062681355; PR #414 comment 6431777824).
+	// present is used as written, never merged with the defaults.
 	if c.Ports == nil {
 		c.Ports = DefaultConfig().Ports
 	}

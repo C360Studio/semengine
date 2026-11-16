@@ -69,6 +69,6 @@ func TestIntegration_ConcurrentCanonicalAppend(t *testing.T) {
 	require.NoError(t, err)
 	var entity graph.EntityState
 	require.NoError(t, json.Unmarshal(entry.Value, &entity))
-	// The seed's own statement is of another predicate: a create carries one (design D15).
+	// The seed's own statement is of another predicate: a create carries one.
 	assert.Equal(t, writers, countDedupTriples(entity, "test.concurrent.value"), "no concurrent append may be lost")
 }

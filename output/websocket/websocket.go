@@ -32,7 +32,7 @@ const stopping = "websocket output is stopping"
 var _ component.LifecycleComponent = (*output)(nil)
 
 // output is the websocket output component: an HTTP server whose upgrade path streams frames to
-// every connected client (design D2, D3).
+// every connected client.
 type output struct {
 	settings   settings
 	natsClient *natsclient.Client
@@ -115,7 +115,7 @@ func create(rawConfig json.RawMessage, deps component.Dependencies) (component.D
 		tls:        deps.Security.TLS.Server,
 		metrics:    metrics,
 		drops:      newDrops(listener, logger, metrics),
-		// Every origin is accepted, as the pin did: the output has no authentication (#84).
+		// Every origin is accepted: the output has no authentication.
 		upgrader: websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
 		clients:  map[*client]struct{}{},
 	}, nil
@@ -143,7 +143,7 @@ func (c *output) InputPorts() []component.Port { return []component.Port{c.setti
 func (c *output) OutputPorts() []component.Port { return []component.Port{c.settings.output} }
 
 // Health reports the shell's verdict (component.Lifecycle.Health), over the applied-state view's
-// stuck state: catching up, or its watch lost and reopening (design D3).
+// stuck state: catching up, or its watch lost and reopening.
 func (c *output) Health() component.HealthStatus {
 	if c.settings.subject != "" {
 		return c.lifecycle.Health()
@@ -180,8 +180,8 @@ func (c *output) Start(ctx context.Context) error {
 // cleanup releases a partial start.
 func (c *output) start(ctx context.Context) error {
 	// LoadServerTLSConfig returns nil when server TLS is disabled, applies mTLS when it is enabled,
-	// and refuses what this module does not build, such as an "acme" mode, naming the key (design
-	// D6; TestACMEModeRefusedAtStart). Loading first means a refusal binds nothing.
+	// and refuses what this module does not build, such as an "acme" mode, naming the key
+	// (TestACMEModeRefusedAtStart). Loading first means a refusal binds nothing.
 	tlsConfig, err := tlsutil.LoadServerTLSConfig(c.tls)
 	if err != nil {
 		return errs.Wrap(err, key, "Start", "load TLS")
@@ -238,51 +238,46 @@ func (c *output) start(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does nothing,
-// and a Stop whose context ends first returns that context's error and keeps what is left for the
-// next Stop.
+// and any non-nil Stop on a started component initiates every teardown step, bounds drain/join
+// waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *output) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start. It refuses later upgrades with 503, stops the server so the port is released,
-// drains the subscription so nothing more is sent, sends every client close 1001, then waits until
-// the server and every client handler have returned. Only then does it end the run context and wait
-// for the view supervisor, so a client is closed by the stop, never by the view ending under it. A
-// ctx that ends first returns its error with the handles kept, and the next Stop resumes. A view
-// that could not stop its watch is reported by the Stop that joined its supervisor only, as
-// graph-query does: there is nothing left to retry.
+// partial start. It refuses later upgrades with 503, stops the HTTP server, initiates subscription
+// drain, sends every client close 1001, closes the listener, waits up to ctx for the server and
+// client handlers, ends the run context, and waits up to ctx for the view supervisor without
+// returning early on an earlier ctx error. Because sendEnded treats view context cancellation as a
+// stop (close 1001) rather than watch loss (1013), ending the run context when requests.Wait
+// outlasts ctx never misclassifies a stopping client. A ctx that ends before all joins complete
+// returns its error with the handles kept, and the next Stop resumes.
 func (c *output) cleanup(ctx context.Context) error {
+	var cleanupErr error
 	c.requests.CloseAdmission()
 	if c.server != nil {
 		// Close stops Serve and closes the connections not upgraded. net/http documents that it
 		// does not close a hijacked connection: an upgraded client is its handler's, which
 		// closeClients asks to close (TestStartContextEndingStopsNothing sees its close 1001).
-		if err := c.server.Close(); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.server.Close())
 	}
 	if c.sub != nil {
-		if err := c.sub.Drain(ctx); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.sub.Drain(ctx))
 	}
 	c.closeClients()
 	if c.served != nil {
 		select {
 		case <-c.served:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
 	}
 	if c.listen != nil {
 		// Serve closes the listener it was given; closing it here as well releases the port after
 		// a partial start, which never served.
 		if err := c.listen.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			return err
+			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
-	if err := c.requests.Wait(ctx); err != nil {
-		return err
-	}
+	cleanupErr = errors.Join(cleanupErr, c.requests.Wait(ctx))
 	if c.runCancel != nil {
 		c.runCancel()
 	}
@@ -290,8 +285,11 @@ func (c *output) cleanup(ctx context.Context) error {
 		select {
 		case <-c.supervised:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
+	}
+	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {
+		return err
 	}
 	// Read after supervised closed.
 	viewErr := c.supervisorErr
@@ -336,7 +334,7 @@ func (c *output) detach(cl *client) {
 }
 
 // receive is the subscription's handler: a message that is valid JSON goes to every client as a
-// data frame; any other is dropped, counted and logged (design D2, "Declared drops").
+// data frame; any other is dropped, counted and logged.
 func (c *output) receive(_ context.Context, msg *nats.Msg) {
 	c.lifecycle.CountInput(len(msg.Data))
 	c.metrics.received.Inc()

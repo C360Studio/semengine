@@ -1,0 +1,176 @@
+//go:build integration
+
+package graphlexical
+
+// The first build's cost: the time from Start to the first answer of graph.lexical.query.search,
+// over N entities on one NATS server in Docker at the repository's pinned image. Copy into
+// processor/graph-lexical as first_build_probe_integration_test.go and run, once per case:
+//
+//	PROBE_ENTITIES=20000 PROBE_MODE=inline go test -tags integration -run '^TestFirstBuildProbe$' -count=1 -timeout 60m -v ./processor/graph-lexical/
+//	PROBE_ENTITIES=20000 PROBE_MODE=offloaded go test ...
+//
+// The corpus is the scorecard's 2,000 sections written as many times as N needs under different
+// entity IDs, each body cut at the last space before 800 bytes (a mean of about 606 bytes,
+// SemSource's code-body size). inline: the name under .name, the body under .description in the
+// entity state. offloaded: the name under .name, the body as an object in an object store the
+// entity's storage reference names. Seeding runs before Start and is not timed against the
+// budget. The build is done when the verb stops refusing index_not_ready; the probe then checks
+// the answer read every body.
+
+import (
+	"bufio"
+	"compress/gzip"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/storage/storeregistry"
+)
+
+type probeRow struct{ Name, Body string }
+
+func probeCorpus(t *testing.T) []probeRow {
+	t.Helper()
+	f, err := os.Open("../../graph/lexical/testdata/scorecard/corpus.jsonl.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	z, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := bufio.NewScanner(z)
+	sc.Buffer(make([]byte, 1<<20), 1<<24)
+	var rows []probeRow
+	for sc.Scan() {
+		var r probeRow
+		if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
+			t.Fatal(err)
+		}
+		if len(r.Body) > 800 {
+			cut := strings.LastIndexAny(r.Body[:800], " \t\n")
+			r.Body = r.Body[:max(cut, 0)]
+		}
+		rows = append(rows, r)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+func TestFirstBuildProbe(t *testing.T) {
+	n, err := strconv.Atoi(os.Getenv("PROBE_ENTITIES"))
+	if err != nil || n <= 0 {
+		t.Fatalf("PROBE_ENTITIES=%q: want a positive count", os.Getenv("PROBE_ENTITIES"))
+	}
+	mode := os.Getenv("PROBE_MODE")
+	if mode != "inline" && mode != "offloaded" {
+		t.Fatalf("PROBE_MODE=%q: want inline or offloaded", mode)
+	}
+	offloaded := mode == "offloaded"
+
+	rows := probeCorpus(t)
+	client := fixtureClient(t)
+	states := ensureEntityStates(t, client)
+	var stores *storeregistry.Registry
+	store := openBodyStore(t, client)
+	if offloaded {
+		stores = registered(t, store)
+	}
+
+	// Seed with 32 writers; the last revision is the bucket's last sequence afterwards.
+	seedStart := time.Now()
+	var next atomic.Int64
+	var bodyBytes atomic.Int64
+	var wg sync.WaitGroup
+	errc := make(chan error, 32)
+	for range 32 {
+		wg.Go(func() {
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= n {
+					return
+				}
+				r := rows[i%len(rows)]
+				key := fmt.Sprintf("c360.probe.code.c%d.section.s%d", i/len(rows), i%len(rows))
+				tx := text{name: r.Name}
+				if offloaded {
+					tx.offloaded = true
+					if err := store.Put(t.Context(), key+"/body", []byte(r.Body)); err != nil {
+						errc <- fmt.Errorf("put body %s: %w", key, err)
+						return
+					}
+				} else {
+					tx.inline = r.Body
+				}
+				bodyBytes.Add(int64(len(r.Body)))
+				if _, err := states.Put(t.Context(), key, stateEntry(t, key, 0, tx).Value); err != nil {
+					errc <- fmt.Errorf("put %s: %w", key, err)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errc)
+	for err := range errc {
+		t.Fatal(err)
+	}
+	seeded := time.Since(seedStart)
+	lastRev := remove(t, states, "c360.probe.code.none.section.none")
+	t.Logf("seeded %d entities (%s), mean body %d B, last revision %d, in %s",
+		n, mode, bodyBytes.Load()/int64(n), lastRev, seeded.Round(time.Millisecond))
+
+	c := newLexical(t, client, `{}`, metric.NewMetricsRegistry(), stores)
+	t.Cleanup(func() { stopComponent(t, c) })
+
+	start := time.Now()
+	if err := c.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	startReturned := time.Since(start)
+
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	refusals := 0
+	for {
+		_, err := ask(t, client, `{"query":"retry"}`)
+		var refused *errs.ClassifiedError
+		if err == nil {
+			break
+		}
+		if !errors.As(err, &refused) || refused.Code != graph.ErrorCodeIndexNotReady {
+			t.Fatalf("search during the build: %v", err)
+		}
+		refusals++
+		select {
+		case <-tick.C:
+		case <-t.Context().Done():
+			t.Fatal(t.Context().Err())
+		}
+	}
+	firstAnswer := time.Since(start)
+
+	reply := answer(t, client, `{"query":"retry"}`)
+	t.Logf("RESULT entities=%d mode=%s start_returned=%s first_answer=%s refusals=%d seed=%s "+
+		"indexed_revision=%d last_revision=%d bodies_not_indexed=%d retry_matched=%d",
+		n, mode, startReturned.Round(time.Millisecond), firstAnswer.Round(time.Millisecond), refusals,
+		seeded.Round(time.Millisecond), reply.IndexedRevision, lastRev, reply.Data.BodiesNotIndexed,
+		reply.Data.Matched)
+	if reply.IndexedRevision < lastRev || reply.Data.BodiesNotIndexed != 0 {
+		t.Errorf("first answer indexed_revision %d (want >= %d), bodies_not_indexed %d (want 0)",
+			reply.IndexedRevision, lastRev, reply.Data.BodiesNotIndexed)
+	}
+}

@@ -8,13 +8,13 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// IsKVNotFoundError and IsKVConflictError read an error's type, never its text
-// (owner ruling N, #91 comment 6080973822; #146): a refusal's text can name a
-// stored entity, and an entity ID holding "10071" or "10037" must not decide
-// whether a write retries or a read reports not-found.
+// IsKVNotFoundError and IsKVConflictError read an error's type, never its text:
+// a refusal's text can name a stored entity, and an entity ID holding "10071"
+// or "10037" must not decide whether a write retries or a read reports
+// not-found.
 
 // textOnlyKVError carries text in an error whose type is none the classifiers
-// accept, in the shape of the write seam's key-check refusal (#146).
+// accept, in the shape of the write seam's key-check refusal.
 func textOnlyKVError(text string) error {
 	return fmt.Errorf("stored entity c360.ops.robotics.gcs.drone.%s does not match its key", text)
 }
@@ -40,7 +40,7 @@ func TestIsKVNotFoundErrorClassifiesByType(t *testing.T) {
 		}
 	}
 
-	// Each string the pin's text match read (kv.go:700-703 at 8b99efe9).
+	// Each string a text-matching classifier would read as not-found.
 	for _, text := range []string{"key not found", "key was deleted", "10037"} {
 		if err := textOnlyKVError(text); IsKVNotFoundError(err) {
 			t.Errorf("IsKVNotFoundError(%q) = true, want false: a text match decided the class", err)
@@ -72,7 +72,7 @@ func TestIsKVConflictErrorClassifiesByType(t *testing.T) {
 			Code: 400, ErrorCode: jetstream.JSErrCodeStreamWrongLastSequence, Description: "wrong last sequence: 3",
 		}},
 		// A replicated stream reports a CAS conflict as 10164, "wrong last sequence",
-		// which the pin's text match also read (nats.go v1.55.0 jetstream/errors.go:62-65).
+		// which a text match would also read (nats.go v1.55.0 jetstream/errors.go:62-65).
 		{"APIError 10164", &jetstream.APIError{
 			Code: 400, ErrorCode: jetstream.JSErrCodeStreamWrongLastSequenceConstant, Description: "wrong last sequence",
 		}},
@@ -90,7 +90,7 @@ func TestIsKVConflictErrorClassifiesByType(t *testing.T) {
 		}
 	}
 
-	// Each string the pin's text match read (kv.go:716-720 at 8b99efe9).
+	// Each string a text-matching classifier would read as a conflict.
 	for _, text := range []string{"wrong last sequence", "10071", "key exists", "10058"} {
 		if err := textOnlyKVError(text); IsKVConflictError(err) {
 			t.Errorf("IsKVConflictError(%q) = true, want false: a text match decided the class", err)

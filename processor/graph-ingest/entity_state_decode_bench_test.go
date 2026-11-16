@@ -10,10 +10,10 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// benchmarkEntityStateBytes builds a representative stored graph.EntityState —
-// roughly the shape the semboids load generator produces per boid (SemStreams gh#562):
-// a 6-part ID and ~24 triples with realistic three-part predicates — and
-// returns its graph.MarshalEntityState bytes.
+// benchmarkEntityStateBytes builds a representative stored graph.EntityState — roughly
+// the shape the semboids load generator produces per boid: a 6-part ID and ~24 triples
+// with realistic three-part predicates — and returns its graph.MarshalEntityState
+// bytes.
 const benchmarkEntityID = "c360.sim.robotics.swarm.boid.017"
 
 func benchmarkEntityStateBytes(b *testing.B, prototypes []message.Triple) []byte {
@@ -43,7 +43,7 @@ func benchmarkEntityStateBytes(b *testing.B, prototypes []message.Triple) []byte
 }
 
 // BenchmarkUnmarshalEntityState measures the validating decoder — the cost
-// the per-key-serialized RMW read paid before SemStreams gh#562.
+// the trusted decoder saves the per-key-serialized RMW read.
 func BenchmarkUnmarshalEntityState(b *testing.B) {
 	data := benchmarkEntityStateBytes(b, []message.Triple{
 		{Predicate: semantictest.Predicate(b, "boid", "telemetry", "position-x")},
@@ -81,10 +81,10 @@ func BenchmarkUnmarshalEntityState(b *testing.B) {
 	}
 }
 
-// BenchmarkUnmarshalEntityStateTrusted measures the trusted decoder used by
-// the ENTITY_STATES owner's own RMW reads after SemStreams gh#562. The canonical
-// prototypes intentionally remain direct benchmark fixtures: hiding
-// semantictest.Predicate behind the byte-builder would evade fixture authority.
+// BenchmarkUnmarshalEntityStateTrusted measures the trusted decoder used by the
+// ENTITY_STATES owner's own RMW reads. The canonical prototypes intentionally
+// remain direct benchmark fixtures: hiding semantictest.Predicate behind the
+// byte-builder would evade fixture authority.
 func BenchmarkUnmarshalEntityStateTrusted(b *testing.B) {
 	data := benchmarkEntityStateBytes(b, []message.Triple{
 		{Predicate: semantictest.Predicate(b, "boid", "telemetry", "position-x")},

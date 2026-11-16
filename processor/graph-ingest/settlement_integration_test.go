@@ -27,8 +27,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// The helpers the settlement process-kill test starts (design D8, "The settlement process-kill test"), and what the
-// test passes each in its environment.
+// The helpers the settlement process-kill test starts, and what the test passes each in its environment.
 const (
 	// settlementHeld runs graph-ingest with every input held after its entity write: the first run.
 	settlementHeld = "graph-ingest-held-after-apply"
@@ -63,8 +62,8 @@ func TestHelperProcess(t *testing.T) {
 
 // runSettlementHelper starts graph-ingest on the broker named in the environment, creates the ready file, and parks
 // until a signal ends the process; it never stops graph-ingest. With holdApplied, graph-ingest's logger handler pauses
-// on "Entity ingested" and is never released (fix-301 design D2, "The pause"), so an input it applies is never given
-// its applied-sequence record or acknowledged. A failure fails TestHelperProcess, and the child exits.
+// on "Entity ingested" and is never released, so an input it applies is never given its applied-sequence record or
+// acknowledged. A failure fails TestHelperProcess, and the child exits.
 func runSettlementHelper(t *testing.T, holdApplied bool) {
 	ctx := t.Context()
 	client, _, err := openFixtureClient(ctx, os.Getenv(helperNATSURL))
@@ -171,10 +170,10 @@ func ingestConsumer(ctx context.Context, js jetstream.JetStream) (ingestDelivery
 
 // graphState reads every entity in ENTITY_STATES, by key, with UpdatedAt zeroed and its statements grouped by their
 // (subject, predicate, source) set, each set's statements in their stored order. Neither is state an input applied
-// again may not change. UpdatedAt is the store's write time, not a statement (design D15, "Statement metadata"). A
-// set's position among the others is where the replace rule put it: the stored sets an arrival does not carry stay
-// ahead of the sets it applies (graph.ReplaceBySource), so an input applied again moves its sets to the end. The order
-// inside a set, which GetTriple's last tie-break reads, is the arrival's both times.
+// again may not change. UpdatedAt is the store's write time, not a statement. A set's position among the others is
+// where the replace rule put it: the stored sets an arrival does not carry stay ahead of the sets it applies
+// (graph.ReplaceBySource), so an input applied again moves its sets to the end. The order inside a set, which
+// GetTriple's last tie-break reads, is the arrival's both times.
 func graphState(ctx context.Context, t *testing.T, entities jetstream.KeyValue) map[string]graph.EntityState {
 	t.Helper()
 	keys, err := entities.Keys(ctx)
@@ -208,12 +207,11 @@ func requirePublishedStatementOnce(t *testing.T, entity graph.EntityState) {
 }
 
 // TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck holds graph-ingest-recovery, "Recovery on a file stream
-// is redelivery", scenario "Process killed between apply and acknowledgement" (design D8, "The settlement process-kill
-// test"; task 4.4, Q18). graph-ingest runs in a helper process on a file-backed stream. In the first run its logger
-// handler pauses for good on "Entity ingested", after the entity write and before the applied-sequence record, so the
-// input it applies stays unacknowledged (fix-301 design D2, "The pause"); the test kills that process and starts
-// a second on the same stream and buckets, which is delivered the input again and acknowledges it. The graph is then
-// as one application left it.
+// is redelivery", scenario "Process killed between apply and acknowledgement". graph-ingest runs in a helper process
+// on a file-backed stream. In the first run its logger handler pauses for good on "Entity ingested", after the entity
+// write and before the applied-sequence record, so the input it applies stays unacknowledged; the test kills that
+// process and starts a second on the same stream and buckets, which is delivered the input again and acknowledges it.
+// The graph is then as one application left it.
 func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancelOperation()

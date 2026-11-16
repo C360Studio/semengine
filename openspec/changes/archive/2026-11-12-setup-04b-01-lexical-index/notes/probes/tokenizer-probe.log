@@ -1,0 +1,6 @@
+go test ./graph/embedding -run TestReviewTokenizers -v -count=1   (commit 2853486d; real BM25, 8000 sections, 1500 queries)
+
+shipped stemmer, stopwords               R@1  13.1%  R@10  36.7%  MRR 0.210  docs>0/query    3459
+no stemming, stopwords                   R@1  11.9%  R@10  35.3%  MRR 0.196  docs>0/query    3016
+plural-only stemmer, stopwords           R@1  12.5%  R@10  37.0%  MRR 0.204  docs>0/query    3341
+plural-only stemmer, no stopword list    R@1  11.7%  R@10  36.7%  MRR 0.198  docs>0/query    6401

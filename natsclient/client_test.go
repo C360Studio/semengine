@@ -141,7 +141,7 @@ func TestIsHealthy(t *testing.T) {
 // Test WaitForConnection with timeout
 func TestWaitForConnection(t *testing.T) {
 	t.Run("times out when not connected", func(t *testing.T) {
-		// R1a: the deadline and WaitForConnection's ticker run on the bubble's clock.
+		// The deadline and WaitForConnection's ticker run on the bubble's clock.
 		synctest.Test(t, func(t *testing.T) {
 			manager, err := NewClient("nats://unused")
 			assert.NoError(t, err)
@@ -156,7 +156,7 @@ func TestWaitForConnection(t *testing.T) {
 	})
 
 	t.Run("returns immediately when connected", func(t *testing.T) {
-		// R1a: inside the bubble time.Now and WaitForConnection's ticker share the fake clock, so
+		// Inside the bubble time.Now and WaitForConnection's ticker share the fake clock, so
 		// the elapsed time is exact (one 10ms tick) and a wait that ran to the deadline reads 1s.
 		synctest.Test(t, func(t *testing.T) {
 			manager, err := NewClient("nats://unused")
@@ -176,7 +176,7 @@ func TestWaitForConnection(t *testing.T) {
 	})
 
 	t.Run("returns when becomes connected", func(t *testing.T) {
-		// R1a: the delay, WaitForConnection's ticker and the deadline all run on the bubble's clock.
+		// The delay, WaitForConnection's ticker and the deadline all run on the bubble's clock.
 		synctest.Test(t, func(t *testing.T) {
 			manager, err := NewClient("nats://unused")
 			assert.NoError(t, err)
@@ -241,8 +241,8 @@ func TestContextAwareMethods(t *testing.T) {
 		err = client.Publish(ctx, "test.subject", []byte("data"))
 		assert.Equal(t, ErrNotConnected, err)
 
-		// Subscribe after Close returns nats.ErrConnectionClosed (design D3,
-		// natsclient-status-ownership; the pin returned ErrNotConnected).
+		// Subscribe after Close returns nats.ErrConnectionClosed (transport-client,
+		// "Subscribe returns ErrConnectionClosed once Close has begun").
 		_, err = client.Subscribe(ctx, "test.subject", func(_ context.Context, _ *nats.Msg) {})
 		assert.ErrorIs(t, err, nats.ErrConnectionClosed)
 	})
@@ -359,7 +359,7 @@ func TestManagerScenarios(t *testing.T) {
 			},
 			action: func(m *Client) {
 				m.setStatus(StatusReconnecting)
-				<-time.After(10 * time.Millisecond) // the bubble's clock (R1a)
+				<-time.After(10 * time.Millisecond) // the bubble's clock
 				m.setStatus(StatusConnected)
 			},
 			validate: func(t *testing.T, m *Client) {
@@ -386,7 +386,7 @@ func TestManagerScenarios(t *testing.T) {
 // TestConnectionLossTimeout_FiresAfterGrace verifies the watchdog fires
 // onConnectionLost once the broker has been continuously absent for grace.
 func TestConnectionLossTimeout_FiresAfterGrace(t *testing.T) {
-	// R1a: the watchdog is a time.AfterFunc, so the bubble's clock drives it and the 1s limit
+	// The watchdog is a time.AfterFunc, so the bubble's clock drives it and the 1s limit
 	// below expires only when the watchdog never fires.
 	synctest.Test(t, func(t *testing.T) {
 		var fired atomic.Int32
@@ -421,7 +421,7 @@ func TestConnectionLossTimeout_FiresAfterGrace(t *testing.T) {
 // TestConnectionLossTimeout_CancelledByReconnect verifies that a reconnect
 // arriving before grace expires cancels the watchdog.
 func TestConnectionLossTimeout_CancelledByReconnect(t *testing.T) {
-	// R1a: the watchdog is a time.AfterFunc, so the bubble's clock drives it.
+	// The watchdog is a time.AfterFunc, so the bubble's clock drives it.
 	synctest.Test(t, func(t *testing.T) {
 		var fired atomic.Int32
 
@@ -455,8 +455,8 @@ func TestConnectionLossTimeout_RepeatDisconnectKeepsOriginalDeadline(t *testing.
 	const midGrace = 100 * time.Millisecond
 	const slack = 75 * time.Millisecond // < midGrace so a buggy reset (fire ~midGrace+grace) lies outside grace+slack
 
-	// R1a: inside the bubble time.Now and the watchdog's timer share the fake clock, so the
-	// elapsed time is exact and the slack only keeps the pin's bounds.
+	// Inside the bubble time.Now and the watchdog's timer share the fake clock, so the
+	// elapsed time is exact; the slack is kept only as the bound a real clock would need.
 	synctest.Test(t, func(t *testing.T) {
 		firedAt := make(chan time.Time, 1)
 		manager, err := NewClient("nats://unused",
@@ -493,9 +493,9 @@ func TestConnectionLossTimeout_RepeatDisconnectKeepsOriginalDeadline(t *testing.
 	})
 }
 
-// TestConnectionLossTimeout_DisabledByDefault verifies the legacy behavior:
-// without WithConnectionLossTimeout, onConnectionLost never fires
-// automatically on disconnect.
+// TestConnectionLossTimeout_DisabledByDefault verifies the default: without
+// WithConnectionLossTimeout, onConnectionLost never fires automatically on
+// disconnect.
 func TestConnectionLossTimeout_DisabledByDefault(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var fired atomic.Int32
@@ -508,7 +508,7 @@ func TestConnectionLossTimeout_DisabledByDefault(t *testing.T) {
 		assert.NoError(t, err)
 
 		manager.handleDisconnect(nil, errors.New("boom"))
-		<-time.After(100 * time.Millisecond) // the bubble's clock (R1a)
+		<-time.After(100 * time.Millisecond) // the bubble's clock
 		synctest.Wait()
 		assert.Equal(t, int32(0), fired.Load())
 		// Structural check: no timer should have armed at all.
@@ -528,7 +528,7 @@ func TestConnectionLossTimeout_NoCallbackNoFire(t *testing.T) {
 		assert.NoError(t, err)
 
 		manager.handleDisconnect(nil, errors.New("boom"))
-		<-time.After(100 * time.Millisecond) // the bubble's clock (R1a)
+		<-time.After(100 * time.Millisecond) // the bubble's clock
 		synctest.Wait()
 		// Mostly we're confirming this doesn't panic; the timer should not have
 		// armed at all since onConnectionLost is nil.
@@ -558,7 +558,7 @@ func TestConnectionLossTimeout_CloseCancels(t *testing.T) {
 		defer cancelClose()
 		_ = manager.Close(closeCtx)
 
-		<-time.After(200 * time.Millisecond) // the bubble's clock (R1a)
+		<-time.After(200 * time.Millisecond) // the bubble's clock
 		synctest.Wait()
 		assert.Equal(t, int32(0), fired.Load())
 	})

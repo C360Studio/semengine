@@ -100,8 +100,8 @@ func TestAccountTierLimits_ZeroIsUnknownNotUnbounded(t *testing.T) {
 	assert.Equal(t, OvercommitmentUnavailableUnknownLimit, file.Unavailable)
 }
 
-// TestDeriveAccountReport_UnboundedLimitIsNotApplicableNotSatisfied is task 4.6
-// stated as an assertion: the DEFAULT integration path (testcontainers reports
+// TestDeriveAccountReport_UnboundedLimitIsNotApplicableNotSatisfied: an unbounded
+// account limit is not applicable, and the DEFAULT integration path (testcontainers reports
 // -1) must not read as a comparison that passed.
 func TestDeriveAccountReport_UnboundedLimitIsNotApplicableNotSatisfied(t *testing.T) {
 	limits := accountTierLimitsFrom(&jetstream.AccountInfo{

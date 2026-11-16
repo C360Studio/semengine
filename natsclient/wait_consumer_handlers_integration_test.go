@@ -17,8 +17,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The tests of Client.WaitConsumerHandlers (design D11 of
-// setup-04a-04-graph-roots-objectstore-component; transport-client "A caller can wait for one
+// The tests of Client.WaitConsumerHandlers (transport-client "A caller can wait for one
 // consumer's handlers").
 
 // heldWait bounds a wait the test expects to block because a handler is held: the call can only

@@ -16,10 +16,9 @@ import (
 // HTTP/2 multiplexing + TLS session resumption, so the cost of
 // occasional reconnects is negligible.
 //
-// Tightened from Go's net/http default (90s) in beta.43 after the
-// long tail of stale-pooled-conn wedges semspec/semteams hit through
-// beta.34-42. A higher value can still be set per-endpoint via
-// EndpointConfig.IdleConnTimeout.
+// Tighter than Go's net/http default (90s): stale pooled connections
+// wedged LLM requests at that default. A higher value can still be set
+// per-endpoint via EndpointConfig.IdleConnTimeout.
 const FrameworkDefaultIdleConnTimeout = 30 * time.Second
 
 // FrameworkDefaultMaxIdleConnsPerHost caps the idle pool per host.
@@ -50,10 +49,9 @@ const FrameworkDefaultHTTP2PingTimeout = 5 * time.Second
 // HTTPClientOptions configures the *http.Client used by OpenAI-compatible
 // clients in the framework.
 //
-// Beta.43 reframed the field semantics: framework defaults now
-// preempt Go's net/http defaults on three fields (IdleConnTimeout,
-// MaxIdleConnsPerHost, HTTP/2 PING) because the long tail of
-// stale-pooled-conn wedges through beta.34-42 proved the Go defaults
+// Framework defaults preempt Go's net/http defaults on three fields
+// (IdleConnTimeout, MaxIdleConnsPerHost, HTTP/2 PING) because stale
+// pooled connections wedged LLM requests under the Go defaults, which
 // are too forgiving for the LLM-gateway class. Operator-configured
 // values still override the framework defaults, so per-endpoint
 // tuning continues to work — and the tightened defaults mean the
@@ -67,7 +65,7 @@ const FrameworkDefaultHTTP2PingTimeout = 5 * time.Second
 type HTTPClientOptions struct {
 	// Timeout sets http.Client.Timeout (overall request deadline). Zero
 	// preserves Go's default (no timeout) — appropriate when the caller
-	// drives cancellation via context (the agentic-model pattern). Set
+	// drives cancellation via context. Set
 	// only when the caller does NOT manage ctx deadlines itself.
 	Timeout time.Duration
 	// IdleConnTimeout bounds idle pooled connection lifetime. Empty
@@ -153,7 +151,8 @@ func NewHTTPClient(opts HTTPClientOptions) *http.Client {
 
 // HTTPClientOptionsFromEndpoint builds HTTPClientOptions from an EndpointConfig,
 // translating the three Transport-tuning fields. The Timeout field is left
-// zero — agentic-model and graph/llm both manage request deadlines via context.
+// zero for callers that manage request deadlines via context (agentic-model
+// and graph/llm, neither in SemEngine yet).
 func HTTPClientOptionsFromEndpoint(ep *EndpointConfig) HTTPClientOptions {
 	if ep == nil {
 		return HTTPClientOptions{}

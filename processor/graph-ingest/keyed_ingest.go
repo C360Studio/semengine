@@ -19,20 +19,20 @@ import (
 // plus the JetStream message, which only the delivery helper settles, and the
 // (stream, generation, sequence) the redelivery guard keys on. Partitioned by
 // entityID so same-entity updates serialize on one lane in arrival order
-// (SemStreams ADR-072, SemStreams gh#480).
+// (SemStreams ADR-072).
 type ingestWork struct {
 	entity *graph.EntityState
 	msg    jetstream.Msg
 	// consumer is the configuration the input's consumer was created with, and heartbeat the
 	// interval at which its application tells the server it is still in progress: what
-	// processIngest builds the input's delivery policy from (design D8, "Long apply").
+	// processIngest builds the input's delivery policy from (graph-ingest-recovery spec, "Long apply").
 	consumer  natsclient.StreamConsumerConfig
 	heartbeat time.Duration
 	entityID  string
 	stream    string
 	seq       uint64
 	// generation is the input stream's generation: its creation time on the server, in
-	// nanoseconds, read once before Start binds the consumer (design D8, #15).
+	// nanoseconds, read once before Start binds the consumer.
 	generation uint64
 	// deliveredAt is the JetStream timestamp of this message, carried from the
 	// consume closure, which read it, so the application, which holds no message,
@@ -42,9 +42,9 @@ type ingestWork struct {
 	// authority rejection is metered under, so an operator reading
 	// mutation_rejections can see WHICH port a refused write came in on.
 	subject string
-	// importLane is the arrival port's own "import": true declaration (ADR-102
-	// d5). It is read from the port, never from the message: a peer cannot
-	// declare itself trusted.
+	// importLane is the arrival port's own "import": true declaration (ADR-102).
+	// It is read from the port, never from the message: a peer cannot declare
+	// itself trusted.
 	importLane bool
 }
 
@@ -66,7 +66,7 @@ func (r guardRecord) encode() []byte {
 }
 
 // decodeGuardRecord reads a stored record. A value of any other length than the one format
-// is not a record graph-ingest can read (design D21).
+// is not a record graph-ingest can read.
 func decodeGuardRecord(value []byte) (guardRecord, bool) {
 	if len(value) != guardRecordSize {
 		return guardRecord{}, false
@@ -79,7 +79,7 @@ func decodeGuardRecord(value []byte) (guardRecord, bool) {
 
 // covers reports whether work is a redelivery of an input this record has seen: it comes
 // from the same stream generation, at a sequence not newer than the last applied. An input
-// from any other generation is not covered, whatever its sequence (#15). An input from a
+// from any other generation is not covered, whatever its sequence. An input from a
 // stream that was deleted and created again, or restored, can still carry this record's
 // generation; those cases are declared limitations (graph-ingest-recovery, "Replay
 // protection uses the generation read before the bind"). Generations are compared for
@@ -95,12 +95,12 @@ func (r guardRecord) covers(work ingestWork) bool {
 // before it returns, so the lane's inputs are applied one after another.
 // Bounded: past max, one arbitrary entry is evicted — a cache
 // miss just falls through to the durable tier, so which entry leaves the cache
-// never affects correctness (SemStreams ADR-072 B3).
+// never affects correctness (SemStreams ADR-072).
 type laneGuard struct {
 	seq      map[string]guardRecord
 	capacity int
 	// refused holds the keys whose durable record this lane refused as undecodable and logged,
-	// so a redelivery loop logs once per key (design D21). A key leaves when its record is next
+	// so a redelivery loop logs once per key. A key leaves when its record is next
 	// read absent or decodable, which is the repair. It is bounded like seq: past capacity one
 	// arbitrary key leaves, and if that key's record is still undecodable it is logged again.
 	refused map[string]struct{}
@@ -157,7 +157,7 @@ func guardKey(entityID, stream string) string {
 }
 
 // buildIngestPool constructs the keyed-concurrent ingest pool + the in-memory
-// guard shards. Called from Start BEFORE subscriptions (SemStreams ADR-072 M3). The pool
+// guard shards. Called from Start BEFORE subscriptions (SemStreams ADR-072). The pool
 // context, a child of the run context Start creates, is supplied lexically and never
 // retained.
 func (c *Component) buildIngestPool(poolCtx context.Context) error {
@@ -204,7 +204,7 @@ func (c *Component) buildIngestPool(poolCtx context.Context) error {
 // calls it and logs a returned error at Debug), run on lane `lane`'s goroutine
 // with the lane context, the pool context. It runs the
 // input's application (applyIngest) inside natsclient.ConsumeDeliveryWithHeartbeat
-// (design D8, "Long apply"): while the application runs, the server is told every
+// (graph-ingest-recovery spec, "Long apply"): while the application runs, the server is told every
 // heartbeat interval that the input is still in progress, and when it returns,
 // the helper settles the input once, by the decision the application returned.
 func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork) error {
@@ -268,9 +268,9 @@ func (c *Component) applyIngest(ctx context.Context, lane int, work ingestWork) 
 		return natsclient.DeliveryDecisionTerminate, validationErr
 	}
 
-	// Redelivery guard (SemStreams ADR-072 B1/B2/B3): drop a stale re-delivery whose stream
+	// Redelivery guard (SemStreams ADR-072): drop a stale re-delivery whose stream
 	// sequence is not newer than the last already applied to this entity from the
-	// same stream generation (#15).
+	// same stream generation.
 	stale, err := c.ingestGuardStale(ctx, lane, work)
 	if err != nil {
 		// Transient durable-guard read failure, or a stored record that cannot be
@@ -296,7 +296,7 @@ func (c *Component) applyIngest(ctx context.Context, lane int, work ingestWork) 
 	if ingestErr != nil {
 		var stateErr *graph.StateContractError
 		if errors.As(ingestErr, &stateErr) {
-			// Disposition split by FAULT (poison-response-scoping D8): this
+			// Disposition split by FAULT: this
 			// arrival's own candidate is valid — the RESIDENT state it must
 			// merge into is poisoned, which is the environment's fault and
 			// repairable (delete + recreate). Nak so the valid data survives
@@ -345,12 +345,11 @@ func (c *Component) applyIngest(ctx context.Context, lane int, work ingestWork) 
 // sent, or the delivery's metadata or the application's decision was invalid. The
 // helper settled nothing, so the server delivers the input again after its ack wait;
 // the applied-sequence record makes the redelivery apply once, and MaxDeliver bounds
-// the attempts. The lane keeps taking input (owner ruling, #91 comment 6109278240,
-// item 1): graph-ingest is the only writer of entity state, so one bad input must not
-// stop ingest. This departs from OwnerStopRequired's "must stop its lane" (design D8,
-// "Long apply"). The interruption is declared: an ERROR line and one in
+// the attempts. The lane keeps taking input: graph-ingest is the only writer of entity state, so one
+// bad input must not stop ingest. This departs from OwnerStopRequired's "must stop its
+// lane". The interruption is declared: an ERROR line and one in
 // work_interrupted_total under its cause. It adds nothing to the error count Health
-// reports (owner ruling, #91 comment 6124130342): a write the interruption cut has counted
+// reports: a write the interruption cut has counted
 // once at its own site, and an interruption anywhere else leaves that count unchanged.
 func (c *Component) recordInterruptedWork(work ingestWork, err error) {
 	cause := interruptedWorkCause(err)
@@ -380,7 +379,7 @@ func interruptedWorkCause(err error) string {
 
 // recordStructuralRejection counts and logs one stream message refused because its candidate
 // is structurally invalid: applyIngest's record for a candidate that fails its contract, and
-// the consume closure's for a refused statement (design D15). The caller terminates the message.
+// the consume closure's for a refused statement. The caller terminates the message.
 func (c *Component) recordStructuralRejection(lane string, err error) {
 	c.recordEntityStateContractRejection(lane, err)
 	c.recordPredicateContractRejections(lane, err)
@@ -435,10 +434,10 @@ func (c *Component) ingestGuardStale(ctx context.Context, lane int, work ingestW
 		}
 		return false, err
 	}
-	// ingestGuardStampDurable writes the one format, guardRecord's. A value of any other length,
-	// the pin's eight-byte sequence among them, cannot be decoded. Reading it as first seen would
+	// ingestGuardStampDurable writes the one format, guardRecord's. A value of any other length
+	// cannot be decoded. Reading it as first seen would
 	// reopen the overwrite the record prevents, and reading part of it would be a guess, so the
-	// input is refused until the key is deleted (design D21).
+	// input is refused until the key is deleted.
 	last, ok := decodeGuardRecord(entry.Value)
 	if !ok {
 		c.refuseUndecodableGuardRecord(lane, key, len(entry.Value))
@@ -449,7 +448,7 @@ func (c *Component) ingestGuardStale(ctx context.Context, lane int, work ingestW
 	return last.covers(work), nil
 }
 
-// recordUnguardedInput declares the degrade of design D8: with no applied-sequence bucket,
+// recordUnguardedInput declares a degrade: with no applied-sequence bucket,
 // which only a component built without Start can lack (Start fails when it cannot acquire
 // one), an input the lane's cache has not seen is applied as first seen. Each such input is
 // counted and logged, naming it: nothing redelivers it in a loop, since it is applied and

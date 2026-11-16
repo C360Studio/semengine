@@ -1,0 +1,18 @@
+# body-size-probe, run 2026-11-12, go1.26.11 darwin/arm64
+# input: SemSource at 4ca2072c5d9d6bf4ec5ad76dc33b92d61c1614c1, gh api repos/C360Studio/semsource/tarball/<sha>, extracted to its own directory
+# command: ./sizeprobe.bin <extracted root>
+Go symbol bodies, tests included: 4766 bodies, total 2879021 chars, median 401, p90 1323, p99 3273, max 17287
+  over  4000 chars: 34 bodies (0.71%), 65336 chars cut (2.27% of all text)
+  over  8000 chars: 3 bodies (0.06%), 11632 chars cut (0.40% of all text)
+  over 16000 chars: 1 bodies (0.02%), 1287 chars cut (0.04% of all text)
+  over 32000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)
+Go symbol bodies, production files only: 2233 bodies, total 1185637 chars, median 306, p90 1323, p99 2771, max 7686
+  over  4000 chars: 5 bodies (0.22%), 10014 chars cut (0.84% of all text)
+  over  8000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)
+  over 16000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)
+  over 32000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)
+Markdown fenced blocks (passages that may exceed the 2,000-byte ceiling): 288 bodies, total 74605 chars, median 183, p90 555, p99 1075, max 1507
+  over  4000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)
+  over  8000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)
+  over 16000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)
+  over 32000 chars: 0 bodies (0.00%), 0 chars cut (0.00% of all text)

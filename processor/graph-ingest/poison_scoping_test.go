@@ -64,11 +64,10 @@ func storedEntry(bucket *mockKVBucket, id string) (mockKVData, bool) {
 }
 
 // TestPoisonRepairRecoveryWithoutRestart drives the spec scenario "operator
-// repair recovers Health without restart" through the wire handlers (ruled O,
-// #91 comment 6080973822; design D15, delete): a delete at an older revision is
-// refused as a revision mismatch and keeps the value; the delete at the stored
-// revision removes it, clears the inventory, the gauge reads zero, Health
-// recovers, and a canonical create births the entity again.
+// repair recovers Health without restart" through the wire handlers: a delete
+// at an older revision is refused as a revision mismatch and keeps the value;
+// the delete at the stored revision removes it, clears the inventory, the gauge
+// reads zero, Health recovers, and a canonical create births the entity again.
 func TestPoisonRepairRecoveryWithoutRestart(t *testing.T) {
 	const (
 		id       = "acme.ops.test.system.widget.repair"
@@ -215,7 +214,7 @@ func TestPoisonRepoisonIsReinventoriedAndRelogged(t *testing.T) {
 		"re-poison must produce a fresh structured ERROR")
 }
 
-// TestPoisonInventoryIsObservabilityOnly pins the D2 invariant: no read or
+// TestPoisonInventoryIsObservabilityOnly pins the invariant: no read or
 // write path consults the inventory for a decision. A stale entry cannot
 // refuse a repaired entity, and a write to an entity with a stale entry
 // commits normally.
@@ -244,7 +243,6 @@ func TestPoisonInventoryIsObservabilityOnly(t *testing.T) {
 			Reason: graph.GraphStateReasonNoncanonicalPredicate, EntityID: id,
 		}, 1)
 
-		// Component.MergeEntity is gone (design D6); its body is the call below.
 		require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{
 			ID:          id,
 			MessageType: testEntityType(),
@@ -256,7 +254,7 @@ func TestPoisonInventoryIsObservabilityOnly(t *testing.T) {
 }
 
 // TestAggregateReadNamesEveryPoisonedEntity drives the spec scenario "batch
-// fetch fails loudly and names all poisoned entities" (D5): one typed error
+// fetch fails loudly and names all poisoned entities": one typed error
 // naming A and C, both inventoried in the same attempt, no B-only response —
 // on BOTH multi-entity read paths (batch and prefix).
 func TestAggregateReadNamesEveryPoisonedEntity(t *testing.T) {
@@ -360,7 +358,7 @@ type storedPoisonCase struct {
 
 // storedPoison lists the values stored under key that are refused beside guardTestPoisonBytes'
 // noncanonical predicate: a value whose entity ID is not its key, an empty value, and a value
-// holding a statement with no source or no timestamp (checkpoint 3 H3).
+// holding a statement with no source or no timestamp.
 func storedPoison(key string) []storedPoisonCase {
 	return []storedPoisonCase{
 		{
@@ -383,8 +381,8 @@ func storedPoison(key string) []storedPoisonCase {
 }
 
 // storedStatementWithout is a value of the entity key holding one statement with no field,
-// "source" or "timestamp", written as JSON the way a writer outside graph-ingest could store it
-// (checkpoint 3 H3).
+// "source" or "timestamp", written as JSON the way a writer outside graph-ingest could store
+// it.
 func storedStatementWithout(key, field string) []byte {
 	var metadata string
 	switch field {
@@ -400,12 +398,12 @@ func storedStatementWithout(key, field string) []byte {
 }
 
 // TestEveryEntityReadRefusesTheSameStoredPoison holds one read rule on the four
-// sites that read one authority value and answer with it (#139 B): the entity
-// verb, batch, prefix and reconcile. A stored value whose entity ID is not its
-// key, an empty value, and a value holding a statement with no source or no
-// timestamp, are graph-state poison to every one of them: refused,
-// inventoried at the revision read, never served, cached, reported absent or
-// deleted. The delete reads the same way but is not refused for the value
+// sites that read one authority value and answer with it: the entity verb,
+// batch, prefix and reconcile. A stored value whose entity ID is not its key,
+// an empty value, and a value holding a statement with no source or no
+// timestamp, are graph-state poison to every one of them: refused, inventoried
+// at the revision read, never served, cached, reported absent or deleted. The
+// delete reads the same way but is not refused for the value
 // (TestCanonicalDeleteRemovesAValueTheReadRefuses).
 func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 	const (
@@ -476,12 +474,11 @@ func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 }
 
 // TestCanonicalDeleteRemovesAValueTheReadRefuses: a delete is not refused for its
-// stored value (ruled O, #91 comment 6080973822; design D15, delete). Its read
-// still refuses the value and records it at the revision read; the delete then
-// runs at the caller's expected revision, the bucket's revision check being the
-// fence: an older revision is refused as a mismatch and keeps the value, the
-// stored one removes it. A read that fails for any other reason is answered as
-// before and deletes nothing.
+// stored value. Its read still refuses the value and records it at the revision
+// read; the delete then runs at the caller's expected revision, the bucket's
+// revision check being the fence: an older revision is refused as a mismatch and
+// keeps the value, the stored one removes it. A read that fails for any other
+// reason is answered as before and deletes nothing.
 func TestCanonicalDeleteRemovesAValueTheReadRefuses(t *testing.T) {
 	const (
 		key      = "acme.ops.test.system.widget.delete-key"
@@ -531,7 +528,7 @@ func TestCanonicalDeleteRemovesAValueTheReadRefuses(t *testing.T) {
 }
 
 // TestProcessIngestResidentPoisonNakThenAppliesAfterRepair drives the spec
-// scenario "valid arrival survives a poison window" (D8): the resident-poison
+// scenario "valid arrival survives a poison window": the resident-poison
 // arrival is Nak'd (not Term'd), and a redelivery of the SAME message applies
 // successfully once the entity is repaired.
 func TestProcessIngestResidentPoisonNakThenAppliesAfterRepair(t *testing.T) {
@@ -600,8 +597,8 @@ func TestBootSweepLogCap(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(logs.String(), "log cap"), "one count-only WARN summarizes the rest")
 }
 
-// TestDebugStatusEnumeratesFullInventory pins the DebugStatusProvider surface
-// (D6): full enumeration, sorted, JSON-serializable.
+// TestDebugStatusEnumeratesFullInventory pins the DebugStatusProvider
+// surface: full enumeration, sorted, JSON-serializable.
 func TestDebugStatusEnumeratesFullInventory(t *testing.T) {
 	c, bucket := poisonScopingTestComponent(t)
 	ids := []string{
@@ -637,10 +634,10 @@ func TestDebugStatusEnumeratesFullInventory(t *testing.T) {
 }
 
 // TestVerifyAfterRecordDropsStaleRecordAfterCompletedRepair pins the
-// verify-after-record close of the last record/clear interleaving (reviewer
-// MEDIUM-1): a repair that completed ENTIRELY between a detection's read and
-// its inventory record found no entry to clear, so the fresh record must be
-// verified against current bytes and dropped when they prove repair.
+// verify-after-record close of the last record/clear interleaving: a repair
+// that completed ENTIRELY between a detection's read and its inventory
+// record found no entry to clear, so the fresh record must be verified
+// against current bytes and dropped when they prove repair.
 func TestVerifyAfterRecordDropsStaleRecordAfterCompletedRepair(t *testing.T) {
 	c, bucket := poisonScopingTestComponent(t)
 	ctx := context.Background()
@@ -686,10 +683,10 @@ func assertNewerPoisonKept(t *testing.T, c *Component, id string, revision uint6
 	assert.Equal(t, "degraded", health.Status)
 }
 
-// TestStaleAbsenceKeepsNewerPoison (checkpoint 3 B1): a detection's verify read finds the key
-// absent; before that read returns, the key is re-created with poisoned bytes at revision 3 and
-// a second read inventories them. The absence proves only the revision recorded before the
-// verify read (1), so the revision-3 record stays.
+// TestStaleAbsenceKeepsNewerPoison: a detection's verify read finds the key absent; before that
+// read returns, the key is re-created with poisoned bytes at revision 3 and a second read
+// inventories them. The absence proves only the revision recorded before the verify read (1),
+// so the revision-3 record stays.
 func TestStaleAbsenceKeepsNewerPoison(t *testing.T) {
 	const id = "acme.ops.test.system.widget.stale-absence"
 	c, bucket := poisonScopingTestComponent(t)
@@ -737,9 +734,9 @@ func TestStaleAbsenceKeepsNewerPoison(t *testing.T) {
 	assertNewerPoisonKept(t, c, id, 3)
 }
 
-// TestDeleteCleanupKeepsNewerPoison (checkpoint 3 B1): a delete at revision 4 succeeds; before
-// its cleanup runs, the key is re-created with poisoned bytes at revision 6 and a read
-// inventories them. The delete removed revision 4 only, so the revision-6 record stays.
+// TestDeleteCleanupKeepsNewerPoison: a delete at revision 4 succeeds; before its cleanup runs,
+// the key is re-created with poisoned bytes at revision 6 and a read inventories them. The
+// delete removed revision 4 only, so the revision-6 record stays.
 func TestDeleteCleanupKeepsNewerPoison(t *testing.T) {
 	const id = "acme.ops.test.system.widget.stale-delete"
 	c, bucket := poisonScopingTestComponent(t)
@@ -768,7 +765,7 @@ func TestDeleteCleanupKeepsNewerPoison(t *testing.T) {
 // invalidates the cached entry": a warm query-cache entry for an entity whose
 // stored bytes were poisoned out-of-band must not outlive detection — the
 // inventory record deletes it, bounding the stale-serve window to detection
-// latency instead of the cache TTL (design D2).
+// latency instead of the cache TTL.
 func TestDetectionInvalidatesCachedEntry(t *testing.T) {
 	c, bucket := poisonScopingTestComponent(t)
 	ctx := context.Background()
@@ -799,6 +796,3 @@ func TestDetectionInvalidatesCachedEntry(t *testing.T) {
 	_, hit = entityCache.Get(id)
 	assert.False(t, hit, "the cached response must not outlive poison detection")
 }
-
-// The pin's TestSuffixResolutionServesIDWhileReadRefuses is not ported: the suffix
-// index and the suffix verb are not ported (design D19).

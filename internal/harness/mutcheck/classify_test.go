@@ -30,7 +30,7 @@ import (
 
 const testBound = 4 * time.Minute
 
-// raceText is the line Go's race detector prints in a test that raced (design P18).
+// raceText is the line Go's race detector prints in a test that raced.
 const raceText = "race detected during execution of test"
 
 type recordedRun struct {
@@ -72,9 +72,8 @@ func stream(t *testing.T, file string) []byte {
 
 func expectAt(locations ...string) expectation { return expectation{locations: locations} }
 
-// TestObserveRecordedRuns (design D5, D11 item 1): each recorded per-run case is read into the
-// facts and lines written here from the recording itself, and given the reading the spec's rules
-// give it.
+// TestObserveRecordedRuns: each recorded per-run case is read into the facts and lines written
+// here from the recording itself, and given the reading the spec's rules give it.
 func TestObserveRecordedRuns(t *testing.T) {
 	type want struct {
 		facts     facts
@@ -140,7 +139,7 @@ func TestObserveRecordedRuns(t *testing.T) {
 			outcome:   detection,
 			expected:  []string{"    testing.go:1712: race detected during execution of test"},
 			locations: []string{"testing.go:1712"}}},
-		// Design D2: an expected line before the panic does not change the reading.
+		// An expected line before the panic does not change the reading.
 		{"a hang after an expected line", recTimeout, true, expectAt("value_test.go:53"), want{
 			facts:   facts{selected: true, timedOut: true, expectedHit: true},
 			outcome: hang, words: []string{"timeout"},
@@ -227,9 +226,9 @@ func TestObserveBoundedRun(t *testing.T) {
 	}
 }
 
-// TestObserveElapsed (design D1, D6): the package's elapsed time is read from the recorded
-// package pass or fail event, and only from it: a test's own Elapsed is not the package's, and a
-// stream cut before the package's result reports none, which differs from zero.
+// TestObserveElapsed: the package's elapsed time is read from the recorded package pass or fail
+// event, and only from it: a test's own Elapsed is not the package's, and a stream cut before the
+// package's result reports none, which differs from zero.
 func TestObserveElapsed(t *testing.T) {
 	head := []byte(strings.Join(strings.SplitAfter(string(stream(t, "pass")), "\n")[:5], ""))
 	for _, tc := range []struct {
@@ -252,13 +251,13 @@ func TestObserveElapsed(t *testing.T) {
 	}
 }
 
-// wantReading is the reading the spec gives, written from "Outcome classification" and design D5
-// as the conditions for each outcome, not as the program's ordered cases. Detection needs a
-// failed named test with an expected line; a mutant run that built, ran the named test and was
-// ended by go test's timeout with no result, no signal and before the bound is a hang (design
-// D2); any other run ended by the timeout, a signal or the bound is inconclusive whatever it
-// printed; a mutant that does not build is invalid; an unchanged-code run passes only when the
-// named test passed and go test exited zero.
+// wantReading is the reading the spec gives, written from "Outcome classification" as the
+// conditions for each outcome, not as the program's ordered cases. Detection needs a failed named
+// test with an expected line; a mutant run that built, ran the named test and was ended by go
+// test's timeout with no result, no signal and before the bound is a hang; any other run ended by
+// the timeout, a signal or the bound is inconclusive whatever it printed; a mutant that does not
+// build is invalid; an unchanged-code run passes only when the named test passed and go test
+// exited zero.
 func wantReading(f facts, mutant bool) outcome {
 	endedEarly := f.timedOut || f.signal != "" || f.bounded
 	ran := !f.buildFailed && f.selected && !endedEarly
@@ -429,7 +428,7 @@ func TestCheckVerdicts(t *testing.T) {
 			plan:     map[string]recordedRun{"mutant 1": recHang},
 			wantRuns: hung, want: detection, words: []string{"by hang", "slowest baseline run took 15s", "margin of 15s"}},
 		// The recorded runs' 1.247s is over a third of 3s: the -race build's exit pause alone puts a
-		// -timeout under about 3.75s out of reach of a detection by hang (design D1).
+		// -timeout under about 3.75s out of reach of a detection by hang.
 		{name: "a timeout too short for the margin", exp: expectAt("value_test.go:99"), timeout: 3 * time.Second,
 			plan:     map[string]recordedRun{"mutant 1": recHang},
 			wantRuns: hung, want: inconclusive, words: []string{"baseline run 1", "1.247s", "margin of 1s"}},

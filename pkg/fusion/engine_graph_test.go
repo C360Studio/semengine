@@ -15,8 +15,8 @@ import (
 	"github.com/c360studio/semengine/pkg/fusion"
 )
 
-// Graph projection facet tests (gh#533). Each of the issue's eight acceptance
-// criteria maps to a test below:
+// Graph projection facet tests. Each of the facet's eight acceptance criteria
+// maps to a test below:
 //
 //  1. ID-shaped literal stays a fact        → TestGraph_IDShapedLiteralStaysFact
 //  2. parallel predicates are two edges     → TestGraph_ParallelPredicates_TwoEdges
@@ -24,8 +24,8 @@ import (
 //  4. evidence merges on one edge           → TestGraph_SameEdgeEvidence_OneEdgeTwoEntries
 //  5. absent evidence stays absent          → TestGraph_AbsentEvidence_OmittedFromWire
 //  6. truncation observable + independent   → TestGraph_FactCap_ObservableAndIndependent
-//  7. view-revision observations            → removed with the status read
-//     (ADR-109 D1); the wire carries no view_revision, TestGraphProjectionRoundTrip
+//  7. no view-revision observations         → the wire carries no view_revision,
+//     since fusion reads no readiness status (ADR-109), TestGraphProjectionRoundTrip
 //  8. v1 requests unaffected                → TestGraph_NotRequested_V1ShapeUnchanged
 
 // fuseGraph runs a graph-want fuse over g through lens, failing the test on a
@@ -498,8 +498,8 @@ func TestGraph_TypedFactsAndMultiValuedPredicates(t *testing.T) {
 // encode/decode losslessly — the proof that any adapter transporting the Response
 // as JSON (the fusionnats deployment shape: the RetrievalClient feeds the engine,
 // the Response travels as opaque JSON) carries the facet through unmodified — and
-// its wire carries no view_revision, which left with the status read that filled
-// it (design D2).
+// its wire carries no view_revision, since fusion reads no readiness status that
+// could fill it (ADR-109).
 func TestGraphProjectionRoundTrip(t *testing.T) {
 	conf := 0.85
 	resp := fusion.Response{
@@ -556,11 +556,10 @@ func TestGraphProjectionRoundTrip(t *testing.T) {
 	}
 }
 
-// TestGraph_FactEvidenceCap_Truncates pins the reviewer M1 fix: fact evidence
-// is capped like edge evidence (8), so a multi-source assertion re-stamped by
-// many producers cannot turn one fact into an unbounded wire payload, and the
-// cut is observable on the fact and the projection while v1 truncation stays
-// untouched.
+// TestGraph_FactEvidenceCap_Truncates: fact evidence is capped like edge
+// evidence (8), so a multi-source assertion re-stamped by many producers cannot
+// turn one fact into an unbounded wire payload, and the cut is observable on
+// the fact and the projection while v1 truncation stays untouched.
 func TestGraph_FactEvidenceCap_Truncates(t *testing.T) {
 	// 10 distinct-provenance assertions of the same (predicate, value)
 	// against the per-fact evidence cap of 8.

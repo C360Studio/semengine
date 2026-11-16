@@ -28,6 +28,7 @@ import (
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/graphview"
 	"github.com/c360studio/semengine/pkg/lifecycle"
 	graphindex "github.com/c360studio/semengine/processor/graph-index"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
@@ -66,6 +67,13 @@ func startStack(t *testing.T) graphStack {
 // startIngestAndIndex starts graph-ingest and graph-index on a fresh client, without graph-query.
 func startIngestAndIndex(t *testing.T) graphStack {
 	t.Helper()
+	return startIngestAndIndexAs(t, types.PlatformMeta{Org: "c360", Platform: "test"})
+}
+
+// startIngestAndIndexAs is startIngestAndIndex with graph-ingest running under platform, which
+// decides the entity IDs it accepts.
+func startIngestAndIndexAs(t *testing.T, platform types.PlatformMeta) graphStack {
+	t.Helper()
 	client := fixtureClient(t)
 	js, err := client.JetStream()
 	if err != nil {
@@ -83,7 +91,7 @@ func startIngestAndIndex(t *testing.T) graphStack {
 	}
 	ingest, err := graphingest.CreateGraphIngest(ingestConfig, component.Dependencies{
 		NATSClient: client, PayloadRegistry: registry, MetricsRegistry: metric.NewMetricsRegistry(),
-		Platform: types.PlatformMeta{Org: "c360", Platform: "test"},
+		Platform: platform,
 	})
 	if err != nil {
 		t.Fatalf("CreateGraphIngest: %v", err)
@@ -200,11 +208,11 @@ func requireRefusal(t *testing.T, reply []byte, err error, class errs.ErrorClass
 }
 
 // spyOnEntityVerb watches every request the entity verb receives, on the connection every component
-// here shares. The returned check fails if one arrived. It sends a marker on the same connection and
-// reads what the spy saw first: NATS orders one connection's messages, so a request graph-query sent
-// before it replied reaches the spy before the marker. That order, at the pinned versions, is shown by
-// the "second request" row in notes/3.3.md; across versions it is not promised here. The marker is
-// refused, which nothing reads.
+// here shares. The returned check fails if one arrived. It sends a marker on the same connection
+// and reads what the spy saw first: NATS orders one connection's messages, so a request graph-query
+// sent before it replied reaches the spy before the marker. That order is shown at the pinned
+// versions by TestEntityByAlias, which fails through this spy when graph-query sends a request it
+// must not; across versions it is not promised here. The marker is refused, which nothing reads.
 func spyOnEntityVerb(t *testing.T, client *natsclient.Client) func() {
 	t.Helper()
 	subject := verbRow(t, graph.ResponderGraphIngest, "entity").Subject
@@ -226,10 +234,10 @@ func spyOnEntityVerb(t *testing.T, client *natsclient.Client) func() {
 	}
 }
 
-// TestEntityByAlias: the alias verb is asked first and its refusals reach the caller; a holder is read,
-// an unheld valid ID is read as itself, an unheld non-ID is not found, and the reply wraps the entity
-// verb's JSON with the alias reply's revision (design D4, ADR-114). Real ingest and index where a
-// real one can produce the case; stubs for the rows D4 names, and for reply bytes no real ingest
+// TestEntityByAlias: the alias verb is asked first and its refusals reach the caller; a holder is
+// read, an unheld valid ID is read as itself, an unheld non-ID is not found, and the reply wraps
+// the entity verb's JSON with the alias reply's revision (ADR-114). Real ingest and index where a
+// real one can produce the case; stubs for the other cases, and for reply bytes no real ingest
 // sends.
 func TestEntityByAlias(t *testing.T) {
 	t.Run("real ingest and index", testEntityByAliasReal)
@@ -571,7 +579,8 @@ func TestRelationshipsEnvelopeKeepsIndexRevision(t *testing.T) {
 }
 
 // TestRelationshipsRefusesUnknownDirection: a direction that is not exactly outgoing or incoming is
-// invalid_request and no index verb receives a request; the pin read all of these as outgoing.
+// invalid_request and no index verb receives a request: reading any of these as outgoing would
+// silently answer another question, half the links for "both" or none.
 func TestRelationshipsRefusesUnknownDirection(t *testing.T) {
 	client := fixtureClient(t)
 	startComponent(t, client, `{}`)
@@ -783,74 +792,100 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	step("summary: both requests, one input", summary, `{}`, 21)
 
 	searchRequest := `{"entity_id":"` + drone1 + `","query":"drone"}`
-	aheadRequest := fmt.Sprintf(`{"entity_id":%q,"query":"drone","min_revision":%d}`, drone1, farAhead)
 	step("localSearch: a request it refuses", localSearchSubject, `{"entity_id":"`+drone1+`"}`, 21)
-	step("localSearch: no view", localSearchSubject, searchRequest, 21)
+	step("localSearch: no responder on the word index", localSearchSubject, searchRequest, 22)
+	word := stub(graph.ResponderGraphLexical, "search")
+	word.Store(replying(`not json`))
+	step("localSearch: a word reply that does not decode", localSearchSubject, searchRequest, 23)
+	word.Store(replying(`{}`))
+	step("localSearch: a word reply naming no producer", localSearchSubject, searchRequest, 24)
+	word.Store(replying(`{"data":{"matched":0},"producer":"graph-lexical"}`))
+	step("localSearch: a word reply holding no results", localSearchSubject, searchRequest, 25)
+	word.Store(refusing)
+	step("localSearch: the word search refused by the responder", localSearchSubject, searchRequest, 25)
+	word.Store(replying(`{"data":{"results":[{"entity_id":"` + drone1 + `","score":1}],"matched":1},"producer":"graph-lexical"}`))
+	step("localSearch: no responder on the batch verb", localSearchSubject, searchRequest, 26)
+	batch := stub(graph.ResponderGraphIngest, "batch")
+	batch.Store(replying(`not json`))
+	step("localSearch: a batch reply that does not decode", localSearchSubject, searchRequest, 27)
+	batch.Store(refusing)
+	step("localSearch: the batch refused by the responder", localSearchSubject, searchRequest, 27)
+	batch.Store(replying(`{"entities":[]}`))
+	step("localSearch: a batch reply that leaves a hit out unnamed", localSearchSubject, searchRequest, 28)
+	batch.Store(replying(`{"entities":[{"id":"` + drone1 + `","triples":[]}]}`))
+	step("localSearch: answered with no community view", localSearchSubject, searchRequest, 28)
+
 	kv, m := communityRecords(t, client)
 	publishDrones(t, m, 1, drone1)
-	if _, err := kv.Put(t.Context(), "0.c360.test.query.poison", []byte(`{}`)); err != nil {
+	const poisonKey = "0.c360.test.query.poison"
+	if _, err := kv.Put(t.Context(), poisonKey, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	// The view opens within one reopen interval and replays both keys before it serves. Each request
-	// until it serves is one input and no error.
-	if _, err := probe.Await(t.Context(), func(ctx context.Context) (bool, error) {
-		_, err := client.RequestClassified(ctx, localSearchSubject, []byte(aheadRequest), requestTimeout)
-		wantMessages++
-		wantBytes += int64(len(aheadRequest))
-		return codeOf(err) == graph.ErrorCodeRevisionNotReached, nil
-	}, func(served bool) bool { return served }); err != nil {
+	// The view opens within one reopen interval and replays both keys in order before it serves.
+	awaitCommunityView(t, c, systemGroupKey, 1)
+	if _, err := probe.Await(t.Context(), func(context.Context) (bool, error) {
+		var poison *graphview.PoisonError
+		_, _, err := c.communities.Load().Get(poisonKey)
+		return errors.As(err, &poison), nil
+	}, func(applied bool) bool { return applied }); err != nil {
 		t.Fatal(err)
 	}
-	step("localSearch: min_revision above the record", localSearchSubject, aheadRequest, 21)
-	step("localSearch: an unreadable record", localSearchSubject, `{"entity_id":"c360.test.query.poison.drone.001","query":"drone"}`, 22)
-	unpublished := `{"entity_id":"c360.test.query.unpublished.drone.001","query":"drone"}`
-	step("localSearch: no record, the entity exists", localSearchSubject, unpublished, 22)
+	step("localSearch: answered with a record", localSearchSubject, searchRequest, 28)
+	step("localSearch: answered past an unreadable record", localSearchSubject, `{"entity_id":"c360.test.query.poison.drone.001","query":"drone"}`, 29)
 	entity.Store(refusing)
-	step("localSearch: no record, the entity refused by the responder", localSearchSubject, unpublished, 22)
-	prefix.Store(replying(`{}`))
-	step("localSearch: a broken page", localSearchSubject, searchRequest, 23)
-	prefix.Store(refusing)
-	step("localSearch: the page refused by the responder", localSearchSubject, searchRequest, 23)
-	prefix.Store(replying(`{"entities":null,"total":0}`))
-	step("localSearch: answered", localSearchSubject, searchRequest, 23)
+	// The word index's one hit is now in the group whose record is unreadable, at level 0.
+	const poisonHit = "c360.test.query.poison.drone.001"
+	hitReply := `{"data":{"results":[{"entity_id":"` + poisonHit + `","score":1}],"matched":1},"producer":"graph-lexical"}`
 
-	// globalSearch: the alias stub still refuses and the entity stub too; the edge stubs answer empty.
+	// globalSearch: the word index's one hit is drone1, whose group record reads, so only a hint's own
+	// read can count an error. The alias and entity stubs still refuse; the edge stubs answer empty.
+	// A hint's refusal or failure never refuses the reply; graph-query's own failure still counts.
 	const globalSearch = "graph.query.globalSearch"
 	const entityQuestion, pathQuestion = `{"query":"held-1"}`, `{"query":"what is connected to held-1"}`
-	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":3}`, 23)
-	step("globalSearch: a count", globalSearch, `{"query":"how many pumps are there"}`, 23)
-	step("globalSearch: the alias refused by the responder", globalSearch, entityQuestion, 23)
+	word.Store(replying(`{"data":{"results":[{"entity_id":"` + drone1 + `","score":1}],"matched":1},"producer":"graph-lexical"}`))
+	batch.Store(replying(`{"entities":[{"id":"` + drone1 + `","triples":[]}]}`))
+	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":3}`, 29)
+	step("globalSearch: a count, searched with its hint not honoured", globalSearch, `{"query":"how many pumps are there"}`, 29)
+	step("globalSearch: the alias refused by the responder", globalSearch, entityQuestion, 29)
 	alias.Store(replying(`not json`))
-	step("globalSearch: an alias reply that does not decode", globalSearch, entityQuestion, 24)
+	step("globalSearch: an alias reply that does not decode", globalSearch, entityQuestion, 30)
 	alias.Store(ptr(aliasReply("")))
-	// A reference naming no entity is searched as text, whose level 0 holds the unreadable record
-	// localSearch read above: an answer past it counts one error.
-	step("globalSearch: a reference naming no entity, searched as text", globalSearch, entityQuestion, 25)
+	step("globalSearch: a reference naming no entity", globalSearch, entityQuestion, 30)
 	alias.Store(ptr(aliasReply(drone1)))
-	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 25)
+	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 30)
 	entity.Store(&stubAnswer{refusal: errs.ClassifiedCode(errs.ErrorInvalid, "entity_not_found", errors.New("gone"))})
-	step("globalSearch: the holder's entity gone, searched as text", globalSearch, entityQuestion, 26)
-	step("globalSearch: the path start gone", globalSearch, pathQuestion, 26)
+	step("globalSearch: the holder's entity gone", globalSearch, entityQuestion, 30)
+	step("globalSearch: the path start gone", globalSearch, pathQuestion, 30)
 	entity.Store(replying(`not json`))
-	step("globalSearch: an entity reply that is not JSON", globalSearch, entityQuestion, 27)
+	step("globalSearch: an entity reply that is not JSON", globalSearch, entityQuestion, 31)
 	entity.Store(replying(``))
-	step("globalSearch: an empty entity reply", globalSearch, entityQuestion, 28)
+	step("globalSearch: an empty entity reply", globalSearch, entityQuestion, 32)
 	entity.Store(replying(`{"entity":{"id":"` + drone1 + `"},"kv_revision":5}`))
-	step("globalSearch: entity answered, two requests, one input", globalSearch, entityQuestion, 28)
-	step("globalSearch: path answered", globalSearch, pathQuestion, 28)
+	step("globalSearch: entity answered, four requests, one input", globalSearch, entityQuestion, 32)
+	step("globalSearch: path answered", globalSearch, pathQuestion, 32)
 	outgoing.Store(replying(`not json`))
-	step("globalSearch: a path hop reply that does not decode", globalSearch, pathQuestion, 29)
+	step("globalSearch: a path hop reply that does not decode", globalSearch, pathQuestion, 33)
 	outgoing.Store(refusing)
-	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 29)
+	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 33)
 
-	// The text tier: level 0 holds drone1's group's record, which "drone fleet" matches, and the
-	// unreadable one; level 1 drone1's group's record alone. The prefix stub answers empty.
+	// The word search's own steps: the hit's level-0 group record is unreadable; its level-1 group,
+	// shared with drone1, has a readable record.
+	word.Store(replying(hitReply))
+	batch.Store(replying(`{"entities":[{"id":"` + poisonHit + `","triples":[]}]}`))
 	const textQuestion = `{"query":"drone fleet"}`
-	step("globalSearch: a text answer past an unreadable record", globalSearch, textQuestion, 30)
-	step("globalSearch: a text answer", globalSearch, `{"query":"drone fleet","level":1}`, 30)
-	step("globalSearch: a text min_revision above the mark", globalSearch, fmt.Sprintf(`{"query":"drone fleet","min_revision":%d}`, farAhead), 30)
-	prefix.Store(replying(`{}`))
-	step("globalSearch: a broken text page, one error past an unreadable record", globalSearch, textQuestion, 31)
-	prefix.Store(refusing)
-	step("globalSearch: a text page refused by the responder", globalSearch, textQuestion, 31)
+	step("globalSearch: a text answer past an unreadable record", globalSearch, textQuestion, 34)
+	step("globalSearch: a text answer", globalSearch, `{"query":"drone fleet","level":1}`, 34)
+	word.Store(refusing)
+	step("globalSearch: the word search refused by the responder", globalSearch, textQuestion, 34)
+	word.Store(replying(`not json`))
+	step("globalSearch: a word reply that does not decode", globalSearch, textQuestion, 35)
+	// The batch would return it, so only the group check refuses.
+	word.Store(replying(`{"data":{"results":[{"entity_id":"c360.test","score":1}],"matched":1},"producer":"graph-lexical"}`))
+	batch.Store(replying(`{"entities":[{"id":"c360.test","triples":[]}]}`))
+	step("globalSearch: a hit that names no group", globalSearch, textQuestion, 36)
+	word.Store(replying(hitReply))
+	batch.Store(refusing)
+	step("globalSearch: the batch refused by the responder", globalSearch, textQuestion, 36)
+	batch.Store(replying(`{"entities":[]}`))
+	step("globalSearch: a batch reply that leaves a hit out unnamed", globalSearch, textQuestion, 37)
 }

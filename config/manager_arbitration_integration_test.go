@@ -45,9 +45,9 @@ func sectionKeys(entries map[string]string) []string {
 	return keys
 }
 
-// TestDeletedFileComponentStaysDeletedAtNextBoot is P4 (#17) as a test: a component the file
-// declares, deleted from the bucket at run time, is not brought back by the next boot of the same
-// file at the same version, because a selected bucket's components replace the file's (design D3).
+// TestDeletedFileComponentStaysDeletedAtNextBoot: a component the file declares, deleted from the
+// bucket at run time, is not brought back by the next boot of the same file at the same version,
+// because a selected bucket's components replace the file's.
 //
 // spec: config-manager / Version arbitration selects one source for services and components
 func TestDeletedFileComponentStaysDeletedAtNextBoot(t *testing.T) {
@@ -74,7 +74,7 @@ func TestDeletedFileComponentStaysDeletedAtNextBoot(t *testing.T) {
 // TestNameThatIsNotOneKeyTokenIsRefused: a service or component name that is not one NATS KV
 // literal token after the space mapping is written as a key the watches and the sync never read
 // back. Start refuses such a file name before it acquires the bucket, naming it, and the component
-// writers refuse it before any write (design D3).
+// writers refuse it before any write.
 //
 // spec: config-manager / Version arbitration selects one source for services and components
 // spec: config-manager / Component writes are next-boot desired state
@@ -135,7 +135,7 @@ func TestNameThatIsNotOneKeyTokenIsRefused(t *testing.T) {
 		before := bucketEntries(t, ctx, tc, manager.bucketName)
 		// The entry map alone cannot show a refused write: a put of components.a.b followed by its
 		// delete leaves the same live keys. Every put and delete adds a message to the bucket's
-		// stream, so its message count must not move either (task 2.4).
+		// stream, so its message count must not move either.
 		bucket, err := tc.GetKeyValueBucket(ctx, manager.bucketName)
 		require.NoError(t, err)
 		status, err := bucket.Status(ctx)
@@ -188,7 +188,7 @@ func TestDeletingAFileComponentWithASpaceUpdatesMemory(t *testing.T) {
 
 // TestRecoveryFromAnInterruptedPush proves recovery from the leftovers a push interrupted after
 // its first write can leave: the identity record and part of the services and components, with no
-// version or the bucket's older one, since version is written last (design D3). It seeds that
+// version or the bucket's older one, since version is written last. It seeds that
 // state through the KV API; driving the interruption itself would need fault injection.
 //
 // spec: config-manager / Version arbitration selects one source for services and components
@@ -238,7 +238,7 @@ func mapNames[V any](m map[string]V) []string {
 
 // TestPushWritesVersionLast: after a successful push, the revision of version is greater than the
 // revision of every other key the push wrote, so a push interrupted after its first write leaves
-// the bucket's old version (design D3).
+// the bucket's old version.
 //
 // spec: config-manager / Version arbitration selects one source for services and components
 func TestPushWritesVersionLast(t *testing.T) {
@@ -268,9 +268,9 @@ func TestPushWritesVersionLast(t *testing.T) {
 	require.Subset(t, compared, []string{"services.s1", "services.s2", "components.c1", "components.c2", "platform"})
 }
 
-// TestMalformedStoredServiceFailsStart is P5 as a test: a selected bucket holding a services.*
-// entry that does not decode fails Start, naming the key, instead of dropping the service from the
-// effective configuration. The failed Start arms no writer (design D4).
+// TestMalformedStoredServiceFailsStart: a selected bucket holding a services.* entry that does not
+// decode fails Start, naming the key, instead of dropping the service from the effective
+// configuration. The failed Start arms no writer.
 //
 // spec: config-manager / Start fails closed on the bucket it cannot use
 func TestMalformedStoredServiceFailsStart(t *testing.T) {
@@ -290,7 +290,7 @@ func TestMalformedStoredServiceFailsStart(t *testing.T) {
 }
 
 // TestStoredNATSTokenFailsStart: a selected bucket's nats value that sets a key configuration
-// loading refuses fails Start, naming it, in any letter case (design D4).
+// loading refuses fails Start, naming it, in any letter case.
 //
 // spec: config-manager / Start fails closed on the bucket it cannot use
 func TestStoredNATSTokenFailsStart(t *testing.T) {
@@ -313,13 +313,12 @@ func TestStoredNATSTokenFailsStart(t *testing.T) {
 
 // TestPushEncodingFailureFailsStart: a push whose value cannot be encoded fails Start, naming the
 // entry, and writes nothing the push would have written. encoding/json refuses to marshal a
-// json.RawMessage that is not valid JSON; this test is the probe for that (design D4). The driver
-// is a service, not the component design D4 names: Start validates the whole effective
-// configuration when it applies the platform identity, before arbitration, and that validation
-// decodes each component's config, so a component whose config is "{" fails Start there and never
-// reaches the push (notes/2.1.md). A service's config is not decoded by validation, so it reaches
-// the push: at the pin, Start logged the marshal error, returned nil, and left version and the
-// services written before it in the bucket.
+// json.RawMessage that is not valid JSON; this test drives that refusal. The driver is a service,
+// not a component: Start validates the whole effective configuration when it applies the platform
+// identity, before arbitration, and that validation decodes each component's config, so a
+// component whose config is "{" fails Start there and never reaches the push. A service's config
+// is not decoded by validation, so it reaches the push, which must fail Start rather than log the
+// marshal error, return nil, and leave version and the services written before it in the bucket.
 //
 // spec: config-manager / Start fails closed on the bucket it cannot use
 func TestPushEncodingFailureFailsStart(t *testing.T) {

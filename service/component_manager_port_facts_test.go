@@ -14,10 +14,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The composition projections, from the pin's component_manager_port_facts_test.go. The pin built
-// a struct-literal manager and ran analyzeBootComposition by hand; here NewComponentManager admits
-// the components and analyses the composition once, as at boot (design D3), and the tests read the
-// result it keeps and the routes that project it, which compute nothing (design D5).
+// The composition projections. NewComponentManager admits the components and analyses the
+// composition once, as at boot, and the tests read the result it keeps and the routes that project
+// it, which compute nothing.
 
 type portFactsDiscoverable struct {
 	baseDiscoverable
@@ -162,8 +161,8 @@ func TestComponentManagerProjectionCarriesOnlyAdmittedInstances(t *testing.T) {
 
 // TestComponentManagerFlowReportingUsesRetainedPortsAfterComponentMutation: after construction
 // the live instance changes its port, and the result and the flowgraph and validate routes still
-// answer with the declaration admitted at construction (ADR-100 P5): they project the kept
-// result and compute nothing (design D5).
+// answer with the declaration admitted at construction (ADR-100): they project the kept
+// result and compute nothing.
 func TestComponentManagerFlowReportingUsesRetainedPortsAfterComponentMutation(t *testing.T) {
 	instance := &portFactsDiscoverable{
 		inputs: []component.Port{{

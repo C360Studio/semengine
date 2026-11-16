@@ -11,14 +11,14 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// The graph projection facet (gh#533). WantGraph adds a lossless, structured
-// projection of the response's seed entities — typed property facts, explicit
-// directed edges, and per-fact/per-edge evidence — so structured consumers
-// (e.g. a knowledge-workbench drill-down) never reconstruct graph structure by
+// The graph projection facet. WantGraph adds a lossless, structured projection
+// of the response's seed entities — typed property facts, explicit directed
+// edges, and per-fact/per-edge evidence — so structured consumers (e.g. a
+// knowledge-workbench drill-down) never reconstruct graph structure by
 // shape-sniffing six-part strings or fabricating provenance. Classification is
 // declaration-driven (lens EdgeSpecs or the explicit "@id" entity-reference
-// datatype), never value-shape-driven; the engine owns these generic
-// semantics, the lens keeps declaring only domain predicates and human roles.
+// datatype), never value-shape-driven; the engine owns these generic semantics,
+// the lens keeps declaring only domain predicates and human roles.
 
 // Graph-facet caps. Deliberately independent of the v1 node/body budgeter and
 // of the relations facet's maxRelationsPerNode: the graph facet does not

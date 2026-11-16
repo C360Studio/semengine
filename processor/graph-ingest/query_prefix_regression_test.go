@@ -19,10 +19,9 @@ import (
 // thereby drive fetchEntitiesConcurrent's "cached-first, misses-second" return
 // ordering — the exact condition under which the byte-trim cursor would be
 // derived from an UNSORTED slice. createTestComponentWithMockKV leaves
-// entityCache nil, which masks the sort bug (all-misses come back already in
-// sorted pageKeys order). That nil-cache blind spot is precisely why the
-// pre-existing TestHandleQueryPrefix_SortDeterminism did not fail without the
-// sort fix.
+// entityCache nil, which hides a missing sort (all misses come back already in
+// sorted pageKeys order), so TestHandleQueryPrefix_SortDeterminism cannot
+// catch it.
 func createTestComponentWithCache(t *testing.T) *Component {
 	t.Helper()
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
@@ -38,7 +37,7 @@ func createTestComponentWithCache(t *testing.T) *Component {
 // returned as a cache HIT — and therefore FIRST — by fetchEntitiesConcurrent.
 // It reads the stored entity back out of KV rather than reconstructing it so
 // the cached value is byte-identical to the fetched one (CreateEntity stamps an
-// indexing-profile triple per SemStreams ADR-054).
+// indexing-profile triple).
 func prewarmCacheEntity(t *testing.T, comp *Component, id string) {
 	t.Helper()
 	storePrefixEntity(t, comp, id)
@@ -64,9 +63,9 @@ func idIDs(entities []graph.EntityState) []string {
 	return out
 }
 
-// TestRegression_ByteTrimCursor_ScrambledFetchOrder is the handler-level
-// regression for the fetch-order sort fix (orchestrator fix #1 — the
-// sort.Slice(entities, byID) added right after fetchEntitiesConcurrent).
+// TestRegression_ByteTrimCursor_ScrambledFetchOrder is the handler-level check
+// of the fetch-order sort, the sort.Slice(entities, byID) right after
+// fetchEntitiesConcurrent.
 //
 // Setup: 5 entities k01..k05. The two LATE-sorting IDs (k04,k05) are pre-warmed
 // into the cache, so fetchEntitiesConcurrent returns them FIRST
@@ -75,13 +74,12 @@ func idIDs(entities []graph.EntityState) []string {
 //   - WITHOUT sort.Slice(entities): the trimmed page is [k04,k05] and the
 //     cursor is set on k05 — the lexicographic MAX of the whole prefix. Page 2
 //     resumes after k05 -> empty. k01,k02,k03 are SILENTLY SKIPPED.
-//   - WITH the fix: entities are re-sorted to [k01..k05], the trimmed page is
+//   - WITH the sort: entities are re-sorted to [k01..k05], the trimmed page is
 //     [k01,k02], cursor on k02, page 2 resumes at k03 -> full, sorted, disjoint
 //     coverage.
 //
-// Verified to FAIL when the sort.Slice line is reverted (see review notes):
-// without it the union is {k01,k02,k04,k05} (k03 skipped) and the page-0 cursor
-// decodes to k05, not k02.
+// Without the sort.Slice line the test fails: the union is {k01,k02,k04,k05}
+// (k03 skipped) and the page-0 cursor decodes to k05, not k02.
 func TestRegression_ByteTrimCursor_ScrambledFetchOrder(t *testing.T) {
 	comp := createTestComponentWithCache(t)
 
@@ -91,7 +89,7 @@ func TestRegression_ByteTrimCursor_ScrambledFetchOrder(t *testing.T) {
 		ids = append(ids, fmt.Sprintf("acme.ops.dom.sys.type.k%02d", i))
 	}
 	// k01,k02,k03 -> KV-only (cache MISS). k04,k05 -> cache HIT (returned first
-	// by fetchEntitiesConcurrent, scrambling order before the sort fix).
+	// by fetchEntitiesConcurrent, scrambling the order the sort must restore).
 	for _, id := range ids[:3] {
 		storePrefixEntity(t, comp, id)
 	}
@@ -115,8 +113,8 @@ func TestRegression_ByteTrimCursor_ScrambledFetchOrder(t *testing.T) {
 			"page %d must be sorted by ID; got %v", page, idIDs(resp.Entities))
 
 		// INVARIANT 2: when a cursor is set, it is the sorted MAX of the page
-		// (the last returned entity). This is the exact property the sort fix
-		// guarantees and the bug violated by setting it on an arbitrary key.
+		// (the last returned entity). This is the exact property the sort
+		// guarantees; a cursor set on an arbitrary key breaks it.
 		if resp.NextCursor != "" {
 			decoded, err := decodeCursor(resp.NextCursor)
 			require.NoError(t, err)

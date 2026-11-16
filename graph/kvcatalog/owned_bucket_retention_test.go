@@ -7,7 +7,7 @@ import (
 )
 
 // TestIsFrameworkOwnedBucket_IncludesOperationalBuckets pins two operational
-// buckets' write-ownership: GRAPH_INGEST_APPLIED_SEQ (redelivery-guard stamps, SemStreams #715)
+// buckets' write-ownership: GRAPH_INGEST_APPLIED_SEQ (redelivery-guard stamps)
 // and GRAPH_STATUS (readiness envelopes) are members of the owned set, so a
 // generic rule update_kv cannot forge a sequence stamp or readiness at either
 // guard site. Both are correctness-critical no-eviction state; the retention

@@ -10,10 +10,10 @@ import (
 	"github.com/c360studio/semengine/storage"
 )
 
-// recordingWorkerMetrics is a WorkerMetrics double that counts the signals the
-// evidence-integrity change adds (dedup skips, truncations) alongside the
-// pre-existing counters, so a test can assert the worker actually CONSUMES the new
-// metric methods rather than leaving them as phantom registrations (#623 / #602).
+// recordingWorkerMetrics is a WorkerMetrics double that counts every signal the
+// worker emits, dedup skips and truncations included, so a test can assert the
+// worker actually CONSUMES each metric method rather than leaving it as a phantom
+// registration.
 type recordingWorkerMetrics struct {
 	mu               sync.Mutex
 	dedupHits        int
@@ -147,17 +147,17 @@ func (g *genCounter) embeddedTexts() []string {
 	return append([]string(nil), g.texts...)
 }
 
-// TestOffloadedLaneDedupsOnIdenticalBytes is the primary D1 (#623) statement: an
+// TestOffloadedLaneDedupsOnIdenticalBytes is the primary content-dedup statement: an
 // offloaded (StorageRef) entity and an inline entity that resolve to byte-identical
 // text must produce the SAME dedup key, so the second is served from the dedup
 // store without regeneration.
 //
-// Both pending records carry an EMPTY ContentHash — exactly what hop-1 writes after
-// the derivation moves to hop-2. On the pre-fix worker an empty ContentHash disables
-// dedup for BOTH lanes, so the second entity regenerates: two generations, the
-// offloaded-lane re-embed cost #623 measured (68 -> 191 per statistical run). With
-// the key derived in hop-2 over the resolved+truncated body, both lanes converge on
-// one key and the second dedups: exactly one generation.
+// Both pending records carry an EMPTY ContentHash — exactly what hop 1 writes, since
+// hop 2 derives the key. A worker that trusted the empty ContentHash would disable
+// dedup for BOTH lanes, so the second entity would regenerate: two generations, the
+// offloaded-lane re-embed cost. With the key derived in hop 2 over the
+// resolved+truncated body, both lanes converge on one key and the second dedups:
+// exactly one generation.
 func TestOffloadedLaneDedupsOnIdenticalBytes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -205,15 +205,15 @@ func TestOffloadedLaneDedupsOnIdenticalBytes(t *testing.T) {
 	}
 }
 
-// TestOverwritingStableStorageKeyRegenerates is the D1 anti-address-keying guard:
+// TestOverwritingStableStorageKeyRegenerates is the anti-address-keying guard:
 // the dedup key is content-addressed, so identical bodies at a stable ObjectStore
 // key dedup, but overwriting that key with new content regenerates rather than
 // serving the previous body's vector.
 //
-// A -> B at the same key with the same body: B must dedup (the fail-without-fix
-// half — the pre-fix offloaded lane never dedups). Then the body is overwritten and
-// C at the same key must regenerate (the anti-regression half — a naive fix that
-// hashed the ObjectStore address would serve A's stale vector here forever).
+// A -> B at the same key with the same body: B must dedup (the dedup half — an
+// offloaded lane that never dedups fails here). Then the body is overwritten and C
+// at the same key must regenerate (the anti-address half — a key that hashed the
+// ObjectStore address would serve A's stale vector here forever).
 func TestOverwritingStableStorageKeyRegenerates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -272,16 +272,15 @@ func TestOverwritingStableStorageKeyRegenerates(t *testing.T) {
 }
 
 // TestDedupKeyIsOverTruncatedEmbeddedBytes proves the hop-2 key is derived over the
-// exact bytes embedded — the resolved+TRUNCATED text — and that hop-2 no longer
-// consults the hop-1 Record.ContentHash (D1 + #602's key half).
+// exact bytes embedded — the resolved+TRUNCATED text — and that hop-2 does not
+// consult the hop-1 Record.ContentHash.
 //
 // Two inline entities share the first `cap` bytes and differ only beyond them. They
-// are seeded with DIFFERENT non-empty content hashes — what pre-fix hop-1 wrote,
-// keyed over the UNtruncated text — so the pre-fix worker keys over bytes it never
-// embeds and fails to dedup (two generations). Post-fix, hop-2 keys over the
-// truncated body, which is identical for both, so the second dedups (one
-// generation). This is why the cap participates in identity "for free": the key is
-// over the truncated text.
+// are seeded with DIFFERENT non-empty content hashes, keyed over the UNtruncated
+// text — a worker that used them would key over bytes it never embeds and fail to
+// dedup (two generations). Hop-2 keys over the truncated body, which is identical
+// for both, so the second dedups (one generation). This is why the cap
+// participates in identity "for free": the key is over the truncated text.
 func TestDedupKeyIsOverTruncatedEmbeddedBytes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -310,8 +309,8 @@ func TestDedupKeyIsOverTruncatedEmbeddedBytes(t *testing.T) {
 
 	stop := runWorker(t, w)
 
-	// Non-empty, DIFFERING hashes over the untruncated text — the pre-fix hop-1
-	// value hop-2 must now ignore.
+	// Non-empty, DIFFERING hashes over the untruncated text — a hop-1 value hop-2
+	// must ignore.
 	if err := pendingText(ctx, s, "acme.ops.a.b.c.x", "hash-of-untruncated-X", textX, 1); err != nil {
 		t.Fatalf("SavePending X: %v", err)
 	}
@@ -329,10 +328,9 @@ func TestDedupKeyIsOverTruncatedEmbeddedBytes(t *testing.T) {
 	}
 }
 
-// TestTruncationEmitsSignal is the D2 (#602) observability half: truncating text to
+// TestTruncationEmitsSignal is the truncation observability half: truncating text to
 // the cap must emit a signal so the bytes actually embedded are discoverable, not
-// silently dropped. The pre-fix truncateAtWord path is silent, so the counter stays
-// at zero.
+// silently dropped. Text within the cap emits nothing, so the counter stays at zero.
 func TestTruncationEmitsSignal(t *testing.T) {
 	t.Parallel()
 
@@ -355,11 +353,11 @@ func TestTruncationEmitsSignal(t *testing.T) {
 	}
 }
 
-// TestDedupSkippedIsCounted is the D1 observability half (#623 group 2): an entity
+// TestDedupSkippedIsCounted is the dedup observability half: an entity
 // embedded on a condition where dedup is not consulted increments
 // dedup_skipped_total{reason}, so the avoided-reuse cost is visible rather than
 // inferred. An embedder that has not resolved its dimensions yields no dedup key,
-// so dedup is skipped; the pre-fix worker skips silently.
+// so dedup is skipped, and the skip must not be silent.
 func TestDedupSkippedIsCounted(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

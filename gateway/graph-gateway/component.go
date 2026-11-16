@@ -21,11 +21,11 @@ import (
 // key names graph-gateway once: its registration and its logger.
 const key = "graph-gateway"
 
-// stopping is the answer to a request before Start and once Stop begins (design D6).
+// stopping is the answer to a request before Start and once Stop begins.
 const stopping = "graph-gateway is stopping"
 
 // Component implements graph-gateway. It holds no NATS state and runs no goroutine of its own:
-// each admitted HTTP request makes its one NATS request on the handler's goroutine (design D5).
+// each admitted HTTP request makes its one NATS request on the handler's goroutine.
 type Component struct {
 	config  Config
 	outputs []component.Port
@@ -140,7 +140,7 @@ func (c *Component) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	mux.Handle(strings.TrimSuffix(prefix, "/")+"/graphql", c.requests.Wrap(http.HandlerFunc(c.serveGraphQL), stopping))
 }
 
-// serveGraphQL answers one admitted request with the HTTP status design D6 assigns it.
+// serveGraphQL answers one admitted request with its HTTP status.
 func (c *Component) serveGraphQL(w http.ResponseWriter, r *http.Request) {
 	// No stuck state is ever passed in, so Healthy is false exactly while the shell is not running:
 	// before Start, and from the moment cleanup begins, after which admission is closed too.

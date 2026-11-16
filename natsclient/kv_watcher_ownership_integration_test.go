@@ -83,8 +83,8 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 	updates := native.watcher.Updates()
 	require.Greater(t, cap(updates), 0, "native watcher must have a finite Updates buffer")
 	// The buffer must fill while the framework child is live, so the wait runs under the child's
-	// own context: its deadline (the KV timeout) is the failure bound. The pin polled on a 10 ms
-	// ticker under a 3 s timer of its own.
+	// own context: its deadline (the KV timeout) is the failure bound, and the test sets no
+	// deadline of its own.
 	filled, err := probe.Await(native.ctx, func(context.Context) (int, error) { return len(updates), nil },
 		func(n int) bool { return n == cap(updates) })
 	switch {

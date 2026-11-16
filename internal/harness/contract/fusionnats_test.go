@@ -11,21 +11,21 @@ const fusionNATSRule = "(composed-stack › The graph stack answers fusion witho
 
 // fusionNATSForbidden are the module packages pkg/fusion/fusionnats must not reach: the embedding
 // index and its component, which a stack without an embedder does not build, and the readiness
-// watch fusionnats no longer uses (fusion spec, "No readiness import").
+// watch, which fusionnats does not use (fusion spec, "No readiness import").
 var fusionNATSForbidden = []string{"graph/embedding", "processor/graph-embedding", "graph/readiness"}
 
 // TestFusionNATSImportsNoEmbedding holds the rule that pkg/fusion/fusionnats builds into a stack
 // with no embedder: neither it nor any package it imports, directly or transitively, is
 // graph/embedding, processor/graph-embedding or graph/readiness, or a package under one of them.
 //
-// Requirement: composed-stack/The graph stack answers fusion without an embedder
+// Requirement: composed-stack/fusionnats imports no embedding code
 func TestFusionNATSImportsNoEmbedding(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "pkg/fusion/fusionnats embedding imports", fusionNATSEmbeddingPaths(
 		modulePath(t, root), goList(t, root, "./pkg/fusion/fusionnats", "-deps", "{{.ImportPath}}")))
 }
 
-// Requirement: composed-stack/The graph stack answers fusion without an embedder
+// Requirement: composed-stack/fusionnats imports no embedding code
 func TestFusionNATSImportsNoEmbeddingSensitivity(t *testing.T) {
 	const module = "example.com/fixture"
 	// The transitive edge, through go list over a real tree: fusionnats imports graph, and graph

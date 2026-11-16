@@ -11,17 +11,11 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The component manager as a lifecycle owner, from the pin's component_manager_owner_test.go. The
-// borrow-fence tests (pin :137-156, :180-311) and their helpers are not carried: the fence is gone
-// (design D2, "No wait for readers"; D7). The pin's :158-178 is flipped into
-// TestComponentHealthAfterStopAsksEachComponent (component_manager_state_test.go). Components are
-// lifecycleTestComponent (component_manager_lifecycle_test.go), which stands in for the pin's
-// orderedManagerComponent.
+// The component manager as a lifecycle owner. Components are lifecycleTestComponent
+// (component_manager_lifecycle_test.go).
 
 // TestComponentManagerNilContextsPreserveLifecycleState: Start and Stop refuse a nil context as
-// invalid, and a refusal leaves the manager as it was (design D2). The pin read lifecycleUsed,
-// cleanupPending, lifecycleTerminal, startDone and cancel; this reads what a later Start and Stop
-// do.
+// invalid, and a refusal leaves the manager as it was, read from what a later Start and Stop do.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestComponentManagerNilContextsPreserveLifecycleState(t *testing.T) {
@@ -58,9 +52,9 @@ func TestComponentManagerNilContextsPreserveLifecycleState(t *testing.T) {
 }
 
 // TestComponentManagerStopUsesReverseStartOrderAndAggregates: within one phase the start order is
-// recorded by name (sweep C4), Stop stops in the reverse of it and joins every component's failure
-// (design D2). The pin's second Stop called nothing, a failed Stop being final; here it calls again,
-// in the same reverse order, only the components whose Stop failed (sweep C6), and returns nil.
+// recorded by name, Stop stops in the reverse of it and joins every component's failure. A failed
+// Stop is not final: a second Stop calls again, in the same reverse order, only the components
+// whose Stop failed, and returns nil.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestComponentManagerStopUsesReverseStartOrderAndAggregates(t *testing.T) {

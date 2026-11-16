@@ -50,7 +50,7 @@ var testStampKeys = []message.Type{
 
 // fixtureSource and fixtureTime are the Source and Timestamp withTestMetadata gives a fixture
 // statement that carries none: every statement graph-ingest stores carries both, and a write
-// carrying a statement without them is refused (design D15, #98).
+// carrying a statement without them is refused.
 const fixtureSource = "graph-ingest-fixture"
 
 var fixtureTime = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
@@ -89,9 +89,8 @@ func registerTestStamps(tb testing.TB, reg *payloadregistry.Registry) {
 // framework payloads graph-ingest writes or decodes (message's GenericJSON and
 // the hierarchy container inference births), lifecycle.harness.v1 (the stamp
 // update_preserve_metadata_test.go creates and reconciles) and every test-only
-// stamp. At the pin this was payloadbuiltins' whole builtin set plus
-// agentic/research; design D2 takes the per-package RegisterPayloads the tests
-// need instead.
+// stamp. The framework payloads come from the per-package RegisterPayloads the
+// tests need.
 func newTestPayloadRegistry(tb testing.TB) *payloadregistry.Registry {
 	tb.Helper()
 	reg := payloadfixture.NewWithSubset(tb, message.RegisterPayloads, inference.RegisterPayloads, lifecycle.RegisterPayloads)
@@ -153,7 +152,7 @@ func testDependencies(tb testing.TB, natsClient *natsclient.Client, opts ...test
 // fixture keeps a heterogeneous table's rows and their component in lockstep
 // instead of duplicating the pair in every row.
 //
-// It is a test convenience and nothing else: ADR-102 d2 forbids exactly this
+// It is a test convenience and nothing else: ADR-102 (decision 2) forbids exactly this
 // read-back on any minting path, which is why no production code does it.
 func authorityOfFixture(tb testing.TB, entityID string) testComponentOption {
 	tb.Helper()
@@ -167,7 +166,7 @@ func authorityOfFixture(tb testing.TB, entityID string) testComponentOption {
 // seedEntityState writes an entity straight into ENTITY_STATES, as a mirror of
 // what an import lane would have produced. A fixture needs it only for an
 // entity under a FOREIGN authority: the in-process write paths are
-// authority-bound (ADR-102 d5), and correctly so — an in-process create under a
+// authority-bound (ADR-102, decision 5), and correctly so — an in-process create under a
 // peer's pair would be the framework minting under a foreign authority. The
 // import lane itself is exercised end-to-end by
 // TestImportLaneAcceptsForeignRejectsLocalClaim; here it is only a seed.
@@ -195,12 +194,6 @@ func seedOwnedOrMirrored(tb testing.TB, c *Component, entity *graph.EntityState)
 	}
 	seedEntityState(tb, c, entity)
 }
-
-// The helpers below are defined at the pin in test files stage 2b ports; they move
-// here with their first ported reader. newTestContext and newTestEntity are
-// entity_validation_test.go:467-488 (newTestEntity without Version, design D15);
-// guardTestPoisonBytes, guardTestValidBytes, assertIngestResetRequired and
-// poisonInventoryEntry are query_contract_guard_test.go:35-42, 459-465 and 375-381.
 
 func newTestContext(t *testing.T) context.Context {
 	t.Helper()
@@ -248,10 +241,8 @@ func poisonInventoryEntry(c *Component, id string) (entityPoisonRecord, bool) {
 }
 
 // mergeTestGraphable is a minimal Graphable payload that stamps a caller-supplied
-// triple set on an entity ID. It and registerMergeTestPayload are in the pin's
-// merge_entity_integration_test.go:329-378, which a later stage ports. They came here
-// from fixture_integration_test.go when a unit test (statement_metadata_test.go) first
-// sent one on the stream lane.
+// triple set on an entity ID. It and registerMergeTestPayload live in this untagged
+// file because a unit test (statement_metadata_test.go) sends one on the stream lane.
 type mergeTestGraphable struct {
 	entityID string
 	triples  []message.Triple
@@ -286,8 +277,8 @@ func (g *mergeTestGraphable) UnmarshalJSON(data []byte) error {
 func (g *mergeTestGraphable) Validate() error { return nil }
 
 // registerMergeTestPayload gives c a decoder that decodes test.merge.v1 into a
-// mergeTestGraphable. The pin started from payloadbuiltins.Register (:369); design D2
-// takes the per-package RegisterPayloads graph-ingest's fixture registry uses instead.
+// mergeTestGraphable. It starts from the per-package RegisterPayloads graph-ingest's
+// fixture registry uses.
 func registerMergeTestPayload(t *testing.T, c *Component) {
 	t.Helper()
 	reg := payloadfixture.NewWithSubset(t, message.RegisterPayloads, inference.RegisterPayloads)

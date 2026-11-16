@@ -9,14 +9,14 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// malformedSubjects is the hand-written verdict list (#369 design, "Proving tests"): each subject
-// fails the subject grammar. The space, form feed, `a.>.b` and `a..b` verdicts come from the #367
-// probe (server.IsValidSubject false); `a*` and `a.b*.c` are the grammar's documented stricter
-// points; tab, line feed and carriage return come from the spec's grammar text.
+// malformedSubjects is the hand-written verdict list: each subject fails the subject grammar. The
+// space, form feed, `a.>.b` and `a..b` verdicts are subjects server.IsValidSubject refused
+// (measured at nats-server v2.15.1; not promised); `a*` and `a.b*.c` are the grammar's documented
+// stricter points; tab, line feed and carriage return come from the spec's grammar text.
 var malformedSubjects = []string{"a.foo bar", "a.foo\fbar", "a.>.b", "a*", "a.b*.c", "a..b", "a.\tb", "a.\nb", "a.\rb"}
 
-// validSubjects pass the grammar: the #367 probe for `a.>` and `a.*.c`, the spec's grammar text for
-// `>` and the JetStream advisory family.
+// validSubjects pass the grammar: server.IsValidSubject accepted `a.>` and `a.*.c` (same
+// measurement), and the spec's grammar text gives `>` and the JetStream advisory family.
 var validSubjects = []string{"a.>", "a.*.c", ">", "$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>"}
 
 // subjectSite is one place a subject is declared. build returns the registry and configuration

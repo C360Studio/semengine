@@ -15,9 +15,8 @@
 // decided by graphmutation.ClassifyPort. Two binds on one network address are
 // refused earlier, when the component Registry admits the second one.
 //
-// In SemStreams the composition package is this package's one reader; it
-// comes to SemEngine in a later change. Until then this package's tests are
-// its only callers.
+// Its readers are the composition package and the service package's message
+// logger.
 //
 // # What the graph connects
 //

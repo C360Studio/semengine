@@ -11,9 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// T-B4: SemEngine never selects Docker resources broadly. SemStreams' routine tasks delete volumes
-// by name substring and prune the daemon's build cache (taskfiles/e2e/common.yml:77-79,
-// clean.yml:17-19 at 5457b345); on a shared daemon those commands reach other repositories' data.
+// SemEngine never selects Docker resources broadly. A task that deletes volumes by name substring
+// or prunes the daemon's build cache reaches other repositories' data on a shared daemon.
 func TestNoBroadDockerCleanup(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "broad Docker cleanup", broadCleanupViolations(t, root, repoFiles(t, root)))
@@ -65,7 +64,7 @@ func TestNoBroadDockerCleanupSensitivity(t *testing.T) {
 	}
 }
 
-// T-B5: every Docker name a script, task, workflow or Compose file assigns starts with semengine-
+// Every Docker name a script, task, workflow or Compose file assigns starts with semengine-
 // and uses only [a-z0-9-] (harness-boundaries › "Docker names this repository assigns").
 func TestSemEngineAssignedNames(t *testing.T) {
 	root := repoRoot(t)
@@ -132,8 +131,8 @@ func TestSemEngineAssignedNamesSensitivity(t *testing.T) {
 }
 
 // dockerScriptFile reports whether a file can start or remove Docker resources and so falls under
-// T-B4 and T-B5: shell scripts, the Taskfile (and any taskfiles/ includes), CI workflows, and
-// Compose files under docker/.
+// the broad-cleanup and Docker-name checks: shell scripts, the Taskfile (and any taskfiles/
+// includes), CI workflows, and Compose files under docker/.
 func dockerScriptFile(name string) bool {
 	switch {
 	case strings.HasPrefix(name, "scripts/") && strings.HasSuffix(name, ".sh"):
@@ -184,10 +183,10 @@ var (
 	ownProject  = regexp.MustCompile(`(^|\s)(-p|--project-name)[= ]+semengine-`)
 )
 
-// broadCleanupViolations is the T-B4 check. Removal is only ever by observed ID or exact label;
-// every Compose invocation must name the SemEngine project it acts on, since an unnamed project
-// defaults to the directory name and can be another repository's stack (inventory A6, "Compose
-// project name"): `up` would join it and `down` would remove it.
+// broadCleanupViolations is the broad-cleanup check. Removal is only ever by observed ID or exact
+// label; every Compose invocation must name the SemEngine project it acts on, since an unnamed
+// project is named after its project directory (Compose's documented default, not probed here)
+// and can be another repository's stack: `up` would join it and `down` would remove it.
 func broadCleanupViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string
@@ -247,8 +246,8 @@ func checkDockerName(name string) error {
 	return nil
 }
 
-// dockerNameViolations is the T-B5 check over literal names in scripts, Taskfile, workflows, and
-// the structure of Compose files under docker/.
+// dockerNameViolations is the Docker-name check over literal names in scripts, Taskfile, workflows,
+// and the structure of Compose files under docker/.
 func dockerNameViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string

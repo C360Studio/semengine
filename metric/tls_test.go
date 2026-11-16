@@ -54,9 +54,8 @@ func newTestIdentity(t *testing.T) testIdentity {
 }
 
 // TestServerRequiredMTLSRejectsClientWithoutCertificate: a Server configured to require client
-// certificates serves only clients presenting one its client CA signed. At the pin Start loaded
-// the server TLS configuration without its MTLS part (handler.go:154), so a client with no
-// certificate was served.
+// certificates serves only clients presenting one its client CA signed: Start must load the MTLS
+// part of the server TLS configuration, or a client with no certificate would be served.
 func TestServerRequiredMTLSRejectsClientWithoutCertificate(t *testing.T) {
 	id := newTestIdentity(t)
 	securityCfg := security.Config{TLS: security.TLSConfig{Server: security.ServerTLSConfig{

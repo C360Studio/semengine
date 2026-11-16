@@ -15,8 +15,8 @@ import (
 // TestMetricsCountTraffic: two outputs on one registry count their own traffic apart by listener.
 // Output a serves two clients and gets three JSON messages, one that is not JSON and a request that
 // is not an upgrade; output b serves two clients, one of which leaves, and gets one JSON message.
-// Every semengine_websocket_* metric of design D6 but changes_coalesced_total (the applied-state
-// input's, task 3.3) is checked against that traffic: bytes against the frames the clients read.
+// Every semengine_websocket_* metric but changes_coalesced_total (the applied-state input's) is
+// checked against that traffic: bytes against the frames the clients read.
 func TestMetricsCountTraffic(t *testing.T) {
 	client := fixtureClient(t)
 	registry := metric.NewMetricsRegistry()

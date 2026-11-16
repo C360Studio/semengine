@@ -204,9 +204,9 @@ func seedPathGraph(t *testing.T, stack graphStack) uint64 {
 	return written
 }
 
-// TestPathSearchOnARealIndex: each direction, the cycle, the filter, a depth cut and a dangling edge,
-// as literal JSON from real ingest and index (design D3; spec, "An incoming edge", "A start that does
-// not exist"). The carried behaviours of the pin's TestComponent_PathSearch_* live here.
+// TestPathSearchOnARealIndex: each direction, the cycle, the filter, a depth cut and a dangling
+// edge, as literal JSON from real ingest and index (spec, "An incoming edge", "A start that does
+// not exist").
 func TestPathSearchOnARealIndex(t *testing.T) {
 	stack := startStack(t)
 	written := seedPathGraph(t, stack)
@@ -279,9 +279,9 @@ func TestPathSearchOnARealIndex(t *testing.T) {
 	})
 }
 
-// TestPathSearchTruncatedIsExact: truncated is true exactly when an unseen entity was found and left
-// out, on real ingest and index (spec, "The limit meets the graph exactly"; the pin said true at the
-// limit, P9).
+// TestPathSearchTruncatedIsExact: truncated is true exactly when an unseen entity was found and
+// left out, on real ingest and index (spec, "The limit meets the graph exactly"): filling the limit
+// alone is not truncation.
 func TestPathSearchTruncatedIsExact(t *testing.T) {
 	stack := startStack(t)
 	// drone1 -> drone2, drone3; drone2 -> drone3; drone3 -> drone4. drone5 has no edge.
@@ -403,11 +403,11 @@ func TestPathSearchRevisionIsTheSmallest(t *testing.T) {
 	})
 }
 
-// TestPathSearchRefusedMidWalk: at a later hop, a responder's refusal reaches the caller with its class,
-// code and detail, its message naming that hop's entity, and a reply graph-query cannot use is transient
-// internal naming it too, never the entities found so far (spec, "A hop refused mid-walk", "A hub over
-// the reply limit"). Carries the pin's RejectsStructurallyInvalidRelationshipEnvelopes bodies: "{}",
-// "null" and an envelope with no relationships name no producer.
+// TestPathSearchRefusedMidWalk: at a later hop, a responder's refusal reaches the caller with its
+// class, code and detail, its message naming that hop's entity, and a reply graph-query cannot use
+// is transient internal naming it too, never the entities found so far (spec, "A hop refused
+// mid-walk", "A hub over the reply limit"). The unusable bodies include "{}", "null" and an
+// envelope with no relationships, which name no producer.
 func TestPathSearchRefusedMidWalk(t *testing.T) {
 	notReady := errs.ClassifiedCodeDetail(errs.ErrorTransient, "index_not_ready", map[string]any{"replayed": float64(3)}, errors.New("replaying"))
 
@@ -567,8 +567,8 @@ func (s *pathRequestSpy) count(t *testing.T) map[string]int {
 
 // TestPathSearchRequestsAreBounded: counting beside the real responders, a walk makes at most 1 +
 // max_nodes requests, or 1 + 2 x max_nodes for both, and each count here is the exact one for its
-// graph: the bound is met when nothing cuts the walk short, and truncation stops it (spec, "Counting
-// the requests"; design D4).
+// graph: the bound is met when nothing cuts the walk short, and truncation stops it (spec,
+// "Counting the requests").
 func TestPathSearchRequestsAreBounded(t *testing.T) {
 	stack := startStack(t)
 	// A chain, drone1 to drone5, and drone6 pointing at its first three.

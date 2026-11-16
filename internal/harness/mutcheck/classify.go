@@ -15,7 +15,7 @@ import (
 // outcome is the reading of one run, or the verdict of a whole check. pass and hang are readings
 // only: pass is a run of the unchanged code that passed, or a mutant run in which the named test
 // passed; hang is a mutant run that ran the named test and that go test's own timeout ended
-// before the test reported a result (design D2). decide maps hang to detection or inconclusive.
+// before the test reported a result. decide maps hang to detection or inconclusive.
 type outcome string
 
 const (
@@ -40,7 +40,7 @@ type expectation struct {
 	texts     []string
 }
 
-// facts are the per-run inputs a reading is a function of (design D5, D11 item 1).
+// facts are the per-run inputs a reading is a function of.
 type facts struct {
 	buildFailed bool   // the build or the package's setup failed
 	selected    bool   // a run event for the named test
@@ -61,7 +61,7 @@ type observed struct {
 	notes         []string // panics and fatal errors anywhere; other located lines of the named test, in full
 	buildLines    []string // the build's output
 	// elapsed is the package's elapsed time from go test -json's package pass or fail event, when
-	// elapsedReported; a stream with no such event reports none, which is not zero (design D1).
+	// elapsedReported; a stream with no such event reports none, which is not zero.
 	elapsed         time.Duration
 	elapsedReported bool
 }
@@ -180,10 +180,10 @@ func (o *observed) readLine(line, test string, ours bool, exp expectation) {
 	}
 }
 
-// read gives one run's reading by the rules of design D5. A run of the unchanged code (baseline,
-// after or reach) reads pass or inconclusive; a mutant run can also read detection or invalid.
-// A run ended by the timeout, a signal or the bound is inconclusive whatever it printed first,
-// except a mutant run that is a hang (design D2); decide judges a hang.
+// read gives one run's reading (mutation-check › "Outcome classification"). A run of the
+// unchanged code (baseline, after or reach) reads pass or inconclusive; a mutant run can also read
+// detection or invalid. A run ended by the timeout, a signal or the bound is inconclusive whatever
+// it printed first, except a mutant run that is a hang; decide judges a hang.
 func read(f facts, mutant bool, bound time.Duration) reading {
 	switch {
 	case f.bounded:

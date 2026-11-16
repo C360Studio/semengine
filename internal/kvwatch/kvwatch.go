@@ -29,7 +29,7 @@ var ErrDeliveryOpen = errors.New("kvwatch: the watch's delivery did not close af
 // one path with nothing to join: WatchAll subscribes before it installs the handler that closes the
 // channel (jetstream/kv.go:1356-1368), and nats.go reads that handler once, when its delivery
 // goroutine exits (nats.go:3830-3834). A watch whose context ends, or whose connection closes, in
-// between leaves the channel open for good with no delivery goroutine running (#454).
+// between leaves the channel open for good with no delivery goroutine running.
 // TestStopGivesUpOnADeliveryThatNeverCloses drives the bound on a scripted watcher; the window
 // itself has not been reproduced against nats.go.
 //

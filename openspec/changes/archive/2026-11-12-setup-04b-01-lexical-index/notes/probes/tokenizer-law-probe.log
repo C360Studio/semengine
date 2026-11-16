@@ -1,0 +1,13 @@
+go test -run TestWitnesses -count=1 . && go test -run '^$' -fuzz FuzzTokens -fuzztime 90s .
+  (tokenizer-law-probe.go.txt as tok.go and tok_test.go in a module outside the tree; go1.26.4 darwin/arm64,
+  Apple M3 Pro; 2026-11-12)
+
+ok  	scratchtok	0.201s
+fuzz: elapsed: 1m30s, execs: 32403394 (423560/sec), new interesting: 143 (total: 229)
+PASS
+ok  	scratchtok	90.302s
+
+The witnesses pass: wills does haves ands ares thes fors withs -> no words; the ten folding pairs fold; bus, status
+and cookie stay apart from their plurals. The order is lower-case, fold, then drop a word when it or its fold is a
+stopword or its fold is over 32 bytes. An earlier run found U+03D2 (a capital with no lower-case form) splitting
+again on a second pass; "capital" now means a letter that lower-casing changes, and the 90-second run passed.

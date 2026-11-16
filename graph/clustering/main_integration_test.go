@@ -34,8 +34,7 @@ func run(m *testing.M) int {
 	return code
 }
 
-// clientTimeout is the request timeout of the fixture client, the value the pin's
-// NewTestClient family used.
+// clientTimeout is the request timeout of the fixture client.
 const clientTimeout = 15 * time.Second
 
 // fixtureClient resets the package's shared server and returns a Client connected to it,

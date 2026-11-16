@@ -52,9 +52,8 @@ func TestRacingAttachNeverObservesPreAppliedState(t *testing.T) {
 	})
 }
 
-// TestTickSeamNoStaleDeliveryToLateAttacher is THE tick-seam regression (the
-// SemStreams PR #583 shape one seam over, spec "No stale delivery across the
-// tick seam"): a coalesced batch holding K@R5 is ticked out, the view then
+// TestTickSeamNoStaleDeliveryToLateAttacher is THE tick-seam regression (spec
+// "No stale delivery across the tick seam"): a coalesced batch holding K@R5 is ticked out, the view then
 // applies K@R6, subscriber X attaches with a snapshot at K@R6 — X must NEVER
 // receive the R5 value. Under the critical-section fan-out this is
 // structural: the batch is enqueued to the subscribers registered at

@@ -30,7 +30,7 @@ RFC 3339. `kvRevision` is the entity's `ENTITY_STATES` revision, a JSON number. 
 `graph.QueryVerbs()` when the component is created, and none is spelled in this package.
 
 - **`entity`** decodes the stored value with `graph.UnmarshalEntityState` and refuses a reply with no entity or a
-  revision of 0, the checks `graph.NewExactEntityReader` makes (ADR-091, section 4, at the pin).
+  revision of 0, the checks `graph.NewExactEntityReader` makes (ADR-091, section 4).
 - **`entitiesByPrefix`** checks the page with `graph.ValidateDecodedEntityStates`. An empty `prefix` matches every
   entity. Send `next_cursor` back as `cursor` for the next page; graph-ingest caps `limit` at
   `graph.MaxPrefixQueryLimit`.

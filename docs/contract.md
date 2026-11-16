@@ -10,8 +10,8 @@ outcome, what survives a restart, how undeliverable messages stay visible, how r
 watch changes and operate it. It also says what is left to your application. The reasoning and the test for each
 promise are in the [design record for this contract](../openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md).
 
-**Status:** no engine code is in this repository yet. This page states what the first code release (called slice 04A)
-must implement; each promise below becomes a test when that code lands. Until then, the code it describes lives in
+**Status:** most of the tier-0 code is in this repository, and the rest is not yet ported. This page states what the
+tier-0 release must implement; each promise becomes a test as its code lands. Code not yet ported lives in
 [SemStreams](https://github.com/C360Studio/semstreams) at commit `8b99efe9`, and SemEngine is being built by copying
 the needed parts out of it.
 
@@ -110,8 +110,7 @@ protection uses the generation read before the bind".
 - Not in this release:
   - durable execution beyond phases: a record of each attempt with one owner for its final outcome, a guard that
     stops an outside call from running twice after a restart, typed reasons an attempt is blocked and may be
-    retried, and replay of unfinished work at startup. They are planned as their own piece of work
-    ([#24](https://github.com/C360Studio/semengine/issues/24)).
+    retried, and replay of unfinished work at startup. They are planned as their own piece of work.
 
 ### Observing changes
 
@@ -119,8 +118,8 @@ protection uses the generation read before the bind".
   changes, watch those buckets. A watcher started later first receives every current value, then each change.
 - The engine provides a view helper (`pkg/graphview`) that gives you a snapshot followed by a stream of changes.
 - For browsers and other remote clients, the websocket output component streams changes to stored state. It does
-  not relay raw input. In SemStreams (commit `8b99efe9`) it reads a NATS subject; copying it into SemEngine changes
-  that.
+  not relay raw input by default: its default input is a watch of `ENTITY_STATES`; a core NATS subject is the
+  configured alternative (`output/websocket/README.md`).
 - For operators, the service's HTTP endpoint `GET {prefix}kv/{bucket}/watch` streams the same changes as server-sent
   events.
 
@@ -140,7 +139,7 @@ Each running engine serves the following. `{prefix}` is the path the component m
 | storage report | the storage observability endpoint |
 | metrics | a Prometheus endpoint |
 
-The `flowgraph` response and the metric names are part of the contract. Slice 04A will check in a dashboard
+The `flowgraph` response and the metric names are part of the contract. SemEngine will check in a dashboard
 definition that uses the metric names, and a test that fails if one disappears. To see how a program's components are
 wired without any UI, render it as a Mermaid diagram with the composition command-line tool (`composition/cli`).
 
@@ -150,7 +149,7 @@ wired without any UI, render it as a Mermaid diagram with the composition comman
   wires into the program's startup, and each payload type it uses (a payload type is the Go type of a message body,
   which the engine looks up by name to decode), so your program builds only what it names. The sketch below is
   illustrative: the package paths and signatures are SemStreams' at commit `8b99efe9` (with the module path swapped,
-  it compiles there), and SemEngine's are fixed when each package is copied over in slice 04A.
+  it compiles there), and SemEngine's are fixed when each package is copied over.
 
 ```go
 package main

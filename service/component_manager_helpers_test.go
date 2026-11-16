@@ -12,12 +12,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The component manager's shared test helpers, from the pin's
-// component_manager_test_helpers_test.go and component_manager_lifecycle_test.go:1-20. The pin
-// built managers as struct literals and set their lifecycle fields by hand; here every manager is
-// built through NewComponentManager over a test component.Registry and a config.Manager holding
-// the test components (design D7), so a test sees only what the constructor composes and asserts
-// outcomes, never the manager's lifecycle state (design D2).
+// The component manager's shared test helpers. Every manager is built through NewComponentManager
+// over a test component.Registry and a config.Manager holding the test components, so a test sees
+// only what the constructor composes and asserts outcomes, never the manager's lifecycle state.
 
 // baseDiscoverable is a component with no ports that reports itself healthy. Test components
 // embed it for the component.Discoverable methods they do not care about.
@@ -44,9 +41,9 @@ func (m *mockDiscoverableComponent) Health() component.HealthStatus {
 func (m *mockDiscoverableComponent) DataFlow() component.FlowMetrics { return component.FlowMetrics{} }
 
 // admitTestRegistryComponent registers on registry a processor factory named name whose
-// constructor returns instance and whose port declaration is instance's ports. The pin's helper
-// also called registry.CreateComponent itself; here the component manager creates the component,
-// from the configuration testComponentDependencies builds, as it does at boot.
+// constructor returns instance and whose port declaration is instance's ports. The component
+// manager creates the component, from the configuration testComponentDependencies builds, as it
+// does at boot.
 func admitTestRegistryComponent(
 	t *testing.T, registry *component.Registry, name string, instance component.Discoverable,
 ) {
@@ -112,9 +109,8 @@ func newTestComponentManager(t *testing.T, components ...testComponent) *Compone
 	return cm
 }
 
-// startTestComponentManager starts cm and stops it when the test ends. It replaces the pin's
-// startPostBootComponentManager, which marked a struct-literal manager initialized by hand; a
-// manager NewComponentManager returns is composed already.
+// startTestComponentManager starts cm and stops it when the test ends. A manager
+// NewComponentManager returns is composed already.
 func startTestComponentManager(t *testing.T, cm *ComponentManager) {
 	t.Helper()
 	require.NoError(t, cm.Start(t.Context()))

@@ -150,7 +150,7 @@ func (m *Manager) Register(workflow Workflow) error {
 			ErrInvalidWorkflow, workflow.Name, meta.GoType)
 	}
 	// Disjointness needs the parsed projection predicates, so it runs here
-	// rather than inside validate() (gh#234).
+	// rather than inside validate().
 	if err := workflow.validateDisjointness(meta); err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func (m *Manager) GetRaw(ctx context.Context, entityID string) (*graph.EntitySta
 }
 
 // Create attaches lifecycle to the entity at initial.EntityID() —
-// the "add lifecycle dimension" semantics per ADR-049 Q5. The
+// the "add lifecycle dimension" semantics per ADR-049. The
 // entity MAY already exist with non-lifecycle triples (e.g. a
 // processor stamping `mission.control.command` before any lifecycle action
 // fires); Create coexists with those triples without clobbering.
@@ -390,8 +390,9 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 	//     = current rev; a revision mismatch is decided by a reread
 	//     below: ErrAlreadyExists only when it shows a phase triple)
 	//
-	// Per ADR-049 reviewer B2 this split closes the silent concurrent-
-	// create race that ExpectedRevision=0 had on the prior code.
+	// Each path writes under its own condition, so two concurrent
+	// Creates cannot both succeed and double-stamp the phase triple
+	// (ADR-049).
 	now := time.Now()
 	state, rev, err := m.getEntity(ctx, entityID)
 	switch {
@@ -658,7 +659,7 @@ func (m *Manager) transitionWithOutcome(
 // whose projected value changed. Skips the phase field (Transition
 // emits it explicitly) and read-only fields (ID, audit, reference).
 //
-// Zero-value semantics (per ADR-049 reviewer B4): when a predicate is
+// Zero-value semantics (ADR-049): when a predicate is
 // MISSING from the original triples AND the mutator leaves the field
 // at its zero value, no delta is emitted — emitting `field=0` to fill
 // a missing predicate is noise, not a meaningful state change. When
@@ -850,7 +851,7 @@ func (m *Manager) Fail(ctx context.Context, workflow, entityID, reason string) e
 
 // Despawn reclaims a lifecycle entity by deleting it from ENTITY_STATES
 // through the graph-ingest graph.mutation.entity.delete mutation, so no
-// consumer hand-rolls the raw delete (gh#497). It reclaims ONLY — it does NOT
+// consumer hand-rolls the raw delete. It reclaims ONLY — it does NOT
 // transition the entity to a terminal phase first; a caller that wants a
 // terminal audit trail should Complete/Fail beforehand, or use DespawnWith.
 //
@@ -861,8 +862,8 @@ func (m *Manager) Fail(ctx context.Context, workflow, entityID, reason string) e
 //
 // RECLAIM ≠ INDEX GC: Despawn removes the entity from ENTITY_STATES but does
 // NOT clean derived indexes (PREDICATE/NAME/ALIAS/CONTEXT/spatial/embedding) —
-// that is gh#433/ADR-068 work. Until it lands, a despawned entity may leave
-// stale index rows. Despawn introduces no new leak (it centralizes the same
+// that is ADR-068 work. Until that clean-up exists, a despawned entity may
+// leave stale index rows. Despawn introduces no new leak (it centralizes the same
 // entity.delete consumers already call); it does not fix the existing one.
 func (m *Manager) Despawn(ctx context.Context, workflow, entityID string) error {
 	reg, err := m.lookupByWorkflow(workflow)
@@ -903,7 +904,7 @@ func (m *Manager) Despawn(ctx context.Context, workflow, entityID string) error 
 // after a committed transition, so newer state causes revision_mismatch rather
 // than being silently reclaimed.
 //
-// Like Despawn, reclaim is NOT index GC (gh#433/ADR-068).
+// Like Despawn, reclaim is NOT index GC (ADR-068).
 func (m *Manager) DespawnWith(ctx context.Context, workflow, entityID string, source TransitionSource, note string) error {
 	reg, err := m.lookupByWorkflow(workflow)
 	if err != nil {
@@ -958,7 +959,7 @@ type CreateResult struct {
 
 // CreateFromOperator decodes an operator-supplied initial state into the
 // workflow's registered Schema and creates the instance, returning the
-// authoritative committed state (gh#814).
+// authoritative committed state.
 //
 // This is the BIRTH lane, and it is the only lane that carries a full initial
 // state envelope. The must-exist lanes — UpdateFromOperator and Transition —

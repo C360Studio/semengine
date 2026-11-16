@@ -20,7 +20,7 @@ func newEntitiesUpdatedMetric() prometheus.Counter {
 // newIndexingProfileDefaultMetric builds the counter that fires
 // whenever graph-ingest falls back to the indexing-profile floor at entity
 // creation — i.e. neither a Graphable IndexingProfiler nor a mutation-envelope
-// indexing_profile field declared a profile (SemStreams ADR-054 §5). Labeled by
+// indexing_profile field declared a profile (SemStreams ADR-054). Labeled by
 // message_type so operators can see WHICH producers omit a declaration: a new
 // "content" type nobody declared would otherwise silently default to "control"
 // and never be embedded. message_type is the low-cardinality registry key; the
@@ -37,10 +37,10 @@ func newIndexingProfileDefaultMetric() *prometheus.CounterVec {
 
 // newMutationRejectionsMetric builds the counter for rejected graph writes:
 // mutation requests, and authority refusals on the fact lanes (their arrival
-// port's subject) and on direct writes ("direct"). The reason is a bounded set
-// (#287): authority_foreign or authority_claimed for an authority refusal
+// port's subject) and on direct writes ("direct"). The reason is a bounded set:
+// authority_foreign or authority_claimed for an authority refusal
 // (authorityMetricReason), otherwise the error's classified code, or internal
-// when it carries none. It operationalizes SemStreams ADR-055 §3's "loud fail-fast"
+// when it carries none. It operationalizes SemStreams ADR-055's "loud fail-fast"
 // observability. Append, reconcile, and delete against an absent entity report
 // entity_not_found. Other bounded classes include validation, revision
 // conflict, and strict-create conflict.
@@ -85,16 +85,16 @@ func newEntityStateContractRejectionsMetric() *prometheus.CounterVec {
 }
 
 // newProcessingDurationMetric builds the histogram of per-message
-// apply time — the merge + CAS write applyIngest times (SemStreams gh#480). Paired with
-// newIngestLagMetric it separates processing time from queue wait, which the
-// component previously could not distinguish (callers inferred end-to-end latency
-// downstream). Buckets span sub-ms (a warm CAS is ~1.5ms) to seconds (a stalled KV).
+// apply time — the merge + CAS write applyIngest times. Paired with
+// newIngestLagMetric it separates processing time from queue wait, which an
+// end-to-end latency measured downstream cannot tell apart. Buckets span sub-ms
+// (a warm CAS is ~1.5ms) to seconds (a stalled KV).
 func newProcessingDurationMetric() prometheus.Histogram {
 	processingDurationHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "processing_duration_seconds",
-		Help:      "Per-message apply time in graph-ingest (merge + CAS write). The processing half of the queue-wait-vs-processing split (SemStreams gh#480).",
+		Help:      "Per-message apply time in graph-ingest (merge + CAS write). Read with ingest_lag_seconds (queue wait) to tell slow processing apart from a backlog.",
 		Buckets:   []float64{0.0005, 0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 	})
 	return processingDurationHistogram
@@ -103,22 +103,22 @@ func newProcessingDurationMetric() prometheus.Histogram {
 // newIngestLagMetric builds the histogram of message age at the
 // moment graph-ingest begins processing it (now − the JetStream message
 // timestamp) — i.e. how long a message waited in the stream/delivery buffer
-// before ingest reached it (SemStreams gh#480 queue wait). A rising lag with flat
+// before ingest reached it. A rising lag with flat
 // processing_duration is the backlog signature (consumer_pending_messages
-// climbing) the issue describes.
+// climbing).
 func newIngestLagMetric() prometheus.Histogram {
 	ingestLagHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "ingest_lag_seconds",
-		Help:      "Age of a message when graph-ingest starts processing it (queue/backlog wait). The queue-wait half of the split (SemStreams gh#480).",
+		Help:      "Age of a message when graph-ingest starts processing it (queue/backlog wait). Read with processing_duration_seconds to tell a backlog apart from slow processing.",
 		Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2.5, 5, 10, 30, 60},
 	})
 	return ingestLagHistogram
 }
 
 // newRedeliveriesDroppedMetric builds the counter of messages
-// dropped by the keyed-ingest redelivery guard (SemStreams ADR-072 B1/B2/B3): a delayed
+// dropped by the keyed-ingest redelivery guard (SemStreams ADR-072): a delayed
 // redelivery whose stream sequence is not newer than the last already applied
 // to that entity from the same stream. A small steady number under overload is
 // healthy; a large one means MaxAckPending/AckWait are undersized for the lane
@@ -130,13 +130,13 @@ func newRedeliveriesDroppedMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "redeliveries_dropped_total",
-		Help:      "Stale redeliveries dropped by the applied-sequence guard (SemStreams ADR-072).",
+		Help:      "Stale redeliveries dropped by the applied-sequence guard: a message whose stream sequence is not newer than the last one applied to that entity from the same recorded stream generation.",
 	})
 	return redeliveriesDroppedCounter
 }
 
 // newGuardRecordRefusalsMetric builds the counter of stream inputs refused because the stored
-// applied-sequence record for their entity and stream cannot be decoded (design D21). Each refused
+// applied-sequence record for their entity and stream cannot be decoded. Each refused
 // delivery counts once; the key is logged once. A rising count means a key in
 // GRAPH_INGEST_APPLIED_SEQ needs deleting, after which the redelivery applies.
 func newGuardRecordRefusalsMetric() prometheus.Counter {
@@ -149,7 +149,7 @@ func newGuardRecordRefusalsMetric() prometheus.Counter {
 }
 
 // newUnguardedInputsMetric builds the counter of stream inputs applied as first seen because
-// graph-ingest has no applied-sequence bucket (design D8), which only a component built without
+// graph-ingest has no applied-sequence bucket, which only a component built without
 // Start can lack. Each such input counts once and is logged.
 func newUnguardedInputsMetric() prometheus.Counter {
 	return prometheus.NewCounter(prometheus.CounterOpts{
@@ -161,12 +161,11 @@ func newUnguardedInputsMetric() prometheus.Counter {
 }
 
 // newWorkInterruptedMetric builds the counter of stream inputs whose application was interrupted and
-// left unsettled, so the server delivers them again after the ack wait (design D8, "Long apply"; #91
-// comment 6109278240, item 1). Its cause label is a closed enum: panic (the application panicked),
+// left unsettled, so the server delivers them again after the ack wait. Its cause label
+// is a closed enum: panic (the application panicked),
 // heartbeat_failed (an in-progress signal could not be sent) or invalid (the delivery's metadata or
 // the application's decision was invalid). Each such input is also logged at ERROR, and the lane
-// keeps taking input. The interruption adds nothing to the error count Health reports (#91 comment
-// 6124130342).
+// keeps taking input. The interruption adds nothing to the error count Health reports.
 func newWorkInterruptedMetric() *prometheus.CounterVec {
 	return prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "semengine",
@@ -190,14 +189,14 @@ func newCasRetriesMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "cas_retries_total",
-		Help:      "Entity-merge CAS-conflict retries — cross-entity contention observability, NOT a keying-correctness proof (SemStreams ADR-072).",
+		Help:      "Entity-merge CAS-conflict retries — cross-entity contention observability, NOT a keying-correctness proof.",
 	})
 	return casRetriesCounter
 }
 
 // newStaleSetsMetric builds the counter of (predicate, source) sets a stream message carried that
-// were not applied because they were older than the stored set of the same key (design D15,
-// "Timestamp orders a replace"; #98). The stream lane has no reply, so this count and the debug
+// were not applied because they were older than the stored set of the same key (graph-entity-writes
+// spec, "Timestamp orders a replace"). The stream lane has no reply, so this count and the debug
 // line beside it are how a producer learns that part of its message was not applied.
 func newStaleSetsMetric() prometheus.Counter {
 	return prometheus.NewCounter(prometheus.CounterOpts{
@@ -215,7 +214,7 @@ func newStaleSetsMetric() prometheus.Counter {
 type dedupLane string
 
 // dedupLaneAddBatch is the canonical append mutation lane, the one append lane
-// (ruling M, #91 comment 6080973822, removed hierarchy's in-process append).
+// (hierarchy has no in-process append).
 const dedupLaneAddBatch dedupLane = "append"
 
 // newDuplicateTriplesSuppressedMetric builds the counter of
@@ -246,7 +245,7 @@ const metricService = "graph-ingest"
 // keeping the collector each call returns: a second graph-ingest on the same registry
 // writes the collectors the first one registered, so every write is gathered. With a nil
 // registry the collectors are built and registered nowhere; nothing is ever registered on
-// Prometheus' process-global registry (design D4). Registration happens here, at
+// Prometheus' process-global registry. Registration happens here, at
 // construction, so the series exist before the first message and the first status tick.
 //
 // A registry holds one graph-ingest instance's series. A second instance on the same
@@ -340,9 +339,10 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 // newBatchMissingMetric builds the counter for requested entity IDs a
 // batch query could not hydrate, labelled by the closed graph.MissingReason set.
 //
-// It exists because partial hydration used to be invisible: an ID whose KV read came
-// back not-found was dropped from the response, and the symptom surfaced several hops
-// downstream as a missing search result (SemStreams gh#597). Counting it at the source is what
+// It exists because partial hydration is otherwise invisible to an operator: an ID whose
+// KV read comes back not-found is absent from the hydrated entity list (the response names
+// it only under Missing), and the symptom surfaces several hops downstream as a missing
+// search result. Counting the missing IDs at the source is what
 // makes "how often, and is it not-found or a fault?" answerable from a dashboard rather
 // than from a bug report.
 //
@@ -353,7 +353,7 @@ func newBatchMissingMetric() *prometheus.CounterVec {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "batch_query_missing_total",
-		Help:      "Requested entity IDs a batch query could not hydrate, by reason — partial hydration made visible (SemStreams gh#597)",
+		Help:      "Requested entity IDs a batch query could not hydrate, by reason — the IDs the response lists under missing",
 	}, []string{"reason"})
 	// Pre-initialize the closed label set: an absent series breaks rate() alerting,
 	// so a reason that has never fired must still be scrapeable at zero. `unknown`

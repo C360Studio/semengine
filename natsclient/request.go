@@ -18,7 +18,7 @@ import (
 const DefaultRequestTimeout = 5 * time.Second
 
 // nilContextError is the refusal an exported Client method returns for a nil context, before any
-// client state, callback or NATS call is reached (developer contract, Context ownership; Codex F32).
+// client state, callback or NATS call is reached (developer contract, Context ownership).
 func nilContextError(method string) error {
 	return nilContextErrorOf("Client", method)
 }
@@ -65,17 +65,16 @@ func resolveRequestHandlerTimeoutFromEnv() time.Duration {
 	return d
 }
 
-// Readiness-gated read defaults (ADR-060 sibling doctrine, third bucket — see
-// SemStreams' docs/operations/07-nats-request-retry.md at the pin; not carried
-// here). A readiness-gated read tolerates a not-yet-subscribed responder at
-// cold start / after reconnect: it retries with a SHORT per-attempt timeout up
-// to a bounded TOTAL budget, returning the first reply. Because the
-// per-attempt timeout is short and the total is bounded, a genuinely hung
-// responder fails within the budget rather than a full-timeout×N
-// storm — so it does NOT mask a hung responder the way retrying a full-timeout
-// query would. Distinct from RequestClassified (steady-state query: timeout =
-// real signal, no retry) and RequestWithRetryClassified (an operation whose
-// contract authorizes redelivery: retry on no reply, at full timeout).
+// Readiness-gated read defaults (the third bucket of the request doctrine). A
+// readiness-gated read tolerates a not-yet-subscribed responder at cold start /
+// after reconnect: it retries with a SHORT per-attempt timeout up to a bounded
+// TOTAL budget, returning the first reply. Because the per-attempt timeout is
+// short and the total is bounded, a genuinely hung responder fails within the
+// budget rather than a full-timeout×N storm — so it does NOT mask a hung
+// responder the way retrying a full-timeout query would. Distinct from
+// RequestClassified (steady-state query: timeout = real signal, no retry) and
+// RequestWithRetryClassified (an operation whose contract authorizes
+// redelivery: retry on no reply, at full timeout).
 const (
 	// DefaultReadinessProbeTimeout bounds each attempt. Short so a
 	// not-yet-subscribed responder fails fast and retries instead of consuming a
@@ -85,7 +84,7 @@ const (
 	// responder to come up before the error surfaces. Neither bounds a wait
 	// behind a write the server is not reading: such a write holds an attempt
 	// until it completes or nats.go's write timeout (one minute by default,
-	// WithWriteTimeout) ends it (P13; ADR-112).
+	// WithWriteTimeout) ends it (measured at nats.go v1.55.0, ADR-112).
 	DefaultReadinessBudget = 30 * time.Second
 
 	readinessInitialBackoff = 100 * time.Millisecond
@@ -317,16 +316,15 @@ func (c *Client) ReplyWithHeaders(ctx context.Context, replyTo string, data []by
 // invocation.
 //
 // ctx is used for the setup only (the subscribe and the round trip above) and
-// is not retained (owner ruling, #9 comment 5994720412 item 2). Each handler
-// invocation's context descends from a context the client owns for this
-// subscription, not from ctx: ending ctx after the call returned does not end a
-// handler. The client cancels that context after Close has begun, also after
-// Unsubscribe while a handler still runs, and once delivery has ended and the
-// last invocation has returned. A handler's
-// context also ends when the per-request handler timeout passes, and carries
-// the trace from the request's headers when it has one, and no value of ctx.
-// Unsubscribe stops delivery but does not wait for a running handler;
-// Subscription.Drain returning nil is what proves every handler has returned.
+// is not retained. Each handler invocation's context descends from a context
+// the client owns for this subscription, not from ctx: ending ctx after the
+// call returned does not end a handler. The client cancels that context after
+// Close has begun, also after Unsubscribe while a handler still runs, and once
+// delivery has ended and the last invocation has returned. A handler's context
+// also ends when the per-request handler timeout passes, and carries the trace
+// from the request's headers when it has one, and no value of ctx. Unsubscribe
+// stops delivery but does not wait for a running handler; Subscription.Drain
+// returning nil is what proves every handler has returned.
 func (c *Client) SubscribeForRequests(
 	ctx context.Context,
 	subject string,

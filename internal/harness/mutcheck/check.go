@@ -177,9 +177,9 @@ func decideRuns(c checkResult) (outcome, string) {
 	return inconclusive, fmt.Sprintf("reach was not judged (%q)", c.reachState)
 }
 
-// byHang judges a check whose only mutant run, run 1, was a hang (design D1, D3, D4): detection
-// when every baseline run and the after-run reported a package elapsed time of at most a third of
-// the timeout, so the hung run took at least three times the slowest of them.
+// byHang judges a check whose only mutant run, run 1, was a hang: detection when every baseline
+// run and the after-run reported a package elapsed time of at most a third of the timeout, so the
+// hung run took at least three times the slowest of them.
 func byHang(c checkResult) (outcome, string) {
 	margin := c.timeout / 3
 	var slowest time.Duration

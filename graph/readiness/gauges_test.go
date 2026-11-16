@@ -199,7 +199,7 @@ func registeredGauges(t *testing.T, subsystem string) (*Gauges, *prometheus.Regi
 
 // TestGaugesWriteTheRegisteredCollector: a second gauge set registered under the same
 // subsystem on one registry writes the collectors the first one registered. Had it kept
-// its own candidates, its writes would go to collectors nothing gathers (design D4).
+// its own candidates, its writes would go to collectors nothing gathers.
 func TestGaugesWriteTheRegisteredCollector(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	first := NewGauges("t")
@@ -226,7 +226,7 @@ func TestGaugesWriteTheRegisteredCollector(t *testing.T) {
 }
 
 // TestGaugesNilRegistryRegistersNothing: with no registry the set registers nowhere,
-// not on Prometheus' global registry as the pin did, and still takes writes.
+// not even on Prometheus' global registry, and still takes writes.
 func TestGaugesNilRegistryRegistersNothing(t *testing.T) {
 	g := NewGauges("nil_registry")
 	if err := g.Register(nil); err != nil {
@@ -247,7 +247,7 @@ func TestGaugesNilRegistryRegistersNothing(t *testing.T) {
 }
 
 // TestGaugesRegisterReturnsARefusal: a registration the registry refuses is returned,
-// not dropped as the pin's Register dropped it.
+// not dropped.
 func TestGaugesRegisterReturnsARefusal(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "occupied_lag", Help: "a counter under the gauge's key"})
@@ -278,7 +278,8 @@ func counterValue(t *testing.T, reg *prometheus.Registry, name string) float64 {
 // revision-lag producer exports its revisions": the set graph-index's follower builds
 // exposes exactly the five shared families plus indexed_revision and target_revision,
 // read from the live registry, and Set writes the envelope's floor and target to them.
-// The pin's names (pin:graph/readiness/gauges.go:62-73) with semengine as namespace.
+// The names are the external contract dashboards read (ADR-066), with semengine as
+// namespace.
 func TestRevisionGaugesExportTheRevisions(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	g := NewRevisionGauges("graph_index")

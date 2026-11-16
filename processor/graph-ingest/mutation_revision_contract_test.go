@@ -99,11 +99,11 @@ type structObject struct {
 	Alpha int    `json:"alpha"`
 }
 
-// Codex C3. A struct-valued Object keyed differently from its persisted
-// map[string]any form, so replaying the same valid in-process triple appended
-// it again on EVERY restart — advancing revisions and refiring watchers, which
-// is precisely the corruption this change exists to eliminate. "Fails safe" was
-// the wrong lens: a missed suppression is the failure the requirement forbids.
+// TestAddLane_StructuredObjectReplayIsSuppressed: a struct-valued Object must
+// key the same as its persisted map[string]any form. Keyed differently,
+// replaying the same valid in-process triple would append it again on EVERY
+// restart — advancing revisions and refiring watchers. A missed suppression is
+// not a safe failure: it is the failure the requirement forbids.
 func TestAddLane_StructuredObjectReplayIsSuppressed(t *testing.T) {
 	structured := func(subject string) message.Triple {
 		tr := dedupTriple(subject)

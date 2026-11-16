@@ -1,0 +1,123 @@
+// Probe for setup-04b-02-lexical-processor (design read finding 4): what share of SemSource-shaped bodies exceed
+// a text cap. Run outside the repository over SemSource's source at 4ca2072c, fetched with
+// `gh api repos/C360Studio/semsource/tarball/4ca2072c5d9d6bf4ec5ad76dc33b92d61c1614c1`.
+//
+// Code: SemSource offloads each body-bearing symbol's source lines, StartLine to EndLine
+// (processor/ast-source/bodystore.go). For Go files this probe takes each function, method and type
+// declaration's lines, doc comment excluded, as the body, and counts its characters (runes).
+// Docs: SemSource splits Markdown into passages of at most 2,000 bytes, except a fenced block kept whole up to
+// 6,000 (handler/doc/splitter.go:36). This probe does not run the splitter: it counts fenced blocks, which are the
+// passages that can exceed the ceiling, and reports how many exceed each cap. openspec/** and node_modules are
+// excluded, as SemSource's default docs corpus does.
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"unicode/utf8"
+)
+
+var caps = []int{4000, 8000, 16000, 32000}
+
+func report(name string, sizes []int) {
+	slices.Sort(sizes)
+	n := len(sizes)
+	total := 0
+	for _, s := range sizes {
+		total += s
+	}
+	fmt.Printf("%s: %d bodies, total %d chars, median %d, p90 %d, p99 %d, max %d\n", name, n, total,
+		sizes[n/2], sizes[n*90/100], sizes[n*99/100], sizes[n-1])
+	for _, c := range caps {
+		over, cut := 0, 0
+		for _, s := range sizes {
+			if s > c {
+				over++
+				cut += s - c
+			}
+		}
+		fmt.Printf("  over %5d chars: %d bodies (%.2f%%), %d chars cut (%.2f%% of all text)\n", c, over,
+			100*float64(over)/float64(n), cut, 100*float64(cut)/float64(total))
+	}
+}
+
+func main() {
+	root := os.Args[1]
+	var code, codeProd, fences []int
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		if d.IsDir() && (d.Name() == "node_modules" || rel == "openspec" || d.Name() == "vendor") {
+			return filepath.SkipDir
+		}
+		switch {
+		case strings.HasSuffix(path, ".go"):
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution)
+			if err != nil {
+				return nil
+			}
+			lines := strings.SplitAfter(string(src), "\n")
+			add := func(n ast.Node) {
+				a, b := fset.Position(n.Pos()).Line, fset.Position(n.End()).Line
+				size := utf8.RuneCountInString(strings.Join(lines[a-1:b], ""))
+				code = append(code, size)
+				if !strings.HasSuffix(path, "_test.go") {
+					codeProd = append(codeProd, size)
+				}
+			}
+			for _, decl := range f.Decls {
+				switch d := decl.(type) {
+				case *ast.FuncDecl:
+					add(d)
+				case *ast.GenDecl:
+					if d.Tok == token.TYPE {
+						for _, s := range d.Specs {
+							add(s)
+						}
+					}
+				}
+			}
+		case strings.HasSuffix(path, ".md"):
+			fh, err := os.Open(path)
+			if err != nil {
+				return nil
+			}
+			defer fh.Close()
+			sc := bufio.NewScanner(fh)
+			sc.Buffer(make([]byte, 1<<20), 1<<20)
+			in, size := false, 0
+			for sc.Scan() {
+				line := sc.Text()
+				if strings.HasPrefix(strings.TrimSpace(line), "```") {
+					if in {
+						fences = append(fences, size)
+					}
+					in, size = !in, 0
+					continue
+				}
+				if in {
+					size += utf8.RuneCountInString(line) + 1
+				}
+			}
+		}
+		return nil
+	})
+	report("Go symbol bodies, tests included", code)
+	report("Go symbol bodies, production files only", codeProd)
+	report("Markdown fenced blocks (passages that may exceed the 2,000-byte ceiling)", fences)
+}

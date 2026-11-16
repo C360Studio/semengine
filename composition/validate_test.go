@@ -343,14 +343,12 @@ func TestValidateSuppressesOrphanOnlyForExternallyFedInput(t *testing.T) {
 // lane is fed by a PEER deployment by construction, so it must not be reported
 // as a no-publisher orphan, and the operator must not have to say so twice.
 //
-// SemStreams' `docs/operations/migration-beta162-to-beta163.md` promises "`import` is the one
-// knob" and shows a snippet that sets `config.import` and nothing else. Before
-// this derivation that promise was false: composition suppressed the orphan
-// finding only from `PortDefinition.External`, a sibling of `config`, so a lane
-// declared exactly the documented way was still reported. `external` is
-// ENTAILED by `import` — the lane refuses any subject carrying this deployment's
-// own authority (ADR-102 d5), so no in-graph publisher can legitimately feed it
-// — which makes restating it a fact the framework already holds.
+// `import` is the one knob: a lane that sets `config.import` and nothing else
+// is not reported, though `PortDefinition.External`, a sibling of `config`, is
+// unset. `external` is ENTAILED by `import` — the lane refuses any subject
+// carrying this deployment's own authority (ADR-102 decision 5), so no in-graph
+// publisher can legitimately feed it — which makes restating it a fact the
+// framework already holds.
 //
 // The control case is what makes this a test of the DERIVATION rather than of
 // the orphan rule: the same port with `import` absent is still an orphan.

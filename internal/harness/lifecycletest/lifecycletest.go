@@ -1,12 +1,10 @@
-// Package lifecycletest is the portable owner-lifecycle floor (openspec change
-// setup-02-isolated-harness, capability lifecycle-suite), adapted from SemStreams
-// component/lifecycle_test_suite.go at 5457b345 (ledger row L4) without testify, without aggregate
-// goroutine or memory counts (they cannot prove an owner's join), and as error-returning checks so
-// each one's sensitivity is testable against a failpoint double.
+// Package lifecycletest is the portable owner-lifecycle floor (capability lifecycle-suite). It
+// uses no testify and no aggregate goroutine or memory counts (they cannot prove an owner's join),
+// and its checks return errors so each one's sensitivity is testable against a failpoint double.
 //
 // The floor is not proof of an owner's drain and join protocol; each owner still needs focused
-// tests for its blocked callbacks, partial startup, and finalisation. Test-only: contract test T-B1
-// refuses any production import.
+// tests for its blocked callbacks, partial startup, and finalisation. Test-only: the contract test
+// TestImportGraph refuses any production import.
 package lifecycletest
 
 import (
@@ -26,7 +24,7 @@ import (
 // settleWindow is the one timed wait on a healthy owner: how long after the Start context ends the
 // owner is given to drop work it should have kept. It observes and never bounds, so its expiry
 // cannot fail an owner whose reported work lasts until Stop. Inside synctest the result is exact;
-// for a real owner it is best-effort, which the owner accepted (start-context design D3).
+// for a real owner it is best-effort, an accepted limit of the check.
 const (
 	startBound   = 2 * time.Minute
 	stopBound    = 30 * time.Second

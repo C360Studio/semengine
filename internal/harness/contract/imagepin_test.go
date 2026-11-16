@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// T-B3: the NATS image is spelled once, in internal/harness/natsfixture/nats-image, by digest
-// (owner ruling Q6; harness-boundaries › "One image pin"). natsfixture embeds the file. A second
-// spelling is how SemStreams came to re-point a shared mutable tag from one repository's task.
+// The NATS image is spelled once, in internal/harness/natsfixture/nats-image, by digest
+// (harness-boundaries › "One image pin"). natsfixture embeds the file. A second spelling lets one
+// repository's task re-point a shared mutable tag that other repositories run.
 func TestOneImagePin(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "image pin", imagePinViolations(t, root, repoFiles(t, root)))
@@ -92,16 +92,15 @@ var (
 	imageLiteral = regexp.MustCompile(`(^|[^A-Za-z0-9_.-])nats(:([A-Za-z0-9]|\$\{?[A-Za-z_])[A-Za-z0-9._${}-]*|@sha256:)`)
 	// goImageLiteral is imageLiteral for Go files: a tag must start with a digit or a variable.
 	// Go spells component port identifiers `nats:<subject>` (component/port_nats.go), so a tag
-	// that starts with a letter (`nats:latest`) is review only in Go (design D10 of
-	// setup-04a-02-ingest-kernel).
+	// that starts with a letter (`nats:latest`) is review only in Go.
 	goImageLiteral = regexp.MustCompile(`(^|[^A-Za-z0-9_.-])nats(:([0-9]|\$\{?[A-Za-z_])[A-Za-z0-9._${}-]*|@sha256:)`)
 	// pinShape is the one accepted form of the pin: a tag for humans, a digest for Docker.
 	pinShape = regexp.MustCompile(`^nats:[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$`)
 )
 
-// configuresDocker reports whether a file can name an image Docker runs (ruling A3): Go, shell,
-// the Taskfile, YAML (Compose, CI workflows), and Dockerfiles. Markdown and other prose may cite the
-// pin and the upstream tag; no tool reads an image from them.
+// configuresDocker reports whether a file can name an image Docker runs: Go, shell, the Taskfile,
+// YAML (Compose, CI workflows), and Dockerfiles. Markdown and other prose may cite the pin and the
+// upstream tag; no tool reads an image from them.
 func configuresDocker(name string) bool {
 	base := filepath.Base(name)
 	switch {
@@ -115,7 +114,8 @@ func configuresDocker(name string) bool {
 	return false
 }
 
-// imagePinViolations is the T-B3 check over every tracked file that configures or runs Docker.
+// imagePinViolations is the one-image-pin check over every tracked file that configures or runs
+// Docker.
 func imagePinViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string

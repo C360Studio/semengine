@@ -13,7 +13,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// rootVerbs maps each root field to the graph.query.* verb that answers it (design D2).
+// rootVerbs maps each root field to the graph.query.* verb that answers it.
 var rootVerbs = map[string]string{
 	"entity":              "entity",
 	"entitiesByPrefix":    "prefix",
@@ -86,15 +86,15 @@ func (c *Component) ask(ctx context.Context, verb graph.QueryVerb, request any) 
 	return envelope.Data, nil
 }
 
-// unfit is a reply that does not decode as verb's row declares, or fails a check of design D2: the
-// root field answers null with this error at its path, HTTP 200.
+// unfit is a reply that does not decode as verb's row declares, or fails a check its resolver makes:
+// the root field answers null with this error at its path, HTTP 200.
 func unfit(verb graph.QueryVerb, err error) error {
 	return fmt.Errorf("reply of %s refused: %w", verb.Subject, err)
 }
 
 // entity answers {entity {id triples}, kvRevision}, refusing a missing entity or a zero kv_revision
 // and decoding the stored value with graph.UnmarshalEntityState, as graph.ExactEntityReader does
-// (graph/exact_entity.go, ADR-091 §4).
+// (graph/exact_entity.go, SemStreams ADR-091 § 4).
 func (c *Component) entity(verb graph.QueryVerb) resolver {
 	return func(ctx context.Context, args map[string]any) (any, error) {
 		id, _ := args["id"].(string)
@@ -224,11 +224,11 @@ func (c *Component) pathSearch(verb graph.QueryVerb) resolver {
 	}
 }
 
-// pathsOf aligns the paths with the entities, as the pin did (pin processor/graph-query/pathrag.go:139-140):
-// paths[k] is the run of edges from the start to entities[k], and paths[0] is empty. edges[k-1]
-// first reached entities[k] (graph/query_path_types.go), from the end of it that is not entities[k],
-// which an earlier entity must be; the path is that entity's with the edge appended. A reply breaking
-// that shape is refused, not answered in part.
+// pathsOf aligns the paths with the entities: paths[k] is the run of edges from the start to
+// entities[k], and paths[0] is empty. edges[k-1] first reached entities[k]
+// (graph/query_path_types.go), from the end of it that is not entities[k], which an earlier entity
+// must be; the path is that entity's with the edge appended. A reply breaking that shape is
+// refused, not answered in part.
 func pathsOf(found graph.PathSearchData) ([]any, error) {
 	if len(found.Entities) == 0 {
 		return nil, errors.New("no start entity")
@@ -300,7 +300,7 @@ func intArg(args map[string]any, name string) (int, error) {
 	return int(n), nil
 }
 
-// predicatesArg reads pathSearch's predicates, a [String] as at the pin, refusing a null item: it
+// predicatesArg reads pathSearch's predicates, a [String], refusing a null item: it
 // would name no predicate, and dropping it would widen the answer.
 func predicatesArg(args map[string]any) ([]string, error) {
 	var items []any

@@ -149,10 +149,16 @@ Schema column states the schema mapping (`semengine-entity-id` is the entity-ID 
 
 Declaring nothing is legal. **Anything else panics at registration**, naming the offending value and the accepted
 vocabulary. The framework translates nothing — there is no legacy-spelling map, so `float64`, `number`, `double`,
-`time.Time`, `timestamp`, `int64`, `array`, `entity_ref`, `reference` and `boolean` all halt the binary rather than
-becoming their canonical equivalent. If you declare any of them today, see
-SemStreams' `docs/operations/migration-predicate-datatype.md` (not in this repository), which is the whole
-migration.
+`time.Time`, `timestamp`, `int64`, `array`, `entity_ref`, `reference`, and `boolean` all halt the binary rather than
+becoming their canonical equivalent. Replace non-canonical declarations at the call site:
+
+- `float64`, `number`, `double` — use `DataTypeFloat`
+- `int64`, `integer` — use `DataTypeInt`
+- `boolean` — use `DataTypeBool`
+- `time.Time`, `timestamp` — use `DataTypeDateTime`
+- `entity_ref`, `reference` — use `DataTypeEntityID`
+- `array` — use `DataTypeJSON` (or emit one triple per element when values are independent facts)
+- Go struct names or unstructured payloads — use `DataTypeJSON` or omit `WithDataType`
 
 Export honors the declaration, and **ignores it for any triple whose observed value contradicts it** — a fractional
 value under an `int` declaration serializes as `xsd:double`, not as a rounded integer.

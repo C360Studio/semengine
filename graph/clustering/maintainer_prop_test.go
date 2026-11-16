@@ -2,10 +2,13 @@ package clustering
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"reflect"
 	"regexp"
 	"slices"
@@ -17,8 +20,8 @@ import (
 	"pgregory.net/rapid"
 )
 
-// The generated checks of design D5 (task 2.3). The reference model is written from the
-// community-grouping spec and design D2, never from maintainer.go or terms.go:
+// The generated checks of the maintainer. The reference model is written from the
+// community-grouping spec, never from maintainer.go or terms.go:
 //
 //   - an entity's groups are its ID's first four, three and two dot-separated positions,
 //     split here on '.'; its type is the fifth position;
@@ -29,13 +32,23 @@ import (
 //     the entity's last-applied one, where a delete forgets the entity;
 //   - a refused value (nil state, unparseable ID, mismatched state ID) contributes nothing
 //     and names the entity in Tick's *IncompleteError until a valid upsert or a delete;
-//   - a record holds the member count, the MaxKeywords most common types and words (ties
-//     lexical), the pin's summary template, and the MaxRepEntities smallest members with
+//   - a record holds the member count, the MaxKeywords most common types (ties lexical),
+//     the keywords, the summary template, and the MaxRepEntities smallest members with
 //     words; a group with no members has no record;
+//   - the keywords are the MaxKeywords words of best score, ties lexical, a word's score
+//     being the share of the group's members holding it times ln(graph members with
+//     words / graph members holding it), kept only above zero, a word needing two holders
+//     in a group of two or more;
+//   - a record is built by the tick that writes it: a tick that publishes everything
+//     (nil or *IncompleteError) builds every group changed since the last such tick, from
+//     the held values of that moment, and a group changes on every applied delivery of an
+//     entity whose ID parses into it; other groups keep the record they had;
+//   - after a restart (a new maintainer fed the final values over the same bucket) the
+//     records are those computed from the final values alone, apart from entity_revision;
 //   - a record's entity_revision is the highest revision among the applied upserts and
 //     deletes of entities whose IDs parse into the group, held, refused or not; a group
-//     that is removed takes its mark with it (task 2.1, "A record names the latest entity
-//     write it reflects").
+//     that is removed takes its mark with it (community-grouping spec, "A record names the
+//     latest entity write it reflects").
 
 // propIDs are the valid entity IDs a history draws from: two deployments, two sources,
 // two domains, two types and two instances, so every level holds several groups.
@@ -74,10 +87,13 @@ const (
 	kindMismatched = "mismatched"
 )
 
-// propValue is one generated delivery's value.
+// propValue is one generated delivery's value: its text's words, and a size and a status, values
+// no text rule reads.
 type propValue struct {
-	kind  string
-	words []string
+	kind   string
+	words  []string
+	size   float64
+	status string
 }
 
 func (v propValue) state(id string) *graph.EntityState {
@@ -91,7 +107,8 @@ func (v propValue) state(id string) *graph.EntityState {
 		}
 		return &graph.EntityState{ID: other}
 	}
-	state := &graph.EntityState{ID: id, Triples: []message.Triple{{Subject: id, Predicate: "docs.note.size", Object: 7.0}}}
+	state := &graph.EntityState{ID: id, Triples: []message.Triple{{Subject: id, Predicate: "docs.note.size", Object: v.size},
+		{Subject: id, Predicate: "docs.note.status", Object: v.status}}}
 	if len(v.words) > 0 {
 		state.Triples = append(state.Triples, message.Triple{Subject: id, Predicate: "docs.note.body", Object: strings.Join(v.words, " ")})
 	}
@@ -104,7 +121,7 @@ func drawValue(rt *rapid.T, bad bool) propValue {
 		kind = kindValid // a bad ID is refused whatever its state
 	}
 	words := rapid.SliceOfN(rapid.SampledFrom(propVocabulary), 0, 60).Draw(rt, "words")
-	return propValue{kind: kind, words: words}
+	return propValue{kind: kind, words: words, size: 7, status: "idle"}
 }
 
 // modelEntity is the model's view of one held entity.
@@ -135,6 +152,36 @@ func modelTop(counts map[string]int, n int) []string {
 	var out []string
 	for i := 0; i < len(all) && i < n; i++ {
 		out = append(out, all[i].k)
+	}
+	return out
+}
+
+// modelKeywords scores a group's words against the graph's: share of the group's members
+// holding the word times ln(withWords / holders), above zero only, two holders needed in a
+// group of two or more, the MaxKeywords best kept, ties lexical.
+func modelKeywords(members int, words, holders map[string]int, withWords int) []string {
+	type ws struct {
+		w string
+		s float64
+	}
+	var all []ws
+	for w, held := range words {
+		if members >= 2 && held < 2 {
+			continue
+		}
+		if s := float64(held) / float64(members) * math.Log(float64(withWords)/float64(holders[w])); s > 0 {
+			all = append(all, ws{w, s})
+		}
+	}
+	slices.SortFunc(all, func(a, b ws) int {
+		if c := cmp.Compare(b.s, a.s); c != 0 {
+			return c
+		}
+		return strings.Compare(a.w, b.w)
+	})
+	var out []string
+	for _, x := range all[:min(len(all), MaxKeywords)] {
+		out = append(out, x.w)
 	}
 	return out
 }
@@ -174,6 +221,8 @@ func modelRecords(entities map[string]modelEntity, marks map[string]uint64) map[
 		text    []string
 	}
 	groups := map[string]*acc{}
+	holders := map[string]int{} // graph members holding each word
+	withWords := 0              // graph members holding any
 	for id, e := range entities {
 		if e.refused() {
 			continue
@@ -184,6 +233,12 @@ func modelRecords(entities map[string]modelEntity, marks map[string]uint64) map[
 			counts[w]++
 		}
 		capped := modelTop(counts, MaxEntityTerms)
+		for _, w := range capped {
+			holders[w]++
+		}
+		if len(capped) > 0 {
+			withWords++
+		}
 		for level, n := range []int{4, 3, 2} {
 			gid := strings.Join(p[:n], ".")
 			key := fmt.Sprintf("%d.%s", level, gid)
@@ -217,7 +272,7 @@ func modelRecords(entities map[string]modelEntity, marks map[string]uint64) map[
 				parts = append(parts, fmt.Sprintf("%d %s%s", g.types[typ], typ, plural))
 			}
 		}
-		keywords := modelTop(g.words, MaxKeywords)
+		keywords := modelKeywords(g.members, g.words, holders, withWords)
 		summary := fmt.Sprintf("Community of %d entities including %s", g.members, strings.Join(parts, ", "))
 		if len(keywords) > 0 {
 			summary += ". Key themes: " + strings.Join(keywords[:min(5, len(keywords))], ", ")
@@ -249,14 +304,17 @@ func modelRefused(entities map[string]modelEntity) []string {
 var errInjected = errors.New("injected bucket failure")
 
 type matchCounts struct {
-	compared, incomplete, obsolete, refusals, deletes, capped, repsFull, keywordsFull, emptied, failedTicks int
+	compared, incomplete, obsolete, refusals, deletes, capped, repsFull, keywordsFull, emptied, failedTicks, sizeOnly, restarts int
 }
 
 // TestMaintainerMatchesModel applies generated histories of upserts (valid and refused),
-// deletes, obsolete deliveries and ticks, and after every tick past BootstrapDone compares
-// every published record and Tick's result with the model computed from the held values.
-// Failing ticks make the listing, a write or a removal fail partway; the model does not
-// change, so the next good tick must publish what the failed one left pending.
+// upserts that change only an entity's size, deletes, obsolete deliveries and ticks, and
+// after every tick past BootstrapDone compares every published record and Tick's result
+// with the model's records: each group rebuilt from the held values by the last tick that
+// published everything after the group changed. Failing ticks make the listing, a write or
+// a removal fail partway; they leave the model as it was, so the next good tick must
+// publish what the failed one left pending. Each history ends with a restart over the same
+// bucket, whose records must be those of the final values alone.
 // The bucket starts with records an earlier run left, which the first good tick replaces
 // or removes. Each history starts with fixed upserts: an entity with 40 distinct words, so the
 // MaxEntityTerms cap is applied in every check, and five more members with words in one
@@ -264,7 +322,7 @@ type matchCounts struct {
 func TestMaintainerMatchesModel(t *testing.T) {
 	var c matchCounts
 	rapid.Check(t, func(rt *rapid.T) {
-		m, kv, err := newFakeMaintainer()
+		m, kv, err := newFakeMaintainer(nil)
 		if err != nil {
 			rt.Fatal(err)
 		}
@@ -286,6 +344,32 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		}
 		var revision uint64
 		bootstrapped := false
+		published := map[string]*Community{} // the model's records; empty until the first good tick
+		everPublished := false
+		changed := map[string]bool{} // record keys changed since the last good tick
+		touch := func(id string) {
+			if !bad[id] {
+				for _, key := range modelGroupKeys(id) {
+					changed[key] = true
+				}
+			}
+		}
+		// publish is the model's good tick: it rebuilds every changed group, every group on
+		// the first one, which also removes every record no group holds.
+		publish := func() {
+			fresh := modelRecords(entities, marks)
+			if !everPublished {
+				published, everPublished = fresh, true
+			}
+			for key := range changed {
+				if fresh[key] != nil {
+					published[key] = fresh[key]
+				} else {
+					delete(published, key)
+				}
+			}
+			clear(changed)
+		}
 
 		upsert := func(id string, rev uint64, v propValue) {
 			err := m.Upsert(id, rev, v.state(id))
@@ -299,10 +383,12 @@ func TestMaintainerMatchesModel(t *testing.T) {
 			}
 			entities[id] = e
 			modelApplied(marks, entities, id, rev, bad[id])
+			touch(id)
 		}
 		applyDelete := func(id string, rev uint64) {
 			delete(entities, id)
 			modelApplied(marks, entities, id, rev, bad[id])
+			touch(id)
 		}
 		tick := func() {
 			err := m.Tick(t.Context())
@@ -322,11 +408,12 @@ func TestMaintainerMatchesModel(t *testing.T) {
 			case len(wantRefused) > 0:
 				c.incomplete++
 			}
+			publish()
 			got, err := kv.decodeAll()
 			if err != nil {
 				rt.Fatal(err)
 			}
-			want := modelRecords(entities, marks)
+			want := published
 			if !reflect.DeepEqual(got, want) {
 				keys := slices.Concat(slices.Collect(maps.Keys(got)), slices.Collect(maps.Keys(want)))
 				slices.Sort(keys)
@@ -361,7 +448,7 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		}
 
 		ops := rapid.SliceOfN(rapid.SampledFrom([]string{
-			"upsert", "upsert", "upsert", "upsert", "delete", "delete-held", "obsolete-upsert", "obsolete-delete", "tick",
+			"upsert", "upsert", "upsert", "upsert", "size-only", "delete", "delete-held", "obsolete-upsert", "obsolete-delete", "tick",
 			"bootstrap", "failing-tick",
 		}), 1, 80).Draw(rt, "ops")
 		for _, op := range ops {
@@ -370,6 +457,18 @@ func TestMaintainerMatchesModel(t *testing.T) {
 				id := rapid.SampledFrom(append(slices.Clone(propIDs), propBadIDs...)).Draw(rt, "id")
 				revision++
 				upsert(id, revision, drawValue(rt, bad[id]))
+			case "size-only":
+				// A new revision whose only changes are values no text rule reads.
+				if len(entities) == 0 {
+					continue
+				}
+				id := rapid.SampledFrom(slices.Sorted(maps.Keys(entities))).Draw(rt, "resized")
+				v := entities[id].value
+				v.size++
+				v.status = map[string]string{"": "running", "running": "idle", "idle": "running"}[v.status]
+				revision++
+				upsert(id, revision, v)
+				c.sizeOnly++
 			case "delete", "delete-held":
 				candidates := append(slices.Clone(propIDs), propBadIDs...)
 				if op == "delete-held" {
@@ -428,6 +527,8 @@ func TestMaintainerMatchesModel(t *testing.T) {
 					rt.Fatalf("failing Tick = %v, want the injected failure, nil or *IncompleteError", err)
 				case errors.Is(err, errInjected):
 					c.failedTicks++
+				case bootstrapped:
+					publish() // the failure came after the last bucket operation
 				}
 			case "tick":
 				tick()
@@ -463,11 +564,40 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		applyDelete(lone, revision)
 		tick()
 		c.emptied++
+
+		// A restart over the same bucket rebuilds every group from the final values.
+		restarted, err := newMaintainerOver(kv, nil)
+		if err != nil {
+			rt.Fatal(err)
+		}
+		for _, id := range slices.Sorted(maps.Keys(entities)) {
+			_ = restarted.Upsert(id, entities[id].revision, entities[id].value.state(id)) // refusals as before
+		}
+		restarted.BootstrapDone()
+		if err := restarted.Tick(t.Context()); err != nil && !errors.As(err, new(*IncompleteError)) {
+			rt.Fatalf("restart Tick = %v", err)
+		}
+		got, err := kv.decodeAll()
+		if err != nil {
+			rt.Fatal(err)
+		}
+		want := modelRecords(entities, nil)
+		for key := range got {
+			if want[key] == nil {
+				rt.Fatalf("after a restart, record %s = %+v; the final values hold no such group", key, got[key])
+			}
+			got[key].EntityRevision = 0
+		}
+		if !reflect.DeepEqual(got, want) {
+			rt.Fatalf("after a restart, records = %+v, want %+v", got, want)
+		}
+		c.restarts++
 	})
 	t.Logf("assertions run: compared ticks %d (incomplete %d), obsolete deliveries %d, refused at the end %d, "+
-		"deletes of held entities %d, capped entities %d, records at MaxRepEntities %d, at MaxKeywords %d, groups emptied %d, failed ticks %d",
+		"deletes of held entities %d, capped entities %d, records at MaxRepEntities %d, at MaxKeywords %d, groups emptied %d, failed ticks %d, "+
+		"size-only revisions %d, restarts compared %d",
 		c.compared, c.incomplete, c.obsolete, c.refusals, c.deletes, c.capped, c.repsFull, c.keywordsFull, c.emptied,
-		c.failedTicks)
+		c.failedTicks, c.sizeOnly, c.restarts)
 }
 
 // propDelivery is one delivery of one entity's history.
@@ -480,19 +610,24 @@ type propDelivery struct {
 
 // TestHistoryOrderIrrelevant: two histories that interleave the same per-entity
 // deliveries differently, each entity's in its own revision order, with ticks at
-// different points, leave records byte-identical apart from entity_revision, and the same
-// Tick result. Revisions here ascend per entity only, not across entities, so
-// entity_revision, which only an ascending feed fixes, is masked before comparing.
-// Obsolete deliveries are inserted only after an upsert, where the entity is still held.
+// different points, give the same Tick result and, after a restart over each history's own
+// bucket, records byte-identical apart from entity_revision. Before the restart the records
+// are equal too, apart from entity_revision, the keywords and the summary naming them: a
+// group is scored when it is written, so those may lag. Revisions here ascend
+// per entity only, not across entities, so entity_revision, which only an ascending feed
+// fixes, is masked before comparing. Obsolete deliveries are inserted only after an
+// upsert, where the entity is still held.
 func TestHistoryOrderIrrelevant(t *testing.T) {
 	var differing, obsolete, nonEmpty int
 	rapid.Check(t, func(rt *rapid.T) {
 		ids := rapid.SliceOfNDistinct(rapid.SampledFrom(append(slices.Clone(propIDs), propBadIDs...)), 1, 10,
 			rapid.ID[string]).Draw(rt, "entities")
 		var perEntity [][]propDelivery
+		var finals []propDelivery // each entity's last delivery that is not obsolete
 		for _, id := range ids {
 			isBad := slices.Contains(propBadIDs, id)
 			var seq []propDelivery
+			var final propDelivery
 			n := rapid.IntRange(1, 4).Draw(rt, "deliveries")
 			for rev := uint64(1); rev <= uint64(n); rev++ {
 				d := propDelivery{id: id, revision: rev}
@@ -502,6 +637,7 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 					d.value = drawValue(rt, isBad)
 				}
 				seq = append(seq, d)
+				final = d
 				if !d.delete && rapid.Bool().Draw(rt, "obsolete?") {
 					o := propDelivery{id: id, revision: rapid.Uint64Range(1, rev).Draw(rt, "obsolete revision")}
 					if rapid.Bool().Draw(rt, "obsolete delete?") {
@@ -514,16 +650,16 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 				}
 			}
 			perEntity = append(perEntity, seq)
+			finals = append(finals, final)
 		}
 
-		run := func(label string) (map[string][]byte, string, []string) {
-			m, kv, err := newFakeMaintainer()
+		run := func(label string) (before, after map[string][]byte, result string, order []string) {
+			m, kv, err := newFakeMaintainer(nil)
 			if err != nil {
 				rt.Fatal(err)
 			}
 			m.BootstrapDone()
 			next := make([]int, len(perEntity))
-			var order []string
 			for {
 				var open []int
 				for i, seq := range perEntity {
@@ -548,18 +684,41 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 				}
 				order = append(order, fmt.Sprintf("%s@%d", d.id, d.revision))
 			}
-			var result string
 			if err := m.Tick(t.Context()); err != nil {
 				result = err.Error()
 			}
 			kv.mu.Lock()
+			before = maps.Clone(kv.data)
+			kv.mu.Unlock()
+			// A restart over this history's bucket, fed the final values, builds every group.
+			restarted, err := newMaintainerOver(kv, nil)
+			if err != nil {
+				rt.Fatal(err)
+			}
+			for _, d := range finals {
+				if !d.delete {
+					_ = restarted.Upsert(d.id, d.revision, d.value.state(d.id)) // refusals as before
+				}
+			}
+			restarted.BootstrapDone()
+			var restartResult string
+			if err := restarted.Tick(t.Context()); err != nil {
+				restartResult = err.Error()
+			}
+			if restartResult != result {
+				rt.Fatalf("restart Tick = %q, want %q as before it", restartResult, result)
+			}
+			kv.mu.Lock()
 			defer kv.mu.Unlock()
-			return maps.Clone(kv.data), result, order
+			return before, maps.Clone(kv.data), result, order
 		}
-		dataA, resultA, orderA := run("A")
-		dataB, resultB, orderB := run("B")
+		beforeA, dataA, resultA, orderA := run("A")
+		beforeB, dataB, resultB, orderB := run("B")
 		if resultA != resultB {
 			rt.Fatalf("final Tick: %q after %q, %q after %q", resultA, orderA, resultB, orderB)
+		}
+		if !maps.EqualFunc(beforeA, beforeB, func(a, b []byte) bool { return bytes.Equal(maskLagging(rt, a), maskLagging(rt, b)) }) {
+			rt.Fatalf("records before the restart differ outside keywords:\n%q\n%q\nafter %q and %q", beforeA, beforeB, orderA, orderB)
 		}
 		if !maps.EqualFunc(dataA, dataB, func(a, b []byte) bool { return bytes.Equal(maskRevision(a), maskRevision(b)) }) {
 			rt.Fatalf("records differ:\n%q\n%q\nafter %q and %q", dataA, dataB, orderA, orderB)
@@ -573,6 +732,23 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 	})
 	t.Logf("assertions run: differing interleavings %d, obsolete deliveries %d, non-empty final indexes %d",
 		differing, obsolete, nonEmpty)
+}
+
+// maskLagging returns record without the fields a record not written since the graph-wide word
+// counts moved may hold from older counts (keywords, statistical_summary), and entity_revision.
+func maskLagging(rt *rapid.T, record []byte) []byte {
+	var fields map[string]any
+	if err := json.Unmarshal(record, &fields); err != nil {
+		rt.Fatalf("decode %s: %v", record, err)
+	}
+	delete(fields, "keywords")
+	delete(fields, "statistical_summary")
+	delete(fields, "entity_revision")
+	masked, err := json.Marshal(fields)
+	if err != nil {
+		rt.Fatal(err)
+	}
+	return masked
 }
 
 // entityRevisionField is the encoded entity_revision field; a record holds it once.

@@ -127,7 +127,7 @@ func TestStreamNotVisibleSeparatesASpentBudgetFromACancelledWait(t *testing.T) {
 func TestConsumerSetupCancelledWaitCarriesNoAbsenceEvidence(t *testing.T) {
 	for _, entry := range consumeEntryPoints() {
 		t.Run(entry.name, func(t *testing.T) {
-			// R1a: the caller's deadline, the probe ticker and the visibility budget run on the bubble's
+			// The caller's deadline, the probe ticker and the visibility budget run on the bubble's
 			// clock, so the deadline always ends the wait before the 5s budget does.
 			synctest.Test(t, func(t *testing.T) {
 				fake := &fakeJetStream{streamErr: jetstream.ErrStreamNotFound}
@@ -216,7 +216,7 @@ func (f *absentThenBlockedTransport) Stream(ctx context.Context, _ string) (jets
 func TestConsumerSetupDoesNotReclassifyALaterProbeFailureAsAbsence(t *testing.T) {
 	for _, entry := range consumeEntryPoints() {
 		t.Run(entry.name, func(t *testing.T) {
-			// R1a: the caller's deadline, the probe ticker and the visibility budget run on the bubble's
+			// The caller's deadline, the probe ticker and the visibility budget run on the bubble's
 			// clock, so the deadline always ends the wait before the 5s budget does.
 			synctest.Test(t, func(t *testing.T) {
 				fake := &absentThenBlockedTransport{
@@ -275,7 +275,7 @@ func (f *absentThenLostReply) Stream(ctx context.Context, _ string) (jetstream.S
 func TestConsumerSetupDoesNotMintTheSentinelForALostReply(t *testing.T) {
 	for _, entry := range consumeEntryPoints() {
 		t.Run(entry.name, func(t *testing.T) {
-			// R1a: the wait ends on streamVisibilityBudget (5 s), paced by its 50 ms probe ticker; both run
+			// The wait ends on streamVisibilityBudget (5 s), paced by its 50 ms probe ticker; both run
 			// on the bubble's clock, so the budget's expiry, which this test needs, takes no wall time and a
 			// slow host cannot reorder it.
 			synctest.Test(t, func(t *testing.T) {

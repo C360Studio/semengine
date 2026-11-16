@@ -1,5 +1,5 @@
 // storage_observability_http.go is the operator HTTP surface over the PUBLISHED
-// storage report (storage-capacity-observability, task 4.4).
+// storage report.
 //
 // It is a CONSUMER of the report bucket and nothing else. Every value it serves
 // arrives through storagereport.Consumer's Watch of the bucket the collector

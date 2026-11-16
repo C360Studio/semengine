@@ -98,10 +98,11 @@ func TestReadYourWrites(t *testing.T) {
 }
 
 // TestMinRevisionRefusalThroughGraphQuery: each enveloped verb asked for a revision far above the
-// index's passes on the index's refusal with class, code and detail, localSearch refuses on its
-// group record's revision and the text tier of globalSearch and searchGraph on its level's highest, while the same
-// request without the field, or at the revision reached, succeeds, so it is the field that was refused. The index and the record have reached the only write
-// and nothing else writes, so the detail is that write's revision.
+// index's passes on the index's refusal with class, code and detail, localSearch passes on the word
+// index's, as do globalSearch and searchGraph whatever the question's hints, while the same request without
+// the field, or at the revision reached, succeeds, so it is the field that was refused. The indexes
+// and the record have reached the only write and nothing else writes, so the detail is that write's
+// revision.
 func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 	stack := startCommunityStack(t)
 	written := stack.write(t, drone1,
@@ -110,7 +111,8 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		[2]string{linkTo, drone2})
 	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
-	awaitCommunityView(t, stack.client, drone1, written)
+	awaitCommunityView(t, stack.component, systemGroupKey, written)
+	awaitWordIndexed(t, stack.client, written)
 
 	for _, tc := range []struct{ name, verb, body string }{
 		{"byName", "byName", `"name":"Alpha"`},
@@ -121,12 +123,11 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"pathSearch outgoing", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"outgoing","max_depth":1`, drone1)},
 		{"pathSearch incoming", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"incoming","max_depth":1`, drone1)},
 		{"summary", "summary", `"examples_per_type":1`},
-		// The record's entity_revision is the write's: the one write to its group.
-		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"drone"`, drone1)},
-		// The alias verb refuses for both strategies, before the entity read or the walk.
+		// The word index has applied the one write.
+		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"alpha"`, drone1)},
+		// The word search comes first, so its refusal is the reply whatever the hints.
 		{"globalSearch entity", "globalSearch", `"query":"held-1"`},
 		{"globalSearch path", "globalSearch", `"query":"what is connected to held-1"`},
-		// The text tier's mark is the highest entity_revision at level 0: drone1's group's, the write's.
 		{"globalSearch text", "globalSearch", `"query":"alpha drone"`},
 		{"searchGraph entity", "searchGraph", `"query":"held-1"`},
 		{"searchGraph path", "searchGraph", `"query":"what is connected to held-1"`},
@@ -193,10 +194,10 @@ func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
 	return nil
 }
 
-// TestGraphQueryRepliesDecodeByTheTable: every row the verb table declares for graph-query, not a list
-// kept here, gets a reply naming the entity written, and that reply has the row's shape and type
-// (design D1). The reply is real, from real ingest and index, except on the four forwards whose
-// responders changes 5 and 7 bring: there a stub sends the literal JSON the row declares.
+// TestGraphQueryRepliesDecodeByTheTable: every row the verb table declares for graph-query, not a
+// list kept here, gets a reply naming the entity written, and that reply has the row's shape and
+// type. The reply is real, from real ingest and index, except on the four forwards to the
+// embedding, time-range and bounds verbs: there a stub sends the literal JSON the row declares.
 // relationships is read both ways, its two reply paths.
 func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	stack := startCommunityStack(t)
@@ -207,10 +208,11 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	written := stack.write(t, drone3)
 	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
-	awaitCommunityView(t, stack.client, drone1, written)
+	awaitCommunityView(t, stack.component, systemGroupKey, written)
+	awaitWordIndexed(t, stack.client, written)
 
 	for _, stub := range []struct{ responder, name, reply string }{
-		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25","unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"word-count","unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
 		{graph.ResponderGraphEmbedding, "similar", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.5}],"unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
 		{graph.ResponderGraphIndexSpatial, "bounds", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","lat":48.25,"lon":11.5,"alt":310.5}],"truncated":true},"indexed_revision":9,"producer":"graph-index-spatial","timestamp":"2026-11-04T10:00:00Z"}`},
 		{graph.ResponderGraphIndexTemporal, "range", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001"}],"truncated":false},"indexed_revision":9,"producer":"graph-index-temporal","timestamp":"2026-11-04T10:00:00Z"}`},
@@ -228,6 +230,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"entity":        {fmt.Sprintf(`{"id":%q}`, drone1)},
 		"batch":         {fmt.Sprintf(`{"ids":[%q,%q]}`, drone1, absentDrone)},
 		"prefix":        {`{"prefix":"c360","limit":1}`},
+		"prefixIDs":     {`{"prefix":"c360","limit":1}`},
 		"byName":        {`{"name":"Alpha"}`},
 		"predicate":     {fmt.Sprintf(`{"predicate":%q}`, vocabulary.DCTermsTitle), fmt.Sprintf(`{"predicate":%q,"value":"Alpha"}`, vocabulary.DCTermsTitle)},
 		"entityByAlias": {`{"alias":"held-1"}`},

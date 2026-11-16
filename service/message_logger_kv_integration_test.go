@@ -17,10 +17,8 @@ import (
 	"github.com/c360studio/semengine/graph/kvcatalog"
 )
 
-// The message logger's KV query route against a real NATS server (design D4, D7 U-e). The pin
-// drove these cases through an injected bucket provider (message_logger_http_kv_query_test.go:98-125,
-// :149-205) and an unexported handler (message_logger_kv_acquisition_integration_test.go:18-145);
-// here every request goes through the routes RegisterHTTPHandlers mounts, and the buckets are real.
+// The message logger's KV query route against a real NATS server. Every request goes through the
+// routes RegisterHTTPHandlers mounts, and the buckets are real.
 
 // kvRouteBudget bounds each test's NATS calls and requests.
 const kvRouteBudget = 10 * time.Second
@@ -72,8 +70,7 @@ func entryKeys(result kvRouteResult) []string {
 }
 
 // TestKVQueryReadsExistingBucketsWithoutCreating: the query reads a framework catalog bucket and a
-// product bucket that already exist, and answers the value put there (pin
-// message_logger_kv_acquisition_integration_test.go:18-96).
+// product bucket that already exist, and answers the value put there.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQueryReadsExistingBucketsWithoutCreating(t *testing.T) {
@@ -122,9 +119,8 @@ func TestKVQueryReadsExistingBucketsWithoutCreating(t *testing.T) {
 }
 
 // TestKVQueryMissingBucketIs404AndCreatesNothing: a query for a bucket that does not exist answers
-// 404, and neither the query nor a watch of that bucket creates it or any other (pin
-// message_logger_http_kv_query_test.go:98-125 on a real server; acquisition test :126-144). The
-// lookup is classified with errors.Is(err, jetstream.ErrBucketNotFound) (D4, S7).
+// 404, and neither the query nor a watch of that bucket creates it or any other. The
+// lookup is classified with errors.Is(err, jetstream.ErrBucketNotFound).
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQueryMissingBucketIs404AndCreatesNothing(t *testing.T) {
@@ -154,7 +150,7 @@ func TestKVQueryMissingBucketIs404AndCreatesNothing(t *testing.T) {
 }
 
 // TestKVQueryEmptyBucketReturnsNoEntries: a bucket that exists with no keys answers 200 with no
-// entries, not an error; natsclient.FilteredKeys lists it as nil and no error (D4, S7).
+// entries, not an error; natsclient.FilteredKeys lists it as nil and no error.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQueryEmptyBucketReturnsNoEntries(t *testing.T) {
@@ -183,8 +179,7 @@ func TestKVQueryEmptyBucketReturnsNoEntries(t *testing.T) {
 
 // TestKVQueryFailedRecordRoundTrips: a failed EMBEDDING_INDEX record put on the server comes back
 // through the route with status=failed, its operator fields intact, and a generated record beside
-// it is filtered out (pin message_logger_http_kv_query_test.go:149-185, which round-tripped a map
-// through encoding/json without the route; #613's per-entity forensic view).
+// it is filtered out: the per-entity forensic view of failed embeddings.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQueryFailedRecordRoundTrips(t *testing.T) {
@@ -219,8 +214,8 @@ func TestKVQueryFailedRecordRoundTrips(t *testing.T) {
 }
 
 // TestKVQueryLookupFailureIs500: a bucket lookup that fails for any reason other than a missing
-// bucket answers 500, not 404 — the not-found answer is a classification, not a catch-all (pin
-// message_logger_http_kv_query_test.go:187-205). The failure is real: the logger's client never
+// bucket answers 500, not 404 — the not-found answer is a classification, not a catch-all. The
+// failure is real: the logger's client never
 // connected.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
@@ -235,9 +230,9 @@ func TestKVQueryLookupFailureIs500(t *testing.T) {
 }
 
 // TestKVQuerySortsKeysBeforeLimit: the query answers keys in byte order and applies limit to that
-// order, whatever order the keys were written in (D4, M23; AGENTS.md § 2). The listing,
-// natsclient.FilteredKeys, answers keys in delivery order, so the logger's own sort is the one
-// that orders them.
+// order, whatever order the keys were written in (AGENTS.md § 2). The listing,
+// natsclient.FilteredKeys, does not promise an order, so the logger's own sort is the one that
+// orders them.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQuerySortsKeysBeforeLimit(t *testing.T) {
@@ -267,7 +262,7 @@ func TestKVQuerySortsKeysBeforeLimit(t *testing.T) {
 
 // TestKVQueryPreservesJSONValues: the query answers each stored JSON value with its number tokens as
 // stored, with and without the status filter, so an integer past 2^53, a nested number and a float
-// spelling come back unrounded (#370). The fixtures are compact ASCII, so the oracle is the stored
+// spelling come back unrounded. The fixtures are compact ASCII, so the oracle is the stored
 // bytes (the encoder compacts and escapes HTML characters, which these fixtures do not exercise);
 // JSONEq would decode both sides into float64 and hide the rounding. A value that is not JSON comes back as a JSON string, as the watch sends it.
 //
@@ -299,7 +294,7 @@ func TestKVQueryPreservesJSONValues(t *testing.T) {
 }
 
 // TestKVQueryPatternMatchesBeforeLimit: a middle-wildcard pattern matches only keys long enough to
-// hold both literal parts (#371), and a key it does not match never counts toward limit. In byte
+// hold both literal parts, and a key it does not match never counts toward limit. In byte
 // order the keys are aaXaa, aaa, aaaa; aa*aa matches aaXaa and aaaa (empty wildcard) but not aaa,
 // whose prefix and suffix would share a character.
 //

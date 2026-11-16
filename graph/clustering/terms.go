@@ -3,16 +3,18 @@ package clustering
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/entitytext"
 )
 
-// minWordBytes is the shortest word, as at the pin (summarizer.go:483).
+// minWordBytes is the shortest word.
 const minWordBytes = 3
 
-// stopWords are dropped from a value's words; the pin's list (summarizer.go:474-479).
+// stopWords are dropped from a value's words.
 var stopWords = map[string]bool{
 	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
 	"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
@@ -52,18 +54,14 @@ func isWordByte(b byte) bool {
 
 // entityWords returns what an entity contributes to its groups' keywords: its
 // MaxEntityTerms most frequent words, most frequent first, ties broken lexically. Words
-// come only from string values; the ID's positions, predicate names and the object of a
-// relationship (another entity's ID) add none, unlike the pin (summarizer.go:136-163).
-func entityWords(state *graph.EntityState) []string {
+// come only from the values text selects (entitytext.Rule.Values), the same text
+// graph-embedding reads; the ID's positions, predicate names, other values and the
+// object of a relationship (another entity's ID) add none.
+func entityWords(text entitytext.Rule, state *graph.EntityState) []string {
 	counts := map[string]int{}
-	for _, triple := range state.Triples {
-		if triple.IsRelationship() {
-			continue
-		}
-		if value, ok := triple.Object.(string); ok {
-			for _, w := range extractWords(value) {
-				counts[w]++
-			}
+	for _, value := range text.Values(state) {
+		for _, w := range extractWords(value) {
+			counts[w]++
 		}
 	}
 	// The words are substrings of the values (strings.ToLower returns lower-case input
@@ -77,16 +75,44 @@ func entityWords(state *graph.EntityState) []string {
 	return words
 }
 
+// graphWords are the graph-wide counts keywords are scored against: how many members
+// hold at least one word, and how many hold each word.
+type graphWords struct {
+	members int
+	holders map[string]int
+}
+
+// distinctiveWords returns a group's keywords: the MaxKeywords words that score best, ties
+// broken lexically. A word's score is the share of the group's memberCount members holding
+// it (wordCounts) times ln(g.members / g.holders[word]), so a word most of the graph holds
+// scores near zero however often the group uses it, and one held by every member with words
+// scores zero and is never a keyword. In a group of two or more a word needs two holders: one
+// member's word says nothing about the group.
+func distinctiveWords(memberCount int, wordCounts map[string]int, g graphWords) []string {
+	minHolders := min(2, memberCount)
+	scores := make(map[string]float64, len(wordCounts))
+	for w, held := range wordCounts {
+		if held < minHolders {
+			continue
+		}
+		if s := float64(held) / float64(memberCount) * math.Log(float64(g.members)/float64(g.holders[w])); s > 0 {
+			scores[w] = s
+		}
+	}
+	return topCounted(scores, MaxKeywords)
+}
+
 // newCommunity builds a group's record from its counts: the MaxKeywords most common
-// types and words, the summary, and the first MaxRepEntities of reps, which the caller
-// passes in ascending order. revision is the group's mark (Community.EntityRevision).
-func newCommunity(level int, id string, memberCount int, revision uint64, typeCounts, wordCounts map[string]int, reps []string) *Community {
+// types, the group's distinctive words scored against g, the summary, and the first
+// MaxRepEntities of reps, which the caller passes in ascending order. revision is the
+// group's mark (Community.EntityRevision).
+func newCommunity(level int, id string, memberCount int, revision uint64, typeCounts, wordCounts map[string]int, g graphWords, reps []string) *Community {
 	types := topCounted(typeCounts, MaxKeywords)
 	kept := make(map[string]int, len(types))
 	for _, typ := range types {
 		kept[typ] = typeCounts[typ]
 	}
-	keywords := topCounted(wordCounts, MaxKeywords)
+	keywords := distinctiveWords(memberCount, wordCounts, g)
 	return &Community{
 		ID:                 id,
 		Level:              level,
@@ -99,8 +125,8 @@ func newCommunity(level int, id string, memberCount int, revision uint64, typeCo
 	}
 }
 
-// summarize is the pin's summary template (summarizer.go:388-461): the member count, up
-// to three types with their counts, and up to five keywords.
+// summarize is the summary template: the member count, up to three types with their
+// counts, and up to five keywords.
 func summarize(memberCount int, types []string, typeCounts map[string]int, keywords []string) string {
 	var summary strings.Builder
 	fmt.Fprintf(&summary, "Community of %d entities", memberCount)
@@ -122,10 +148,10 @@ func summarize(memberCount int, types []string, typeCounts map[string]int, keywo
 	return summary.String()
 }
 
-// topCounted returns the at most n keys with the highest counts, highest first, ties
-// broken lexically. It keeps only the n best while it reads the counts, so a group with v
-// distinct words costs O(v log n) comparisons, not a sort of all v.
-func topCounted(counts map[string]int, n int) []string {
+// topCounted returns the at most n keys with the highest counts or scores, highest first,
+// ties broken lexically. It keeps only the n best while it reads the counts, so a group with
+// v distinct words costs O(v log n) comparisons, not a sort of all v.
+func topCounted[V int | float64](counts map[string]V, n int) []string {
 	before := func(a, b string) int {
 		if c := cmp.Compare(counts[b], counts[a]); c != 0 {
 			return c

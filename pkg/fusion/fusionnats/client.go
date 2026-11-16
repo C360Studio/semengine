@@ -20,9 +20,10 @@ type requester interface {
 	RequestClassified(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error)
 }
 
-// verbs are the graph-query rows of graph.QueryVerbs() the client uses.
+// verbs are the rows of graph.QueryVerbs() the client uses: graph-query's, and
+// graph-lexical's search for an NL resolve.
 type verbs struct {
-	entity, batch, prefix, byName, relationships, semantic graph.QueryVerb
+	entity, batch, prefixIDs, byName, relationships, wordSearch graph.QueryVerb
 }
 
 // lookupVerbs reads the client's rows from table, refusing one that is missing
@@ -31,26 +32,26 @@ type verbs struct {
 func lookupVerbs(table []graph.QueryVerb) (verbs, error) {
 	var v verbs
 	for _, want := range []struct {
-		name string
-		row  *graph.QueryVerb
+		responder, name string
+		row             *graph.QueryVerb
 	}{
-		{"entity", &v.entity},
-		{"batch", &v.batch},
-		{"prefix", &v.prefix},
-		{"byName", &v.byName},
-		{"relationships", &v.relationships},
-		{"semantic", &v.semantic},
+		{graph.ResponderGraphQuery, "entity", &v.entity},
+		{graph.ResponderGraphQuery, "batch", &v.batch},
+		{graph.ResponderGraphQuery, "prefixIDs", &v.prefixIDs},
+		{graph.ResponderGraphQuery, "byName", &v.byName},
+		{graph.ResponderGraphQuery, "relationships", &v.relationships},
+		{graph.ResponderGraphLexical, "search", &v.wordSearch},
 	} {
 		found := false
 		for _, verb := range table {
-			if verb.Responder == graph.ResponderGraphQuery && verb.Name == want.name {
+			if verb.Responder == want.responder && verb.Name == want.name {
 				*want.row = verb
 				found = true
 				break
 			}
 		}
 		if !found {
-			return verbs{}, fmt.Errorf("fusionnats: the verb table has no %s verb %q", graph.ResponderGraphQuery, want.name)
+			return verbs{}, fmt.Errorf("fusionnats: the verb table has no %s verb %q", want.responder, want.name)
 		}
 	}
 	return v, nil
@@ -97,7 +98,7 @@ func (c *Client) Resolve(ctx context.Context, q fusion.ResolveQuery) (fusion.Res
 	case fusion.ResolveModePrefix:
 		return c.resolvePrefix(ctx, q.Query, q.Limit)
 	case fusion.ResolveModeNL:
-		return c.resolveSemantic(ctx, q.Query, q.Scope, q.Limit)
+		return c.resolveWords(ctx, q.Query, q.Scope, q.Limit)
 	default:
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: unsupported resolve mode %q", q.Mode)
 	}
@@ -117,61 +118,69 @@ func (c *Client) resolveByName(ctx context.Context, query string, limit int) (fu
 	return fusion.Resolution{Seeds: seeds}, nil
 }
 
-// resolvePrefix resolves an ID prefix through prefix, taking only the first
-// page: seeds are bounded by limit, not exhaustive. An enumeration carries no
-// score, so the seeds carry none.
+// resolvePrefix resolves an ID prefix through prefixIDs, taking only the first
+// page: seeds are bounded by limit, not exhaustive. The listing reads no stored
+// value, so a damaged entity under the prefix becomes a seed and is reported
+// when it is hydrated, rather than failing the resolve. An enumeration carries
+// no score, so the seeds carry none.
 func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fusion.Resolution, error) {
 	if err := validatePrefix(query); err != nil {
 		return fusion.Resolution{}, err
 	}
-	raw, err := c.request(ctx, c.verbs.prefix, graph.PrefixQueryRequest{Prefix: query, Limit: limit})
+	raw, err := c.request(ctx, c.verbs.prefixIDs, graph.PrefixQueryRequest{Prefix: query, Limit: limit})
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
-	resp, err := decodeReply[graph.PrefixQueryResponse](c.verbs.prefix, raw)
+	resp, err := decodeReply[graph.PrefixIDsResponse](c.verbs.prefixIDs, raw)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
-	if err := graph.ValidateDecodedEntityStates(resp.Entities); err != nil {
+	if err := graph.ValidateDecodedEntityIDs(resp.IDs); err != nil {
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate prefix: %w", err)
 	}
-	seeds := make([]fusion.Seed, 0, len(resp.Entities))
-	for i := range resp.Entities {
-		seeds = append(seeds, fusion.Seed{ID: resp.Entities[i].ID})
+	seeds := make([]fusion.Seed, 0, len(resp.IDs))
+	for _, id := range resp.IDs {
+		seeds = append(seeds, fusion.Seed{ID: id})
 	}
 	return fusion.Resolution{Seeds: seeds}, nil
 }
 
-// resolveSemantic resolves a natural-language query through semantic. A
-// non-empty scope keeps only entities under its ID prefixes (ADR-071); an empty
-// one is left out of the request. The reply's counts of records the search
-// could not read are passed on in the Resolution.
-func (c *Client) resolveSemantic(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
+// resolveWords resolves a natural-language query through graph-lexical's word
+// search. The query passes unchanged, so the word index's query rules apply and
+// its refusals are returned as it sent them. A non-empty scope keeps only
+// entities under its ID prefixes (ADR-071); an empty one is left out of the
+// request. Seeds keep the reply's order and carry each hit's score as the
+// mode's own score; the reply's bodies_not_indexed and excluded ride along in
+// the Resolution. A request nothing answers, graph-lexical not composed
+// included, is a transient internal error naming the subject.
+func (c *Client) resolveWords(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
 	if err := validateScope(scope); err != nil {
 		return fusion.Resolution{}, err
 	}
-	raw, err := c.request(ctx, c.verbs.semantic, graph.SemanticRequest{Query: query, Limit: limit, Scope: scope})
+	verb := c.verbs.wordSearch
+	raw, err := c.request(ctx, verb, graph.LexicalSearchRequest{Query: query, Limit: limit, Scope: scope})
 	if err != nil {
-		return fusion.Resolution{}, err
+		var refusal *errs.ClassifiedError
+		if errors.As(err, &refusal) {
+			return fusion.Resolution{}, err
+		}
+		return fusion.Resolution{}, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
+			fmt.Errorf("fusionnats: request to %s: %w", verb.Subject, err))
 	}
-	resp, err := decodeReply[graph.SemanticData](c.verbs.semantic, raw)
+	resp, err := decodeReply[graph.LexicalSearchData](verb, raw)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
 	seeds := make([]fusion.Seed, 0, len(resp.Results))
 	ids := make([]string, 0, len(resp.Results))
-	for _, r := range resp.Results {
-		seeds = append(seeds, fusion.Seed{ID: r.EntityID, Similarity: r.Similarity, HasSimilarity: true})
-		ids = append(ids, r.EntityID)
+	for _, hit := range resp.Results {
+		seeds = append(seeds, fusion.Seed{ID: hit.EntityID, Similarity: hit.Score, HasSimilarity: true})
+		ids = append(ids, hit.EntityID)
 	}
 	if err := graph.ValidateDecodedEntityIDs(ids); err != nil {
-		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate semantic: %w", err)
+		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate word search: %w", err)
 	}
-	return fusion.Resolution{
-		Seeds:             seeds,
-		UnreadableRecords: resp.UnreadableRecords,
-		FailedRecords:     resp.FailedRecords,
-	}, nil
+	return fusion.Resolution{Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded}, nil
 }
 
 func validatePrefix(prefix string) error {
@@ -251,11 +260,11 @@ func (c *Client) decodeEntity(id string, raw []byte) (*fusion.Entity, error) {
 //
 // The batch's responder refuses the whole batch with code
 // graph_state_reset_required when one stored entity is poisoned, naming it only
-// in text (pin ADR-079 D3). On that refusal the IDs are read one at a time
-// (entitiesAlone), so a poisoned seed is listed unhydrated error rather than
-// failing every answer it ranks in (ADR-109 D1). A refusal from the client's
-// own check of a reply carries the same code; it is returned and never starts
-// that read. A nil context is refused, even for zero IDs.
+// in text. On that refusal the IDs are read one at a time (entitiesAlone), so a
+// poisoned seed is listed unhydrated error rather than failing every answer it
+// ranks in (ADR-109). A refusal from the client's own check of a reply carries
+// the same code; it is returned and never starts that read. A nil context is
+// refused, even for zero IDs.
 func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, error) {
 	if ctx == nil {
 		return fusion.Hydration{}, errors.New("fusionnats: nil context")
@@ -308,7 +317,7 @@ func (c *Client) entitiesAlone(ctx context.Context, ids []string) (fusion.Hydrat
 		raw, err := c.request(ctx, c.verbs.entity, graph.EntityRequest{ID: id})
 		if err != nil {
 			// A refusal that arrives after the caller gave up is not listed: the
-			// ended context is the answer (#580).
+			// ended context is the answer.
 			if cerr := ctx.Err(); cerr != nil {
 				return fusion.Hydration{}, cerr
 			}
@@ -347,7 +356,7 @@ func unhydratedReason(r graph.MissingReason) fusion.UnhydratedReason {
 }
 
 // reconcileHydration turns a batch reply into a total account of the requested
-// IDs, in request order (ADR-084 D6). It works by ID set, never by count: a
+// IDs, in request order (ADR-084). It works by ID set, never by count: a
 // duplicate request is one entity, reported once; an ID the reply both returns
 // and lists missing is hydrated, since the entity is held; an ID in neither list
 // is unknown, since nobody observed it missing; an entity nobody asked for is

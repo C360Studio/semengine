@@ -14,11 +14,11 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// Each of graph-ingest's three configuration fields has a test here that fails when the
-// field is ignored, that is, when the component runs on the field's default instead of
-// the value the configuration gave it (design D6, Config (b)). Each test builds the
-// component through CreateGraphIngest from JSON, so the value goes through the strict
-// decoder, ApplyDefaults and Validate as an operator's would.
+// Each of graph-ingest's three configuration fields has a test here that fails when
+// the field is ignored, that is, when the component runs on the field's default
+// instead of the value the configuration gave it. Each test builds the component
+// through CreateGraphIngest from JSON, so the value goes through the strict decoder,
+// ApplyDefaults and Validate as an operator's would.
 
 // newConfiguredGraphIngest builds graph-ingest through CreateGraphIngest from config and
 // gives it the in-memory entity bucket, as createTestComponentWithMockKV does.
@@ -107,7 +107,7 @@ func TestConfigEnableHierarchyAddsHierarchyStatements(t *testing.T) {
 
 // TestHierarchyBirthWritesNoSiblingEdge: with enable_hierarchy, a second birth of one
 // type carries its type-membership statement and no hierarchy.type.sibling statement,
-// and the entity born first gains none (ruling G, #91 comment 6062681355).
+// and the entity born first gains none.
 func TestHierarchyBirthWritesNoSiblingEdge(t *testing.T) {
 	config := DefaultConfig()
 	config.EnableHierarchy = true
@@ -152,10 +152,9 @@ func TestConfigIngestLanesSetsTheLaneCount(t *testing.T) {
 	}
 }
 
-// TestConfigIngestLanesBelowOne: as at the pin, an explicit ingest_lanes 0 is read as
-// unset and builds the default eight lanes, and a negative value is clamped to one lane
-// (owner ruling, #91 comment 6059144952). The field has no omitempty, so the JSON the
-// factory decodes carries the 0.
+// TestConfigIngestLanesBelowOne: an explicit ingest_lanes 0 is read as unset and builds
+// the default eight lanes, and a negative value is clamped to one lane. The field has
+// no omitempty, so the JSON the factory decodes carries the 0.
 func TestConfigIngestLanesBelowOne(t *testing.T) {
 	cases := []struct {
 		name  string

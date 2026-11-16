@@ -140,8 +140,7 @@ func TestIntegrationConsumeDeliveryWithHeartbeatStoppedRenewalUsesBackOff(t *tes
 	defer closeClient(t, first)
 
 	// semanticDelay is firstBackOff plus failureBound and AckWait twice that, so the upper bound
-	// below tells the BackOff redelivery from either policy's on a slow host (design D8 R1b; the
-	// pin's were 4 s and 8 s).
+	// below tells the BackOff redelivery from either policy's on a slow host.
 	const (
 		firstBackOff  = 800 * time.Millisecond
 		semanticDelay = firstBackOff + failureBound

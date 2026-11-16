@@ -12,7 +12,7 @@ import (
 
 // openWatcher is a jetstream.KeyWatcher whose update channel never closes: the state nats.go
 // v1.55.0 leaves a watch in when its context ends between Subscribe and the install of the
-// handler that closes the channel (#454).
+// handler that closes the channel.
 type openWatcher struct{ updates chan jetstream.KeyValueEntry }
 
 func (w openWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
@@ -44,8 +44,8 @@ type stopCounter struct{ stops int }
 func (w *stopCounter) Updates() <-chan jetstream.KeyValueEntry { return nil }
 func (w *stopCounter) Stop() error                             { w.stops++; return nil }
 
-// TestStopRefusesNilContext: a nil context is refused with an error before the watcher is touched
-// (#463); without the check Stop calls the watcher's Stop and then panics in context.WithoutCancel.
+// TestStopRefusesNilContext: a nil context is refused with an error before the watcher is touched;
+// without the check Stop would call the watcher's Stop and then panic in context.WithoutCancel.
 func TestStopRefusesNilContext(t *testing.T) {
 	w := &stopCounter{}
 	err := Stop(nil, w)

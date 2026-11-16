@@ -1,14 +1,14 @@
 package types
 
-// frameworkEntityDomains is the framework-reserved domain set (ADR-102 d4,
-// ruled O-9): every framework identity family lives under one of these and
+// frameworkEntityDomains is the framework-reserved domain set (ADR-102
+// decision 4): every framework identity family lives under one of these and
 // they pass authorization for every producer. Products delegate their own
 // domains; they never re-delegate a reserved one.
 var frameworkEntityDomains = [...]string{"agent", "ops", "graph"}
 
 // reservedInstanceTokens are the hierarchy-container padding tokens
-// (graph/inference) reserved in the instance position until gh606 retires
-// containers. A producer instance equal to one of them is a corpus finding.
+// (graph/inference) reserved in the instance position while hierarchy
+// containers exist. A producer instance equal to one of them is a corpus finding.
 var reservedInstanceTokens = [...]string{"group", "container", "level"}
 
 // IsFrameworkEntityDomain reports whether domain is framework-reserved.
@@ -37,14 +37,12 @@ func IsReservedInstanceToken(token string) bool {
 // inferred from Triple.Source or a payload type. Wildcards are not supported.
 //
 // It is a DECLARATION, not an authorization policy. Its consumer is the
-// entity-ID corpus audit, which AST-scans these literals in production Go for
-// the registered set its domain_unregistered rule consults
-// (internal/entityidaudit/segment_rules.go collectRegisteredDomains) — no
-// runtime code reads it. The EntityDomainAuthority/Authorize policy that once
-// accompanied it was deleted by the owner ruling of 2026-08-28: two producers
-// sharing one domain is PERMITTED, so there was nothing left to authorize, and
-// detecting a mis-chosen token is a vocabulary question rather than a
-// composition-time one.
+// entity-ID corpus audit (not in SemEngine yet), which AST-scans these
+// literals in production Go for the registered set its domain_unregistered
+// rule consults — no runtime code reads it. There is no authorization policy
+// beside it: two producers sharing one domain is PERMITTED, so there is
+// nothing to authorize, and detecting a mis-chosen token is a vocabulary
+// question rather than a composition-time one.
 type EntityDomainDelegation struct {
 	Producer string
 	Domain   string

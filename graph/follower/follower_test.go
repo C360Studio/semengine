@@ -69,7 +69,7 @@ func TestOpenRefusesMissingInputs(t *testing.T) {
 
 // openWatcher is a jetstream.KeyWatcher whose update channel never closes: the state nats.go
 // v1.55.0 leaves a watch in when its context ends between Subscribe and the install of the
-// handler that closes the channel (#454).
+// handler that closes the channel.
 type openWatcher struct{ updates chan jetstream.KeyValueEntry }
 
 func (w openWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
@@ -145,8 +145,8 @@ func (r watchOnlyReader) WatchAll(context.Context, ...jetstream.WatchOpt) (jetst
 // TestFollowerDeclaresLostFeedOnOutOfOrderDelivery: a watch that delivers revision 5 and then
 // revision 3 has broken the ascending order the floor rests on, so the follower declares the feed
 // lost (entity-state-follower spec, "The follower checks delivery order"), and still delivers the
-// entry with revision 3's value (design D2). The watch delivers the snapshot marker first, so the
-// two writes are live and no stored entity is validated.
+// entry with revision 3's value. The watch delivers the snapshot marker first, so the two writes
+// are live and no stored entity is validated.
 func TestFollowerDeclaresLostFeedOnOutOfOrderDelivery(t *testing.T) {
 	updates := make(chan jetstream.KeyValueEntry, 3)
 	updates <- nil
@@ -248,14 +248,14 @@ func heldLowRevision(t *testing.T, key string) {
 
 // TestHeldLowRevisionWithProgress: one revision not completed for more than 30 s while later
 // revisions keep completing reads not ready and not degraded (entity-state-follower spec, "A held
-// low revision while later revisions complete"; owner ruling (a1), PR #550 comment 6721867279).
+// low revision while later revisions complete").
 func TestHeldLowRevisionWithProgress(t *testing.T) {
 	heldLowRevision(t, "graph-embedding")
 }
 
 // TestGraphIndexHeldRevisionNotDegraded: graph-index reads the same rule, since the rule is the
-// follower's and graph-index has no option of its own (design D1: "graph-index changes the same
-// way"). The history is the one above under graph-index's status key.
+// follower's and graph-index has no option of its own. The history is the one above under
+// graph-index's status key.
 func TestGraphIndexHeldRevisionNotDegraded(t *testing.T) {
 	heldLowRevision(t, readiness.KeyGraphIndex)
 }
@@ -308,7 +308,7 @@ func TestNoCompletionsReadsDegraded(t *testing.T) {
 
 // TestFirstWriteAfterIdleEmptyGraph: an authoritatively empty graph, read by the heartbeat for
 // more than 30 s, counts as caught up, so the first write after it reads building, not degraded
-// (spec, "Falling behind after a long time caught up"; Codex review C1 on PR #550).
+// (spec, "Falling behind after a long time caught up").
 func TestFirstWriteAfterIdleEmptyGraph(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := progressFollower("graph-embedding")
@@ -338,11 +338,11 @@ func read(f *Follower, target uint64) graph.IndexStatusResponse {
 }
 
 // TestEnvelopeCarriesFailedReasons: the envelope carries the plug-in's per-reason counts from the
-// same Failed call as failed_count (entity-state-follower spec, "Failures with reasons"; design
-// D3). The plug-in's failures change on every call while revisions complete on other goroutines,
-// so an envelope built from two calls would pair a count with reasons from another moment; each
-// envelope is read once Failed has returned to it, on this goroutine. Run under -race: the
-// envelope's map is marshalled here while the plug-in keeps changing its own state.
+// same Failed call as failed_count (entity-state-follower spec, "Failures with reasons"). The
+// plug-in's failures change on every call while revisions complete on other goroutines, so an
+// envelope built from two calls would pair a count with reasons from another moment; each envelope
+// is read once Failed has returned to it, on this goroutine. Run under -race: the envelope's map is
+// marshalled here while the plug-in keeps changing its own state.
 func TestEnvelopeCarriesFailedReasons(t *testing.T) {
 	var mu sync.Mutex
 	calls := 0
@@ -398,9 +398,9 @@ func TestEnvelopeCarriesFailedReasons(t *testing.T) {
 }
 
 // TestGraphIndexEnvelopeUnchanged: a plug-in that returns nil reasons, as graph-index does, gets
-// the envelope it had before reasons existed: failed_count only (spec, "A plug-in with no
-// reasons"). Reasons beside a zero count are not published, and neither key is written for no
-// failures, whether the plug-in returns nil or an empty map. first_failure_at is never written.
+// failed_count only (spec, "A plug-in with no reasons"). Reasons beside a zero count are not
+// published, and neither key is written for no failures, whether the plug-in returns nil or an
+// empty map. first_failure_at is never written.
 func TestGraphIndexEnvelopeUnchanged(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -491,7 +491,7 @@ func TestWithholdNarrowsQueryReady(t *testing.T) {
 }
 
 // TestGraphIndexWithholdUnchanged: with no Withhold, as graph-index configures its follower,
-// QueryReady withholds on Failed's count as before (entity-state-follower spec, "No Withhold").
+// QueryReady withholds on Failed's count (entity-state-follower spec, "No Withhold").
 func TestGraphIndexWithholdUnchanged(t *testing.T) {
 	var count atomic.Int64
 	f := builtFollower(readiness.KeyGraphIndex, func() (int64, map[string]uint64) { return count.Load(), nil }, nil)

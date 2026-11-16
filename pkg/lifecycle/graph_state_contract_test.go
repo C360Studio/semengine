@@ -212,7 +212,7 @@ func assertResetReason(t *testing.T, err error, want graph.StateResetReason) {
 
 // TestBucketExactReaderRefusesWhatGraphIngestRefuses: the unit exact-read
 // double refuses each stored value graph-ingest's stored-value rule refuses,
-// as the real exact read does (#199).
+// as the real exact read does.
 func TestBucketExactReaderRefusesWhatGraphIngestRefuses(t *testing.T) {
 	t.Parallel()
 	const id = "acme.ops.gcs.lifecycle.mission.refused"

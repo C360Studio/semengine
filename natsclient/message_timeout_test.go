@@ -35,10 +35,10 @@ func TestMessageHandlerContext_PositiveRetainsWorkDeadline(t *testing.T) {
 	}
 }
 
-// TestSafeHandleMessageRecoversPanicNaksLogsAndCounts is owner ruling 3 (#9 comment 5985697767): a
-// panic in a consumer's message handler is recovered, the message is Nak'd, and the panic is
-// logged at error level and counted on the JetStream error metric as operation handler_panic. A
-// Nak that fails is logged too, never discarded.
+// TestSafeHandleMessageRecoversPanicNaksLogsAndCounts: a panic in a consumer's message handler is
+// recovered, the message is Nak'd, and the panic is logged at error level and counted on the
+// JetStream error metric as operation handler_panic. A Nak that fails is logged too, never
+// discarded.
 func TestSafeHandleMessageRecoversPanicNaksLogsAndCounts(t *testing.T) {
 	for _, nakErr := range []error{nil, errors.New("nak refused")} {
 		name := "nak-ok"

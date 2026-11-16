@@ -3,7 +3,7 @@
 For the authors of SemSource's code-context component and its fusion lenses, who move from SemStreams' `pkg/fusion`
 to SemEngine's. It says what you change at your cutover and what you can leave alone. The port breaks old shapes where
 that gives a better result (owner, 2026-11-02). Nothing here was run against your code: it comes from reading the
-SemEngine package and the SemStreams pin `8b99efe9`. Your call sites at SemSource `8737c7ea` are
+SemEngine package and SemStreams. Your call sites at SemSource `8737c7ea` are
 `processor/code-context/component.go` (`NewEngine` with `WithSignals` and `WithMetrics`, `NewBodyResolver`,
 `MapStoreResolver`, `fusionnats.New`), `processor/code-context/exact_seed.go` (a `RetrievalClient` wrapper),
 `source/fusion/fusiontest/memgraph.go` (a `RetrievalClient`), and the test doubles in
@@ -35,16 +35,16 @@ Each of these is a compile error. Fix them first.
 - **`Fuse` and `BodyResolver.ResolveBody` refuse a nil context** with an error. The pin did not check.
 - **`RetrievalClient` has no `Status`, and `Resolve` returns a `Resolution`.** `IndexStatus`, `IndexState` and its
   constants, and `ErrReadinessUnknown` are gone. `Resolve(ctx, ResolveQuery)` returns
-  `Resolution{Seeds, UnreadableRecords, FailedRecords}` where it returned `[]Seed`. *Do:* in `fusiontest.MemGraph`
-  delete `Status`, and wrap the seeds: `return fusion.Resolution{Seeds: seeds}, nil`. A client over the graph's
-  semantic search copies the reply's `unreadable_records` and `failed_records` into the two counts; any other
-  resolve leaves them 0. A wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a
-  rebuilt one, or the two counts are lost.
+  `Resolution{Seeds, BodiesNotIndexed, Excluded}` where it returned `[]Seed`. *Do:* in `fusiontest.MemGraph`
+  delete `Status`, and wrap the seeds: `return fusion.Resolution{Seeds: seeds}, nil`. A client over the word index
+  copies the reply's `bodies_not_indexed` and `excluded` into the two fields; any other resolve leaves them empty. A
+  wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a rebuilt one, or the two
+  are lost.
 - **`fusionnats.New` returns an error, and the client has no `Status` and no `Close`.** It was
   `fusionnats.New(nats, timeout) *Client`, which accepted a nil client and bound a readiness watch on its first
   `Status` call. It is now `New(requester, timeout) (*Client, error)`: a nil requester and a negative timeout are
   refused. A zero timeout is passed to the requester, which for `*natsclient.Client` means its
-  `DefaultRequestTimeout` (5 s, the pin's own default). The client starts nothing and watches no key, so there is
+  `DefaultRequestTimeout` (5 s, SemStreams' own default). The client starts nothing and watches no key, so there is
   nothing to close. *Do:*
 
   ```go
@@ -67,6 +67,17 @@ Each of these is a compile error. Fix them first.
 Read these. Nothing fails to compile, and a consumer that reads the JSON can be wrong without an error.
 
 - **The wire is `contract_version` `"2"`.** Check it before you rely on anything below.
+- **A word question asks graph-lexical, not an embedder.** SemStreams sent an `nl` resolve to the graph's semantic
+  (embedding) search; `fusionnats` now sends it to graph-lexical's word search, `graph.lexical.query.search`, with the
+  question unchanged. The word index's query rules apply: a question of more than 32 distinct words or of stopwords
+  only, or one holding `name:`, `body:` or a final `*`, is refused class invalid, code `invalid_request`, and `Fuse`
+  returns that refusal; `-word` excludes a word and double quotes make a phrase. A stack with no graph-lexical fails
+  every `nl` question with a transient `internal` error naming the subject. Seeds carry the word index's score, which
+  has no fixed scale.
+  *Do:* compose graph-lexical, and gate word questions on its `graph-lexical` readiness key.
+- **An `nl` answer's `provenance` is `lexical`.** It was `embedding`. `symbol` and `prefix` stay `deterministic`, and
+  a mode the engine does not know stays `embedding`. *Do:* update UI fixtures and any code or docs that expect
+  `embedding` on a word question.
 - **`index` is gone from the response.** The pin sent the graph index's readiness record there. Read `deferred`
   (and `defer_reason`) to learn whether you got an answer. The engine asks for no status; a read that replies
   `index_not_ready` is what defers. A reader of `index.ready` now sees a missing key.
@@ -75,7 +86,7 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **Four `defer_reason` values are gone: `hard_stop`, `status_unknown`, `bootstrap_incomplete`, `unrecognized_state`.**
   They came from the readiness gate. `defer_reason` is now empty, `index_not_ready` or `all_seeds_unhydrated`. Code
   that switches on the old values never matches; treat any non-empty value as "no answer yet, try again".
-- **A graph reset is an error, not a deferral.** At the pin a reset deferred as `hard_stop`. Now a fatal error such as
+- **A graph reset is an error, not a deferral.** In SemStreams a reset deferred as `hard_stop`. Now a fatal error such as
   `graph_state_reset_required` from `Resolve` or `Entities` is returned by `Fuse` as the error and no response. The
   same fatal error from a read after the seeds (relations, a relation target, paths, impact, graph) does not fail the
   call: that read is skipped and the answer is labelled `relations_truncated`, `paths_truncated`, `impact.truncated`
@@ -86,22 +97,23 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   it is poisoned. `fusionnats.Client.Entities` then reads each requested ID alone: the poisoned seed is listed in
   `unhydrated` with reason `error`, the other seeds answer, and if every seed is poisoned the response is `deferred`
   with `all_seeds_unhydrated`. A seed not found when read alone is listed `not_found`; any other error from those
-  reads, including an ended context, still fails the call. A `prefix`
-  resolve whose page holds a poisoned entity still fails the call (#578). *Do:* read `unhydrated` on an
-  answered response, not only on a deferred one.
+  reads, including an ended context, still fails the call. A `prefix` resolve lists IDs with `prefixIDs` and then
+  reads them, so a poisoned entity under the prefix is listed `error` too. Prefix mode sends up to 40 seeds to one
+  `batch` read with no size fit, so very large entities can be refused `response_too_large`. *Do:* read
+  `unhydrated` on an answered response, not only on a deferred one.
 - **A relations read that replies `index_not_ready` still defers the whole response**, nodes already built included, as
-  at the pin. Relation targets, paths, impact and graph reads do not: they are skipped and labelled.
+  in SemStreams. Relation targets, paths, impact and graph reads do not: they are skipped and labelled.
 - **A node's refs are listed by predicate, then target.** Every edge list is sorted and de-duplicated before the cap
   of 12 per role, so the same graph gives the same refs whatever order the reply used. The pin kept reply order, so
   the 12 kept (and the order within a role) can change when a role has more than 12.
 - **Graph facts and evidence list in key order.** Facts are sorted by predicate, datatype, then value before the 64-fact
   cap; each fact's or edge's evidence is sorted by source, timestamp, confidence, then context, with repeats dropped,
   before the cap of 8. Pin output followed the order the triples were stored in.
-- **New labels, all omitted when zero or false.** `unreadable_records` and `failed_records` on the response (only
-  after a word search, `nl` resolve; omitted at 0 and never set for symbol or prefix resolves; they also ride on a
-  miss and on a deferral that follows the search's answer); `relations_truncated` on a node; `paths_truncated` on the
-  response. Where the pin sent a short answer, a truncated flag may now be set; an answer whose search could not read
-  records is no longer the same as an answer that read them all. A path now ends, marked `truncated`, at the last node
+- **New labels, all omitted when zero, empty or false.** `bodies_not_indexed` and `excluded` on the response (only
+  after a word search, `nl` resolve; never set for symbol or prefix resolves; they also ride on a miss and on a
+  deferral that follows the search's answer); `relations_truncated` on a node; `paths_truncated` on the response.
+  Where SemStreams sent a short answer, a truncated flag may now be set; an answer that left out entities holding an
+  excluded word, or bodies the index did not hold, says so. A path now ends, marked `truncated`, at the last node
   it could read and never names an unread node.
 - **`impact.truncated` and `graph.truncated` are set in more cases:** a skipped read for an affected node's file
   (impact), and an incoming counterpart whose read failed (graph). A counterpart that reads as absent keeps its edge
@@ -109,7 +121,7 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **Two counters, on the injected registry only.**
   `semengine_fusion_skipped_reads_total{facet}` (`relations`, `paths`, `impact`, `graph`) is new, and each `Fuse` call
   logs one Warn line per facet that skipped a read (count and first error). The body counter is now
-  `semengine_fusion_body_hydration_failures_total{reason}`; the pin's was
+  `semengine_fusion_body_hydration_failures_total{reason}`; SemStreams' was
   `semstreams_fusion_body_hydration_failures_total`, and it fell back to Prometheus' default registerer when no
   registry was given. Now an engine built without `WithMetrics` has no counters at all, and two engines built on one
   registry share one series. A body failure also logs a Warn line.
@@ -123,10 +135,10 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   fields named above.
 - `WithSignals` and the predicate-weight half of `fusionvocab` (read from `vocabulary`'s registry).
 
+A deployment with no graph-embedding still answers word questions (`nl` lens) when it composes graph-lexical: fusion
+reads no embedding. Symbol and prefix lenses need neither.
+
 ## Still open
 
-- A word question (`nl` lens) on a stack with no graph-embedding fails with a transient `internal` refusal naming
-  `graph.embedding.query.search`, so a caller that retries transient errors retries it without success. Issue #579
-  asks graph-query to refuse it outright when the composition offers no embedder. Symbol and prefix lenses answer on
-  such a stack.
-- A `prefix` resolve whose page holds a poisoned entity fails the call (#578).
+- A `prefix` resolve sends up to 40 seeds to one `batch` read with no size fit, so a prefix over very large entities
+  can be refused `response_too_large`.

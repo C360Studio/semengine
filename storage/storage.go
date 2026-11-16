@@ -10,7 +10,7 @@ import (
 // ErrObjectNotFound is the backend-agnostic sentinel a Store.Get returns (wrapped
 // with %w) when the key resolved to NO stored object — as opposed to a transient
 // backend fault. Callers match it with errors.Is to distinguish "the object is
-// absent" (e.g. content-addressed evidence that was reclaimed, #600) from "the
+// absent" (e.g. content-addressed evidence that was reclaimed) from "the
 // read faulted", which is a genuine error worth retrying/alerting. A not-found is
 // deliberately NOT classified as transient: retrying will not conjure the object.
 var ErrObjectNotFound = errors.New("object not found")
@@ -51,9 +51,10 @@ var ErrObjectNotFound = errors.New("object not found")
 type Store interface {
 	// Put stores binary data at the specified key.
 	// If the key already exists, behavior is implementation-specific:
-	//   - NATS ObjectStore (objectstore.Store) replaces the object and keeps no
-	//     earlier version. Observed with nats.go v1.54.0 and nats-server v2.15.1
-	//     (probe P4, PR #432 comment 6445520357); the library does not promise it.
+	//   - NATS ObjectStore (objectstore.Store) replaces the object at the key: a
+	//     later Get returns the last bytes and List names the key once
+	//     (TestPutReplacesObjectAtKey, at the pinned nats.go and NATS image); the
+	//     library does not promise it.
 	//   - Mutable stores (S3, SQL) overwrite the existing value
 	//
 	// The data parameter accepts any binary format:

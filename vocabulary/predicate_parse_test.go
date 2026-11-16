@@ -78,10 +78,10 @@ func grammarAccepts(predicate string) (PredicateParts, bool) {
 	return PredicateParts{Domain: segments[0], Category: segments[1], Property: segments[2]}, true
 }
 
-// parsePredicateBySplit is ParsePredicate as it was before this change, without its memo. It is
-// the oracle for which reason and segment a refusal reports: the order of reasons for an input
-// with several faults is the one this code defined. It shares validatePredicateSegment, which
-// the change leaves as it is; grammarAccepts checks segments independently.
+// parsePredicateBySplit is ParsePredicate without its memo: a plain split-and-validate parse. It
+// is the oracle for which reason and segment a refusal reports: the order of reasons for an input
+// with several faults is the one this code defines. It shares validatePredicateSegment with
+// ParsePredicate; grammarAccepts checks segments independently.
 func parsePredicateBySplit(predicate string) (PredicateParts, error) {
 	if predicate == "" {
 		return PredicateParts{}, newPredicateValidationError(predicate, PredicateReasonEmpty, -1)
@@ -130,7 +130,7 @@ func TestPredicateGrammarSeedsCoverEveryReason(t *testing.T) {
 
 // FuzzParsePredicateAgreesWithGrammar checks two rules on every input (vocabulary-packs spec,
 // "Agreement with the grammar"): ParsePredicate accepts exactly the grammar, with the same
-// parts; and a refusal is a *PredicateValidationError equal to the pre-change parse's.
+// parts; and a refusal is a *PredicateValidationError equal to parsePredicateBySplit's.
 func FuzzParsePredicateAgreesWithGrammar(f *testing.F) {
 	for _, seed := range predicateGrammarSeeds {
 		f.Add(seed.predicate)
@@ -165,7 +165,7 @@ func FuzzParsePredicateAgreesWithGrammar(f *testing.F) {
 }
 
 // BenchmarkParsePredicate parses one valid predicate repeatedly. Its numbers are recorded as
-// information only (design D7); they make no speed claim.
+// information only; they make no speed claim.
 func BenchmarkParsePredicate(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {

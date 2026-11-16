@@ -672,10 +672,10 @@ func describePorts(refs []ComponentPortRef) string {
 // AnalyzeConnectivity performs graph connectivity analysis. It reports what the
 // graph IS — connected components, disconnected nodes, orphaned ports — and
 // derives no severity of its own. Severity belongs to composition.Analyze,
-// which owns the one findings vocabulary (ADR-100 D3); a status computed here
-// would be a second judgment over the same walk, and the one that used to be
-// here treated every required stream port with no publisher as critical without
-// checking whether the operator declared it externally fed.
+// which owns the one findings vocabulary (ADR-100 decision 3); a status
+// computed here would be a second judgment over the same walk, and one that
+// cannot see whether the operator declared a required stream port with no
+// publisher externally fed.
 func (g *FlowGraph) AnalyzeConnectivity() *FlowAnalysisResult {
 	result := &FlowAnalysisResult{
 		DisconnectedNodes:   []DisconnectedNode{}, // Initialize empty slice

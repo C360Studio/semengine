@@ -17,11 +17,10 @@ import (
 // (graph.ErrorCodeIndexNotReady), mirroring processor/graph-index/query.go and
 // the graph-query responders that preserve classified index errors.
 //
-// ADR-084 narrowed this: the transient no longer fires on ordinary catch-up lag, so the
-// window in which Fuse's internal reads hit it is now a health window rather than a
-// load window. The DEGRADE behavior under test is unchanged and matters more, not less
-// — the transient is rarer now, which makes handling it inconsistently harder to catch
-// in the wild.
+// Under ADR-084 the transient does not fire on ordinary catch-up lag, so the window in
+// which Fuse's internal reads hit it is a health window rather than a load window. The
+// DEGRADE behavior under test matters all the more: the transient is rare, which makes
+// handling it inconsistently hard to catch in the wild.
 func indexNotReady() error {
 	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
 		errors.New("index not ready: initial build has not completed"))
@@ -34,10 +33,9 @@ func resetRequired() error {
 		errors.New("graph_state_reset_required: unreadable_entity_state"))
 }
 
-// TestDeferredOnIndexNotReady: Fuse asks no status (ADR-109 D1); an index_not_ready
+// TestDeferredOnIndexNotReady: Fuse asks no status (ADR-109); an index_not_ready
 // reply to Resolve, Entities or a relations Neighbors read defers the whole answer
-// with defer_reason index_not_ready, no nodes and no miss, and no error. Ported
-// from the pin's TestEngine_ReadinessTransient_Degrades without the status gate.
+// with defer_reason index_not_ready, no nodes and no miss, and no error.
 func TestDeferredOnIndexNotReady(t *testing.T) {
 	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
 
@@ -91,10 +89,9 @@ func TestDeferredOnIndexNotReady(t *testing.T) {
 	}
 }
 
-// TestFatalReplyReturnsError: a fatal seed read fails the call. At the pin a
-// reset deferred hard_stop through the status gate; with no gate, a
-// graph_state_reset_required reply to Entities (one poisoned seed refuses the
-// whole batch) or Resolve is Fuse's error, class and code intact.
+// TestFatalReplyReturnsError: a fatal seed read fails the call. A graph_state_reset_required
+// reply to Entities (one poisoned seed refuses the whole batch) or Resolve is Fuse's error,
+// class and code intact.
 func TestFatalReplyReturnsError(t *testing.T) {
 	seed := "acme.ops.code.repo.symbol.OnEvent"
 	cases := map[string]*fakeGraph{
@@ -116,10 +113,10 @@ func TestFatalReplyReturnsError(t *testing.T) {
 }
 
 // TestFatalWalkReadSkipped: a fatal walk read is skipped like any other, because
-// poison refuses only the poisoned entities (ADR-109 D1) and the reply cannot tell
+// poison refuses only the poisoned entities (ADR-109) and the reply cannot tell
 // that refusal from a reset. The spec's scenario is a relation target; a
 // relations Neighbors read and the paths, impact and graph walks are checked the
-// same way. In the walks index_not_ready is skipped too (F23); in a relations
+// same way. In the walks index_not_ready is skipped too; in a relations
 // Neighbors read it defers (TestDeferredOnIndexNotReady), so that case is fatal
 // only.
 func TestFatalWalkReadSkipped(t *testing.T) {
@@ -210,8 +207,7 @@ func TestFatalWalkReadSkipped(t *testing.T) {
 
 // TestEndedContextReturnsError: when the caller's context ends, Fuse returns the
 // context's error whichever read failed and whatever the read's reply said: the
-// first row of design D1's table is checked before index_not_ready, the fatal
-// class and the skip.
+// ended context is checked before index_not_ready, the fatal class and the skip.
 func TestEndedContextReturnsError(t *testing.T) {
 	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
 	target := entity("acme.ops.code.repo.symbol.Target", "Target", "target.go")

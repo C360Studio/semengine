@@ -156,7 +156,7 @@ func TestLifecycleWatchEventsPoisonEmitsNoEvent(t *testing.T) {
 
 // TestLifecycleWatchPoisonErrorNamesTheEntryWithoutAWarn: a poisoned entry ends the watch with an
 // error naming the workflow, the entity and its revision and wrapping the state contract error with
-// its reason; nothing is logged at WARN, since the caller holds the report (design D3).
+// its reason; nothing is logged at WARN, since the caller holds the report.
 func TestLifecycleWatchPoisonErrorNamesTheEntryWithoutAWarn(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
@@ -192,7 +192,7 @@ func TestLifecycleWatchPoisonErrorNamesTheEntryWithoutAWarn(t *testing.T) {
 }
 
 // TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks: a watcher that closes while
-// the context is live ends that watch with a transient error and no WARN (design D3), and a later
+// the context is live ends that watch with a transient error and no WARN, and a later
 // watch works.
 func TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks(t *testing.T) {
 	t.Parallel()

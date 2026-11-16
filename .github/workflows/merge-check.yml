@@ -6,7 +6,7 @@ name: Merge check
 #
 # - It reads the pull request's state (the review record, the reviewed-by:
 #   line, open class:flake issues), so it runs on edited too: the reviewer's
-#   description edit reaches it without rerunning Verify.
+#   description edit reaches it without rerunning Checks or Integration.
 # - One run per pull request at a time, queued: a newer event replaces a
 #   pending run, and a running one finishes rather than being cancelled, so
 #   no cancelled Merge check sits beside a passing one at the same head.

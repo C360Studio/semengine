@@ -143,7 +143,7 @@ func parseJSONTag(tag string) (name string, opts string) {
 // named by its element, and a named type by its bare name
 // ("service.RuntimeHealthResponse" -> "RuntimeHealthResponse"). An unnamed type
 // is named by its shape, so a collection's schema never takes its element's
-// name (#349): []X is "list-X", [2]X is "array-2-X", map[K]V is "map-K-V", and
+// name: []X is "list-X", [2]X is "array-2-X", map[K]V is "map-K-V", and
 // any other unnamed type, an anonymous struct among them, is its kind and a
 // hash of its Go spelling ("struct-1a2b3c4d"). Every name matches OpenAPI's
 // component-name grammar, ^[A-Za-z0-9._-]+$, when its named parts do.

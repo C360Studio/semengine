@@ -98,8 +98,8 @@ const (
 	// create-once state that is the worse outcome: the shared configuration
 	// bucket's platform identity may already have expired, so a silent repair
 	// hands the next boot an empty bucket to mint a SECOND authority into —
-	// exactly the remint ADR-104 exists to prevent, and one ADR-102 decision 7
-	// forbids ever reconciling. Refusing makes the operator provision storage
+	// exactly the remint ADR-104 exists to prevent, and one ADR-102 forbids
+	// ever reconciling. Refusing makes the operator provision storage
 	// the identity can actually survive in.
 	RetentionNoLifecycleStrict RetentionKind = "no-lifecycle-strict"
 	// RetentionUnmanaged means acquisition does not reconcile retention. No
@@ -309,8 +309,7 @@ func EnsureFrameworkBucket(ctx context.Context, c *Client, spec BucketSpec) (jet
 
 	// Reconcile History (stream MaxMsgsPerSubject) to the declared value. An
 	// adopted bucket created by another path with a divergent History is
-	// converged so bucket configuration is no longer decided by boot order
-	// (the ENTITY_STATES History race, F1).
+	// converged so bucket configuration is not decided by boot order.
 	if err := reconcileHistory(ctx, js, spec.Name, spec.History, logger); err != nil {
 		return nil, err
 	}
@@ -318,14 +317,14 @@ func EnsureFrameworkBucket(ctx context.Context, c *Client, spec BucketSpec) (jet
 	return bucket, nil
 }
 
-// OpenFrameworkBucket is the READER acquisition seam: bind must-exist. It
-// NEVER creates (a reader that creates is an emitter of divergent
-// configuration — the #714 class) and NEVER reconciles (a reader that "fixes"
-// stream config is the same bug class). An absent bucket yields a classified
-// not-ready error naming the catalog Owner, so the operator reads "wait for /
-// deploy the owner", not "the reader is broken".
+// OpenFrameworkBucket is the READER acquisition seam: bind must-exist. It NEVER
+// creates (a reader that creates is an emitter of divergent configuration) and
+// NEVER reconciles (a reader that "fixes" stream config is the same bug class).
+// An absent bucket yields a classified not-ready error naming the catalog
+// Owner, so the operator reads "wait for / deploy the owner", not "the reader
+// is broken".
 func OpenFrameworkBucket(ctx context.Context, c *Client, spec BucketSpec) (jetstream.KeyValue, error) {
-	// Nil context first, as in EnsureFrameworkBucket: it would reach JetStream and panic (Codex F32).
+	// Nil context first, as in EnsureFrameworkBucket: it would reach JetStream and panic.
 	if ctx == nil {
 		return nil, errs.WrapInvalid(errors.New("nil context"),
 			"KVSpec", "OpenFrameworkBucket", "open framework bucket")
@@ -410,9 +409,8 @@ func reconcileBoundedTTL(
 // reconcileHistory converges a bucket's backing-stream MaxMsgsPerSubject (the
 // KV History depth) to the declared value, WARNing with both values when an
 // adopted bucket diverged. Reconciling DOWN discards stored revisions beyond
-// the new depth — destructive-but-unread for the one shipped case
-// (ENTITY_STATES adopted at History 3 from the retired tool-registration
-// create; nothing reads depth > 1) — which is why the WARN names old and new.
+// the new depth — destructive, though for ENTITY_STATES nothing reads past
+// depth 1 — which is why the WARN names old and new.
 func reconcileHistory(
 	ctx context.Context, js jetstream.JetStream, bucket string, history uint8, logger *slog.Logger,
 ) error {

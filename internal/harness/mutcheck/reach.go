@@ -173,7 +173,7 @@ func insertedRegion(h hunk, blocks []block, lists []stmtList) regionResult {
 	// A labeled statement's start, its label, is the inclusive end of the block before it, which a
 	// goto to the label skips. The first statement after the place may be labeled: the place right
 	// before a label is reached only by falling through, which that block measures. The last one
-	// before the place may not (design D13, P29; the owner's ruling on #79).
+	// before the place may not.
 	if !follows && last.labeled {
 		r.state = notMeasurable
 		r.note = fmt.Sprintf("the last statement before the place, on target line %d, is labeled: a goto can reach it past the block before it, so no block measures the place", last.start.Line)

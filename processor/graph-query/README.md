@@ -31,7 +31,7 @@ tier 0 composition gets. The time-range and area searches wait for their respond
 | `summary` | `graph.index.query.predicateList`, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.SummaryData` |
 | `localSearch` | `graph.lexical.query.search` scoped to one group, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the group's record | enveloped by `graph-query`, `data` a `graph.LocalSearchData` |
 | `globalSearch` | `graph.lexical.query.search` over every entity, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the groups' records; the alias, entity and edge verbs to verify an `entity` or `path` hint | enveloped by `graph-query`, `data` a `graph.GlobalSearchData` |
-| `searchGraph` | the same handler as `globalSearch` | the same, `data` equal to `globalSearch`'s for the same request |
+| `searchGraph` | the same handler as `globalSearch`; when `embedding_enabled` is true and the words find nothing, also `graph.embedding.query.search` | the same, `data` equal to `globalSearch`'s when the words find something or `embedding_enabled` is false |
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
@@ -200,7 +200,8 @@ group; a word index behind it is refused transient `revision_not_reached`.
 #### `globalSearch` and `searchGraph`
 
 Searches every entity for the words of a question, and lists the groups that hold the matches. `searchGraph` is the same
-handler under a second name, the verb SemSource calls; its `data` equals `globalSearch`'s for the same request.
+handler under a second name, the verb SemSource calls. Its `data` equals `globalSearch`'s for the same request, except
+for the search by meaning it adds when `embedding_enabled` is true (below).
 
 The request is `{"query": "...", "level": 0, "limit": 10, "min_revision": ...}`. `query` is required and not blank.
 `level` (0 to 2, absent means 0) picks the group size the matches are grouped at. An unknown key is refused by name,
@@ -209,14 +210,16 @@ including SemStreams' `max_communities`, `summarize_threshold`, `include_summari
 
 `data` (a `graph.GlobalSearchData`) holds:
 
-- `text`: always there, a `graph.TextSearchData`: `level`; `matches` as in `localSearch`; `groups`, each group holding a
-  match once, in the order of its best match, with `community_id`, `matches` (how many of the reply's matches it
-  holds), `record_state` and `record`; `matched`, `excluded`, `missing`, `bodies_not_indexed` and `truncated` as in
-  `localSearch`; `unreadable_groups`, how many listed groups have an `unreadable` record; and `answer`, such as
-  `Found 12 matching entities in 3 groups.`
+- `text`: a `graph.TextSearchData`, always there except in a `searchGraph` reply whose word index was not ready
+  (below), where it is `null`. An empty `text` means the word index was read and matched nothing. It holds: `level`;
+  `matches` as in `localSearch`; `groups`, each group holding a match once, in the order of its best match, with
+  `community_id`, `matches` (how many of the reply's matches it holds), `record_state` and `record`; `matched`,
+  `excluded`, `missing`, `bodies_not_indexed` and `truncated` as in `localSearch`; `unreadable_groups`, how many
+  listed groups have an `unreadable` record; and `answer`, such as `Found 12 matching entities in 3 groups.`
 - `entity`: the entity verb's reply data as it came, present only beside an honoured `entity` hint.
 - `path`: a `graph.PathSearchData`, present only beside an honoured `path` hint.
 - `hints`: what the question asked for beyond its words (empty when nothing).
+- `semantic` and `fallback`: only in a `searchGraph` reply, when `embedding_enabled` is true (below).
 
 Every question is answered by its words. Nothing is refused for what it asks beyond them. The question is read once with
 the keyword classifier (no language model), and each thing it seems to ask for is a *hint* in `hints`:
@@ -247,6 +250,28 @@ answer. The classifier takes the first start of "from A to B" and ignores B. To 
 `entityByAlias`; to walk from one use `pathSearch`.
 
 `indexed_revision` is the word index's. `min_revision` goes to the word index, and to the alias read a hint makes.
+
+#### `searchGraph`'s search by meaning
+
+With `embedding_enabled` false, `searchGraph` makes no request to graph-embedding. With it true, the word search runs
+first, and:
+
+- **The words match.** The reply is `globalSearch`'s, with no `fallback`.
+- **The words match nothing.** `searchGraph` asks `graph.embedding.query.search` once, with the question and the
+  request's `limit` (no `min_revision`: the embedding verbs claim no entity revision). The reply keeps the empty `text`
+  and adds `fallback`, a hint entry with `hint` `semantic` and `detail` `no_matches`:
+  - answered: `honoured` true, and `semantic` holds the embedding search's `data` as it came (`results`,
+    `embedder_type`, `unreadable_records`, `failed_records`);
+  - refused, or no answer within `query_timeout_ms`: `honoured` false, `reason` the refusal's message and `code` its
+    code (`internal` for a timeout), and no `semantic`. The empty word answer still stands; a failed fallback is always
+    named, never an unlabelled empty answer.
+- **The word search is refused `index_not_ready`.** The same request, with `detail` `index_not_ready`. When it is
+  answered, `text` is `null` (the word index was not read, so an empty `text` would wrongly say nothing matched),
+  `semantic` holds the answer, and `indexed_revision` is 0. When it fails too, the `index_not_ready` refusal is returned.
+- **Any other refusal** is returned as it arrived, with no request to graph-embedding.
+
+`globalSearch` never asks graph-embedding. Losing the embedding provider leaves the word searches answering, and the
+fallback names the provider's refusal (`TestLosingTheProviderKeepsWordSearch`).
 
 #### Quality bar
 

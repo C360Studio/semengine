@@ -28,10 +28,14 @@ Read these first. Nothing errors.
   (`disclosure.go:86`), so it reports no answer rather than a failure.
 - **SemSource `searchGraph` on a deployment with embeddings but no matching words.** The old version answered
   from the embedding index when global search was empty or refused `index_not_ready`: strategy `semantic_fallback`, up
-  to 8 entities, marked degraded. That fallback is not carried, and no semantic request is made: a question whose words
-  match nothing gets an empty `data.text.matches`, not a retry against embeddings. Search no longer waits for
-  graph-clustering, so a deployment without clustering gets matches with `record_state` `not_ready`, not a refusal.
-  Adding the semantic fallback back is planned; it is not in this tree.
+  to 8 entities, marked degraded, which `deriveDisclosure` read as `strategy` and
+  `degraded_reason == "global_search_empty_semantic_fallback"` (`disclosure.go:31`). Neither key is sent now. With
+  `embedding_enabled` true, a question whose words match nothing, or a word index not ready, is asked of the embedding
+  search once, and `data.fallback` says so: `hint` `semantic`, `detail` `no_matches` or `index_not_ready`, `honoured`,
+  and `reason` and `code` when it failed. The entities it found are in `data.semantic.results` (the request's `limit`,
+  10 by default, not 8). Read `fallback` and `semantic` instead of `strategy` and `degraded_reason`, and read a `null`
+  `data.text` as "the word index was not read", never as "no word matches". Search no longer waits for graph-clustering,
+  so a deployment without clustering gets matches with `record_state` `not_ready`, not a refusal.
 - **SemSource `searchGraph` for a time range, an area or a count.** The old version answered "what changed in the last
   2 hours" and "what is within 5km" from the time and place verbs, and refused a count. Every question is now answered
   by its words, and what the words did not carry is listed in `data.hints` with `honoured` false and a `reason`. A
@@ -174,7 +178,7 @@ change the following.
 | `temporal` | Forwards to `graph.temporal.query.range`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`; `type` is gone. Request keys become `start_time` and `end_time`, were `startTime` and `endTime`, with the responder; until then it is refused transient `internal` |
 | `localSearch` | Reply enveloped, was bare; matches come from the word index, scoped to the group, and the group's record is attached beside them; keys and fields change. See "Verb details". |
 | `globalSearch` | Reply enveloped, was bare; every question is searched for its words, strategies are gone, and `hints` lists what else the question asked for. See "Verb details". |
-| `searchGraph` | New on this table: `globalSearch` under its own name, with the same request, `data` and refusals. See "Verb details". |
+| `searchGraph` | New on this table: `globalSearch` under its own name, with the same request and refusals; with `embedding_enabled` true it adds `fallback` and `semantic` when the words find nothing. See "Verb details". |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
 ## Verb details
@@ -320,13 +324,17 @@ recall at 10 within one point of the reference, and mean reciprocal rank at most
 ### `searchGraph`
 
 Enveloped, `data` a `graph.GlobalSearchData`. It is `globalSearch`, under its own name: the same request gets the same
-`data` and the same refusal (see `globalSearch` above), so `summarize_threshold`, `max_communities` and the `include_*`
-keys are refused `invalid_request`, naming the key. The old version, when `globalSearch` answered empty or refused
-`index_not_ready`, asked the semantic search for 8 entities and answered with strategy `semantic_fallback`, marked
-degraded.
+refusal (see `globalSearch` above), so `summarize_threshold`, `max_communities` and the `include_*` keys are refused
+`invalid_request`, naming the key. The old version, when `globalSearch` answered empty or refused `index_not_ready`,
+asked the semantic search for 8 entities and answered with strategy `semantic_fallback`, marked degraded.
 
-That is not carried, and no semantic request is made: an empty answer is the answer, until a follow-up graph-query
-change adds the semantic fallback. A truncated answer counts under `searchGraph`, not `globalSearch`.
+SemEngine keeps the fallback and labels it. With `embedding_enabled` true, when the words match nothing or the word index
+is not ready, `searchGraph` asks the embedding search once with the request's `limit`, and `data.fallback` names the
+step (`hint` `semantic`, `detail` `no_matches` or `index_not_ready`, `honoured`, `reason`, `code`); `data.semantic`
+holds the embedding search's `data` when it answered. A failed fallback leaves the word answer standing with `fallback`
+not honoured; on `index_not_ready` it returns the `index_not_ready` refusal. A word index that was not ready sends
+`data.text` as `null`. `strategy` and `degraded_reason` are gone. A truncated answer counts under `searchGraph`, not
+`globalSearch`. The graph-query README, "`searchGraph`'s search by meaning", has the cases.
 
 A stream capturing a declared `graph.query.*` subject refuses boot, and so does a declared NATS-request input
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:

@@ -14,24 +14,34 @@ type GlobalSearchRequest struct {
 	MinRevisionField
 }
 
-// GlobalSearchData is the reply to a global search. Text, the word search's matches, is always
-// there. Entity, the entity verb's reply data as its bytes came, is there only beside an honoured
-// "entity" hint, and Path, the path search from the question's start, only beside an honoured "path"
-// hint. Hints lists what the question asked for beyond its words, honoured or not, empty when
-// nothing.
+// GlobalSearchData is the reply to a global search. Text is the word search's matches; an empty
+// Text means the word index was read and matched nothing. Text is null only in a searchGraph reply
+// whose word index was not ready, which then holds Fallback. Entity, the entity verb's reply data as
+// its bytes came, is there only beside an honoured "entity" hint, and Path, the path search from the
+// question's start, only beside an honoured "path" hint. Hints lists what the question asked for
+// beyond its words, honoured or not, empty when nothing.
+//
+// Semantic and Fallback are searchGraph's, when graph-query's embedding_enabled is true. When the
+// word search matched nothing, or was refused index_not_ready, searchGraph asks the embedding
+// search once: Fallback is that step, a "semantic" hint, and Semantic, the embedding search's reply
+// data as its bytes came, is there only when Fallback is honoured.
 type GlobalSearchData struct {
-	Text   *TextSearchData    `json:"text"`
-	Entity json.RawMessage    `json:"entity,omitempty"`
-	Path   *PathSearchData    `json:"path,omitempty"`
-	Hints  []GlobalSearchHint `json:"hints"`
+	Text     *TextSearchData    `json:"text"`
+	Entity   json.RawMessage    `json:"entity,omitempty"`
+	Path     *PathSearchData    `json:"path,omitempty"`
+	Semantic json.RawMessage    `json:"semantic,omitempty"`
+	Fallback *GlobalSearchHint  `json:"fallback,omitempty"`
+	Hints    []GlobalSearchHint `json:"hints"`
 }
 
-// GlobalSearchHint is one thing a question asked for beyond its words. Hint is its kind: "entity" (a
-// one-word question, read as a reference), "path" (a walk from a start), "time_range", "area",
-// "aggregation", "similarity", "ranking", or "classification" (the question classifier refused the
-// question). Detail is what the question named for it, such as the reference, the start or the
-// operation, omitted when it named nothing. Honoured is true only when the reply holds its answer.
-// Reason says why it was not honoured, and Code is the refusal's code when a refusal caused it.
+// GlobalSearchHint is one thing a question asked for beyond its words, or searchGraph's search by
+// meaning. Hint is its kind: "entity" (a one-word question, read as a reference), "path" (a walk
+// from a start), "time_range", "area", "aggregation", "similarity", "ranking", "classification"
+// (the question classifier refused the question), or "semantic" (searchGraph's fallback to the
+// embedding search). Detail is what the question named for it, such as the reference, the start or
+// the operation, omitted when it named nothing; for "semantic" it is what started the fallback,
+// "no_matches" or "index_not_ready". Honoured is true only when the reply holds its answer. Reason
+// says why it was not honoured, and Code is the refusal's code when a refusal caused it.
 type GlobalSearchHint struct {
 	Hint     string `json:"hint"`
 	Detail   string `json:"detail,omitempty"`

@@ -4,11 +4,13 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // textPastUnreadable is the Warn an answer past unreadable community records logs, and
@@ -26,6 +28,10 @@ const (
 // the word search's revision. verb is the verb asked, which the truncation counter and the Warn
 // name.
 //
+// With subjects.semantic set (searchGraph when the composition runs graph-embedding), an answer with
+// no matches also holds the embedding search's fallback, honoured or not, and a word search refused
+// index_not_ready is answered by semanticAlone.
+//
 // A group's record is attached when the community view holds one, and never decides the answer:
 // record_state says when it is missing. An answer past unreadable records is a declared degrade: it
 // sets unreadable_groups, counts one error and logs one Warn, both only once the reply is encoded,
@@ -35,6 +41,9 @@ func (c *Component) globalText(ctx context.Context, verb string, subjects global
 		Query: request.Query, Limit: request.Limit, MinRevisionField: request.MinRevisionField,
 	})
 	if err != nil {
+		if subjects.semantic != "" && isIndexNotReady(err) {
+			return c.semanticAlone(ctx, subjects, request, route, err)
+		}
 		return nil, err
 	}
 	hits := search.Data.Results
@@ -59,12 +68,12 @@ func (c *Component) globalText(ctx context.Context, verb string, subjects global
 		BodiesNotIndexed: search.Data.BodiesNotIndexed,
 		Truncated:        search.Data.Matched > len(hits) || missing > 0,
 	}
-	answer := graph.GlobalSearchData{Hints: []graph.GlobalSearchHint{}}
-	if verified, ok := c.verify(ctx, subjects, route, request.MinRevision); ok {
-		answer.Hints = append(answer.Hints, verified.hint)
-		answer.Entity, answer.Path = verified.entity, verified.path
+	answer := c.hinted(ctx, subjects, route, request.MinRevision)
+	if subjects.semantic != "" && len(matches) == 0 {
+		// A failed fallback is named in the reply, and the word answer still stands: it is no refusal.
+		fallback, semantic := c.semanticFallback(ctx, subjects.semantic, request, fallbackNoMatches)
+		answer.Fallback, answer.Semantic = &fallback, semantic
 	}
-	answer.Hints = append(answer.Hints, route.hints...)
 	limit, err := c.natsClient.MaxPayload()
 	if err != nil {
 		return nil, c.unanswered(err)
@@ -90,6 +99,38 @@ func (c *Component) globalText(ctx context.Context, verb string, subjects global
 			slog.Int("unreadable", sent.UnreadableGroups), slog.String("reason", textPastUnreadableReason))
 	}
 	return encoded, nil
+}
+
+// hinted is a global search answer with no text yet: the route's reference verified, first, then
+// the hints no read can verify.
+func (c *Component) hinted(ctx context.Context, subjects globalSearchSubjects, route globalRoute, minRevision uint64) graph.GlobalSearchData {
+	answer := graph.GlobalSearchData{Hints: []graph.GlobalSearchHint{}}
+	if verified, ok := c.verify(ctx, subjects, route, minRevision); ok {
+		answer.Hints = append(answer.Hints, verified.hint)
+		answer.Entity, answer.Path = verified.entity, verified.path
+	}
+	answer.Hints = append(answer.Hints, route.hints...)
+	return answer
+}
+
+// semanticAlone answers a searchGraph whose word search was refused index_not_ready, refusal, from
+// the embedding search: text null, since the word index was not read and an empty text would say it
+// matched nothing, with the semantic data and the hints, under revision 0, since no ENTITY_STATES
+// revision was read. A fallback that fails returns refusal, the first one, as it arrived.
+func (c *Component) semanticAlone(ctx context.Context, subjects globalSearchSubjects, request graph.GlobalSearchRequest, route globalRoute, refusal error) ([]byte, error) {
+	fallback, semantic := c.semanticFallback(ctx, subjects.semantic, request, fallbackIndexNotReady)
+	if !fallback.Honoured {
+		return nil, refusal
+	}
+	answer := c.hinted(ctx, subjects, route, request.MinRevision)
+	answer.Fallback, answer.Semantic = &fallback, semantic
+	return envelope(c, subjects.semantic, 0, answer)
+}
+
+// isIndexNotReady says err is a refusal with code index_not_ready.
+func isIndexNotReady(err error) bool {
+	var refusal *errs.ClassifiedError
+	return errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady
 }
 
 // matchGroups is each match's group, by entity ID, as the reply lists it: the group's ID, its

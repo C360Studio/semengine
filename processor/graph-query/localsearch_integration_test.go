@@ -227,10 +227,16 @@ type communityStack struct {
 
 func startCommunityStack(t *testing.T) communityStack {
 	t.Helper()
+	return startCommunityStackWith(t, tierOneConfig)
+}
+
+// startCommunityStackWith is startCommunityStack with graph-query configured by config.
+func startCommunityStackWith(t *testing.T, config string) communityStack {
+	t.Helper()
 	stack := startIngestAndIndex(t)
 	startWordIndex(t, stack.client)
 	kv, m := communityRecords(t, stack.client)
-	c := startComponent(t, stack.client, tierOneConfig)
+	c := startComponent(t, stack.client, config)
 	return communityStack{graphStack: stack, component: c, records: kv, maintainer: m}
 }
 

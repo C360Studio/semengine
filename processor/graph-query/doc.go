@@ -42,8 +42,8 @@
 // ends the view. semengine_graph_query_search_truncated_total counts localSearch and text search
 // answers that were cut short.
 //
-// globalSearch, and searchGraph, which is the same handler under a second name with the same data,
-// answer every question with a word search: graph-lexical's search over every entity, passing the
+// globalSearch, and searchGraph, which is the same handler under a second name, answer every
+// question with a word search: graph-lexical's search over every entity, passing the
 // query, the limit and min_revision unchanged, the hits read back with one graph-ingest batch
 // request. The reply's text holds the matches in the word index's order (id, label, score, the
 // entity as graph-ingest sent it), the groups at the request's level that hold them, in the order of
@@ -63,6 +63,13 @@
 // a ranking is never honoured here; each is listed with its reason. The keyword classifier's limits
 // stay its own: "from A to B" reads a start at A, and the refusal of a second place can be wrong for
 // a hyphenated word such as "real-time".
+//
+// When embedding_enabled is true, searchGraph also falls back to graph-embedding's search, once,
+// when the word search matches nothing or is refused index_not_ready. The reply's fallback names
+// that step, honoured with the embedding reply's data in semantic, or not honoured with the
+// refusal's code and message; a failed fallback is never hidden. A word index that was not ready
+// leaves text null; if the fallback fails too, the index_not_ready refusal is returned.
+// globalSearch never falls back.
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

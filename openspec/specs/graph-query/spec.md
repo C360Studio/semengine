@@ -527,19 +527,65 @@ in `Health` and log one Warn naming the verb, the level, the count and why answe
 
 ### Requirement: searchGraph answers as global search
 
-`graph.query.searchGraph` SHALL decode and answer every request as `globalSearch` does, with the same `data`. It SHALL
-make no semantic request.
+When `embedding_enabled` is false, `graph.query.searchGraph` SHALL decode and answer every request as `globalSearch`
+does, with the same `data`, and SHALL make no semantic request. When it is true, searchGraph SHALL answer as
+`globalSearch` when that answer's `text` has matches. Any other refusal SHALL be returned with no semantic request.
 
 #### Scenario: The same question
 
-- **WHEN** one request is sent to `searchGraph` and to `globalSearch`
-- **THEN** both replies' `data` are equal (`TestSearchGraphAnswersAsGlobalSearch`)
+- **WHEN** `embedding_enabled` is false and one request is sent to `searchGraph` and to `globalSearch`
+- **THEN** both replies' `data` are equal and no semantic request is made (`TestSearchGraphAnswersAsGlobalSearch`,
+  `TestSearchGraphTierZeroAsksNoEmbedding`)
+
+### Requirement: searchGraph labels its semantic fallback
+
+When `embedding_enabled` is true and the word search matches nothing, searchGraph SHALL ask the embedding `search`
+verb once, waiting no longer than `query_timeout_ms`, and answer the global reply with `fallback`, a hint entry with
+`hint` `semantic` and `detail` `no_matches`. On success `honoured` is true and `semantic` holds the embedding reply's
+data as it came. An empty `text` means the word index was read and matched nothing.
+
+#### Scenario: No word matches at tier 1
+
+- **WHEN** `embedding_enabled` is true and the word search matches nothing
+- **THEN** the reply holds the empty `text`, `semantic` with the embedding search's data, and `fallback` honoured
+  with detail `no_matches` (`TestSearchGraphFallsBackWhenNoMatches`)
+
+### Requirement: A failed semantic fallback is named
+
+When the embedding search is refused or does not answer in time, searchGraph SHALL answer with `fallback` `honoured`
+false, the refusal's `code` and its message as `reason`, and SHALL keep the word answer.
+
+#### Scenario: The fallback fails
+
+- **WHEN** the word search matches nothing and the embedding search is refused
+- **THEN** the reply holds the empty `text` and `fallback` not honoured, with the refusal's code and message, never an
+  unlabelled empty answer (`TestSearchGraphNamesAFailedFallback`)
+
+#### Scenario: The fallback runs out of time
+
+- **WHEN** the word search matches nothing and the embedding search does not answer within `query_timeout_ms`
+- **THEN** the reply holds the word answer and `fallback` not honoured, with code `internal`
+  (`TestSearchGraphFallbackTimeoutKeepsWordAnswer`)
+
+### Requirement: searchGraph falls back when the word index is not ready
+
+When `embedding_enabled` is true and `globalSearch` is refused `index_not_ready`, searchGraph SHALL answer as the
+labelled fallback does, with `detail` `index_not_ready`, and SHALL leave `text` out (null), since the word index was
+not read. If the embedding search also fails it SHALL return the `index_not_ready` refusal.
+
+#### Scenario: The word index is not ready
+
+- **WHEN** `embedding_enabled` is true, `globalSearch` is refused `index_not_ready`, and the embedding search answers
+- **THEN** the reply leaves `text` out (null), holds `semantic`, and `fallback` honoured with detail `index_not_ready`;
+  had the embedding search failed, the `index_not_ready` refusal is returned
+  (`TestSearchGraphIndexNotReadyLeavesTextOut`)
 
 ### Requirement: Embedding verbs can be turned off
 
 When `embedding_enabled` is `false`, which it is when the key is left out, `semantic` and `similar` SHALL refuse every
 request with class `invalid` and code `not_enabled`, the message naming the verb, without sending any request. Every
-other verb SHALL be unchanged by the key.
+other verb SHALL be unchanged by the key, except `searchGraph`, whose semantic fallback runs only when the key is
+true.
 
 #### Scenario: Not the same as a missing responder
 
@@ -752,3 +798,15 @@ questions.
 - **WHEN** the corpus is ingested and the questions asked through both verbs
 - **THEN** the R@10 and MRR bars hold, and the test logs R@1, R@10 and MRR for both verbs and the reference
   (`TestSearchScorecard`)
+
+### Requirement: Losing the embedding provider keeps word search
+
+With graph-embedding running on an outside provider, losing the provider SHALL leave the word searches answering as
+before. The embedding verbs SHALL refuse rather than answer empty, and graph-embedding's readiness SHALL read
+`degraded`, naming the provider failure among `failed_reasons`.
+
+#### Scenario: The provider goes away
+
+- **WHEN** the provider is closed and an entity is then written
+- **THEN** globalSearch and searchGraph find it by its words, `semantic` is refused, and graph-embedding reads
+  `degraded` with `connection_refused` counted (`TestLosingTheProviderKeepsWordSearch`)

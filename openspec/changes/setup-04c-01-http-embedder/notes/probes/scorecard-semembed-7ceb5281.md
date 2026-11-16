@@ -56,11 +56,42 @@ prefix and 1.667s raw. The whole `go run`, build included, took 2m12.57s.
 
 ## What the numbers say
 
-On this set, this model's vectors find the answer less often than the word index does: 47.6% of answers in the first
-ten against 56.0%, and 22.8% first against 24.6%. Merging the two lists does better than either alone, by 2.4 points
-of R@10 and 2.2 points of R@1 over words, so the vectors find some answers the words miss, but not many. Leaving out
-the query prefix costs a third of the vector score: R@10 falls from 47.6% to 31.2% and MRR from 0.310 to 0.200. These
-numbers hold for `Snowflake/snowflake-arctic-embed-s` on this corpus only; they say nothing about another model.
+The first reading, "this model's vectors lose to words", does not hold. An independent audit re-ran the probe
+against the same container with its own HTTP calls and ranking, and reproduced all four rows exactly. It then found
+two things holding the vector row back that are not the model
+([audit on PR #680](https://github.com/C360Studio/semengine/pull/680#issuecomment-6916898569)).
+
+1. **The file title in front of every section.** In this corpus `name` is the first heading of the section's
+   *file*, not of the section, so every section of a file starts with the same words. Embedded with it, sibling
+   sections look more alike than they are. Words barely notice. A real entity's name is its own, so this is a
+   property of the test set, not of graph-embedding.
+
+   | Row | R@1 | R@10 | MRR |
+   | --- | --- | --- | --- |
+   | Words alone (committed scorecard) | 24.6% | 56.0% | 0.358 |
+   | Words, body only | 26.2% | 55.8% | 0.368 |
+   | Vectors, `name + " " + body` (this probe) | 22.8% | 47.6% | 0.310 |
+   | Vectors, body only | 28.2% | 52.0% | 0.362 |
+   | Merged, this probe's vectors | 26.8% | 58.4% | 0.374 |
+   | Merged, body-only vectors | 31.2% | 62.4% | 0.412 |
+
+2. **semembed cuts every text at 512 tokens and says nothing.** Counted with the model's own tokenizer, 475 of the
+   2,000 sections (23.8%) are longer than the window, and 23.1% of the corpus's tokens were never read. Split by
+   whether the answer fits:
+
+   | Body-only vectors against words | Questions | Vectors R@1 / R@10 / MRR | Words R@1 / R@10 / MRR |
+   | --- | --- | --- | --- |
+   | Answer fits the window | 389 | 32.6% / 57.6% / 0.409 | 25.4% / 57.3% / 0.369 |
+   | Answer is longer | 111 | 12.6% / 32.4% / 0.197 | 21.6% / 51.4% / 0.320 |
+
+   Where the model reads the whole answer, vectors match words in the first ten and are well ahead in first place.
+   The whole shortfall is in the long answers. Splitting long bodies into pieces of at most 480 tokens did not win
+   it back on this set (26.8% / 50.2% / 0.349 against 28.2% / 52.0% / 0.362 unsplit). The cut is filed on semembed
+   as C360Studio/semembed#6, and SemEngine's side of long text is #667.
+
+Leaving out the query prefix still costs a third of the vector score (R@10 47.6% to 31.2%). Merging is the strongest
+row in every variant. These numbers hold for `Snowflake/snowflake-arctic-embed-s` on this corpus only; 500 questions
+resolve differences of about 2 points, and smaller ones are noise.
 
 ## Command
 

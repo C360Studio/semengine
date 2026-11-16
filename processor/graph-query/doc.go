@@ -69,7 +69,8 @@
 // over the lists holding it, and each match carries word_rank and vector_rank. The reply's merge
 // says whether vectors were used, honoured with the embedding reply's data in semantic, or not
 // honoured with the refusal's code and message, leaving the word list; a failed merge is never
-// hidden. A word index that was not ready leaves text null; if the embedding search fails too, the
+// hidden: it also logs one Warn and adds one to semengine_graph_query_search_merge_failed_total. An
+// embedding reply with no results list is broken, not empty. A word index that was not ready leaves text null; if the embedding search fails too, the
 // index_not_ready refusal is returned. globalSearch never asks graph-embedding.
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the

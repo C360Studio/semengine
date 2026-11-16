@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 
 	"github.com/c360studio/semengine/graph"
@@ -154,6 +155,11 @@ func (c *Component) readSemantic(subject string, outcome semanticOutcome, detail
 	var data graph.SemanticData
 	if err := json.Unmarshal(reply.Data, &data); err != nil {
 		return failed(c.brokenReply(subject, err))
+	}
+	// Data of {}, null or {"results":null} decodes without error but lists nothing: a reply with no
+	// results list is broken, not an empty one, which is {"results":[]}.
+	if data.Results == nil {
+		return failed(c.brokenReply(subject, errors.New("holds no results")))
 	}
 	hint.Honoured = true
 	return semanticRead{hint: hint, data: reply.Data, hits: data.Results}

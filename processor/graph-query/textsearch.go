@@ -21,6 +21,13 @@ const (
 	textPastUnreadableReason = "a record only describes its group; the matches come from the word index"
 )
 
+// mergeFailed is the Warn a searchGraph answered without the embedding list logs, and
+// mergeFailedReason why answering is safe.
+const (
+	mergeFailed       = "searchGraph answered the word list alone: the embedding search failed"
+	mergeFailedReason = "the reply names the failed merge, and the word list is the answer searchGraph gives with no embedding search"
+)
+
 // globalText is global search's answer: one unscoped word search, passing query, limit and
 // min_revision unchanged, then one batch read of its hits, grouped by their community at the
 // request's level, then the route's reference verified, with the hints listed beside the matches. A
@@ -60,6 +67,8 @@ func (c *Component) globalText(ctx context.Context, verb string, subjects global
 // lists (mergeRanks) and keeps the first limit of the merge. The merge hint says the embedding list
 // was read. When the embedding search is refused, broken or silent past query_timeout_ms, the answer
 // is the word list in its own order, with the merge hint not honoured, naming why: never a refusal.
+// That answer is a declared degrade: once the reply is encoded it logs one Warn and adds one to the
+// merge-failed counter, so a request that fails to fit counts nothing there.
 //
 // A word search refused index_not_ready is answered by semanticAlone. Any other word refusal is
 // returned as it arrived; the embedding request is cancelled and the call waits for it to end, never
@@ -103,7 +112,16 @@ func (c *Component) mergedText(ctx context.Context, verb string, subjects global
 		search: search, list: list, more: more, hitGroups: hitGroups,
 		merge: &semantic.hint, semantic: semantic.data,
 	}
-	return c.answerText(ctx, verb, subjects, request, route, answer)
+	encoded, err := c.answerText(ctx, verb, subjects, request, route, answer)
+	if err != nil {
+		return nil, err
+	}
+	if !semantic.hint.Honoured {
+		c.metrics.searchMergeFailed.Inc()
+		c.logger.Warn(mergeFailed, slog.String("verb", verb), slog.String("code", semantic.hint.Code),
+			slog.String("error", semantic.hint.Reason), slog.String("reason", mergeFailedReason))
+	}
+	return encoded, nil
 }
 
 // listedText is what a global search read before its matches are read back: the word search's reply;

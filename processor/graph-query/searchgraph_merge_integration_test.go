@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"reflect"
 	"slices"
@@ -18,7 +19,9 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -710,6 +713,113 @@ func TestSearchGraphBrokenEmbeddingReplyKeepsWordAnswer(t *testing.T) {
 			// The broken reply is counted where it is read, before graph-query replies.
 			if health := c.Health(); health.ErrorCount != 1 {
 				t.Errorf("Health = %+v, want one error: the embedding reply was broken", health)
+			}
+		})
+	}
+}
+
+// mergeFailedFamily is the counter of searchGraph answers given without the embedding list.
+const mergeFailedFamily = "semengine_graph_query_search_merge_failed_total"
+
+// counterValue is the value the registry gathers for family, a counter with no labels, 0 when it has
+// no series.
+func counterValue(t *testing.T, registry *metric.MetricsRegistry, family string) float64 {
+	t.Helper()
+	families, err := registry.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() == family {
+			total := 0.0
+			for _, series := range f.GetMetric() {
+				total += series.GetCounter().GetValue()
+			}
+			return total
+		}
+	}
+	return 0
+}
+
+// TestSearchGraphFailedMergeIsDeclared: a searchGraph whose embedding search fails still answers the
+// word list, and declares the degrade once per reply: one Warn naming the verb, the failure's code and
+// message and why answering is safe, and one count on the merge-failed counter. An embedding refusal
+// is the responder's answer and counts no error; a reply graph-query cannot use (data with no results
+// list) counts one. A results list that is present and empty is an honoured merge: no Warn, no count.
+func TestSearchGraphFailedMergeIsDeclared(t *testing.T) {
+	refused := func() ([]byte, error) {
+		return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeEmbeddingUnavailable, errors.New("provider is down"))
+	}
+	reply := func(data string) func() ([]byte, error) {
+		return func() ([]byte, error) { return semanticReply(data), nil }
+	}
+	for _, tc := range []struct {
+		name     string
+		answer   func() ([]byte, error)
+		honoured bool
+		code     string
+		reason   string
+		errors   int
+	}{
+		{"refused embedding_unavailable", refused, false, graph.ErrorCodeEmbeddingUnavailable, "provider is down", 0},
+		{"data {}", reply(`{}`), false, graph.ErrorCodeInternal, "holds no results", 1},
+		{"data null", reply(`null`), false, graph.ErrorCodeInternal, "holds no results", 1},
+		{`data {"results":null}`, reply(`{"results":null}`), false, graph.ErrorCodeInternal, "holds no results", 1},
+		{`data {"results":[]}`, reply(`{"results":[]}`), true, "", "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fixtureClient(t)
+			stubWords(t, client, wordHits(t, 1, drone(1)))
+			stubSemantic(t, client, tc.answer)
+			stubBatchEcho(t, client)
+			logs := &warnCapture{message: "searchGraph answered the word list alone: the embedding search failed"}
+			registry := metric.NewMetricsRegistry()
+			built, err := CreateGraphQuery(json.RawMessage(tierOneConfig), component.Dependencies{
+				NATSClient: client, Logger: slog.New(logs), MetricsRegistry: registry,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			startLifecycle(t, "graph-query", built)
+			c := built.(*Component)
+
+			raw, err := askSearchGraph(t, client, mergeQuestion)
+			if err != nil {
+				t.Fatalf("searchGraph: %v; want the word answer", err)
+			}
+			envelope, got := decodeSearchGraph(t, raw)
+			if rows, want := shortRows(got.ranked(t)), []string{"001 w1 v-"}; !slices.Equal(rows, want) {
+				t.Errorf("matches = %q, want %q", rows, want)
+			}
+			if got.Merge == nil || got.Merge.Honoured != tc.honoured || got.Merge.Code != tc.code ||
+				!strings.Contains(got.Merge.Reason, tc.reason) {
+				t.Fatalf("data = %s, want merge honoured %v, code %q, reason naming %q", envelope.Data, tc.honoured, tc.code, tc.reason)
+			}
+			// graph-query logs, counts and adds to the counter before it replies, so the reads below
+			// are ordered after the reply above.
+			if health := c.Health(); health.ErrorCount != tc.errors {
+				t.Errorf("Health = %+v, want %d errors", health, tc.errors)
+			}
+			warns := logs.snapshot()
+			wantCount := 1.0
+			if tc.honoured {
+				wantCount = 0
+				if len(warns) != 0 {
+					t.Errorf("warnings = %+v, want none for an honoured merge", warns)
+				}
+			} else {
+				if len(warns) != 1 {
+					t.Fatalf("warnings = %+v, want one", warns)
+				}
+				w := warns[0]
+				if w.level != slog.LevelWarn || w.attrs["verb"] != "searchGraph" || w.attrs["code"] != tc.code ||
+					!strings.Contains(w.attrs["error"], tc.reason) ||
+					w.attrs["reason"] != "the reply names the failed merge, and the word list is the answer searchGraph gives with no embedding search" {
+					t.Errorf("warning = %+v, want Warn naming searchGraph, code %q, the failure and why answering is safe", w, tc.code)
+				}
+			}
+			if count := counterValue(t, registry, mergeFailedFamily); count != wantCount {
+				t.Errorf("%s = %v, want %v", mergeFailedFamily, count, wantCount)
 			}
 		})
 	}

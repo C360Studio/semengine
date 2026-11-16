@@ -272,8 +272,9 @@ In the reply:
   and `reason` and `code` say why not. `semantic` holds the embedding search's `data` as it came (`results`,
   `embedder_type`, `unreadable_records`, `failed_records`).
 - `matched` stays the word index's count. `answer` adds `, and N more by meaning` for the N matches with no `word_rank`.
-- `truncated` is true when either list held more entities than `limit`, `matched` is above the word hits read, a hit
-  was missing, or matches were left out to fit. The embedding list has no score threshold, so at a small `limit` this
+- `truncated` is true when the lists read held more distinct entities between them than `limit` (the word list alone
+  when the embedding search failed), `matched` is above the word hits read, a hit was missing, or matches were left out
+  to fit. The embedding list has no score threshold, so at a small `limit` this
   is nearly always true.
 - `indexed_revision` is the word index's.
 
@@ -282,7 +283,11 @@ When one side fails:
 - **The embedding search is refused, broken, or silent past `query_timeout_ms`.** The word list answers in word order,
   each match with `word_rank` only and the word index's `score`. `merge` is not honoured, with the refusal's `code`
   (`internal` for a timeout) and message as `reason`, and no `semantic`. A failed merge is always named, never an
-  unlabelled word-only answer.
+  unlabelled word-only answer. An embedding reply whose `data` has no `results` list (`{}`, `null`,
+  `{"results":null}`) is broken; `{"results":[]}` is an empty list and the merge is honoured. Each failed merge also
+  logs one Warn, `searchGraph answered the word list alone: the embedding search failed`, with the `code`, the
+  failure as `error`, and why answering is safe as `reason`, and adds one to
+  `semengine_graph_query_search_merge_failed_total`, once the reply is encoded.
 - **The words match nothing.** `text.matches` is the embedding list, each match with `vector_rank` only.
 - **The word search is refused `index_not_ready`, and the embedding search answers.** `text` is `null` (the word index
   was not read, so an empty `text` would wrongly say nothing matched), `semantic` holds the answer, `merge` has `detail`
@@ -389,6 +394,7 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 | Name | Type | Meaning |
 | --- | --- | --- |
 | `semengine_graph_query_search_truncated_total` | counter vec | `localSearch`, `globalSearch` and `searchGraph` answers cut short, by `verb` (`localSearch`, `globalSearch`, `searchGraph`) |
+| `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` answers given as the word list alone because the embedding search was refused, broken, or silent past `query_timeout_ms` |
 
 A search answer is cut short when more entities matched than the `limit` returned, a hit was deleted before it was
 read, or matches were left out to fit `max_payload`: each sets `truncated` and adds one to the counter. A refused

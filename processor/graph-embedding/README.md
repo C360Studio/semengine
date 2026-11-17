@@ -58,12 +58,16 @@ OpenAI-shaped embeddings request over HTTP, such as semembed, build it with `gra
 ```go
 err := graphembedding.RegisterWithEmbedder(registry, "semembed", func() (embedding.Embedder, error) {
     return httpembedder.New(httpembedder.Config{
-        BaseURL:     "http://127.0.0.1:8081/v1", // must end in /v1 for semembed
-        Model:       "Snowflake/snowflake-arctic-embed-s",
-        QueryPrefix: "Represent this sentence for searching relevant passages: ",
+        BaseURL: "http://127.0.0.1:8081/v1", // must end in /v1 for semembed
+        Model:   "Snowflake/snowflake-arctic-embed-s",
     })
 })
 ```
+
+The client tells the provider whether each request holds search queries or documents (`input_type`), and semembed
+puts the model's own query or document instruction in front of each text, so a product on semembed needs no prefix of
+its own. For a provider that does not add instructions itself, set `QueryPrefix` to the model's query instruction; for
+one that refuses the `input_type` field, set `OmitInputType`.
 
 The name (`"semembed"` here) must not be empty. It is the type part of the dedup key, so two embedders never share a
 stored vector, and `search` replies it as `embedder_type`. The constructor is called once in each `Start`, never when

@@ -36,10 +36,20 @@ type Config struct {
 	// and then no Authorization header is sent.
 	APIKey string
 
-	// QueryPrefix is prepended to each text GenerateQuery embeds, never to documents. Set it to
-	// the model's query instruction for an asymmetric model, such as "Represent this sentence for
-	// searching relevant passages: " for Snowflake arctic-embed. Empty sends queries raw.
+	// QueryPrefix is prepended to each text GenerateQuery embeds, never to documents. It is for a
+	// provider that does not add the model's instructions itself: set it to the model's query
+	// instruction for an asymmetric model, such as "Represent this sentence for searching relevant
+	// passages: " for Snowflake arctic-embed. semembed adds that instruction for every query on its
+	// own (see OmitInputType) and sends text that already starts with it unchanged, so a product on
+	// semembed leaves this empty. On a provider that adds its own instruction but does not recognise
+	// this one, a query would carry both. Empty sends queries raw.
 	QueryPrefix string
+
+	// OmitInputType, when true, leaves the input_type field out of every request. By default
+	// GenerateQuery sends "input_type": "query" and Generate "input_type": "document", which semembed
+	// reads to put the model's own query or document instruction in front of each text. Set it for a
+	// provider that refuses the field.
+	OmitInputType bool
 }
 
 // Embedder calls an embedding provider over HTTP. It is safe for concurrent use. The caller's
@@ -49,6 +59,7 @@ type Embedder struct {
 	model       string
 	apiKey      string
 	queryPrefix string
+	inputType   bool // send input_type
 
 	// dimensions is the width of the first accepted reply, or 0 before one. It is read by other
 	// goroutines while a Generate call writes it.
@@ -81,25 +92,27 @@ func New(cfg Config) (*Embedder, error) {
 		model:       cfg.Model,
 		apiKey:      cfg.APIKey,
 		queryPrefix: cfg.QueryPrefix,
+		inputType:   !cfg.OmitInputType,
 	}, nil
 }
 
-// Generate embeds documents: one vector per text, in the texts' order. No texts sends no request.
+// Generate embeds documents: one vector per text, in the texts' order, sent as input_type
+// "document" unless OmitInputType is set. No texts sends no request.
 func (e *Embedder) Generate(ctx context.Context, texts []string) ([][]float32, error) {
-	return e.embed(ctx, texts)
+	return e.embed(ctx, texts, "document")
 }
 
-// GenerateQuery embeds search queries, each with the configured query prefix in front. With no
-// prefix it sends the same request Generate does.
+// GenerateQuery embeds search queries, sent as input_type "query" unless OmitInputType is set, each
+// with the configured query prefix in front. With no prefix it sends the same texts Generate does.
 func (e *Embedder) GenerateQuery(ctx context.Context, texts []string) ([][]float32, error) {
 	if e.queryPrefix == "" {
-		return e.embed(ctx, texts)
+		return e.embed(ctx, texts, "query")
 	}
 	prefixed := make([]string, len(texts))
 	for i, text := range texts {
 		prefixed[i] = e.queryPrefix + text
 	}
-	return e.embed(ctx, prefixed)
+	return e.embed(ctx, prefixed, "query")
 }
 
 // Dimensions returns the width of the first accepted reply, or 0 before one.
@@ -119,8 +132,9 @@ func (e *Embedder) Close() error {
 }
 
 type request struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
+	Model     string   `json:"model"`
+	Input     []string `json:"input"`
+	InputType string   `json:"input_type,omitempty"`
 }
 
 // reply's index and coordinates are pointers so that a null or absent value is seen, not read as
@@ -139,14 +153,19 @@ type errorReply struct {
 	} `json:"error"`
 }
 
-func (e *Embedder) embed(ctx context.Context, texts []string) ([][]float32, error) {
+// embed sends texts as one request, naming inputType unless the Embedder omits it.
+func (e *Embedder) embed(ctx context.Context, texts []string, inputType string) ([][]float32, error) {
 	if ctx == nil {
 		return nil, errors.New("httpembedder: nil context")
 	}
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	body, err := json.Marshal(request{Model: e.model, Input: texts})
+	sent := request{Model: e.model, Input: texts}
+	if e.inputType {
+		sent.InputType = inputType
+	}
+	body, err := json.Marshal(sent)
 	if err != nil {
 		return nil, fmt.Errorf("httpembedder: encode request: %w", err)
 	}

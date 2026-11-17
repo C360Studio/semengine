@@ -3910,12 +3910,13 @@
   destination: graph/embedding/httpembedder/httpembedder.go
   contract: >-
     A new package, so graph/embedding still holds no embedder and imports no provider
-    (TestEmbeddingImportsNoProviderModule). New(Config{BaseURL, Model, APIKey, QueryPrefix}) returns an *Embedder
+    (TestEmbeddingImportsNoProviderModule). New(Config{BaseURL, Model, APIKey, QueryPrefix, OmitInputType}) returns an *Embedder
     that implements embedding.Embedder with plain net/http: no SDK, no model package. BaseURL is the provider's API
     root and must end in /v1 for semembed; New refuses an empty base URL or model and a base URL that is not http or
-    https, and makes no request. Generate posts one POST <BaseURL>/embeddings {"model","input"}, sends Authorization:
+    https, and makes no request. Generate posts one POST <BaseURL>/embeddings {"model","input","input_type":"document"}, sends Authorization:
     Bearer only when an API key is set, and returns vectors in input order placed by index; no texts sends no
-    request. GenerateQuery prepends QueryPrefix to each text; Generate never does. A reply is trusted only whole: a
+    request. GenerateQuery sends "input_type":"query" and prepends QueryPrefix to each text; Generate never prepends it.
+    OmitInputType leaves input_type out of every request. A reply is trusted only whole: a
     non-2xx status (the error names it and the provider's error.message), a vector count other than the text count, an
     index out of range or repeated, an empty vector, a width other than the first accepted reply's (the error says
     "dimension", so the Worker files dimension_mismatch), and a non-empty reply model other than the configured one
@@ -3928,8 +3929,9 @@
     graph/embedding; net/http and the standard library; one HTTP request per Generate or GenerateQuery call through
     http.DefaultClient; no Prometheus, no provider module
   known_risks: >-
-    the client cannot check the query prefix: a product must set QueryPrefix to the model's own query instruction, and
-    only a search-quality run shows a wrong one. A provider that echoes a model name other than the one it serves
+    the client cannot check the query instruction: on semembed input_type makes the provider add the model's own, and
+    elsewhere a product must set QueryPrefix to it; whether a provider honoured input_type is not visible in the reply,
+    so only a search-quality run shows a missing or wrong instruction. A provider that echoes a model name other than the one it serves
     passes the model check; a provider such as TEI that echoes its own id needs that id as Model. After an outage,
     entities whose embedding failed wait for a new revision or a restart. The pin's http_embedder_test.go and
     http_embedder_dimensions_test.go carry over as the GenerateQuery and Dimensions tests named below. Real-provider

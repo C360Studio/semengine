@@ -61,7 +61,7 @@ read (`query.go:694`).
 ## 3. Adjacent claims
 
 - Owner rulings: #657 comment 6877432505 (rulings 1, 2, and "#656: ..."). Owner on 2026-11-18: design track, #656 alone.
-- Accepted design that differs (O1): `openspec/changes/archive/2026-11-14-setup-04b-03-graph-query-lexical/design.md:54-56`
+- Accepted design that differs (O1, ruled 2026-11-18, design D3): `openspec/changes/archive/2026-11-14-setup-04b-03-graph-query-lexical/design.md:54-56`
   — "after which graph-query's `missing` path takes it unchanged (chosen)".
 - Specs:
   - fusion `:22-30` (cross-references "A poisoned seed is unhydrated, not a failed read"), `:297-312`, `:314-329`,
@@ -92,7 +92,7 @@ read (`query.go:694`).
 
 - `graph.MissingDamaged` (new exported constant).
   - Production callers in this repository: graph-ingest's batch path (`query.go:147-150`), fusionnats
-    `unhydratedReason`, graph-query `readMatches` (if O1 is ruled B).
+    `unhydratedReason`, graph-query `readMatches`.
   - Consumers: semconnect `systems.go:896` and semsparql `executor.go:1564`.
 - No new subject, bucket, config field or verb.
 

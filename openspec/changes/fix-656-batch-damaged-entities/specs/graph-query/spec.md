@@ -7,9 +7,9 @@
 Both verbs SHALL read their hits with one `graph.ingest.query.batch` request and answer `matches` in the word index's
 order, each `id`, `label`, `score` (the word index's) and `entity`, the bytes the batch sent for it, which graph-query
 does not re-encode. In a searchGraph merged list the order is the merged order and `score` is the merged score. A hit
-the batch names `damaged` SHALL make graph-query refuse the search, class fatal, code `graph_state_reset_required`,
-naming every damaged hit. A hit the batch names missing with any other reason SHALL be left out and counted in
-`missing`. A batch refusal SHALL reach the caller as it arrived.
+the batch names `damaged` SHALL be left out, named in the reply's `damaged` list in hit order, and set `truncated`;
+it SHALL NOT be counted in `missing` or refuse the search. A hit the batch names missing with any other reason SHALL
+be left out and counted in `missing`. A batch refusal SHALL reach the caller as it arrived.
 
 #### Scenario: Order and missing hits
 
@@ -20,8 +20,8 @@ naming every damaged hit. A hit the batch names missing with any other reason SH
 #### Scenario: A damaged hit
 
 - **WHEN** the batch names one hit `damaged`
-- **THEN** `localSearch` and `globalSearch` refuse fatal `graph_state_reset_required` naming it
-  (`TestSearchRefusesDamagedHit`)
+- **THEN** `localSearch` and `globalSearch` answer the other hits, `damaged` names it, `missing` is 0 and `truncated`
+  is true (`TestSearchNamesDamagedHit`)
 
 #### Scenario: Entities pass unchanged
 

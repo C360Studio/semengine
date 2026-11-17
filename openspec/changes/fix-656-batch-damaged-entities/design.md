@@ -49,8 +49,8 @@ does not alter how the cache behaves around a write made from outside graph-inge
 
 - `Entities` sends one batch and reconciles it. On any refusal it returns the error and sends no `entity` request.
   `entitiesAlone` and its branch are deleted (about 50 lines; most of `poison_test.go` goes with them).
-- **O2 (owner).** What should a damaged seed show in fusion's `unhydrated`?
-  - **A (recommended):** `damaged` maps to `fusion.UnhydratedError`, so a fusion consumer sees exactly what it sees
+- **O2 (ruled A, owner 2026-11-18).** What should a damaged seed show in fusion's `unhydrated`?
+  - **A (chosen):** `damaged` maps to `fusion.UnhydratedError`, so a fusion consumer sees exactly what it sees
     today (`retrieval.go:110-112`, `README.md:114-120`), and fusion's closed set is unchanged. semsource reads this
     list.
   - **B:** a new `fusion.UnhydratedDamaged`, which is new product-facing surface, and a consumer's exhaustive switch
@@ -65,20 +65,20 @@ does not alter how the cache behaves around a write made from outside graph-inge
 
 `readMatches` counts every `missing` entry as a hit "gone when read back" (`matches.go:113-131`;
 `graph/query_local_search_types.go:52-53`). With D1 alone, a damaged hit would become `missing: 1, truncated: true`,
-labelled as gone.
+labelled as gone, and semsource, which reads `truncated` and never `missing`
+(`processor/mcp-gateway/graph_matches.go:130`), could not tell.
 
-- **O1 (owner, confirm).** Ruling 1's second case ("the read finds its own records ... refuse") was given the same
-  day after the word-search design's D4 was approved (#657 comments 6877432505 and 6877374827). Word search finds
-  its hits from its own index, so the ruling most likely already replaces D4. The owner is asked to confirm:
-  - **B (follows ruling 1):** a hit the batch names `damaged` makes graph-query refuse the search, fatal
-    `graph_state_reset_required`, naming every damaged hit. This is today's observable behaviour. A hit named with
-    any other reason is left out and counted in `missing`, as today.
-  - **A (D4 as written):** let the `missing` path take damaged hits (`…graph-query-lexical/design.md:54-56`). No
-    code, but `missing` then means "gone or damaged" and the caller cannot tell which. semsource reads `truncated`,
-    never `missing` (`processor/mcp-gateway/graph_matches.go:130`), so it would not see the damage at all.
+- **Ruled (owner, 2026-11-18, O1):** a damaged hit does not stop the search. The search returns the other hits, leaves
+  the damaged one out, and names it in a new reply field, `damaged`: the IDs the batch named `damaged`, in hit order,
+  omitted when empty. A damaged hit is not counted in `missing`, which keeps its meaning (gone when read back), and it
+  sets `truncated`, as a missing hit does. This replaces the refusal the #657 rule's second case would give, for word
+  search only; the prefix page still refuses.
+- Surface: `Damaged []string` on `graph.LocalSearchData` and `graph.TextSearchData` (which searchGraph also answers),
+  with their doc comments; `readMatches` returns the damaged IDs beside the count. Callers: `localsearch.go:191`,
+  `textsearch.go:179`. About 15 production lines.
+- A hit named with a reason outside the set is counted in `missing`, as today.
 - Stakes: graph-lexical stops on the first damaged entity it is sent (`processor/graph-lexical/component.go:240-251`),
-  so this path is reached only in the window before graph-lexical sees the damaged write. B costs about 5 lines and a
-  test.
+  so until #658 lands this path is reached only in the window before graph-lexical sees the damaged write.
 
 ## Adopter seam
 
@@ -122,9 +122,10 @@ labelled as gone.
   - `reconcile_prop_test.go` draws `damaged` too.
   - Integration: `TestPoisonedSeedOverRealResponders` now asserts as its precondition that the batch names poison
     `damaged`, which fails on `main`. Its `Entities` assertions stay.
-- **graph-query (if B):** `TestSearchRefusesDamagedHit`. A stub batch names one hit `damaged`, and `localSearch` and
-  `globalSearch` refuse fatal `graph_state_reset_required` naming it. `TestSearchDropsMissingHits` stays for
-  `not_found`.
+- **graph-query:** `TestSearchNamesDamagedHit`. A stub batch returns two hits and names a third `damaged`;
+  `localSearch` and `globalSearch` answer the two in hit order, `damaged` lists the third, `missing` is 0 and
+  `truncated` is true. On `main` the hit is counted in `missing` and `damaged` is absent, so the test fails.
+  `TestSearchDropsMissingHits` stays for `not_found`.
 
 ## Merge order
 
@@ -132,5 +133,5 @@ No other open PR overlaps. #692 merges alone.
 
 ## Open Questions
 
-- O1 (owner, confirm): ruling 1 replaces word-search D4, so a damaged hit refuses the search (B), or D4 stands (A).
-- O2 (owner): fusion maps `damaged` to `error` (A, recommended) or gains `UnhydratedDamaged` (B).
+- O1: ruled 2026-11-18, see D3.
+- O2: ruled 2026-11-18: A, fusion maps `damaged` to `error`.

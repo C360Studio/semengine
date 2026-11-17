@@ -23,9 +23,9 @@ goes with it."
   graph-ingest's health do not change. The `batch_query_missing_total` counter gains a `damaged` series.
 - The prefix page keeps refusing (ruling 1). The entity verb does not change.
 - `fusionnats.Client.Entities` drops its re-read of a refused batch one ID at a time. It maps `damaged` to
-  `fusion.UnhydratedError`, which is what a damaged seed shows today (owner question O2).
-- graph-query's `localSearch` and `globalSearch` keep refusing a search with a damaged hit, now from the reply's
-  `damaged` entry and not from the batch's refusal (owner question O1).
+  `fusion.UnhydratedError`, which is what a damaged seed shows today (owner, 2026-11-18).
+- graph-query's `localSearch` and `globalSearch` no longer refuse a search with a damaged hit: they return the other
+  hits and name the damaged one in a new `damaged` reply field (owner, 2026-11-18).
 - Docs and migration notes: listed in tasks 2.4.
 
 ## Out of scope

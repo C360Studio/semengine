@@ -8,7 +8,7 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
 
 - [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas). Needs INVENTORY PASS, a passing
   pre-owner design review, and rulings on O1 and O2. INVENTORY PASS and design review PASS at e7b495dd (Claude
-  reviewer; findings applied in the next commit).
+  reviewer); O1 and O2 ruled 2026-11-18, D3 rewritten to the O1 ruling.
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Code
@@ -32,8 +32,9 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
   - Rewrite `TestOwnValidationNotRetried` for the one-request path, and keep a test that every seed damaged answers
     `deferred` `all_seeds_unhydrated` (its proof today, `TestAllSeedsPoisonedDefer`, is deleted).
   - Update `Entities`' doc comment (`:251-267`).
-- [ ] 2.3 graph-query, tests then code (design D3, as ruled on O1). Write `TestSearchRefusesDamagedHit`, then change
-  `readMatches` (`matches.go:113-131`) and the `Missing` doc comments (`graph/query_local_search_types.go:52-53`,
+- [ ] 2.3 graph-query, tests then code (design D3). Write `TestSearchNamesDamagedHit`, then add `Damaged` to
+  `graph.LocalSearchData` and `graph.TextSearchData`, change `readMatches` (`matches.go:113-131`) and its two callers,
+  and update the `Missing` and `Truncated` doc comments (`graph/query_local_search_types.go:52-53`,
   `graph/query_global_search_types.go:60-61`).
 - [ ] 2.4 Docs:
   - `processor/graph-ingest/README.md:123-128` (including "reads them one at a time"), and `:172` if the counter's
@@ -46,7 +47,7 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
     `gateway/cs-api/systems.go:896` must accept `damaged`; a semsparql bullet: `sparql/executor.go:1564` still fails
     the query, but with its own unclassified error in place of fatal `graph_state_reset_required`.
   - `pkg/fusion/README.md:114-120`, `pkg/fusion/MIGRATION.md:96-100`, `pkg/fusion/retrieval.go:110-111`.
-  - `docs/repository-map.md:91` if O1 changes what it says.
+  - `docs/repository-map.md:91`: a damaged hit no longer refuses a search.
 - [ ] 2.5 Before the PR is marked ready: post on #656 what counts as done, and make the PR title and body match.
 
 ## 3. Close

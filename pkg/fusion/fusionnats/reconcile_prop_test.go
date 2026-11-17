@@ -41,7 +41,8 @@ func reconcileModel(tc reconcileCase) (held []string, unhydrated []fusion.Unhydr
 			switch m.Reason {
 			case "not_found":
 				reason = fusion.UnhydratedNotFound
-			case "error":
+			// fusion's closed set has no damaged reason: a damaged entity is an error to its reader.
+			case "error", "damaged":
 				reason = fusion.UnhydratedError
 			}
 		}
@@ -84,6 +85,7 @@ func TestReconcileTotal(t *testing.T) {
 		"duplicate request":    {requested: []string{a, b, a}, entities: []string{b, a}},
 		"in both lists":        {requested: []string{a}, entities: []string{a}, missing: []graph.MissingEntity{{ID: a, Reason: "not_found"}}},
 		"in neither list":      {requested: []string{a, b}, entities: []string{a}},
+		"damaged is error":     {requested: []string{a}, missing: []graph.MissingEntity{{ID: a, Reason: "damaged"}}},
 		"reply order reversed": {requested: []string{a, b, c}, entities: []string{c, b, a}},
 		"missing twice, last wins": {requested: []string{a}, missing: []graph.MissingEntity{
 			{ID: a, Reason: "not_found"}, {ID: a, Reason: "later"},
@@ -98,7 +100,7 @@ func TestReconcileTotal(t *testing.T) {
 	}
 
 	pool := []string{a, b, c, "acme.ops.d.s.t.d"}
-	reasons := []graph.MissingReason{"not_found", "error", "", "later"}
+	reasons := []graph.MissingReason{"not_found", "error", "damaged", "", "later"}
 	t.Run("generated", func(t *testing.T) {
 		rapid.Check(t, func(rt *rapid.T) {
 			tc := reconcileCase{requested: rapid.SliceOfN(rapid.SampledFrom(pool), 0, 8).Draw(rt, "requested")}

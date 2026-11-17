@@ -412,9 +412,9 @@ func TestNLResolveWithoutWordIndex(t *testing.T) {
 }
 
 // TestPoisonedSeedOverRealResponders: bytes the stored-value rule refuses, Put under one key after
-// graph-ingest's Start returned, are found by the read path, not the boot sweep. graph-ingest
-// refuses the whole batch for them; Entities lists the poisoned seed unhydrated error and hydrates
-// the other two in request order (fusion spec, "One poisoned seed").
+// graph-ingest's Start returned, are found by the read path, not the boot sweep. graph-ingest's
+// batch returns the other two and names the damaged one `damaged`; Entities lists it unhydrated
+// error and hydrates the other two in request order (fusion spec, "One damaged seed").
 func TestPoisonedSeedOverRealResponders(t *testing.T) {
 	s := startStack(t)
 	s.create(t, beta, [2]string{titlePredicate, "Gadget Beta"})
@@ -435,13 +435,19 @@ func TestPoisonedSeedOverRealResponders(t *testing.T) {
 		t.Fatalf("put poison: %v", err)
 	}
 
-	// The precondition: graph-query's batch, as graph-ingest answers it, is refused whole.
+	// The precondition: graph-query's batch, as graph-ingest answers it, names the damaged entity.
 	batch := verbRow(t, graph.ResponderGraphQuery, "batch").Subject
 	raw, err := s.client.RequestClassified(t.Context(), batch,
 		[]byte(`{"ids":["`+alpha+`","`+poison+`","`+beta+`"]}`), requestTimeout)
-	var refusal *errs.ClassifiedError
-	if !errors.As(err, &refusal) || refusal.Code != "graph_state_reset_required" {
-		t.Fatalf("batch with poison = %s, %v; want a graph_state_reset_required refusal", raw, err)
+	if err != nil {
+		t.Fatalf("batch with a damaged entity refused: %v", err)
+	}
+	var reply graph.EntityBatchResponse
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		t.Fatalf("decode batch reply %s: %v", raw, err)
+	}
+	if want := []graph.MissingEntity{{ID: poison, Reason: "damaged"}}; !reflect.DeepEqual(reply.Missing, want) {
+		t.Fatalf("batch missing = %+v, want %+v", reply.Missing, want)
 	}
 
 	hydration, err := newClient(t, s).Entities(t.Context(), []string{alpha, poison, beta})

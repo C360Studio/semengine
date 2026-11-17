@@ -13,7 +13,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 - [x] 2.1 Tests first (`graph/embedding/httpembedder/httpembedder_test.go`): `TestRequestShape` wants the document
   body exactly `{model, input, input_type: "document"}`; new `TestInputTypeNamesTheText` reads both bodies, and with
   `OmitInputType` true wants neither to carry the field. Shown to fail on main (`notes/2.1.md`).
-- [ ] 2.2 Implement in `httpembedder.go`: `Config.OmitInputType`, the request's `input_type` field, the doc comments
+- [x] 2.2 Implement in `httpembedder.go`: `Config.OmitInputType`, the request's `input_type` field, the doc comments
   on `Config`, `Generate` and `GenerateQuery`; update `processor/graph-embedding/README.md`, `MIGRATION.md`, the ledger
   row and `docs/repository-map.md`. Accept: 2.1 passes; full `task verify` passes on a clean tree.
 - [x] 2.3 Evidence: `task -x scorecard:tier1` against semembed `c4cfb309` (arctic-embed-s) with no `-query-prefix`;

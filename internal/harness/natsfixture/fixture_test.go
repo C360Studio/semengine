@@ -249,3 +249,32 @@ func TestImagePin(t *testing.T) {
 		}
 	})
 }
+
+// fourMethodTB has only the four methods TB names and is not a *testing.T, as a program run by
+// Task passes one.
+type fourMethodTB struct {
+	cleanups []func()
+	errors   []string
+}
+
+func (r *fourMethodTB) Helper()                        {}
+func (r *fourMethodTB) Logf(string, ...any)            {}
+func (r *fourMethodTB) Cleanup(f func())               { r.cleanups = append(r.cleanups, f) }
+func (r *fourMethodTB) Errorf(format string, _ ...any) { r.errors = append(r.errors, format) }
+
+// New takes any TB, not only a test's: it registers exactly one cleanup there and makes no Docker
+// call, and the cleanup of a fixture never started reports nothing.
+func TestNewTakesAnyTB(t *testing.T) {
+	tb := &fourMethodTB{}
+	f := New(tb)
+	if len(tb.cleanups) != 1 {
+		t.Fatalf("New registered %d cleanups, want 1", len(tb.cleanups))
+	}
+	if f.used {
+		t.Error("New consumed the fixture")
+	}
+	tb.cleanups[0]()
+	if len(tb.errors) != 0 {
+		t.Errorf("cleanup of an unstarted fixture reported %q, want nothing", tb.errors)
+	}
+}

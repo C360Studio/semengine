@@ -22,18 +22,18 @@ in `notes/<task>.md` or `task mutate:check`. Each code task names its pull reque
 
 ## 3. PR B: the tier 1 scorecard
 
-- [ ] 3.0 Open PR B's own draft claim (its own branch and worktree) after PR A merges.
-- [ ] 3.1 `natsfixture.New` takes `natsfixture.TB` (design D6, nats-fixture delta); every existing caller unchanged;
+- [x] 3.0 Open PR B's own draft claim (its own branch and worktree) after PR A merges.
+- [x] 3.1 `natsfixture.New` takes `natsfixture.TB` (design D6, nats-fixture delta); every existing caller unchanged;
   `task verify`.
-- [ ] 3.2 Tests first for the tool's flag refusals and tally arithmetic (hand-computed ranks), shown failing; the tool
+- [x] 3.2 Tests first for the tool's flag refusals and tally arithmetic (hand-computed ranks), shown failing; the tool
   joins the tool packages in `scripts/test-pkgs.sh`.
-- [ ] 3.3 `internal/harness/scorecard` and `task scorecard:tier1` (design D6, D7); nothing is added to `task verify`;
+- [x] 3.3 `internal/harness/scorecard` and `task scorecard:tier1` (design D6, D7); nothing is added to `task verify`;
   `docs/test-infrastructure.md` "When we write harness code" names harness programs run by Task (`pindiff`,
   `mutcheck`, `scorecard`).
-- [ ] 3.4 First run against semembed (`Snowflake/snowflake-arctic-embed-s`); output, command and commits in
+- [x] 3.4 First run against semembed (`Snowflake/snowflake-arctic-embed-s`); output, command and commits in
   `notes/probes/scorecard-<model>-<commit>.md`. Set tier 1's floor from it (design D8), citing that note, and rerun
   to show the verdict passes, and that a floor one point above the measured row exits 1.
 
 ## 4. Close-out
 
-- [ ] 4.1 Spec sync and archive as the last content commit; PR B body carries `Closes #668` and `Closes #666`.
+- [x] 4.1 Spec sync and archive as the last content commit; PR B body carries `Closes #668` and `Closes #666`.

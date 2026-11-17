@@ -60,8 +60,8 @@ names, dimensions, query prefix, commits and timings. It SHALL NOT run in `task 
 ### Requirement: The tier 1 scorecard holds a floor
 
 Tier 1 has one floor, held by every model, kept as constants in the scorecard program, each citing the probe note it
-was measured from. `task scorecard:tier1` SHALL exit 1 when the merged row is below that floor or below either single
-row, and 2 on any other failure.
+was measured from. `task scorecard:tier1` SHALL exit 1 when the merged row's R@10 or MRR is below that floor or its R@10
+is below either single row's, and 2 on any other failure.
 
 #### Scenario: Below the floor
 

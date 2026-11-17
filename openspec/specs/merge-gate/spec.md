@@ -162,10 +162,10 @@ A contract test SHALL fail, naming the job and what it runs on, when any job in 
 
 ### Requirement: Tool tests and repository guards are separate packages
 
-The tool packages SHALL be `internal/harness/toolcheck`, `internal/harness/mutcheck` and `internal/harness/pindiff`,
-named once, in `scripts/test-pkgs.sh`. A test SHALL live in `toolcheck` when every file of the real tree it reads is
-under a trigger path, and in `internal/harness/contract`, a unit package, when it reads any other file.
-`task test:tools` SHALL run the tool packages with `go test -race -count=1 -cpu 1`.
+The tool packages SHALL be `internal/harness/toolcheck`, `internal/harness/mutcheck`, `internal/harness/pindiff` and
+`internal/harness/scorecard`, named once, in `scripts/test-pkgs.sh`. A test SHALL live in `toolcheck` when every file
+of the real tree it reads is under a trigger path, and in `internal/harness/contract`, a unit package, when it reads
+any other file. `task test:tools` SHALL run the tool packages with `go test -race -count=1 -cpu 1`.
 
 #### Scenario: A tool package among the unit packages
 

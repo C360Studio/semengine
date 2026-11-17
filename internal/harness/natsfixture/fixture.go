@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -102,9 +101,18 @@ func WithMaxPayload(n int64) Option {
 	return func(f *Fixture) { f.maxPayload, f.maxPayloadSet = n, true }
 }
 
-// New binds a fixture to its test and registers a Stop, under fresh bounded authority, as the
-// test's cleanup. It makes no Docker call.
-func New(t testing.TB, opts ...Option) *Fixture {
+// TB is what New uses of its caller: a test passes its *testing.T, and a program run by Task
+// passes its own, which runs the cleanups when it exits and treats an Errorf as a failure.
+type TB interface {
+	Helper()
+	Errorf(format string, args ...any)
+	Logf(format string, args ...any)
+	Cleanup(func())
+}
+
+// New binds a fixture to its caller and registers a Stop, under fresh bounded authority, as the
+// caller's cleanup. It makes no Docker call.
+func New(t TB, opts ...Option) *Fixture {
 	t.Helper()
 	f := &Fixture{errorf: t.Errorf, logf: t.Logf, readPort: readMappedPort}
 	for _, opt := range opts {

@@ -220,6 +220,12 @@ today's tree and that testcontainers, `go test`, `t.Cleanup` or Task does not al
 that failure and its issue. Prefer, in order: a `go test` flag, `t.Cleanup`, a testcontainers feature, a Task
 command, and only then code of our own, kept to the fewest lines.
 
+Some harness code is a program Task runs, not a test: `pindiff` (`task ledger:check`, `task ledger:diff`), `mutcheck`
+(`task mutate:check`) and `scorecard` (`task -x scorecard:tier1`, tier 1 search measured on a real embedding provider
+before each tier 1 release). None runs in `task verify` except `pindiff check`. A program that needs a NATS server
+passes `natsfixture.New` its own `natsfixture.TB`, which runs the cleanups when it exits. Its unit tests are in the
+tool packages (`scripts/test-pkgs.sh`); a test that runs the built program against NATS is integration-tagged.
+
 ## Retiring harness code
 
 When the failure a piece of harness code names can no longer happen (the upstream bug is fixed, the test that needed

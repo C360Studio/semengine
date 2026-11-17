@@ -56,9 +56,9 @@ transport"; `TestGraphImportsNoTransport`).
   `graph.query.*`. A name is unique only within its responder: `entity` is declared for graph-ingest and for
   graph-query. Each row also marks `Enveloped` and gives the `Reply` type.
   The embedding responder is in the tree (`processor/graph-embedding`). The spatial and temporal responders are not,
-  so those two rows name a responder that does not exist, and graph-query's `spatial` and `temporal` forwards and its
-  `globalSearch` time-range and area strategies are refused transient `internal`. A verb a consumer serves under
-  `graph.query.*` is not in the table. `QueryVerbs`' doc comment names each verb's request and reply types.
+  so those two rows name a responder that does not exist, and graph-query's `spatial` and `temporal` forwards are
+  refused transient `internal`. A verb a consumer serves under `graph.query.*` is not in the table. `QueryVerbs`' doc
+  comment names each verb's request and reply types.
 - **Local search.** `LocalSearchRequest` names an entity (`entity_id`), a `level` from 0 to 2 and a `query` of 1 to
   `MaxSearchTerms` (32) distinct words, and the search runs in that entity's community: the group of entities that share
   the first 4, 3 or 2 parts of its ID. `LocalSearchData` is the reply: the community's record (`community_id`,
@@ -66,19 +66,28 @@ transport"; `TestGraphImportsNoTransport`).
   `entities_truncated` and an `answer` sentence. The matches come from one page of at most 1,000 entities in ID order,
   so on a larger group they are the best of the lexically smallest IDs. `EntitiesTruncated` is true when the page had
   more to read or matches were left out to fit `max_payload`.
-- **Global search.** `GlobalSearchRequest` is a `query` (required, not blank), a `level` (0 to 2, omitted means 0, read
-  only by the text strategy) and `min_revision`; any other key is refused. The verbs `globalSearch` and `searchGraph`
-  take it and reply with the same `GlobalSearchData`: `strategy` (`entity`, `path`, `temporal`, `spatial` or `text`)
-  and exactly one field holding that strategy's result as read: `entity` (the entity verb's reply bytes), `path` (a
-  `PathSearchData`), `temporal` (a `TemporalData`), `spatial` (a `SpatialData`) or `text` (a `TextSearchData`).
-  `TextSearchData` holds the `groups` read (`TextSearchGroup`: `community_id`, `member_count`, `community_summary`,
-  `keywords`), the `matches` (`TextSearchMatch`: `id`, `label`, `score` and the `entity` as the page sent it),
-  `entities_scanned`, `entities_truncated` (true when the matches are a sample), `unreadable_groups`,
-  `unhonoured_hints` (the hints the text search could not apply: `path`, `similarity`, `ranking`) and an `answer`
-  sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
+- **Global search.** `GlobalSearchRequest` is a `query` (required, not blank), a `level` (0 to 2, omitted means 0), a
+  `limit` (the most matches answered: omitted means `DefaultSimilarityLimit`, else 1 to `MaxSimilarityLimit`) and
+  `min_revision`; any other key is refused. The verbs `globalSearch` and `searchGraph` take it and reply with the same
+  `GlobalSearchData`, whose fields sit side by side:
+  - `text`, a `TextSearchData`: the word search's matches. Empty means the word index matched nothing; null only in a
+    `searchGraph` reply whose word index was not ready.
+  - `entity` (the entity verb's reply bytes) only beside an honoured `entity` hint, and `path` (a `PathSearchData`)
+    only beside an honoured `path` hint.
+  - `semantic` (the embedding search's reply bytes) and `merge` (a `GlobalSearchHint`) only in a `searchGraph` reply
+    when graph-query's `embedding_enabled` is true; `merge` says whether the embedding list was read (merged into
+    `text`, or alone when the word index was not ready) and why not, and `semantic` is there only when it was read.
+  - `hints`: each `GlobalSearchHint` (`hint`, `detail`, `honoured`, `reason`, `code`) the question asked for beyond its
+    words, honoured or not.
+
+  `TextSearchData` holds the `level`, the `groups` read (`TextSearchGroup`: `community_id`, `matches`,
+  `record_state` and the `record` when it was read), the `matches` (`TextSearchMatch`: `id`, `label`, `score`,
+  `word_rank` and `vector_rank` in a merged `searchGraph` list, and the `entity` as read), `matched` (the word index's
+  count before the limit), `excluded`, `missing`, `bodies_not_indexed`, `truncated`, `unreadable_groups` and an
+  `answer` sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
   `SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit`, `min_revision`) are what graph-query sends to the
-  time-range and bounds verbs, and so what the responders decode; SemStreams spelled the times `startTime` and
-  `endTime`. Which questions each strategy answers, and what is refused, is in `processor/graph-query/README.md`.
+  time-range and bounds verbs, and so what the responders decode. Which hints each search honours, and what is
+  refused, is in `processor/graph-query/README.md`.
 - **Counts.** `PrefixQueryResponse.Total` is the number of distinct keys in the listing before the cursor and any limit,
   as listed and not a snapshot. `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
   is the whole group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type

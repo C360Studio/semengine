@@ -33,6 +33,7 @@ changing how host ports are picked; capping reconnects in the restart tests.
 
 ## Impact
 
-`internal/harness/natsfixture` (`fixture.go`, `restart.go`, one integration test); one graph-ingest test helper; the
-`nats-fixture` spec. Test-only: no production code changes. A test that builds a NATS URL from the fixture's host and
-port by hand, rather than from `URL()`, would now be refused; the relay test was the only one.
+`internal/harness/natsfixture` (`fixture.go`, `restart.go`, one integration test); one graph-ingest test helper;
+`docs/test-infrastructure.md`; the `nats-fixture` spec. Test-only: no production code changes. A test that builds a
+NATS URL from the fixture's host and port by hand, rather than from `URL()`, would now be refused; the relay test was
+the only one.

@@ -598,7 +598,7 @@ func TestOpenClosesBeforeTheFixtureStops(t *testing.T) {
 }
 
 // TestBrokerRefusesAClientWithoutItsPassword: a client dialling the broker's host port without the
-// password URL carries is refused, so a client from another test process that redials a port this
+// password URL carries, or with another broker's, is refused, so a client from another test process that redials a port this
 // broker was later handed cannot join it; the URL itself still connects. nats.go dials directly here,
 // not through the fixture's own connect.
 func TestBrokerRefusesAClientWithoutItsPassword(t *testing.T) {
@@ -611,12 +611,26 @@ func TestBrokerRefusesAClientWithoutItsPassword(t *testing.T) {
 		t.Fatalf("URL %q carries no password", f.URL())
 	}
 
-	bare := "nats://" + u.Host
-	if nc, err := nats.Connect(bare, nats.MaxReconnects(0)); !errors.Is(err, nats.ErrAuthorization) {
-		if nc != nil {
-			nc.Close()
+	other := startFixture(t)
+	if other.URL() == f.URL() {
+		t.Fatalf("two brokers share URL %q", f.URL())
+	}
+	otherURL, err := neturl.Parse(other.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if otherURL.User.Username() == u.User.Username() {
+		t.Fatalf("two brokers share the password %q", u.User.Username())
+	}
+
+	// No password, and another broker's password: the stray client's case.
+	for _, dial := range []string{"nats://" + u.Host, (&neturl.URL{Scheme: "nats", User: otherURL.User, Host: u.Host}).String()} {
+		if nc, err := nats.Connect(dial, nats.MaxReconnects(0)); !errors.Is(err, nats.ErrAuthorization) {
+			if nc != nil {
+				nc.Close()
+			}
+			t.Fatalf("connect to %s: err = %v, want %v", dial, err, nats.ErrAuthorization)
 		}
-		t.Fatalf("connect to %s without the password: err = %v, want %v", bare, err, nats.ErrAuthorization)
 	}
 
 	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))

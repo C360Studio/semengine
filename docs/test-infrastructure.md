@@ -148,6 +148,12 @@ A run shares the Docker daemon with every other run and repository on the machin
 The fixture asks the operating system for a free host port for each container, so runs do not collide. Our code
 removes only containers that carry our label, and never runs `docker … prune` or removes anything by name.
 
+A host port can still pass from one run's container to another's: a test that restarts its own server frees the port
+while its client keeps trying to reconnect, and another package's server can be handed that port. So each server
+starts with a random password, which its `URL()` carries (`nats://<password>@host:port`), and refuses any client
+without it. Connect through `URL()` or `Reset`'s return value as given; a URL rebuilt from the host and port alone is
+refused with `nats: authorization violation`.
+
 ## Testing a consumer against a broker
 
 `natsfixture` is internal to this repository. A consumer (SemSource, SemTeams, or any module that imports SemEngine)

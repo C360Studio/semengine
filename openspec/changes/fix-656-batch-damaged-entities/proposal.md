@@ -1,6 +1,6 @@
 # Proposal: fix-656-batch-damaged-entities
 
-Approved-by:
+Approved-by: cglusky (2026-11-18) <https://github.com/C360Studio/semengine/issues/656#issuecomment-6963280216> sha256:477f76dbfa8d
 
 Track: `design`. Capabilities modified: `graph-transport-boundary`, `fusion`, `graph-query`.
 

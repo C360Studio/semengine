@@ -12,7 +12,7 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
 
 ## 2. Code
 
-- [ ] 2.1 graph and graph-ingest, tests first (design D1).
+- [x] 2.1 graph and graph-ingest, tests first (design D1).
   - Write these tests: `TestIntegration_BatchQuery_NamesDamagedEntities` and
     `TestIntegration_BatchQuery_AllDamaged` in `processor/graph-ingest/batch_missing_integration_test.go`; the
     generated accounting check; the damage-plus-fault case (`TestBatchDamageBesideFaultIsTransient`).
@@ -22,7 +22,7 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
   - Then add `graph.MissingDamaged` and its doc comment, change the batch path, seed the `damaged` counter series, and
     make the debug log at `query.go:199` give each reason's count, not a fixed `not_found`.
   - `notes/2.1.md` shows each new test failing on `main`.
-- [ ] 2.2 fusionnats, tests then code (design D2).
+- [x] 2.2 fusionnats, tests then code (design D2).
   - Remove `entitiesAlone` and its branch (`client.go:276-282`, `:293-342`) and map `damaged` in
     `unhydratedReason` (`:347-356`).
   - Rewrite `poison_test.go` as the D2 tests and add `"damaged"` to the reasons drawn in `reconcile_prop_test.go:101`.

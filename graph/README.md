@@ -72,22 +72,23 @@ transport"; `TestGraphImportsNoTransport`).
   `GlobalSearchData`, whose fields sit side by side:
   - `text`, a `TextSearchData`: the word search's matches. Empty means the word index matched nothing; null only in a
     `searchGraph` reply whose word index was not ready.
-  - `entity` (the entity verb's reply bytes) only beside an honoured `entity` hint, and `path` (a `PathSearchData`)
-    only beside an honoured `path` hint.
+  - `entity` (the entity verb's reply bytes) only beside an honoured `entity` hint, and `path` (a `PathSearchData`) only
+    beside an honoured `path` hint.
   - `semantic` (the embedding search's reply bytes) and `merge` (a `GlobalSearchHint`) only in a `searchGraph` reply
     when graph-query's `embedding_enabled` is true; `merge` says whether the embedding list was read (merged into
-    `text`, or alone when the word index was not ready) and why not, and `semantic` is there only when it was read.
+    `text`, or alone in `semantic` when the word index was not ready) and why not, and `semantic` is there only when it
+    was read.
   - `hints`: each `GlobalSearchHint` (`hint`, `detail`, `honoured`, `reason`, `code`) the question asked for beyond its
     words, honoured or not.
 
-  `TextSearchData` holds the `level`, the `groups` read (`TextSearchGroup`: `community_id`, `matches`,
-  `record_state` and the `record` when it was read), the `matches` (`TextSearchMatch`: `id`, `label`, `score`,
-  `word_rank` and `vector_rank` in a merged `searchGraph` list, and the `entity` as read), `matched` (the word index's
-  count before the limit), `excluded`, `missing`, `bodies_not_indexed`, `truncated`, `unreadable_groups` and an
-  `answer` sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
+  `TextSearchData` holds the `level`, the `groups` read (`TextSearchGroup`: `community_id`, `matches`, `record_state`
+  and the `record` when it was read), the `matches` (`TextSearchMatch`: `id`, `label`, `score`, `word_rank` and
+  `vector_rank` in a `searchGraph` reply when `embedding_enabled` is true, and the `entity` as read), `matched` (the
+  word index's count before the limit), `excluded`, `missing`, `bodies_not_indexed`, `truncated`, `unreadable_groups`
+  and an `answer` sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
   `SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit`, `min_revision`) are what graph-query sends to the
-  time-range and bounds verbs, and so what the responders decode. Which hints each search honours, and what is
-  refused, is in `processor/graph-query/README.md`.
+  time-range and bounds verbs, and so what the responders decode. Which hints each search honours, and what is refused,
+  is in `processor/graph-query/README.md`.
 - **Counts.** `PrefixQueryResponse.Total` is the number of distinct keys in the listing before the cursor and any limit,
   as listed and not a snapshot. `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
   is the whole group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type

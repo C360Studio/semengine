@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	neturl "net/url"
 	"os/exec"
 	"slices"
 	"strings"
@@ -594,4 +595,33 @@ func TestOpenClosesBeforeTheFixtureStops(t *testing.T) {
 	if rem := f.remaining(); len(rem) != 0 {
 		t.Fatalf("the fixture's Stop left %v", rem)
 	}
+}
+
+// TestBrokerRefusesAClientWithoutItsPassword: a client dialling the broker's host port without the
+// password URL carries is refused, so a client from another test process that redials a port this
+// broker was later handed cannot join it; the URL itself still connects. nats.go dials directly here,
+// not through the fixture's own connect.
+func TestBrokerRefusesAClientWithoutItsPassword(t *testing.T) {
+	f := startFixture(t)
+	u, err := neturl.Parse(f.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.User.Username() == "" {
+		t.Fatalf("URL %q carries no password", f.URL())
+	}
+
+	bare := "nats://" + u.Host
+	if nc, err := nats.Connect(bare, nats.MaxReconnects(0)); !errors.Is(err, nats.ErrAuthorization) {
+		if nc != nil {
+			nc.Close()
+		}
+		t.Fatalf("connect to %s without the password: err = %v, want %v", bare, err, nats.ErrAuthorization)
+	}
+
+	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+	if err != nil {
+		t.Fatalf("connect with URL: %v", err)
+	}
+	nc.Close()
 }

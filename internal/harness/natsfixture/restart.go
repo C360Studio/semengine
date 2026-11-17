@@ -76,7 +76,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 	if err != nil {
 		return fmt.Errorf("natsfixture: restart: host from %q: %w", oldURL, err)
 	}
-	host := u.Hostname()
+	host, token := u.Hostname(), u.User.Username()
 
 	// run times one phase and turns a cancelled parent into that phase's failure even when the
 	// operation itself returned success, as Start's phases do.
@@ -124,7 +124,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 	}); err != nil {
 		return err
 	}
-	url := fmt.Sprintf("nats://%s:%s", host, port)
+	url := clientURL(token, host, port)
 	if err := run("connect", func() error {
 		nc, err := connect(ctx, url)
 		if nc != nil {

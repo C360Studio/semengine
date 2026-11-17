@@ -9,8 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	neturl "net/url"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -310,7 +310,8 @@ const relayDialTimeout = 5 * time.Second
 // goroutines.
 type brokerRelay struct {
 	listener net.Listener
-	upstream string // the shared broker's host:port
+	upstream string           // the shared broker's host:port
+	user     *neturl.Userinfo // the shared broker's password, which the relay's URL carries
 	wg       sync.WaitGroup
 
 	mu     sync.Mutex
@@ -324,22 +325,24 @@ type brokerRelay struct {
 // relay and the relay before the reset's connection check.
 func newBrokerRelay(t *testing.T, brokerURL string) *brokerRelay {
 	t.Helper()
-	upstream, ok := strings.CutPrefix(brokerURL, "nats://")
-	if !ok {
-		t.Fatalf("broker URL %q is not a nats:// URL", brokerURL)
+	broker, err := neturl.Parse(brokerURL)
+	if err != nil || broker.Scheme != "nats" {
+		t.Fatalf("broker URL %q is not a nats:// URL (%v)", brokerURL, err)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	r := &brokerRelay{listener: listener, upstream: upstream, conns: map[net.Conn]struct{}{}}
+	r := &brokerRelay{listener: listener, upstream: broker.Host, user: broker.User, conns: map[net.Conn]struct{}{}}
 	r.wg.Go(r.accept)
 	t.Cleanup(r.close)
 	return r
 }
 
-// URL is the relay's NATS URL.
-func (r *brokerRelay) URL() string { return "nats://" + r.listener.Addr().String() }
+// URL is the relay's NATS URL, with the broker's password.
+func (r *brokerRelay) URL() string {
+	return (&neturl.URL{Scheme: "nats", User: r.user, Host: r.listener.Addr().String()}).String()
+}
 
 // Cut closes every relayed connection, and each connection accepted until Restore is
 // closed at once, before the broker's INFO reaches the client.

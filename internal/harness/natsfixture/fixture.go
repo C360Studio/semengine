@@ -9,10 +9,12 @@ package natsfixture
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"errors"
 	"fmt"
 	"net"
+	neturl "net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -191,8 +193,11 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	}
 
 	// The image's entrypoint prefixes nats-server to flag arguments. JetStream stores in the
-	// container's own filesystem: the fixture creates no volume.
-	cmd := []string{"--port", "4222", "--js"}
+	// container's own filesystem: the fixture creates no volume. The password keeps out a client
+	// from another test process: one whose own broker went away keeps redialling that broker's host
+	// port, and a broker started later on the same machine can be handed that port.
+	token := rand.Text()
+	cmd := []string{"--port", "4222", "--js", "--auth", token}
 	if f.maxPayloadSet {
 		// nats-server has no command-line flag for max_payload, so it goes in a config file
 		// copied in before the container starts; the flags above still apply over it. The file
@@ -272,7 +277,7 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	url := fmt.Sprintf("nats://%s:%s", host, port)
+	url := clientURL(token, host, port)
 
 	if err := run("connect", func() error {
 		nc, err := connect(ctx, url)
@@ -393,8 +398,14 @@ func (f *Fixture) rollbackAttempt(ctx context.Context) error {
 	return nil
 }
 
-// URL is the broker's client URL, on the host port the start phase picked (freePort); Restart keeps
-// it.
+// clientURL is the broker's client URL, its password in the user part, which nats.go sends as the
+// connection's token.
+func clientURL(token, host, port string) string {
+	return (&neturl.URL{Scheme: "nats", User: neturl.User(token), Host: net.JoinHostPort(host, port)}).String()
+}
+
+// URL is the broker's client URL, carrying its password, on the host port the start phase picked
+// (freePort); Restart keeps both.
 func (f *Fixture) URL() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

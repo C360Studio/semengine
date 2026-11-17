@@ -1,6 +1,6 @@
 # Proposal: fix-686-embedder-input-type
 
-Approved-by:
+Approved-by: cglusky (2026-11-17) <https://github.com/C360Studio/semengine/issues/686#issuecomment-6956235586> sha256:970fb3aabc9f
 
 Track: `quick`. Capability modified: `embedding-index` (one existing requirement changed; none added).
 

@@ -4,9 +4,8 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal and spec delta (`proposal.md`, `specs/embedding-index/spec.md`); `task spec:check` and
-  `task docs:check` pass.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Proposal and spec delta (`proposal.md`, `specs/embedding-index/spec.md`); `task spec:check` and
+  `task docs:check` pass. Approved 2026-11-17 (#686).
 
 ## 2. Code
 
@@ -18,4 +17,4 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
   row and `docs/repository-map.md`. Accept: 2.1 passes; full `task verify` passes on a clean tree.
 - [x] 2.3 Evidence: `task -x scorecard:tier1` against semembed `c4cfb309` (arctic-embed-s) with no `-query-prefix`;
   the vector row is within a point of the prefixed run's R@10 52.0% (`notes/2.3.md`).
-- [ ] 2.4 Archive: `openspec archive fix-686-embedder-input-type --yes`; `task spec:check` and `task docs:check` pass.
+- [x] 2.4 Archive: `openspec archive fix-686-embedder-input-type --yes`; `task spec:check` and `task docs:check` pass.

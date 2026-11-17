@@ -34,7 +34,10 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
   - Update `Entities`' doc comment (`:251-267`).
 - [ ] 2.3 graph-query, tests then code (design D3). Write `TestSearchNamesDamagedHit`, then add `Damaged` to
   `graph.LocalSearchData` and `graph.TextSearchData`, change `readMatches` (`matches.go:113-131`) and its two callers,
-  and update the `Missing` and `Truncated` doc comments (`graph/query_local_search_types.go:52-53`,
+  and update the `Missing` and `Truncated` doc comments (including the searchGraph paragraph,
+  `graph/query_global_search_types.go:66-69`), the `answerText` comment (`textsearch.go:171`), and the `Truncated:`
+  expressions (`localsearch.go:203`, `textsearch.go:194`) so a damaged hit sets them. Also write
+  `TestSearchGraphMergedNamesDamagedHit`; the doc comments (`graph/query_local_search_types.go:52-53`,
   `graph/query_global_search_types.go:60-61`).
 - [ ] 2.4 Docs:
   - `processor/graph-ingest/README.md:123-128` (including "reads them one at a time"), and `:172` if the counter's
@@ -48,6 +51,9 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
     the query, but with its own unclassified error in place of fatal `graph_state_reset_required`.
   - `pkg/fusion/README.md:114-120`, `pkg/fusion/MIGRATION.md:96-100`, `pkg/fusion/retrieval.go:110-111`.
   - `docs/repository-map.md:91`: a damaged hit no longer refuses a search.
+  - `graph/README.md:84-87` (the `TextSearchData` fields), and a `processor/graph-query/MIGRATION.md` bullet for search
+    readers: the new `damaged` field, a damaged hit no longer refuses, and semsource's mcp-gateway, which reads only
+    `truncated` (`processor/mcp-gateway/graph_matches.go:130`), reads `damaged` to name it.
 - [ ] 2.5 Before the PR is marked ready: post on #656 what counts as done, and make the PR title and body match.
 
 ## 3. Close

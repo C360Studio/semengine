@@ -125,7 +125,8 @@ labelled as gone, and semsource, which reads `truncated` and never `missing`
 - **graph-query:** `TestSearchNamesDamagedHit`. A stub batch returns two hits and names a third `damaged`;
   `localSearch` and `globalSearch` answer the two in hit order, `damaged` lists the third, `missing` is 0 and
   `truncated` is true. On `main` the hit is counted in `missing` and `damaged` is absent, so the test fails.
-  `TestSearchDropsMissingHits` stays for `not_found`.
+  `TestSearchDropsMissingHits` stays for `not_found`. `TestSearchGraphMergedNamesDamagedHit`: a damaged hit found only
+  by meaning is named in merged order. The two "declares what it left out" requirements gain "or damaged".
 
 ## Merge order
 

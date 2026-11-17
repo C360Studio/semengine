@@ -168,7 +168,8 @@ func (c *Component) groupVectorHits(semanticSubject string, hits []graph.Similar
 // answerText reads answer's list back with one batch request, each match carrying its list entry's
 // score and ranks, verifies the route's reference, and encodes the reply, fit to max_payload, under
 // the word search's revision. Truncated is set when the lists read held more than the list, the
-// word index matched more than it returned, a hit was missing, or matches were left out to fit.
+// word index matched more than it returned, a hit was missing or damaged, or matches were left out
+// to fit.
 func (c *Component) answerText(ctx context.Context, verb string, subjects globalSearchSubjects, request graph.GlobalSearchRequest, route globalRoute, answer listedText) ([]byte, error) {
 	hits := make([]graph.LexicalHit, 0, len(answer.list))
 	ranks := make(map[string]mergedHit, len(answer.list))
@@ -176,7 +177,7 @@ func (c *Component) answerText(ctx context.Context, verb string, subjects global
 		hits = append(hits, graph.LexicalHit{EntityID: hit.entityID, Score: hit.score})
 		ranks[hit.entityID] = hit
 	}
-	matches, missing, err := c.readMatches(ctx, subjects.batch, hits, c.labelPredicates)
+	matches, gaps, err := c.readMatches(ctx, subjects.batch, hits, c.labelPredicates)
 	if err != nil {
 		return nil, err
 	}
@@ -189,9 +190,10 @@ func (c *Component) answerText(ctx context.Context, verb string, subjects global
 		Matches:          matches,
 		Matched:          search.Data.Matched,
 		Excluded:         search.Data.Excluded,
-		Missing:          missing,
+		Missing:          gaps.missing,
+		Damaged:          gaps.damaged,
 		BodiesNotIndexed: search.Data.BodiesNotIndexed,
-		Truncated:        answer.more || search.Data.Matched > len(search.Data.Results) || missing > 0,
+		Truncated:        answer.more || search.Data.Matched > len(search.Data.Results) || gaps.left(),
 	}
 	reply := c.hinted(ctx, subjects, route, request.MinRevision)
 	reply.Merge, reply.Semantic = answer.merge, answer.semantic

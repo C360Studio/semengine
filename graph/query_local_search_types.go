@@ -51,9 +51,10 @@ type LocalSearchRecord struct {
 // stored. Matched is the word index's count of matches in the group before the limit. Excluded is
 // the query's excluded words, omitted when there are none. Missing counts hits that were gone when
 // they were read back, and were left out. BodiesNotIndexed is the word index's count of entities
-// whose offloaded body it did not hold. Truncated is true exactly when Matched is above the hits
-// returned, a hit was missing, or matches were left out for the reply to fit the connection's
-// max_payload.
+// whose offloaded body it did not hold. Damaged names the hits whose stored value could not be read
+// back, in hit order, left out of Matches and not counted in Missing, omitted when there are none.
+// Truncated is true exactly when Matched is above the hits returned, a hit was missing or damaged,
+// or matches were left out for the reply to fit the connection's max_payload.
 type LocalSearchData struct {
 	CommunityID      string             `json:"community_id"`
 	Level            int                `json:"level"`
@@ -64,6 +65,7 @@ type LocalSearchData struct {
 	Excluded         []string           `json:"excluded,omitempty"`
 	Missing          int                `json:"missing"`
 	BodiesNotIndexed int                `json:"bodies_not_indexed"`
+	Damaged          []string           `json:"damaged,omitempty"`
 	Truncated        bool               `json:"truncated"`
 	Answer           string             `json:"answer"`
 }

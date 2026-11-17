@@ -48,7 +48,7 @@ func TestRequestShape(t *testing.T) {
 	if r.HasAuth {
 		t.Fatalf("Authorization = %q sent with no API key configured", r.Authorization)
 	}
-	wantBody := map[string]any{"model": testModel, "input": []any{"first text", "second text"}}
+	wantBody := map[string]any{"model": testModel, "input": []any{"first text", "second text"}, "input_type": "document"}
 	if !reflect.DeepEqual(r.Body, wantBody) {
 		t.Fatalf("request body = %v, want exactly %v", r.Body, wantBody)
 	}
@@ -60,6 +60,35 @@ func TestRequestShape(t *testing.T) {
 	}
 	if reqs := keyed.Requests(); len(reqs) != 1 || reqs[0].Authorization != "Bearer secret" {
 		t.Fatalf("requests with API key = %+v, want one carrying Authorization: Bearer secret", reqs)
+	}
+}
+
+// TestInputTypeNamesTheText: each request says whether its texts are queries or documents, so a
+// provider such as semembed can put the model's own instruction in front; with OmitInputType the
+// field is not sent at all, for a provider that refuses it.
+func TestInputTypeNamesTheText(t *testing.T) {
+	for _, omit := range []bool{false, true} {
+		p := newProvider(t, semembed(2))
+		e := newEmbedder(t, httpembedder.Config{BaseURL: p.BaseURL(), Model: testModel, OmitInputType: omit})
+		if _, err := e.GenerateQuery(t.Context(), []string{"retry with backoff"}); err != nil {
+			t.Fatalf("GenerateQuery: %v", err)
+		}
+		if _, err := e.Generate(t.Context(), []string{"retry with backoff"}); err != nil {
+			t.Fatalf("Generate: %v", err)
+		}
+		reqs := p.Requests()
+		if len(reqs) != 2 {
+			t.Fatalf("provider saw %d requests, want 2", len(reqs))
+		}
+		for i, want := range []string{"query", "document"} {
+			got, sent := reqs[i].Body["input_type"]
+			switch {
+			case omit && sent:
+				t.Errorf("OmitInputType: request %d sent input_type %v, want no field", i, got)
+			case !omit && got != want:
+				t.Errorf("request %d input_type = %v (sent %t), want %q", i, got, sent, want)
+			}
+		}
 	}
 }
 
@@ -141,8 +170,10 @@ func TestHTTPEmbedder_GenerateQuery_NoPrefixConfigured(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 	reqs := p.Requests()
-	if len(reqs) != 2 || !reflect.DeepEqual(reqs[0].Body, reqs[1].Body) {
-		t.Fatalf("requests = %+v, want two with the same body: with no prefix a query is sent as a document", reqs)
+	// The two differ only in input_type (TestInputTypeNamesTheText): with no prefix a query sends the
+	// same model and texts as a document.
+	if len(reqs) != 2 || !reflect.DeepEqual(reqs[0].Decoded, reqs[1].Decoded) {
+		t.Fatalf("requests = %+v, want two with the same model and input", reqs)
 	}
 	if got := reqs[0].Decoded.Input; !reflect.DeepEqual(got, []string{"hello"}) {
 		t.Fatalf("query input = %q, want unprefixed", got)

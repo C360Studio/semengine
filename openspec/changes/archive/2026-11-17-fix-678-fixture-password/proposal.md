@@ -1,6 +1,6 @@
 # Proposal: fix-678-fixture-password
 
-Approved-by:
+Approved-by: cglusky (2026-11-17) <https://github.com/C360Studio/semengine/issues/678#issuecomment-6941762467> sha256:97371d6c3adf
 
 Track: `quick`. Capability modified: `nats-fixture` (one requirement added).
 

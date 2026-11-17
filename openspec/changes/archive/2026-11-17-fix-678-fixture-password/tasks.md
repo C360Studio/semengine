@@ -4,9 +4,8 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal and spec delta (`proposal.md`, `specs/nats-fixture/spec.md`); `task spec:check` and
-  `task docs:check` pass.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Proposal and spec delta (`proposal.md`, `specs/nats-fixture/spec.md`); `task spec:check` and
+  `task docs:check` pass. Approved 2026-11-17 (#678).
 
 ## 2. Code
 
@@ -18,5 +17,5 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
   old URL; graph-ingest's relay keeps the URL's user part; `docs/test-infrastructure.md` says why a hand-built URL is
   refused. Accept: the natsfixture, graph-ingest and graph-query integration suites pass; full `task verify` passes on
   a clean tree.
-- [ ] 2.3 Archive: `openspec archive fix-678-fixture-password --yes` promotes the delta; `task spec:check` and
+- [x] 2.3 Archive: `openspec archive fix-678-fixture-password --yes` promotes the delta; `task spec:check` and
   `task docs:check` pass.

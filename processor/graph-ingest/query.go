@@ -128,7 +128,7 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 	// exceeded" that no server-side log records. Same reasoning as reportBatchMissing
 	// below: the symptom reaches the user several hops from the fact.
 	fetchStart := time.Now()
-	entities, missing, err := c.fetchEntitiesConcurrent(ctx, req.IDs, defaultMaxConcurrent)
+	fetched, err := c.fetchEntitiesConcurrent(ctx, req.IDs, defaultMaxConcurrent)
 	fetchElapsed := time.Since(fetchStart)
 	if err != nil {
 		c.logger.Warn("entity batch fetch failed",
@@ -139,29 +139,19 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 	}
 	c.logger.Debug("entity batch fetch",
 		slog.Int("requested", len(req.IDs)),
-		slog.Int("returned", len(entities)),
-		slog.Int("missing", len(missing)),
+		slog.Int("returned", len(fetched.entities)),
+		slog.Int("missing", len(fetched.missing)),
 		slog.Duration("elapsed", fetchElapsed))
-	c.reportBatchMissing(req.IDs, missing)
+	c.reportBatchMissing(req.IDs, fetched.missing)
 
-	resp := graph.EntityBatchResponse{Entities: entities}
-	for _, id := range missing {
-		resp.Missing = append(resp.Missing, graph.MissingEntity{ID: id, Reason: batchMissingReason(id)})
-	}
-	return json.Marshal(resp)
+	// The caller named every ID, so a damaged one is named in missing and the rest are
+	// returned. It is already recorded: readEntity records damage at the revision read.
+	return json.Marshal(graph.EntityBatchResponse{Entities: fetched.entities, Missing: fetched.missing})
 }
 
-// batchMissingReason classifies one unhydrated requested ID. An empty ID was never
-// looked up, so `not_found` would assert something unobserved — the exact move this
-// change exists to stop. It is malformed input, which is a per-ID fault: `error`.
-//
-// One function so the wire and the counter cannot drift; they did, briefly.
-func batchMissingReason(id string) graph.MissingReason {
-	if id == "" {
-		return graph.MissingError
-	}
-	return graph.MissingNotFound
-}
+// batchMissingReasons is the closed set of reasons graph-ingest itself reports, in the
+// order the counter seeds them and the debug log lists them.
+var batchMissingReasons = []graph.MissingReason{graph.MissingNotFound, graph.MissingError, graph.MissingDamaged}
 
 // reportBatchMissing makes partial hydration observable: it records whether a dropped
 // ID's KV read was genuinely not-found at the moment of failure, and that a batch came
@@ -170,23 +160,26 @@ func batchMissingReason(id string) graph.MissingReason {
 //
 // The log carries the IDs (bounded) because "which one" is the whole question; the
 // counter carries only counts, since entity IDs are an unbounded label space.
-func (c *Component) reportBatchMissing(requested, missing []string) {
+func (c *Component) reportBatchMissing(requested []string, missing []graph.MissingEntity) {
 	if len(missing) == 0 {
 		return
 	}
-	// Counted by the SAME reason the wire reports, not a blanket not_found: the
-	// empty-ID case is reported as `error`, and a
-	// metric that disagrees with the response is worse than no metric.
-	byReason := make(map[graph.MissingReason]int, 2)
-	for _, id := range missing {
-		byReason[batchMissingReason(id)]++
+	// Counted by the SAME reason the wire reports, read off the reply's own entries,
+	// so the metric cannot disagree with the response.
+	byReason := make(map[graph.MissingReason]int, len(batchMissingReasons))
+	for _, m := range missing {
+		byReason[m.Reason]++
 	}
-	for reason, n := range byReason {
-		c.batchMissing.WithLabelValues(string(reason)).Add(float64(n))
+	counts := make([]any, 0, len(batchMissingReasons))
+	for _, reason := range batchMissingReasons {
+		if n := byReason[reason]; n > 0 {
+			c.batchMissing.WithLabelValues(string(reason)).Add(float64(n))
+			counts = append(counts, slog.Int(string(reason), n))
+		}
 	}
-	logged := missing
-	if len(logged) > maxLoggedMissingIDs {
-		logged = logged[:maxLoggedMissingIDs]
+	logged := make([]string, 0, min(len(missing), maxLoggedMissingIDs))
+	for _, m := range missing[:min(len(missing), maxLoggedMissingIDs)] {
+		logged = append(logged, m.ID)
 	}
 	// Debug, not Warn: with reads serving under lag (ADR-084), a semantic index
 	// ranking an entity whose ENTITY_STATES write has not landed yet is ordinary
@@ -196,7 +189,7 @@ func (c *Component) reportBatchMissing(requested, missing []string) {
 	c.logger.Debug("batch entity query did not hydrate every requested ID",
 		"requested", len(requested),
 		"missing", len(missing),
-		"reason", string(graph.MissingNotFound),
+		slog.Group("by_reason", counts...),
 		"missing_ids", logged)
 }
 
@@ -250,10 +243,16 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	// so an absence is a concurrent delete rather than an unanswerable question about a
 	// caller-supplied ID. The prefix contract is "what is under this prefix now", and a
 	// key deleted mid-page is honestly not under it.
-	entities, _, err := c.fetchEntitiesConcurrent(ctx, pageKeys, defaultMaxConcurrent)
+	fetched, err := c.fetchEntitiesConcurrent(ctx, pageKeys, defaultMaxConcurrent)
+	// A damaged entity refuses the page, and outranks another read fault: the caller
+	// named a prefix, not the IDs, so it has no per-ID list to read the damage from.
+	if len(fetched.damaged) > 0 {
+		return nil, aggregateEntityPoisonError(fetched.damaged)
+	}
 	if err != nil {
 		return nil, classifyEntityQueryError(err)
 	}
+	entities := fetched.entities
 
 	// fetchEntitiesConcurrent returns cache-hits-then-misses order, NOT sorted.
 	// Re-sort by ID so the page is a deterministic sorted prefix of pageKeys and
@@ -583,20 +582,37 @@ func classifyEntityQueryError(err error) error {
 	return rejectInternal(err)
 }
 
+// entityFetch is what one multi-ID read found: every requested ID lands in entities or
+// in missing, once per time it was requested.
+type entityFetch struct {
+	// entities are the readable entities, cache hits first, then KV reads.
+	entities []graph.EntityState
+	// missing names each requested ID not in entities, with its reason: not_found, error
+	// for the empty ID, or damaged.
+	missing []graph.MissingEntity
+	// damaged holds the refusal for each ID missing names damaged, already recorded, so a
+	// caller that refuses damage can name every damaged entity in one error.
+	damaged []*graph.StateContractError
+}
+
 // fetchEntitiesConcurrent fetches entities by IDs using bounded concurrency with cache.
 // Cache hits skip KV entirely; cache misses are fetched with bounded concurrency.
 //
-// It returns the entities found AND the IDs whose read came back not-found, because the
+// It returns the entities found AND the IDs it could not return, with why, because the
 // caller cannot recover the second set from the first: the entity slice is ordered
 // cache-hits-then-misses, so it carries no correspondence to the requested order, and a
 // caller diffing the sets would have to re-derive what this function already knew. That
 // gap is the drop path — a requested ID silently absent from a shorter list.
 //
+// A damaged entity is not an error here: each caller decides what damage means for its
+// reply. Any other read fault is the error, and damaged is still filled beside it, so a
+// caller that refuses damage can rank it above the fault.
+//
 // Order remains non-deterministic by contract; callers that need request order restore
 // it themselves (fusionnats.Entities does, because fusion ranks by position).
-func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, maxConcurrent int) ([]graph.EntityState, []string, error) {
+func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, maxConcurrent int) (entityFetch, error) {
 	if len(ids) == 0 {
-		return nil, nil, nil
+		return entityFetch{}, nil
 	}
 	if maxConcurrent <= 0 {
 		maxConcurrent = defaultMaxConcurrent
@@ -605,15 +621,17 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 	// Phase 1: Check cache for all IDs, collect misses
 	var cached []graph.EntityState
 	var missIDs []string
-	var invalid []string
+	var invalid []graph.MissingEntity
 	entityCache := c.entityCacheHandle()
 	for _, id := range ids {
 		if id == "" {
 			// Reported, not skipped. The response contract is that every requested ID
 			// appears exactly once across entities+missing; silently dropping the empty
 			// string put it in neither and made the accounting a lie for the one input
-			// a caller is most likely to send by accident.
-			invalid = append(invalid, id)
+			// a caller is most likely to send by accident. It was never looked up, so
+			// `not_found` would assert something unobserved: it is malformed input, a
+			// per-ID fault, `error`.
+			invalid = append(invalid, graph.MissingEntity{ID: id, Reason: graph.MissingError})
 			continue
 		}
 		if entityCache != nil {
@@ -627,7 +645,7 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 
 	// Phase 2: Fetch cache misses with bounded concurrency
 	if len(missIDs) == 0 {
-		return cached, invalid, nil
+		return entityFetch{entities: cached, missing: invalid}, nil
 	}
 
 	type fetchResult struct {
@@ -698,16 +716,15 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+		return entityFetch{}, err
 	}
 
-	// Phase 3: Merge cached + fetched results. Poison fails the WHOLE read with one
-	// typed error naming every poisoned entity encountered in this attempt,
-	// and never a B-only response that hides A's poison.
+	// Phase 3: Merge cached + fetched results. Every damaged entity met in this
+	// attempt is collected, so no reply can return B while hiding A's damage.
 	//
-	// A not-found ID is different in kind: it does not fail the call, it is collected
-	// and REPORTED. Partiality is acceptable; invisibility is not.
-	var poisoned []*graph.StateContractError
+	// A not-found ID does not fail the call either: it is collected and REPORTED.
+	// Partiality is acceptable; invisibility is not.
+	var damaged []*graph.StateContractError
 	var firstOtherErr error
 	missing := invalid
 	entities := make([]graph.EntityState, 0, len(cached)+len(missIDs))
@@ -716,28 +733,26 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 		if r.err != nil {
 			var contractErr *graph.StateContractError
 			if errors.As(r.err, &contractErr) {
-				poisoned = append(poisoned, contractErr)
+				damaged = append(damaged, contractErr)
+				missing = append(missing, graph.MissingEntity{ID: missIDs[i], Reason: graph.MissingDamaged})
 			} else if firstOtherErr == nil {
 				firstOtherErr = r.err
 			}
 			continue
 		}
 		if r.notFound {
-			missing = append(missing, missIDs[i])
+			missing = append(missing, graph.MissingEntity{ID: missIDs[i], Reason: graph.MissingNotFound})
 			continue
 		}
 		if r.ok {
 			entities = append(entities, r.entity)
 		}
 	}
-	if len(poisoned) > 0 {
-		return nil, nil, aggregateEntityPoisonError(poisoned)
-	}
 	if firstOtherErr != nil {
-		return nil, nil, firstOtherErr
+		return entityFetch{damaged: damaged}, firstOtherErr
 	}
 
-	return entities, missing, nil
+	return entityFetch{entities: entities, missing: missing, damaged: damaged}, nil
 }
 
 // aggregateEntityPoisonError builds the single typed failure for a

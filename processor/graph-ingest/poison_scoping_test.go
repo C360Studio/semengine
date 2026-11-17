@@ -253,10 +253,11 @@ func TestPoisonInventoryIsObservabilityOnly(t *testing.T) {
 	})
 }
 
-// TestAggregateReadNamesEveryPoisonedEntity drives the spec scenario "batch
-// fetch fails loudly and names all poisoned entities": one typed error
-// naming A and C, both inventoried in the same attempt, no B-only response —
-// on BOTH multi-entity read paths (batch and prefix).
+// TestAggregateReadNamesEveryPoisonedEntity: one read of A, B and C, where A
+// and C are poisoned, inventories both in the same attempt and never answers
+// B alone without naming A and C. The prefix page refuses with one typed error
+// naming A and C. The batch answers B and names A and C `damaged` in its
+// missing list, because the caller named the IDs and can act on each.
 func TestAggregateReadNamesEveryPoisonedEntity(t *testing.T) {
 	const (
 		idA = "acme.ops.test.system.widget.agg-a"
@@ -290,7 +291,20 @@ func TestAggregateReadNamesEveryPoisonedEntity(t *testing.T) {
 		c := setup(t)
 		data, err := c.handleQueryBatchNATS(context.Background(),
 			[]byte(`{"ids":["`+idA+`","`+idB+`","`+idC+`"]}`))
-		assertAggregate(t, c, data, err)
+		require.NoError(t, err, "a damaged entity does not refuse the batch")
+		var resp graph.EntityBatchResponse
+		require.NoError(t, json.Unmarshal(data, &resp))
+		require.Len(t, resp.Entities, 1)
+		assert.Equal(t, idB, resp.Entities[0].ID)
+		assert.ElementsMatch(t, []graph.MissingEntity{
+			{ID: idA, Reason: graph.MissingDamaged},
+			{ID: idC, Reason: graph.MissingDamaged},
+		}, resp.Missing, "the reply must name A and C beside B")
+		_, aInv := poisonInventoryEntry(c, idA)
+		_, cInv := poisonInventoryEntry(c, idC)
+		assert.True(t, aInv && cInv, "one attempt must inventory EVERY poisoned entity")
+		_, bInv := poisonInventoryEntry(c, idB)
+		assert.False(t, bInv, "the valid entity is never inventoried")
 	})
 
 	t.Run("prefix", func(t *testing.T) {
@@ -401,10 +415,11 @@ func storedStatementWithout(key, field string) []byte {
 // sites that read one authority value and answer with it: the entity verb,
 // batch, prefix and reconcile. A stored value whose entity ID is not its key,
 // an empty value, and a value holding a statement with no source or no
-// timestamp, are graph-state poison to every one of them: refused, inventoried
-// at the revision read, never served, cached, reported absent or deleted. The
-// delete reads the same way but is not refused for the value
-// (TestCanonicalDeleteRemovesAValueTheReadRefuses).
+// timestamp, are graph-state poison to every one of them: inventoried at the
+// revision read, never served, cached, reported absent or deleted. Three sites
+// refuse it; the batch names it `damaged` in its missing list instead, because
+// the caller named the ID. The delete reads the same way but is not refused for
+// the value (TestCanonicalDeleteRemovesAValueTheReadRefuses).
 func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 	const (
 		key      = "acme.ops.test.system.widget.read-key"
@@ -425,9 +440,6 @@ func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 	}{
 		{"entity verb", func(ctx context.Context, c *Component) ([]byte, error) {
 			return c.handleQueryEntityNATS(ctx, []byte(`{"id":"`+key+`"}`))
-		}},
-		{"batch", func(ctx context.Context, c *Component) ([]byte, error) {
-			return c.handleQueryBatchNATS(ctx, []byte(`{"ids":["`+key+`"]}`))
 		}},
 		{"prefix", func(ctx context.Context, c *Component) ([]byte, error) {
 			return c.handleQueryPrefixWithMaxPayload(ctx, prefixRequest, 1<<20)
@@ -470,6 +482,42 @@ func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 				assert.True(t, kept, "a refused read must not delete the value")
 			})
 		}
+		// The batch is answered, not refused: the value is named damaged and the
+		// rest of the rule holds as at the other sites.
+		t.Run(value.name+"/batch", func(t *testing.T) {
+			c, bucket := poisonScopingTestComponent(t)
+			entityCache, err := cache.NewFromConfig[graph.EntityState](t.Context(), cache.Config{
+				Enabled:         true,
+				Strategy:        cache.StrategyHybrid,
+				MaxSize:         16,
+				TTL:             time.Minute,
+				CleanupInterval: time.Minute,
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, entityCache.Close()) })
+			c.entityCache = entityCache
+			bucket.data[key] = mockKVData{value: value.value, revision: revision}
+
+			data, err := c.handleQueryBatchNATS(t.Context(), []byte(`{"ids":["`+key+`"]}`))
+			require.NoError(t, err, "a damaged entity does not refuse the batch")
+			var resp graph.EntityBatchResponse
+			require.NoError(t, json.Unmarshal(data, &resp))
+			assert.Empty(t, resp.Entities, "the stored value must not be served: %s", data)
+			assert.Equal(t, []graph.MissingEntity{{ID: key, Reason: graph.MissingDamaged}}, resp.Missing,
+				"the value is named damaged, never reported absent")
+
+			record, inventoried := poisonInventoryEntry(c, key)
+			require.True(t, inventoried, "the read must inventory the poison")
+			assert.Equal(t, value.reason, record.contractErr.Reason)
+			assert.Equal(t, key, record.contractErr.EntityID)
+			assert.Equal(t, revision, record.revision, "inventoried at the revision read")
+			_, cached := entityCache.Get(key)
+			assert.False(t, cached, "a damaged value must not be cached")
+			bucket.mu.Lock()
+			_, kept := bucket.data[key]
+			bucket.mu.Unlock()
+			assert.True(t, kept, "a batch read must not delete the value")
+		})
 	}
 }
 

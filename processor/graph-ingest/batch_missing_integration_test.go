@@ -10,6 +10,8 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -143,4 +145,140 @@ func TestIntegration_BatchQuery_EmptyIDIsAccountedFor(t *testing.T) {
 	assert.Equal(t, "", resp.Missing[0].ID)
 	assert.Equal(t, graph.MissingError, resp.Missing[0].Reason,
 		"an ID that was never looked up cannot be reported as not_found")
+}
+
+// TestIntegration_BatchQuery_NamesDamagedEntities sends a batch over NATS for two stored
+// entities, one whose stored bytes the stored-value rule refuses, and one absent ID. The
+// caller named every ID, so the reply returns the two readable entities and names the
+// damaged one `damaged` and the absent one `not_found`, rather than refusing the whole
+// request. The damaged entity is still recorded, so graph-ingest reports itself unhealthy,
+// and the entity verb on it still refuses.
+func TestIntegration_BatchQuery_NamesDamagedEntities(t *testing.T) {
+	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancelOperation()
+	c, owner := startBatchTestComponent(ctx, t)
+	defer owner.finish(ctx, t)
+
+	idA := "c360.test.batchdamaged.system.drone.001"
+	idB := "c360.test.batchdamaged.system.drone.002"
+	idC := "c360.test.batchdamaged.system.drone.003"
+	absent := "c360.test.batchdamaged.system.drone.404"
+	createDrones(ctx, t, c, idA, idC)
+	putDamaged(ctx, t, c, idB)
+
+	before := batchMissingSeries(t, c)
+	assert.Contains(t, before, string(graph.MissingDamaged), "the damaged series must exist before any request")
+	assert.Zero(t, before[string(graph.MissingDamaged)])
+
+	resp := requestBatch(ctx, t, c, []string{idA, idB, idC, absent})
+	var got []string
+	for _, e := range resp.Entities {
+		got = append(got, e.ID)
+	}
+	assert.ElementsMatch(t, []string{idA, idC}, got, "the readable entities must be returned")
+	assert.ElementsMatch(t, []graph.MissingEntity{
+		{ID: idB, Reason: graph.MissingDamaged},
+		{ID: absent, Reason: graph.MissingNotFound},
+	}, resp.Missing)
+
+	// The reply arrived after the handler returned, and the handler records the damaged
+	// entity and counts the missing IDs before it replies.
+	assert.False(t, c.Health().Healthy, "a recorded damaged entity makes graph-ingest unhealthy")
+	after := batchMissingSeries(t, c)
+	assert.Equal(t, before[string(graph.MissingDamaged)]+1, after[string(graph.MissingDamaged)])
+	assert.Equal(t, before[string(graph.MissingNotFound)]+1, after[string(graph.MissingNotFound)])
+
+	entityRequest, err := json.Marshal(map[string]string{"id": idB})
+	require.NoError(t, err)
+	_, err = c.natsClient.RequestClassified(ctx, ingestVerbSubject(t, "entity"), entityRequest, wireRequestTimeout)
+	assertIngestResetRequired(t, err)
+}
+
+// TestIntegration_BatchQuery_AllDamaged: a batch naming only a damaged entity is answered,
+// not refused, with no entities and the ID named `damaged`.
+func TestIntegration_BatchQuery_AllDamaged(t *testing.T) {
+	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancelOperation()
+	c, owner := startBatchTestComponent(ctx, t)
+	defer owner.finish(ctx, t)
+
+	idB := "c360.test.batchalldamaged.system.drone.002"
+	putDamaged(ctx, t, c, idB)
+
+	resp := requestBatch(ctx, t, c, []string{idB})
+	require.NotNil(t, resp.Entities, "the reply carries an empty entity list, not none")
+	assert.Empty(t, resp.Entities)
+	assert.Equal(t, []graph.MissingEntity{{ID: idB, Reason: graph.MissingDamaged}}, resp.Missing)
+}
+
+func createDrones(ctx context.Context, t *testing.T, c *Component, ids ...string) {
+	t.Helper()
+	for _, id := range ids {
+		require.NoError(t, c.CreateEntity(ctx, &graph.EntityState{
+			ID:          id,
+			MessageType: testEntityType(),
+			Triples: withTestMetadata(message.Triple{
+				Subject: id, Predicate: "core.identity.type", Object: "drone", Confidence: 1.0,
+			}),
+		}))
+	}
+}
+
+// putDamaged stores bytes under id that the stored-value rule refuses, a two-part
+// predicate, straight through the KV bucket as an outside writer would. Put returns once
+// the value is stored, so every later read sees it.
+func putDamaged(ctx context.Context, t *testing.T, c *Component, id string) {
+	t.Helper()
+	js, err := c.natsClient.JetStream()
+	require.NoError(t, err)
+	kv, err := js.KeyValue(ctx, graph.BucketEntityStates)
+	require.NoError(t, err)
+	_, err = kv.Put(ctx, id,
+		[]byte(`{"id":"`+id+`","triples":[{"subject":"`+id+`","predicate":"legacy.predicate","object":1}]}`)) // predicate-audit:invalid {"kind":"stored-predicate","value":"legacy.predicate","reason":"arity"}
+	require.NoError(t, err)
+}
+
+// requestBatch sends ids on graph-ingest's batch verb and decodes the reply; a refusal
+// fails the test.
+func requestBatch(ctx context.Context, t *testing.T, c *Component, ids []string) graph.EntityBatchResponse {
+	t.Helper()
+	body, err := json.Marshal(graph.EntityBatchRequest{IDs: ids})
+	require.NoError(t, err)
+	raw, err := c.natsClient.RequestClassified(ctx, ingestVerbSubject(t, "batch"), body, wireRequestTimeout)
+	require.NoError(t, err, "a damaged entity must not refuse the batch")
+	var resp graph.EntityBatchResponse
+	require.NoError(t, json.Unmarshal(raw, &resp))
+	return resp
+}
+
+// ingestVerbSubject is the subject graph-ingest answers verb name on, from the verb table.
+func ingestVerbSubject(t *testing.T, name string) string {
+	t.Helper()
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder == graph.ResponderGraphIngest && verb.Name == name {
+			return verb.Subject
+		}
+	}
+	t.Fatalf("the verb table has no graph-ingest verb %q", name)
+	return ""
+}
+
+// batchMissingSeries reads every series of the batch missing counter by reason, without
+// creating one, so a series that was never seeded is absent from the map.
+func batchMissingSeries(t *testing.T, c *Component) map[string]float64 {
+	t.Helper()
+	ch := make(chan prometheus.Metric, 8)
+	c.batchMissing.Collect(ch)
+	close(ch)
+	series := map[string]float64{}
+	for m := range ch {
+		var pb dto.Metric
+		require.NoError(t, m.Write(&pb))
+		for _, label := range pb.GetLabel() {
+			if label.GetName() == "reason" {
+				series[label.GetValue()] = pb.GetCounter().GetValue()
+			}
+		}
+	}
+	return series
 }

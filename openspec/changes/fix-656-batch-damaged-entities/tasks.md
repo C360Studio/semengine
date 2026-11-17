@@ -8,7 +8,7 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
 
 - [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas). Needs INVENTORY PASS, a passing
   pre-owner design review, and rulings on O1 and O2. INVENTORY PASS and design review PASS at e7b495dd (Claude
-  reviewer); O1 and O2 ruled 2026-11-18, D3 rewritten to the O1 ruling.
+  reviewer); O1 and O2 ruled 2026-11-18, D3 rewritten to the O1 ruling; review PASS at 87c23833 (round 3).
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Code
@@ -34,11 +34,10 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
   - Update `Entities`' doc comment (`:251-267`).
 - [ ] 2.3 graph-query, tests then code (design D3). Write `TestSearchNamesDamagedHit`, then add `Damaged` to
   `graph.LocalSearchData` and `graph.TextSearchData`, change `readMatches` (`matches.go:113-131`) and its two callers,
-  and update the `Missing` and `Truncated` doc comments (including the searchGraph paragraph,
-  `graph/query_global_search_types.go:66-69`), the `answerText` comment (`textsearch.go:171`), and the `Truncated:`
-  expressions (`localsearch.go:203`, `textsearch.go:194`) so a damaged hit sets them. Also write
-  `TestSearchGraphMergedNamesDamagedHit`; the doc comments (`graph/query_local_search_types.go:52-53`,
-  `graph/query_global_search_types.go:60-61`).
+  and update the `Missing` and `Truncated` doc comments (`graph/query_local_search_types.go:52-53`,
+  `graph/query_global_search_types.go:60-61` and its searchGraph paragraph `:66-69`), the `answerText` comment
+  (`textsearch.go:171`), and the `Truncated:` expressions (`localsearch.go:203`, `textsearch.go:194`) so a damaged
+  hit sets them. Also write `TestSearchGraphMergedNamesDamagedHit`.
 - [ ] 2.4 Docs:
   - `processor/graph-ingest/README.md:123-128` (including "reads them one at a time"), and `:172` if the counter's
     reasons are listed there.

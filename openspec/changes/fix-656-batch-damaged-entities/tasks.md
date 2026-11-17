@@ -31,7 +31,7 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
   - Rewrite `TestOwnValidationNotRetried` for the one-request path, and keep a test that every seed damaged answers
     `deferred` `all_seeds_unhydrated` (its proof today, `TestAllSeedsPoisonedDefer`, is deleted).
   - Update `Entities`' doc comment (`:251-267`).
-- [ ] 2.3 graph-query, tests then code (design D3). Write `TestSearchNamesDamagedHit`, then add `Damaged` to
+- [x] 2.3 graph-query, tests then code (design D3). Write `TestSearchNamesDamagedHit`, then add `Damaged` to
   `graph.LocalSearchData` and `graph.TextSearchData`, change `readMatches` (`matches.go:113-131`) and its two callers,
   and update the `Missing` and `Truncated` doc comments (`graph/query_local_search_types.go:52-53`,
   `graph/query_global_search_types.go:60-61` and its searchGraph paragraph `:66-69`), the `answerText` comment

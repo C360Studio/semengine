@@ -67,12 +67,15 @@ does not alter how the cache behaves around a write made from outside graph-inge
 `graph/query_local_search_types.go:52-53`). With D1 alone, a damaged hit would become `missing: 1, truncated: true`,
 labelled as gone.
 
-- **O1 (owner).**
-  - **B (recommended):** a hit the batch names `damaged` makes graph-query refuse the search, fatal
-    `graph_state_reset_required` naming the ID. This is today's observable behaviour, and it fits ruling 1's second
-    case: the read finds its own records, so it refuses.
-  - **A:** let the `missing` path take damaged hits, as the lexical design said (`…graph-query-lexical/design.md:54-56`).
-    That needs no code, but the `Missing` doc and spec change to "gone or damaged", and the caller cannot tell which.
+- **O1 (owner, confirm).** Ruling 1's second case ("the read finds its own records ... refuse") was given the same
+  day after the word-search design's D4 was approved (#657 comments 6877432505 and 6877374827). Word search finds
+  its hits from its own index, so the ruling most likely already replaces D4. The owner is asked to confirm:
+  - **B (follows ruling 1):** a hit the batch names `damaged` makes graph-query refuse the search, fatal
+    `graph_state_reset_required`, naming every damaged hit. This is today's observable behaviour. A hit named with
+    any other reason is left out and counted in `missing`, as today.
+  - **A (D4 as written):** let the `missing` path take damaged hits (`…graph-query-lexical/design.md:54-56`). No
+    code, but `missing` then means "gone or damaged" and the caller cannot tell which. semsource reads `truncated`,
+    never `missing` (`processor/mcp-gateway/graph_matches.go:130`), so it would not see the damage at all.
 - Stakes: graph-lexical stops on the first damaged entity it is sent (`processor/graph-lexical/component.go:240-251`),
   so this path is reached only in the window before graph-lexical sees the damaged write. B costs about 5 lines and a
   test.
@@ -83,7 +86,8 @@ labelled as gone.
 - Doing nothing, a caller that reads `entities` alone gets the good entities and loses nothing silently.
 - semconnect's exhaustive switch (`gateway/cs-api/systems.go:896`) refuses the batch loudly. This needs a migration
   note, not an owner question.
-- semsparql already fails a query on any reason other than `not_found` (`sparql/executor.go:1564`).
+- semsparql already fails a query on any reason other than `not_found` (`sparql/executor.go:1564`). The failure
+  stays loud but becomes its own unclassified error in place of fatal `graph_state_reset_required`: a migration note.
 - Mixed versions (fusion new, graph-ingest old) return the old refusal from `Fuse` as fatal. Both ship in one module
   version.
 
@@ -128,5 +132,5 @@ No other open PR overlaps. #692 merges alone.
 
 ## Open Questions
 
-- O1 (owner): graph-query refuses a search with a damaged hit (B, recommended) or counts it in `missing` (A).
+- O1 (owner, confirm): ruling 1 replaces word-search D4, so a damaged hit refuses the search (B), or D4 stands (A).
 - O2 (owner): fusion maps `damaged` to `error` (A, recommended) or gains `UnhydratedDamaged` (B).

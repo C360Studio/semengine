@@ -76,6 +76,8 @@ read (`query.go:694`).
     `batchErr: resetRefusal()`).
   - `pkg/fusion/fusionnats/client_integration_test.go:439-445`.
 - Stays as is: `processor/graph-ingest/query_contract_guard_test.go:513` (`TestBatchBackendFailureReturnsNoPartialEntities`).
+- Admission ledger rows describing the refusal: `docs/admission-ledger.yaml` graph-query `:4407`, `:4436`;
+  fusionnats contract item (6) `:4828-4834`, side effects `:4844`, `proving_tests` `:4875-4878`.
 - Docs stating the refusal: `processor/graph-ingest/README.md:126-128`, `processor/graph-query/README.md:150-152`,
   `processor/graph-query/MIGRATION.md:259-261`, `pkg/fusion/README.md:114-120`, `pkg/fusion/MIGRATION.md:96-100`,
   `docs/repository-map.md:91` ("One damaged hit refuses a search until it is fixed").

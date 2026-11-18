@@ -56,9 +56,11 @@ closing), or a lost connection.
 An enveloped reply can carry `damaged_entities`, the number of damaged entities (stored values
 `graph.UnmarshalEntityState` refuses) its producer left out of the answer; the key is absent at 0. Every reply
 `graph-query` builds itself (`entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`,
-`searchGraph`) carries the largest `damaged_entities` among the index replies it read, and no such key when none carried
-one. Counts are not added, since two reads can count the same entity. A forward passes the count in the bytes it passes
-unchanged. A count above 0 means rows may be missing from `data`; the answer about every other entity stands.
+`searchGraph`) carries the largest `damaged_entities` among the index replies it used to build the answer, and no such
+key when none carried one. A reply it read but set aside, such as a hint it did not honour or an embedding list it could
+not merge, adds nothing. Counts are not added, since two reads can count the same entity. A forward passes the count in
+the bytes it passes unchanged. A count above 0 means rows may be missing from `data`; the answer about every other
+entity stands.
 
 ### `entityByAlias`
 

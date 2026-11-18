@@ -127,8 +127,10 @@ paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `tot
   answer. The indexes start setting it in a later release; until then it is always absent. `searchGraph` and
   `globalSearch` set `truncated` whenever a reply they read carries it above 0, so your mcp-gateway, which reads only
   `truncated` (`processor/mcp-gateway/graph_matches.go:130`), will learn of the gap with no change. Once the indexes
-  set it, one damaged entity anywhere makes every unscoped search `truncated` until it is repaired. Read
-  `damaged_entities` from the envelope if you want to say how many were left out.
+  set it, one damaged entity anywhere makes every unscoped search that answers with text `truncated` until it is
+  repaired. A `searchGraph` answered from the embedding search alone, while the word index is still loading, has
+  `text: null` and so no `truncated`; it carries the count only in `damaged_entities`. Read `damaged_entities` from
+  the envelope to learn of the gap in that case, or to say how many were left out.
 
 ## SemConnect
 

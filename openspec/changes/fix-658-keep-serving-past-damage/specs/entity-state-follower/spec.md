@@ -22,9 +22,16 @@ above it. No report SHALL stop the follower or refuse every query.
 
 #### Scenario: Any history
 
-- **WHEN** generated sequences of reports, completions and deletes over a few keys, with rising revisions, are applied
-- **THEN** the recorded keys are exactly those whose highest-revision event is a report, checked against a reference
-  model with the seed and the completed runs recorded (`TestPropDamagedSetFollowsLatestEvent`)
+- **WHEN** generated sequences over a few keys are applied: reports, completions at the reported revision, below it
+  and above it, and deletes
+- **THEN** a key is recorded exactly when its last report is above every later completion and delete of it, checked
+  against a reference model with the seed and the completed runs recorded (`TestPropDamagedSetFollowsLatestEvent`)
+
+#### Scenario: A completion below the report
+
+- **WHEN** the plug-in reports B at revision 7, the revision its read found, and then completes revision 6, the one
+  delivered
+- **THEN** B stays recorded (`TestDamagedEntityClearsOnHigherCompletion`)
 
 ### Requirement: A failed read can hide a damaged entity until its repair
 
@@ -37,6 +44,17 @@ clears the entry; it SHALL be recorded again when the plug-in's repair reads the
   B's damaged value at revision 6 and reports it
 - **THEN** B is not recorded after the completion and is recorded after the report
   (`TestDamagedEntityClearsOnHigherCompletion`)
+
+### Requirement: A report says whether it is new
+
+A report SHALL return whether it newly recorded the key. The plug-in SHALL count one error in `ErrorCount` for each
+report that newly records a key, and none for a report of a key already recorded.
+
+#### Scenario: The same damage read twice
+
+- **WHEN** the plug-in reports B, then reports B again at the same revision after a repair pass reads it
+- **THEN** the first report returns true and the second false, and `ErrorCount` rose by 1
+  (`TestDamagedEntityCountsOneError`)
 
 ### Requirement: A damaged entity never withholds a query
 

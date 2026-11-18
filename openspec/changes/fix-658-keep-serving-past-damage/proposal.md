@@ -3,7 +3,8 @@
 Approved-by:
 
 Track: `design`. Capabilities modified: `entity-state-follower`, `graph-index`, `graph-embedding`, `graph-lexical`,
-`graph-clustering`, `graph-transport-boundary`, `graph-query`.
+`graph-clustering`, `graph-readiness`, `graph-transport-boundary`, `graph-query`, and with Q3 `fusion` and
+`graph-gateway`.
 
 ## Why
 
@@ -25,7 +26,8 @@ so" (#657 ruling 1).
 - graph-query passes the count on in its own replies (Q2: and marks its searches `truncated`); fusion and the GraphQL
   gateway pass it on too (Q3).
 - Health names up to 10 damaged entities and how to repair them; the readiness envelope reads `degraded` with a
-  `damaged_entity` count. A repair is picked up without a restart.
+  `damaged_entity` count. A repair is picked up without a restart. The `reset_required` readiness state, which nothing
+  produces any more, is removed.
 - ADR-108 and ADR-109 are amended; ADR-074 and ADR-084 get a note. Docs and the ledger follow.
 
 ## Questions for the owner
@@ -35,15 +37,18 @@ so" (#657 ruling 1).
   store no longer holds.
 - **Q2. Searches while an entity is damaged.** Recommended: graph-query's word and graph searches say `truncated`
   while any entity is damaged. semsource reads only `truncated`, so it learns of the gap with no change of its own.
+  The cost: a global search counts damage anywhere, so one damaged entity makes every global search say `truncated`
+  until it is repaired.
 - **Q3. Fusion and the GraphQL gateway.** Both keep only a reply's data today, so the count would stop there.
   Recommended: carry it through both in this change and merge the serving change last, so no answer ever leaves a
-  damaged entity out unsaid. Faster: graph-query only, with an issue for the two, and fusion answers and GraphQL
-  replies would omit it unsaid until then.
+  damaged entity out unsaid. For fusion this changes two methods of the interface semsource's test double implements
+  (`Neighbors`, `Names` return a small struct with the count), so semsource's `MemGraph` must be updated when it moves
+  to this release. Faster: graph-query only, with an issue for the two; fusion answers and GraphQL replies would omit
+  a damaged entity unsaid until then.
 
 ## Out of scope
 
-graph-ingest's verbs and poison inventory; refusal detail; the embedding count's scope; removing `reset_required` from
-the readiness vocabulary (a follow-up issue, since nothing produces it after this change).
+graph-ingest's verbs and poison inventory; refusal detail; the embedding count's scope.
 
 ## Impact
 

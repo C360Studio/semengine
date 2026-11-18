@@ -154,8 +154,7 @@ func TestIntegration_BatchQuery_EmptyIDIsAccountedFor(t *testing.T) {
 // request. The damaged entity is still recorded, so graph-ingest reports itself unhealthy,
 // and the entity verb on it still refuses.
 func TestIntegration_BatchQuery_NamesDamagedEntities(t *testing.T) {
-	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancelOperation()
+	ctx := t.Context()
 	c, owner := startBatchTestComponent(ctx, t)
 	defer owner.finish(ctx, t)
 
@@ -197,8 +196,7 @@ func TestIntegration_BatchQuery_NamesDamagedEntities(t *testing.T) {
 // TestIntegration_BatchQuery_AllDamaged: a batch naming only a damaged entity is answered,
 // not refused, with no entities and the ID named `damaged`.
 func TestIntegration_BatchQuery_AllDamaged(t *testing.T) {
-	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancelOperation()
+	ctx := t.Context()
 	c, owner := startBatchTestComponent(ctx, t)
 	defer owner.finish(ctx, t)
 

@@ -24,10 +24,9 @@ issue, #658. #657 stays open for its other follow-ups.
 - [ ] 2.4 Docs: `graph/README.md`, `processor/graph-query/README.md`, `processor/graph-query/MIGRATION.md` (a bullet
   for semsource's `truncated` reader and semconnect's predicate reader).
 
-## 3. PR 2: fusion and graph-gateway (design D4; only if Q3 is yes)
+## 3. PR 2: fusion and graph-gateway (design D4; Q3 ruled yes, 2026-11-18)
 
-- [ ] 3.1 Hold: OPEN-Q Q3 decides whether this task is done here or filed as an issue. fusion:
-  `TestReadsPassOnDamagedCount` and `TestResponseCarriesDamagedCount`, shown failing on `main`; then
+- [ ] 3.1 fusion: `TestReadsPassOnDamagedCount` and `TestResponseCarriesDamagedCount`, shown failing on `main`; then
   `fusionnats.decodeReply` (`client.go:446-465`) returns the count, `Resolution.DamagedEntities`, the
   `fusion.Neighbors` and `fusion.Names` result types (`retrieval.go:41,43`), their callers (`engine_facets.go:255`,
   `engine_lens.go:298`, `:451`), `fusion.Response.DamagedEntities` (`contract.go:181-191`); `pkg/fusion/README.md`,

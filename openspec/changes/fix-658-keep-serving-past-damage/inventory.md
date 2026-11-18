@@ -115,6 +115,8 @@ Reply counts of records left out (all whole-store or whole-index, none for damag
 - Docs: `processor/graph-index/README.md:92-100`, `:160-164`; `processor/graph-embedding/README.md:126-133`, `:199`,
   `MIGRATION.md:72-86`; `processor/graph-clustering/README.md:92-106`, `MIGRATION.md:76-82`;
   `processor/graph-lexical/README.md:43-60`; `graph/README.md:25-27`; `.agents/skills/query-pattern/SKILL.md:53-56`.
+  After PR 2, the "always absent today" lines: `pkg/fusion/README.md:69-70`, `pkg/fusion/MIGRATION.md:131-132`,
+  `gateway/graph-gateway/README.md:80`, `gateway/graph-gateway/MIGRATION.md:84`, `processor/graph-query/MIGRATION.md:127`.
 
 ## 4. Who it is for (surface the design will add)
 

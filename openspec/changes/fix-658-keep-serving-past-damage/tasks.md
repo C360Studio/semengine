@@ -81,7 +81,11 @@ copy. #657 stays open for its other follow-ups.
 - [ ] 6.2 `docs/admission-ledger.yaml` rows graph/follower `:3620-3666`, graph-index `:3560-3566`, `:3606`, ADR-074
   `:3668-3680`, graph-embedding `:4598`, graph-clustering `:4927`; READMEs and MIGRATION notes listed in
   `inventory.md` § 3; `.agents/skills/query-pattern/SKILL.md:53-56`; `graph/index_status.go:80-81` (graph-index now
-  emits `failed_reasons`).
+  emits `failed_reasons`). The "always absent today" lines PR 2 left: `pkg/fusion/README.md:69-70`,
+  `pkg/fusion/MIGRATION.md:131-132`, `gateway/graph-gateway/README.md:80`, `gateway/graph-gateway/MIGRATION.md:84`,
+  `processor/graph-query/MIGRATION.md:127`; ledger rows pkg/fusion `:4682`, pkg/fusion/fusionnats `:4802` (its
+  contract `:4824`: an nl Resolve copies `damaged_entities` too, as do byName and relationships) and graph-gateway
+  `:1931` (answers carry `extensions.damagedEntities`).
 - [ ] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
   `IndexStatusResponse.Code` and `Reason` fields (`:33-36`), the gate's branch (`graph/readiness/readiness_gate.go:127`)
   and their tests (`publisher_test.go:88`, `readiness_gate_test.go:101`, `:331`,

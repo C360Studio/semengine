@@ -108,7 +108,7 @@ const (
 	UnhydratedNotFound UnhydratedReason = "not_found"
 	// UnhydratedError is a per-ID fault that did not fail the whole call, such as
 	// an entity whose stored value its responder refuses (fusionnats lists a
-	// poisoned seed this way) or an empty ID.
+	// seed the batch names damaged this way) or an empty ID.
 	UnhydratedError UnhydratedReason = "error"
 	// UnhydratedUnknown is synthesized when a requested ID appears in neither the
 	// handler's entity list nor its missing list — a handler that under-reported.

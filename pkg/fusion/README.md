@@ -111,12 +111,11 @@ with code `index_not_ready`, and the engine reads that reply. Each method sends 
 | `Names` | `byName` |
 
 A *poisoned* entity is one whose stored value graph-ingest refuses to read (code `graph_state_reset_required`).
-graph-ingest refuses a whole batch when one entity in it is poisoned, so on that refusal `Entities` reads each
-distinct requested ID with its own `entity` request: a poisoned seed is listed in `unhydrated` with reason `error`, the
+graph-ingest's `batch` read returns the readable entities and names each poisoned ID in `missing` with reason
+`damaged`, so `Entities` sends one `batch` request: a poisoned seed is listed in `unhydrated` with reason `error`, the
 others hydrate, and the answer goes on. If every seed is poisoned the response is `deferred` with
-`all_seeds_unhydrated`. This costs one request per distinct ID, only while poison is present. A seed not found
-when read alone is listed with reason `not_found`. Any other error from those reads, including an ended context
-(checked before each read and after each refused one), fails the call.
+`all_seeds_unhydrated`. A seed the batch reports not found is listed with reason `not_found`. A refused batch,
+whatever its code, is returned as the error and no other request is sent.
 `Entities` refuses a nil context.
 
 A `prefix` query is an entity-ID prefix: whole dot-separated segments of an ID, such as `acme.ops.robotics`, or

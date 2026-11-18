@@ -147,9 +147,10 @@ Anything the request gets wrong, such as an unknown key, a blank `query`, a `lev
 100,
 is `invalid_request` naming the key, before any request is made.
 
-**One damaged hit refuses the whole search.** The `batch` verb refuses every entity in a request when one of them is
-damaged, so a search whose matches include a damaged entity is refused until that entity is fixed (issue #656 tracks
-it).
+**A damaged hit is named, not fatal.** When the `batch` read names a hit `damaged` (its stored value is refused), the
+search leaves that hit out, answers the other hits, and lists the damaged ID in the reply's `damaged` field, in hit
+order. A damaged hit is not counted in `missing`, which keeps its meaning (the hit was gone when read back), and it
+sets `truncated`.
 
 #### Groups and records
 

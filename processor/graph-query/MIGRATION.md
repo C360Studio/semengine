@@ -120,6 +120,9 @@ paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `tot
   anything that starts later.
 - Nothing in your graph-query config: `ports` alone is valid.
 - A slow `searchGraph`: your 10 s default (`mcp-gateway/component.go:194-199`) can time out first, loudly.
+- A damaged hit no longer refuses a search. The reply gains `data.text.damaged` (the IDs left out because their
+  stored value could not be read, in hit order, omitted when none). Your mcp-gateway reads only `truncated`
+  (`processor/mcp-gateway/graph_matches.go:130`), which a damaged hit sets; read `damaged` to name the hit.
 
 ## SemConnect
 
@@ -142,6 +145,15 @@ backend (`cmd/cs-graph-backend/main.go:127`).
   (`outputs: []` counts as none). Only the three keys above must go.
 - Your 5 s default (`gateway/cs-api/config.go:157`) is under ingest's 10 s budget, so a 5 to 10 s `batch` still times
   out on your side, loudly, while graph-query keeps forwarding. Raise it if that matters.
+- A `batch` reply can now list an ID in `missing` with reason `damaged` (its stored value is refused), where it used to
+  refuse the whole batch. The `missing` switch at `gateway/cs-api/systems.go:896` must accept `damaged`; until it
+  does, it refuses the batch loudly. A caller that reads `entities` alone gets the readable entities.
+
+## Whoever keeps the SPARQL gateway
+
+A `batch` reply can list an ID in `missing` with reason `damaged`. `sparql/executor.go:1564` fails a query on any
+reason other than `not_found`, so a query that reads a damaged entity still fails, but with its own unclassified error
+in place of fatal `graph_state_reset_required`.
 
 ## Whoever keeps the GraphQL gateway
 
@@ -257,8 +269,8 @@ carried.
 
 Refusals reach you as they arrived from graph-lexical (such as `index_not_ready` while it rebuilds, and
 `revision_not_reached`) and from the `batch` read. Nothing responding is transient `internal`, naming the subject. One
-damaged hit refuses the search until it is fixed (issue #656), since a batch read refuses every entity when one is
-damaged. See "The changes that fail silently".
+damaged hit no longer refuses the search: the hit is left out and named in the reply's `damaged` field. See "The
+changes that fail silently".
 
 ### `globalSearch`
 

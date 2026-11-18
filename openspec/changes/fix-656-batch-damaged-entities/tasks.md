@@ -37,7 +37,7 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
   `graph/query_global_search_types.go:60-61` and its searchGraph paragraph `:66-69`), the `answerText` comment
   (`textsearch.go:171`), and the `Truncated:` expressions (`localsearch.go:203`, `textsearch.go:194`) so a damaged
   hit sets them. Also write `TestSearchGraphMergedNamesDamagedHit`.
-- [ ] 2.4 Docs:
+- [x] 2.4 Docs:
   - `processor/graph-ingest/README.md:123-128` (including "reads them one at a time"), and `:172` if the counter's
     reasons are listed there.
   - `processor/graph-query/doc.go:51`.

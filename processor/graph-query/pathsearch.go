@@ -36,11 +36,11 @@ func (c *Component) pathSearch(entitySubject, outgoingSubject, incomingSubject s
 		if err := c.readPathStart(ctx, entitySubject, request.StartEntity); err != nil {
 			return nil, err
 		}
-		found, revision, err := walkPaths(ctx, request, c.indexHop(outgoingSubject, incomingSubject, request.MinRevision))
+		found, read, err := walkPaths(ctx, request, c.indexHop(outgoingSubject, incomingSubject, request.MinRevision))
 		if err != nil {
 			return nil, err
 		}
-		return envelope(c, outgoingSubject, revision, found)
+		return envelope(c, outgoingSubject, read, found)
 	}
 }
 
@@ -93,32 +93,32 @@ func (c *Component) readPathStart(ctx context.Context, subject, entityID string)
 }
 
 // pathHop reads one entity's edges in one direction, outgoing or incoming, as the index holds them,
-// with the revision they were read at.
-type pathHop func(ctx context.Context, entityID, direction string) ([]graph.RelationshipEdge, uint64, error)
+// with the revision they were read at and the damaged entities the index left out.
+type pathHop func(ctx context.Context, entityID, direction string) ([]graph.RelationshipEdge, indexRead, error)
 
 // indexHop is the walk's hop in production: the index's outgoing or incoming verb, carrying
 // minRevision. Whatever ends the hop keeps its class, code and detail, and its message names the
 // hop's entity, so a caller can find a hub too large to answer.
 func (c *Component) indexHop(outgoingSubject, incomingSubject string, minRevision uint64) pathHop {
-	return func(ctx context.Context, entityID, direction string) ([]graph.RelationshipEdge, uint64, error) {
+	return func(ctx context.Context, entityID, direction string) ([]graph.RelationshipEdge, indexRead, error) {
 		request, err := json.Marshal(struct {
 			EntityID string `json:"entity_id"`
 			graph.MinRevisionField
 		}{entityID, graph.MinRevisionField{MinRevision: minRevision}})
 		if err != nil {
-			return nil, 0, internalError(err)
+			return nil, indexRead{}, internalError(err)
 		}
 		var edges []graph.RelationshipEdge
-		var revision uint64
+		var read indexRead
 		if direction == directionOutgoing {
-			edges, revision, err = c.outgoingRows(ctx, outgoingSubject, entityID, request)
+			edges, read, err = c.outgoingRows(ctx, outgoingSubject, entityID, request)
 		} else {
-			edges, revision, err = c.incomingRows(ctx, incomingSubject, entityID, request)
+			edges, read, err = c.incomingRows(ctx, incomingSubject, entityID, request)
 		}
 		if err != nil {
-			return nil, 0, namingHop(entityID, err)
+			return nil, indexRead{}, namingHop(entityID, err)
 		}
-		return edges, revision, nil
+		return edges, read, nil
 	}
 }
 
@@ -130,13 +130,13 @@ func namingHop(entityID string, err error) error {
 }
 
 // walkPaths walks breadth first from the start, which the caller has read, hopping at each entity
-// below max_depth, and returns what it found and the smallest revision any hop answered at. Any hop's
-// failure ends the walk with no partial answer.
+// below max_depth, and returns what it found, the smallest revision any hop answered at and the
+// largest damaged count any hop carried. Any hop's failure ends the walk with no partial answer.
 //
 // Filling the limit does not end the walk: truncated must be exact, so the walk goes on reading the
 // entities it holds, and stops at the first unseen entity it has no room for. Each entity is read
 // at most once per direction, which is the bound on requests.
-func walkPaths(ctx context.Context, request graph.PathSearchRequest, hop pathHop) (graph.PathSearchData, uint64, error) {
+func walkPaths(ctx context.Context, request graph.PathSearchRequest, hop pathHop) (graph.PathSearchData, indexRead, error) {
 	limit := request.MaxNodes
 	if limit == 0 {
 		limit = graph.DefaultPathSearchNodes
@@ -146,29 +146,29 @@ func walkPaths(ctx context.Context, request graph.PathSearchRequest, hop pathHop
 		Edges:    []graph.RelationshipEdge{},
 	}
 	seen := map[string]bool{request.StartEntity: true}
-	smallest := uint64(math.MaxUint64)
+	read := indexRead{revision: math.MaxUint64}
 	// The list grows as the loop reads it, in depth order, so the first entity at max_depth ends it.
 	for next := 0; next < len(found.Entities) && found.Entities[next].Depth < request.MaxDepth; next++ {
 		at := found.Entities[next]
-		crossings, revision, err := neighbours(ctx, at.EntityID, request, hop)
+		crossings, hopRead, err := neighbours(ctx, at.EntityID, request, hop)
 		if err != nil {
-			return graph.PathSearchData{}, 0, err
+			return graph.PathSearchData{}, indexRead{}, err
 		}
-		smallest = min(smallest, revision)
+		read = read.and(hopRead)
 		for _, crossing := range crossings {
 			if seen[crossing.neighbour] {
 				continue
 			}
 			if len(found.Entities) == limit {
 				found.Truncated = true
-				return found, smallest, nil
+				return found, read, nil
 			}
 			seen[crossing.neighbour] = true
 			found.Entities = append(found.Entities, graph.PathEntity{EntityID: crossing.neighbour, Depth: at.Depth + 1})
 			found.Edges = append(found.Edges, crossing.edge)
 		}
 	}
-	return found, smallest, nil
+	return found, read, nil
 }
 
 // pathCrossing is one edge a walk can cross from an entity, to neighbour.
@@ -181,16 +181,16 @@ type pathCrossing struct {
 // neighbours reads an entity's edges in the request's direction, filtered and sorted by entity,
 // predicate, then outgoing before incoming, so a truncated answer repeats against an unchanged graph.
 // Repeats need no removal of their own: the walk takes the first of any neighbour. It returns the
-// smaller revision of the two legs of both.
-func neighbours(ctx context.Context, entityID string, request graph.PathSearchRequest, hop pathHop) ([]pathCrossing, uint64, error) {
+// smaller revision and the larger damaged count of the two legs of both.
+func neighbours(ctx context.Context, entityID string, request graph.PathSearchRequest, hop pathHop) ([]pathCrossing, indexRead, error) {
 	var crossings []pathCrossing
-	smallest := uint64(math.MaxUint64)
+	both := indexRead{revision: math.MaxUint64}
 	read := func(direction string) error {
-		edges, revision, err := hop(ctx, entityID, direction)
+		edges, leg, err := hop(ctx, entityID, direction)
 		if err != nil {
 			return err
 		}
-		smallest = min(smallest, revision)
+		both = both.and(leg)
 		for _, edge := range edges {
 			if len(request.Predicates) > 0 && !slices.Contains(request.Predicates, edge.Predicate) {
 				continue
@@ -205,12 +205,12 @@ func neighbours(ctx context.Context, entityID string, request graph.PathSearchRe
 	}
 	if request.Direction != directionIncoming {
 		if err := read(directionOutgoing); err != nil {
-			return nil, 0, err
+			return nil, indexRead{}, err
 		}
 	}
 	if request.Direction != directionOutgoing {
 		if err := read(directionIncoming); err != nil {
-			return nil, 0, err
+			return nil, indexRead{}, err
 		}
 	}
 	slices.SortFunc(crossings, func(a, b pathCrossing) int {
@@ -220,7 +220,7 @@ func neighbours(ctx context.Context, entityID string, request graph.PathSearchRe
 			compareBool(a.incoming, b.incoming),
 		)
 	})
-	return crossings, smallest, nil
+	return crossings, both, nil
 }
 
 // compareBool orders false before true.

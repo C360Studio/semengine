@@ -168,10 +168,11 @@ func (s graphStack) awaitIndexed(t *testing.T, revision uint64) {
 	}
 }
 
-// wireEnvelope reads a composed verb's reply strictly: any key beside these four fails the decode.
+// wireEnvelope reads a composed verb's reply strictly: any key beside these fails the decode.
 type wireEnvelope struct {
 	Data            json.RawMessage `json:"data"`
 	IndexedRevision uint64          `json:"indexed_revision"`
+	DamagedEntities int             `json:"damaged_entities"`
 	Producer        string          `json:"producer"`
 	Timestamp       time.Time       `json:"timestamp"`
 }

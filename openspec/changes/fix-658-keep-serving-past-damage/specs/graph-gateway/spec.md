@@ -10,6 +10,6 @@ otherwise. No root field's selected fields change.
 
 #### Scenario: One root field over a reply with a count
 
-- **WHEN** a client asks `relationships` and graph-query's reply carries `damaged_entities` 1
-- **THEN** the answer carries `extensions.damagedEntities` 1 and `data.relationships` holds exactly the selected fields
+- **WHEN** a client asks `pathSearch` and graph-query's reply carries `damaged_entities` 1
+- **THEN** the answer carries `extensions.damagedEntities` 1 and `data.pathSearch` holds exactly the selected fields
   (`TestAnswerCarriesDamagedCount`)

@@ -37,10 +37,12 @@ type RetrievalClient interface {
 	// batch verb answers cache hits first; Client.Entities in pkg/fusion/fusionnats
 	// restores request order for exactly this reason).
 	Entities(ctx context.Context, ids []string) (Hydration, error)
-	// Neighbors returns edges from id along the given predicates in a direction.
-	Neighbors(ctx context.Context, id string, predicates []string, dir Direction) ([]Edge, error)
-	// Names suggests entity display names near a query (for a miss's did_you_mean).
-	Names(ctx context.Context, query string, limit int) ([]string, error)
+	// Neighbors returns edges from id along the given predicates in a direction,
+	// and how many damaged entities the read left out.
+	Neighbors(ctx context.Context, id string, predicates []string, dir Direction) (Neighbors, error)
+	// Names suggests entity display names near a query (for a miss's did_you_mean),
+	// and how many damaged entities the read left out.
+	Names(ctx context.Context, query string, limit int) (Names, error)
 }
 
 // Seed is one resolved candidate, most relevant first.
@@ -66,10 +68,30 @@ type Seed struct {
 // natural-language search, what the word index's reply says it left out:
 // BodiesNotIndexed (entities whose offloaded body it did not hold) and Excluded
 // (the question's excluded terms). Symbol and prefix resolves leave both empty.
+//
+// DamagedEntities, in every mode, is the reply's count of damaged entities
+// (stored values the graph refuses to read) the index held and left out, so
+// the seeds may lack one of them. 0 says nothing was left out.
 type Resolution struct {
 	Seeds            []Seed
 	BodiesNotIndexed int
 	Excluded         []string
+	DamagedEntities  int
+}
+
+// Neighbors is what a Neighbors read found: the edges, and the reply's count of
+// damaged entities the index held and left out, so an edge to or from one of
+// them may be missing. 0 says nothing was left out.
+type Neighbors struct {
+	Edges           []Edge
+	DamagedEntities int
+}
+
+// Names is what a Names read found: the suggested names, and the reply's count
+// of damaged entities the index held and left out, as Neighbors carries it.
+type Names struct {
+	Names           []string
+	DamagedEntities int
 }
 
 // SeedIDs projects seeds to their IDs, for the batch-hydration call and anywhere else

@@ -27,12 +27,12 @@ copy. #657 stays open for its other follow-ups.
 
 ## 3. PR 2: fusion and graph-gateway (design D4; Q3 ruled yes, 2026-11-18)
 
-- [ ] 3.1 fusion: `TestReadsPassOnDamagedCount` and `TestResponseCarriesDamagedCount`, shown failing on `main`; then
+- [x] 3.1 fusion: `TestReadsPassOnDamagedCount` and `TestResponseCarriesDamagedCount`, shown failing on `main`; then
   `fusionnats.decodeReply` (`client.go:446-465`) returns the count, `Resolution.DamagedEntities`, the
   `fusion.Neighbors` and `fusion.Names` result types (`retrieval.go:41,43`), their callers (`engine_facets.go:255`,
   `engine_lens.go:298`, `:451`), `fusion.Response.DamagedEntities` (`contract.go:181-191`); `pkg/fusion/README.md`,
   `MIGRATION.md` (semsource's `source/fusion/fusiontest/memgraph.go` returns the structs).
-- [ ] 3.2 graph-gateway: `TestAnswerCarriesDamagedCount`, shown failing on `main`; then `resolve.go:82-86` keeps the
+- [x] 3.2 graph-gateway: `TestAnswerCarriesDamagedCount`, shown failing on `main`; then `resolve.go:82-86` keeps the
   count and the response carries `extensions.damagedEntities`; its README.
 
 ## 4. PR 3: the follower records damage (design D1, D5)
@@ -81,7 +81,11 @@ copy. #657 stays open for its other follow-ups.
 - [ ] 6.2 `docs/admission-ledger.yaml` rows graph/follower `:3620-3666`, graph-index `:3560-3566`, `:3606`, ADR-074
   `:3668-3680`, graph-embedding `:4598`, graph-clustering `:4927`; READMEs and MIGRATION notes listed in
   `inventory.md` § 3; `.agents/skills/query-pattern/SKILL.md:53-56`; `graph/index_status.go:80-81` (graph-index now
-  emits `failed_reasons`).
+  emits `failed_reasons`). The "always absent today" lines PR 2 left: `pkg/fusion/README.md:69-70`,
+  `pkg/fusion/MIGRATION.md:131-132`, `gateway/graph-gateway/README.md:80`, `gateway/graph-gateway/MIGRATION.md:84`,
+  `processor/graph-query/MIGRATION.md:127`; ledger rows pkg/fusion `:4682`, pkg/fusion/fusionnats `:4802` (its
+  contract `:4824`: an nl Resolve copies `damaged_entities` too, as do byName and relationships) and graph-gateway
+  `:1931` (answers carry `extensions.damagedEntities`).
 - [ ] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
   `IndexStatusResponse.Code` and `Reason` fields (`:33-36`), the gate's branch (`graph/readiness/readiness_gate.go:127`)
   and their tests (`publisher_test.go:88`, `readiness_gate_test.go:101`, `:331`,

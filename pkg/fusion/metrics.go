@@ -63,11 +63,14 @@ func (e *Engine) registerCounters() error {
 // skipFacets is the order a call's Warn lines are written in.
 var skipFacets = []string{string(WantRelations), string(WantPaths), string(WantImpact), string(WantGraph)}
 
-// skipLog records one Fuse call's skipped walk reads per facet: how many, and the
-// first error. It belongs to one call, so concurrent calls never share it.
+// skipLog records what one Fuse call's graph reads left out: its skipped walk
+// reads per facet, how many and the first error, and the largest count of
+// damaged entities any read that answered reported. It belongs to one call, so
+// concurrent calls never share it.
 type skipLog struct {
-	counts map[string]int
-	first  map[string]error
+	counts  map[string]int
+	first   map[string]error
+	damaged int
 }
 
 func newSkipLog() *skipLog {
@@ -80,6 +83,13 @@ func (s *skipLog) add(facet string, err error) {
 		s.first[facet] = err
 	}
 	s.counts[facet]++
+}
+
+// sawDamaged records a read that answered while leaving n damaged entities
+// out. The largest count is kept, not the sum: two reads can count the same
+// entity, so the largest is what the answer is known to lack.
+func (s *skipLog) sawDamaged(n int) {
+	s.damaged = max(s.damaged, n)
 }
 
 // report declares the call's skipped reads: one Warn line per facet that skipped

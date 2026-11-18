@@ -28,27 +28,34 @@ type request struct {
 }
 
 // response is a GraphQL response body. Data is nil, and absent from the body, only when the request was refused
-// before execution; an executed request answers data even when it is empty (all root fields skipped).
+// before execution; an executed request answers data even when it is empty (all root fields skipped). Extensions
+// holds damagedEntities only when a root field was answered from a reply that left damaged entities out; it is
+// absent otherwise.
 type response struct {
-	Data   map[string]any `json:"data,omitzero"`
-	Errors gqlerror.List  `json:"errors,omitempty"`
+	Data       map[string]any `json:"data,omitzero"`
+	Errors     gqlerror.List  `json:"errors,omitempty"`
+	Extensions map[string]any `json:"extensions,omitempty"`
 }
 
 // resolver answers one root field from its coerced arguments. It returns a value keyed by the schema's field names:
 // map[string]any for an object, []any for a list, and for a scalar a string (String), int (Int), float64 (Float),
 // bool (Boolean), uint64 (Uint64) or any JSON-encodable value (JSON). Keys the selection does not name are dropped.
-type resolver func(ctx context.Context, args map[string]any) (any, error)
+// damaged is the reply's count of damaged entities (stored values the graph refuses to read) its producer left out
+// of the value, 0 when none or when the reply carries no envelope.
+type resolver func(ctx context.Context, args map[string]any) (value any, damaged int, err error)
 
 // execute answers one request. refused reports a request turned away before any resolver ran (the caller answers
 // HTTP 400): it does not parse, fails validation against the schema, is not a query, asks for introspection or
 // names more than one root field besides __typename. Otherwise each root field is resolved and projected by its
 // selection; a resolver error or a reply not fitting the schema leaves that field null with an error at its path.
+// The answer's extensions.damagedEntities is the largest damaged count among the fields answered, absent at 0.
 func execute(ctx context.Context, resolvers map[string]resolver, req request) (resp response, refused bool) {
 	op, vars, refusal := prepare(req)
 	if len(refusal) > 0 {
 		return response{Errors: refusal}, true
 	}
 	resp.Data = map[string]any{}
+	damaged := 0
 	for _, c := range collect(op.SelectionSet, "Query", vars) {
 		path := ast.Path{ast.PathName(c.key)}
 		if c.name == "__typename" {
@@ -61,7 +68,7 @@ func execute(ctx context.Context, resolvers map[string]resolver, req request) (r
 			resp.Errors = append(resp.Errors, gqlerror.ErrorPathf(path, "%s has no resolver", c.name))
 			continue
 		}
-		reply, err := resolve(ctx, c.fields[0].ArgumentMap(vars))
+		reply, n, err := resolve(ctx, c.fields[0].ArgumentMap(vars))
 		if err != nil {
 			resp.Errors = append(resp.Errors, &gqlerror.Error{Err: err, Message: err.Error(), Path: path})
 			continue
@@ -72,6 +79,11 @@ func execute(ctx context.Context, resolvers map[string]resolver, req request) (r
 			continue
 		}
 		resp.Data[c.key] = value
+		// Only a reply that was answered counts: a field left null shows nothing from its reply.
+		damaged = max(damaged, n)
+	}
+	if damaged > 0 {
+		resp.Extensions = map[string]any{"damagedEntities": damaged}
 	}
 	return resp, false
 }

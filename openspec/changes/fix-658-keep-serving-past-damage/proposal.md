@@ -1,6 +1,6 @@
 # Proposal: fix-658-keep-serving-past-damage
 
-Approved-by:
+Approved-by: cglusky (2026-11-18) <https://github.com/C360Studio/semengine/issues/658#issuecomment-6981220198> sha256:12d098cd7eaf
 
 Track: `design`. Capabilities modified: `entity-state-follower`, `graph-index`, `graph-embedding`, `graph-lexical`,
 `graph-clustering`, `graph-readiness`, `graph-transport-boundary`, `graph-query`, and with Q3 `fusion` and

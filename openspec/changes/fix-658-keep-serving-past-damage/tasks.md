@@ -7,9 +7,8 @@ issue, #658. #657 stays open for its other follow-ups.
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas), INVENTORY PASS, a passing
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`, spec deltas), INVENTORY PASS, a passing
   pre-owner design review, and rulings on Q1 to Q3.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. PR 1: the count and graph-query's relay (design D3, D4)
 

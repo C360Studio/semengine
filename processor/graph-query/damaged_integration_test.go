@@ -152,6 +152,43 @@ func TestComposedReplyCarriesLargestDamagedCount(t *testing.T) {
 		})
 	}
 
+	// A path question is a path hint: the alias read, then a walk through the edge verbs from the
+	// entity it names. The walk's replies are index replies the answer is built from too.
+	t.Run("globalSearch path hint, the walk at 3", func(t *testing.T) {
+		client := fixtureClient(t)
+		replyWith(t, client, graph.ResponderGraphLexical, "search", countedReply("graph-lexical", emptyWords, 4, 0))
+		replyWith(t, client, graph.ResponderGraphIndex, "alias", countedReply("graph-index", `{"canonical_id":"`+drone1+`"}`, 4, 0))
+		replyWith(t, client, graph.ResponderGraphIngest, "entity", entityReply(drone1))
+		replyWith(t, client, graph.ResponderGraphIndex, "outgoing", countedReply("graph-index", emptyEdges, 4, 3))
+		replyWith(t, client, graph.ResponderGraphIndex, "incoming", countedReply("graph-index", emptyEdges, 4, 0))
+		startComponent(t, client, `{}`)
+		raw, err := ask(t, client, "globalSearch", `{"query":"what is connected to held-1"}`)
+		var data graph.GlobalSearchData
+		if err == nil {
+			if decodeErr := json.Unmarshal(decodeEnvelope(t, raw).Data, &data); decodeErr != nil || data.Path == nil {
+				t.Fatalf("want an honoured path hint: %s", raw)
+			}
+		}
+		requireDamaged(t, raw, err, 3)
+	})
+
+	// An embedding list whose hit names no group is a broken reply: the answer is the word list alone,
+	// so the embedding reply's count is not the answer's.
+	t.Run("searchGraph with a broken embedding list at 3", func(t *testing.T) {
+		client := fixtureClient(t)
+		replyWith(t, client, graph.ResponderGraphLexical, "search", countedReply("graph-lexical", emptyWords, 4, 0))
+		replyWith(t, client, graph.ResponderGraphEmbedding, "search", countedReply("graph-embedding", semanticHits("not-an-entity-id"), 0, 3))
+		startComponent(t, client, tierOneConfig)
+		raw, err := ask(t, client, "searchGraph", mergeQuestion)
+		if err == nil {
+			var data graph.GlobalSearchData
+			if decodeErr := json.Unmarshal(decodeEnvelope(t, raw).Data, &data); decodeErr != nil || data.Merge == nil || data.Merge.Honoured {
+				t.Fatalf("want the merge named as failed: %s", raw)
+			}
+		}
+		requireDamaged(t, raw, err, 0)
+	})
+
 	// At tier 1 searchGraph merges the word search and the embedding search.
 	for _, counts := range [][2]int{{2, 3}, {3, 2}, {0, 0}} {
 		t.Run(fmt.Sprintf("searchGraph words at %d, embedding at %d", counts[0], counts[1]), func(t *testing.T) {

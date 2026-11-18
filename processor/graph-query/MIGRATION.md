@@ -123,11 +123,12 @@ paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `tot
 - A damaged hit no longer refuses a search. The reply gains `data.text.damaged` (the IDs left out because their
   stored value could not be read, in hit order, omitted when none). Your mcp-gateway reads only `truncated`
   (`processor/mcp-gateway/graph_matches.go:130`), which a damaged hit sets; read `damaged` to name the hit.
-- An index can now leave a damaged entity out of its answer and say so in the envelope's `damaged_entities` (absent
-  at 0). `searchGraph` and `globalSearch` set `truncated` while that count is above 0, so your mcp-gateway, which
-  reads only `truncated` (`processor/mcp-gateway/graph_matches.go:130`), learns of the gap with no change. One damaged
-  entity anywhere makes every unscoped search `truncated` until it is repaired. Read `damaged_entities` from the
-  envelope if you want to say how many were left out.
+- The envelope has a `damaged_entities` field (absent at 0): the number of damaged entities an index left out of its
+  answer. The indexes start setting it in a later release; until then it is always absent. `searchGraph` and
+  `globalSearch` set `truncated` whenever a reply they read carries it above 0, so your mcp-gateway, which reads only
+  `truncated` (`processor/mcp-gateway/graph_matches.go:130`), will learn of the gap with no change. Once the indexes
+  set it, one damaged entity anywhere makes every unscoped search `truncated` until it is repaired. Read
+  `damaged_entities` from the envelope if you want to say how many were left out.
 
 ## SemConnect
 
@@ -154,8 +155,9 @@ backend (`cmd/cs-graph-backend/main.go:127`).
   refuse the whole batch. The `missing` switch at `gateway/cs-api/systems.go:896` must accept `damaged`; until it
   does, it refuses the batch loudly. A caller that reads `entities` alone gets the readable entities.
 - Your predicate read (`gateway/cs-api/systems.go:993-997`) decodes `graph.QueryResponse[PredicateData]` and returns
-  `Data.Entities`. The envelope can now carry `damaged_entities` (absent at 0): the index left that many damaged
-  entities out, so the list may lack some that hold the predicate. Nothing fails if you ignore it, and the answer is
+  `Data.Entities`. The envelope has a `damaged_entities` field (absent at 0), which graph-index starts setting in a
+  later release: above 0, the index left that many damaged entities out, so the list may lack some that hold the
+  predicate. Nothing fails if you ignore it, and the answer is
   right about every entity it lists; read it to tell your caller the list may be short.
 
 ## Whoever keeps the SPARQL gateway

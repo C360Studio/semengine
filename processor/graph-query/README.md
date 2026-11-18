@@ -53,12 +53,12 @@ no answer is refused by `graph-query` itself, class transient, code `internal`, 
 `query_timeout_ms` passing, the handler's context ending (`natsclient`'s limit on a request handler, or the client
 closing), or a lost connection.
 
-An enveloped reply can carry `damaged_entities`, the number of damaged entities (stored values the stored-value rule
-refuses) its producer left out of the answer; the key is absent at 0. Every reply `graph-query` builds itself
-(`entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`) carries the
-largest `damaged_entities` among the index replies it read, and no such key when none carried one. Counts are not
-added, since two reads can count the same entity. A forward passes the count in the bytes it passes unchanged. A count
-above 0 means rows may be missing from `data`; the answer about every other entity stands.
+An enveloped reply can carry `damaged_entities`, the number of damaged entities (stored values
+`graph.UnmarshalEntityState` refuses) its producer left out of the answer; the key is absent at 0. Every reply
+`graph-query` builds itself (`entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`,
+`searchGraph`) carries the largest `damaged_entities` among the index replies it read, and no such key when none carried
+one. Counts are not added, since two reads can count the same entity. A forward passes the count in the bytes it passes
+unchanged. A count above 0 means rows may be missing from `data`; the answer about every other entity stands.
 
 ### `entityByAlias`
 
@@ -223,8 +223,10 @@ including SemStreams' `max_communities`, `summarize_threshold`, `include_summari
   (below), where it is `null`. An empty `text` means the word index was read and matched nothing. It holds: `level`;
   `matches` as in `localSearch`; `groups`, each group holding a match once, in the order of its best match, with
   `community_id`, `matches` (how many of the reply's matches it holds), `record_state` and `record`; `matched`,
-  `excluded`, `missing`, `bodies_not_indexed` and `truncated` as in `localSearch`; `unreadable_groups`, how many
-  listed groups have an `unreadable` record; and `answer`, such as `Found 12 matching entities in 3 groups.`
+  `excluded`, `missing` and `bodies_not_indexed` as in `localSearch`; `truncated` as in `localSearch`, and also true
+  when a read behind an honoured hint (the alias read, or the walk of a `path` hint) carried `damaged_entities` above
+  0, since its entity or path is in the reply; `unreadable_groups`, how many listed groups have an `unreadable`
+  record; and `answer`, such as `Found 12 matching entities in 3 groups.`
 - `entity`: the entity verb's reply data as it came, present only beside an honoured `entity` hint.
 - `path`: a `graph.PathSearchData`, present only beside an honoured `path` hint.
 - `hints`: what the question asked for beyond its words (empty when nothing).

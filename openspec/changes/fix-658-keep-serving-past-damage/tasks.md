@@ -50,7 +50,8 @@ copy. #657 stays open for its other follow-ups.
 
 ## 5. PR 3: the four plug-ins (design D1, D2, D3)
 
-- [ ] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests"; shown failing on `main`.
+- [ ] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests", among them
+  `TestDamagedEntityLeftOutAndNamed` (the graph-transport-boundary delta's scenario); shown failing on `main`.
   Rewrite `TestNoncanonicalValueLatchesResetAndHoldsItsRevision` (`index_integration_test.go:480-503`) and the "a
   latched reset" subtest (`lifecycle_integration_test.go:403-410`), and the two reset subtests of
   `TestErrorCountCountsOutcomesNotOperations` (`index_integration_test.go:528-550`) as one error per newly damaged

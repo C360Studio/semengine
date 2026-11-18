@@ -84,6 +84,13 @@ Reply counts of records left out (all whole-store or whole-index, none for damag
   - `openspec/specs/graph-lexical/spec.md:74-91`, `:93-98` (reply fields).
   - `openspec/specs/graph-clustering/spec.md:41-57` ("or a latched reset").
   - `openspec/specs/composed-stack/spec.md:85-99` says no envelope reports `reset_required`: stays true.
+  - `openspec/specs/fusion/spec.md:22-33` ("A fatal seed read fails the call", "`graph_state_reset_required` from a
+    reset") and `:78-90` ("A walk read that fails is skipped", a relation target's read returning
+    `graph_state_reset_required`); `:286-295` and `:327-340` copy the word index's `bodies_not_indexed` onto
+    `Resolution` and every response (the nearest shape for a count).
+  - `openspec/specs/graph-gateway/spec.md:88-103` (refusals keep class and code in `errors[].extensions`) and
+    `:47-56` (an answer holds exactly the selected fields): no text on the reset.
+  - `openspec/specs/graph-readiness/spec.md:12-25`: the gate's `hard_stop` names `reset_required`.
 - Tests asserting the stop: `graph/follower/follower_integration_test.go:476-503`
   (`TestFollowerLatchesResetOnUnreadableSnapshotValue`), `follower_test.go:483-490` (`TestWithholdNarrowsQueryReady`,
   reset clause); `processor/graph-index/index_integration_test.go:480-503`
@@ -91,7 +98,10 @@ Reply counts of records left out (all whole-store or whole-index, none for damag
   `processor/graph-embedding/withhold_integration_test.go:153-165` ("after a reset");
   `processor/graph-lexical/apply_test.go:191-202`; `processor/graph-clustering/publication_integration_test.go:249-277`,
   `component_integration_test.go:163-175` (comment on the replay latch). `internal/smoke/stack_integration_test.go:663`
-  checks `reset_required` is absent: stays.
+  checks `reset_required` is absent: stays. Also: graph-index `TestErrorCountCountsOutcomesNotOperations`, subtests
+  "one reset that holds the entity" and "one reset that completes" (`index_integration_test.go:528-550`, an
+  `ErrorCount` of 1 per reset); graph-embedding `TestHealthIgnoresErrorCount` (`health_integration_test.go:76-86`),
+  which waits for "graph state reset required" in `LastError` and would wait forever once the latch goes.
 - ADR text (this repository's copies): ADR-074 port note `docs/adr/074-canonical-predicate-contract.md:13-18` and
   decision `:87-93` ("Stored-state poison is permanent for the process lifetime"); ADR-084 D4
   `docs/adr/084-readiness-licenses-health-not-absence.md:139-142` ("`reset_required` … never self-clears"); ADR-108
@@ -154,6 +164,17 @@ Readers of the affected replies (consumer working trees):
   `textsearch.go:207`); its forwards pass bytes unchanged (graph-query spec `:20-31`, `:229-245`).
   `pkg/fusion/fusionnats/client.go:446-465` (`decodeReply`) and `gateway/graph-gateway/resolve.go:82-86` keep only
   `Data`, so any envelope field stops there.
+- graph-query also reads `COMMUNITY_INDEX` records into search replies: `localsearch.go:206-208` (`groupRecord`,
+  `attachedRecord`) and `processor/graph-query/community.go`; graph-clustering builds those records, and a damaged
+  entity is in none of them.
+- graph-query's `pathSearch` hops through `outgoing`/`incoming` and a failed hop ends the walk with the hop's class and
+  code (`processor/graph-query/pathsearch.go:102-120`; graph-query spec "A failed read ends a path search").
+- fusion's `RetrievalClient` (`pkg/fusion/retrieval.go:15-43`): `Resolve` returns `Resolution` (a struct),
+  `Neighbors` `[]Edge` and `Names` `[]string`; semsource's `source/fusion/fusiontest/memgraph.go` implements it.
+  `fusion.Response.Truncated` means the budget cut nodes off (`pkg/fusion/README.md:71`), `relations_truncated` a
+  node's missing ref (`contract.go:103-106`), `bodies_not_indexed` the word index's count (`contract.go:181-189`).
+- graph-gateway answers a classified refusal in `errors[].extensions` (`gateway/graph-gateway/component.go:187-197`)
+  and keeps only an envelope's `Data` (`resolve.go:82-86`).
 
 1. What must they know today? That `graph_state_reset_required` from these verbs means "do not retry, wipe".
 2. If the components serve and nothing else changes: a caller that reads `data` only gets an answer missing the damaged

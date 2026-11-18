@@ -27,12 +27,14 @@ issue, #658. #657 stays open for its other follow-ups.
 
 ## 3. PR 2: fusion and graph-gateway (design D4; only if Q3 is yes)
 
-- [ ] 3.1 Hold: OPEN-Q Q3 decides whether this task is done here or filed as an issue. fusion: a test that an answer
-  built after a read whose reply named `damaged_entities` N carries N (the largest seen), shown failing on `main`;
-  then `fusionnats.decodeReply` (`client.go:446-465`) keeps the count and the `RetrievalClient` results carry it;
-  `pkg/fusion/README.md`, `MIGRATION.md` (semsource's `fusiontest/memgraph.go` implements the interface).
-- [ ] 3.2 graph-gateway: a test that a GraphQL root field over an enveloped verb reports the count, shown failing on
-  `main`; then `resolve.go:82-86` and the schema; its README.
+- [ ] 3.1 Hold: OPEN-Q Q3 decides whether this task is done here or filed as an issue. fusion:
+  `TestReadsPassOnDamagedCount` and `TestResponseCarriesDamagedCount`, shown failing on `main`; then
+  `fusionnats.decodeReply` (`client.go:446-465`) returns the count, `Resolution.DamagedEntities`, the
+  `fusion.Neighbors` and `fusion.Names` result types (`retrieval.go:41,43`), their callers (`engine_facets.go:255`,
+  `engine_lens.go:298`, `:451`), `fusion.Response.DamagedEntities` (`contract.go:181-191`); `pkg/fusion/README.md`,
+  `MIGRATION.md` (semsource's `source/fusion/fusiontest/memgraph.go` returns the structs).
+- [ ] 3.2 graph-gateway: `TestAnswerCarriesDamagedCount`, shown failing on `main`; then `resolve.go:82-86` keeps the
+  count and the response carries `extensions.damagedEntities`; its README.
 
 ## 4. PR 3: the follower records damage (design D1, D5)
 
@@ -42,7 +44,8 @@ issue, #658. #657 stays open for its other follow-ups.
   reasons, the count and the repair); the envelope reads `degraded` with `failed_reasons["damaged_entity"]` and
   `QueryReady` answers nil. Rewrite `TestFollowerLatchesResetOnUnreadableSnapshotValue`
   (`follower_integration_test.go:476-503`) as a replay that does not stop, and the reset clause of
-  `TestWithholdNarrowsQueryReady` (`follower_test.go:483-490`).
+  `TestWithholdNarrowsQueryReady` (`follower_test.go:483-490`). The generated check draws completions at, below and
+  above a report.
 - [ ] 4.2 Then the follower: replace `Reset` and the latch (`follower.go:115`, `:299-309`, `:361-365`, `:378-379`,
   `:413-416`, `:458-465`, `resetRemedy` `:97-98`) with the per-key record and its two read methods; package comment.
 
@@ -50,18 +53,24 @@ issue, #658. #657 stays open for its other follow-ups.
 
 - [ ] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests"; shown failing on `main`.
   Rewrite `TestNoncanonicalValueLatchesResetAndHoldsItsRevision` (`index_integration_test.go:480-503`) and the "a
-  latched reset" subtest (`lifecycle_integration_test.go:403-410`). Then `index.go:184-192` and `:412-427` report,
+  latched reset" subtest (`lifecycle_integration_test.go:403-410`), and the two reset subtests of
+  `TestErrorCountCountsOutcomesNotOperations` (`index_integration_test.go:528-550`) as one error per newly damaged
+  entity. Waits: a request with `min_revision` B's revision. Then `index.go:184-192` and `:412-427` report,
   remove rows (`deleteFromIndexes`, `:520`) and complete; `queryRevision` (`query.go:79`) sets the count; `outgoing`
   refuses a damaged entity.
-- [ ] 5.2 graph-embedding: rewrite the "after a reset" subtest (`withhold_integration_test.go:153-165`); add the replay
-  case; shown failing on `main`. Then `hop1.go:135-147` reports, removes (`removeRecord`, `:121`) and completes;
+- [ ] 5.2 graph-embedding: rewrite the "after a reset" subtest (`withhold_integration_test.go:153-165`) and the
+  reset step of `TestHealthIgnoresErrorCount` (`health_integration_test.go:76-86`, which would wait forever); add the
+  replay case; shown failing on `main`. Waits: the follower's floor, then the vector cache past B's delete. Then
+  `hop1.go:135-147` reports, removes (`removeRecord`, `:121`) and completes;
   `search` counts within scope, `similar` refuses a damaged source (`query.go:94-143`).
 - [ ] 5.3 graph-lexical: integration tests, replay and live, shown failing on `main`; rewrite `apply_test.go:191-202`.
+  Waits: a request with `min_revision` B's revision.
   Then `component.go:240-251` and `apply.go:158-161` report, delete the entity's text and complete; `search` counts
   within scope (`query.go:81-110`).
 - [ ] 5.4 graph-clustering: rewrite `TestResetStopsPublication` (`publication_integration_test.go:249-277`) so the
   replay publishes the other groups, shown failing on `main`, and `TestRefusedValueReportedNotWithheld` to expect
-  `damaged_entity` and the ID in `Health`. Then `deliver` (`component.go:269-290`) reports and applies a delete in
+  `damaged_entity` and the ID in `Health`; add `TestDamagedOverwriteLeavesGroup`. Waits: the floor, then a tick by
+  hand. Then `deliver` (`component.go:269-290`) reports and applies a delete in
   place of `Upsert(nil)`; comments at `:156`, `:317`, `component_integration_test.go:163-168`.
 
 ## 6. PR 3: records and docs
@@ -73,8 +82,12 @@ issue, #658. #657 stays open for its other follow-ups.
   `:3668-3680`, graph-embedding `:4598`, graph-clustering `:4927`; READMEs and MIGRATION notes listed in
   `inventory.md` § 3; `.agents/skills/query-pattern/SKILL.md:53-56`; `graph/index_status.go:80-81` (graph-index now
   emits `failed_reasons`).
-- [ ] 6.3 File the follow-up: `reset_required`, `IndexStatusResponse.Code` and `Reason` have no producer
-  (`status:blocked`, linked without a closing keyword). The adoption sweep issue for one damage-record type
+- [ ] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
+  `IndexStatusResponse.Code` and `Reason` fields (`:33-36`), the gate's branch (`graph/readiness/readiness_gate.go:127`)
+  and their tests (`publisher_test.go:88`, `readiness_gate_test.go:101`, `:331`,
+  `internal/smoke/stack_integration_test.go:663`);
+  `TestEvaluateReadinessGate_UnrecognizedStateFailsClosed` gains `reset_required`; a semconnect migration note
+  (`conformance/cmd/index-readiness/main.go:155`). File the adoption-sweep issue for one damage-record type
   (graph-ingest `poison_inventory.go:84`, graph-clustering `maintainer.go:143`, the follower).
 - [ ] 6.4 Before PR 3 is marked ready: post on #658 what counts as done; PR title and body match.
 

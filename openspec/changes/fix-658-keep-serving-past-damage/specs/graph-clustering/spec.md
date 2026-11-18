@@ -21,6 +21,18 @@ entity's contribution at its revision.
 - **THEN** the entity contributes nothing, the tick still publishes the other groups, `Health` names the entity, and
   the envelope's `failed_reasons` name `damaged_entity` 1 (`TestRefusedValueReportedNotWithheld`)
 
+#### Scenario: A valid member overwritten with damage
+
+- **WHEN** an entity in a group is overwritten with bytes that do not decode, and a tick follows
+- **THEN** the group's record no longer counts it, the other groups are unchanged, and `Health` names the entity
+  (`TestDamagedOverwriteLeavesGroup`)
+
+#### Scenario: Repair
+
+- **WHEN** the damaged entity is then written with a valid value and a tick follows
+- **THEN** its groups count it again, `Health` no longer names it, and no restart was needed
+  (`TestDamagedOverwriteLeavesGroup`)
+
 ### Requirement: Publication waits for the replay and stops on a broken feed
 
 graph-clustering SHALL publish nothing to `COMMUNITY_INDEX` until the follower's initial build is complete, and SHALL

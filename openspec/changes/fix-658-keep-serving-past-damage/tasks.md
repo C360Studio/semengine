@@ -3,7 +3,8 @@
 Tests come first. Each code task ends at a clean-tree local `task verify`. "Shown to fail" means failing-first output
 in `notes/<task>.md`, or a `task mutate:check` run. Premises are in `inventory.md` and `design.md`. Three pull
 requests, merged in order: PR 1 (task 2), PR 2 (task 3), PR 3 on draft #693 (tasks 4 to 6), which closes the
-issue, #658. PR 1 brings this change folder to `main`; PR 2 and PR 3 tick their tasks against that copy. #657 stays open for its other follow-ups.
+issue, #658. PR 1 brings this change folder to `main`; PR 2 and PR 3 tick their tasks against that
+copy. #657 stays open for its other follow-ups.
 
 ## 1. Design
 

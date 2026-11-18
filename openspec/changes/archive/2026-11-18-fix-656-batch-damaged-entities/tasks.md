@@ -52,9 +52,10 @@ request, #692, which closes #656. #657, #658 and #659 stay open.
   - `graph/README.md:84-87` (the `TextSearchData` fields), and a `processor/graph-query/MIGRATION.md` bullet for search
     readers: the new `damaged` field, a damaged hit no longer refuses, and semsource's mcp-gateway, which reads only
     `truncated` (`processor/mcp-gateway/graph_matches.go:130`), reads `damaged` to name it.
-- [ ] 2.5 Before the PR is marked ready: post on #656 what counts as done, and make the PR title and body match.
+- [x] 2.5 Before the PR is marked ready: post on #656 what counts as done, and make the PR title and body match.
 
 ## 3. Close
 
-- [ ] 3.1 Codex review of record at the head; `reviewed-by:` in the PR body.
-- [ ] 3.2 Archive the change and sync the specs as the last content commit.
+- [x] 3.1 Review request posted with the archive in the reviewed head, so Codex's review of record covers the final tree;
+  `reviewed-by:` goes in the PR body when the record lands.
+- [x] 3.2 Archive the change and sync the specs as the last content commit.

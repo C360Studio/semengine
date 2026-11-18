@@ -7,21 +7,14 @@
 Both verbs SHALL read their hits with one `graph.ingest.query.batch` request and answer `matches` in the word index's
 order, each `id`, `label`, `score` (the word index's) and `entity`, the bytes the batch sent for it, which graph-query
 does not re-encode. In a searchGraph merged list the order is the merged order and `score` is the merged score. A hit
-the batch names `damaged` SHALL be left out, named in the reply's `damaged` list in hit order, and set `truncated`;
-it SHALL NOT be counted in `missing` or refuse the search. A hit the batch names missing with any other reason SHALL
-be left out and counted in `missing`. A batch refusal SHALL reach the caller as it arrived.
+the batch names missing, other than as `damaged`, SHALL be left out and counted in `missing`. A batch refusal SHALL
+reach the caller unchanged.
 
 #### Scenario: Order and missing hits
 
 - **WHEN** the batch returns the entities in another order and names one hit missing `not_found`
 - **THEN** the matches follow the hits' order without it, `missing` is 1 and `truncated` is true
   (`TestSearchMatchesKeepHitOrder`, `TestSearchDropsMissingHits`)
-
-#### Scenario: A damaged hit
-
-- **WHEN** the batch names one hit `damaged`
-- **THEN** `localSearch` and `globalSearch` answer the other hits, `damaged` names it, `missing` is 0 and `truncated`
-  is true (`TestSearchNamesDamagedHit`)
 
 #### Scenario: Entities pass unchanged
 
@@ -59,3 +52,16 @@ SHALL be named in `damaged` in merged order.
 - **WHEN** at tier 1 a hit found only by the embedding search is named `damaged` by the batch
 - **THEN** it is left out, named in `damaged` in merged order, and `truncated` is true
   (`TestSearchGraphMergedNamesDamagedHit`)
+
+## ADDED Requirements
+
+### Requirement: A damaged hit is named, not refused
+
+A hit the batch names `damaged` SHALL be left out, named in the reply's `damaged` list in hit order, and set
+`truncated`; it SHALL NOT be counted in `missing` or refuse the search.
+
+#### Scenario: A damaged hit
+
+- **WHEN** the batch names one hit `damaged`
+- **THEN** `localSearch` and `globalSearch` answer the other hits, `damaged` names it, `missing` is 0 and `truncated`
+  is true (`TestSearchNamesDamagedHit`)

@@ -98,7 +98,7 @@ Reply counts of records left out (all whole-store or whole-index, none for damag
   `processor/graph-embedding/withhold_integration_test.go:153-165` ("after a reset");
   `processor/graph-lexical/apply_test.go:191-202`; `processor/graph-clustering/publication_integration_test.go:249-277`,
   `component_integration_test.go:163-175` (comment on the replay latch). `internal/smoke/stack_integration_test.go:663`
-  checks `reset_required` is absent: stays. Also: graph-index `TestErrorCountCountsOutcomesNotOperations`, subtests
+  checks `reset_required` is absent: rewritten in PR 3. Also: graph-index `TestErrorCountCountsOutcomesNotOperations`, subtests
   "one reset that holds the entity" and "one reset that completes" (`index_integration_test.go:528-550`, an
   `ErrorCount` of 1 per reset); graph-embedding `TestHealthIgnoresErrorCount` (`health_integration_test.go:76-86`),
   which waits for "graph state reset required" in `LastError` and would wait forever once the latch goes.

@@ -40,6 +40,13 @@ Each of these is a compile error. Fix them first.
   copies the reply's `bodies_not_indexed` and `excluded` into the two fields; any other resolve leaves them empty. A
   wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a rebuilt one, or the two
   are lost.
+- **`Neighbors` and `Names` return structs.** `Neighbors` returns `fusion.Neighbors{Edges, DamagedEntities}` where it
+  returned `[]Edge`, and `Names` returns `fusion.Names{Names, DamagedEntities}` where it returned `[]string`;
+  `Resolution` gains `DamagedEntities` too. `DamagedEntities` is the read's count of damaged entities (stored values
+  the graph refuses to read) the index left out. *Do:* in `fusiontest.MemGraph` (`source/fusion/fusiontest/memgraph.go`)
+  wrap the results, `return fusion.Neighbors{Edges: edges}, nil` and `return fusion.Names{Names: names}, nil`; an
+  in-memory graph has no damaged entities, so it leaves the count 0. A wrapper such as `exact_seed.go` returns the
+  inner client's values unchanged.
 - **`fusionnats.New` returns an error, and the client has no `Status` and no `Close`.** It was
   `fusionnats.New(nats, timeout) *Client`, which accepted a nil client and bound a readiness watch on its first
   `Status` call. It is now `New(requester, timeout) (*Client, error)`: a nil requester and a negative timeout are
@@ -118,6 +125,11 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **`impact.truncated` and `graph.truncated` are set in more cases:** a skipped read for an affected node's file
   (impact), and an incoming counterpart whose read failed (graph). A counterpart that reads as absent keeps its edge
   without evidence and does not set `graph.truncated`.
+- **`damaged_entities` on the response** (absent at 0): the largest count of damaged entities any graph read behind
+  the answer reported leaving out, in every resolve mode, on a miss and a deferral too. It is not `truncated`, which
+  still means only that the budget cut nodes off. The graph's indexes do not set the count yet, so it is always
+  absent today. *Do:* read it beside `bodies_not_indexed` to tell a user an answer may lack entities that could not
+  be read.
 - **Two counters, on the injected registry only.**
   `semengine_fusion_skipped_reads_total{facet}` (`relations`, `paths`, `impact`, `graph`) is new, and each `Fuse` call
   logs one Warn line per facet that skipped a read (count and first error). The body counter is now

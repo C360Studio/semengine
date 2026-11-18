@@ -53,6 +53,13 @@ no answer is refused by `graph-query` itself, class transient, code `internal`, 
 `query_timeout_ms` passing, the handler's context ending (`natsclient`'s limit on a request handler, or the client
 closing), or a lost connection.
 
+An enveloped reply can carry `damaged_entities`, the number of damaged entities (stored values the stored-value rule
+refuses) its producer left out of the answer; the key is absent at 0. Every reply `graph-query` builds itself
+(`entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`) carries the
+largest `damaged_entities` among the index replies it read, and no such key when none carried one. Counts are not
+added, since two reads can count the same entity. A forward passes the count in the bytes it passes unchanged. A count
+above 0 means rows may be missing from `data`; the answer about every other entity stands.
+
 ### `entityByAlias`
 
 The request is `{"alias": "...", "min_revision": ...}`, and its bytes go to the alias verb unchanged. An alias with a
@@ -189,8 +196,9 @@ refused.
 - `missing`: hits deleted between the word search and the read, left out of `matches`.
 - `bodies_not_indexed`: entities whose offloaded body the word index did not hold, so their body words are not searched
   yet.
-- `truncated`: true when `matched` is above the matches returned, a hit was missing, or matches were left out so the
-  reply fits the connection's `max_payload`. The matches kept are then the best ones.
+- `truncated`: true when `matched` is above the matches returned, a hit was missing or damaged, the word index's reply
+  carried `damaged_entities` above 0 (it may have left a match out), or matches were left out so the reply fits the
+  connection's `max_payload`. The matches kept are then the best ones.
 - `answer`: a sentence such as `Found 3 matching entities in acme.ops.src.docs.`, then `Showing the first 2.` when
   truncated, then the record's summary when one was read.
 
@@ -274,9 +282,9 @@ In the reply:
   `embedder_type`, `unreadable_records`, `failed_records`).
 - `matched` stays the word index's count. `answer` adds `, and N more by meaning` for the N matches with no `word_rank`.
 - `truncated` is true when the lists read held more distinct entities between them than `limit` (the word list alone
-  when the embedding search failed), `matched` is above the word hits read, a hit was missing, or matches were left out
-  to fit. The embedding list has no score threshold, so at a small `limit` this
-  is nearly always true.
+  when the embedding search failed), `matched` is above the word hits read, a hit was missing or damaged, a reply the
+  answer was built from carried `damaged_entities` above 0, or matches were left out to fit. The embedding list has no
+  score threshold, so at a small `limit` this is nearly always true.
 - `indexed_revision` is the word index's.
 
 When one side fails:
@@ -399,8 +407,10 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 | `semengine_graph_query_search_truncated_total` | counter vec | `localSearch`, `globalSearch` and `searchGraph` answers cut short, by `verb` (`localSearch`, `globalSearch`, `searchGraph`) |
 | `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` answers given as the word list alone because the embedding search was refused, broken, or silent past `query_timeout_ms` |
 
-A search answer is cut short when more entities matched than the `limit` returned, a hit was deleted before it was
-read, or matches were left out to fit `max_payload`: each sets `truncated` and adds one to the counter. A refused
+A search answer is cut short when more entities matched than the `limit` returned, a hit was deleted or damaged
+before it was read, a reply it was built from carried `damaged_entities` above 0, or matches were left out to fit
+`max_payload`: each sets `truncated` and adds one to the counter. While any entity is damaged, every unscoped search
+counts it, so the counter rises with each `globalSearch` and `searchGraph` until the entity is repaired. A refused
 request, and an answer that is whole, count nothing.
 
 ## Starting and stopping

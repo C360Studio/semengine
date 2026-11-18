@@ -22,7 +22,7 @@ copy. #657 stays open for its other follow-ups.
 - [x] 2.3 If Q2 is yes: `TestSearchTruncatedWhileDamaged`, then the `truncated` expressions (`localsearch.go:204`,
   `textsearch.go:196`, the merged path) and the `Truncated` doc comments
   (`graph/query_local_search_types.go:56`, `graph/query_global_search_types.go:65`, `:73`).
-- [ ] 2.4 Docs: `graph/README.md`, `processor/graph-query/README.md`, `processor/graph-query/MIGRATION.md` (a bullet
+- [x] 2.4 Docs: `graph/README.md`, `processor/graph-query/README.md`, `processor/graph-query/MIGRATION.md` (a bullet
   for semsource's `truncated` reader and semconnect's predicate reader).
 
 ## 3. PR 2: fusion and graph-gateway (design D4; Q3 ruled yes, 2026-11-18)

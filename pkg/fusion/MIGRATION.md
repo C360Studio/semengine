@@ -93,11 +93,11 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   or `graph.truncated`. The reason: graph-ingest refuses a *poisoned* entity (one whose stored value it refuses to
   read) with that same fatal error, and a reply cannot tell it from a reset. *Do:* handle the `Fuse` error in
   code-context's error path; do not parse its text.
-- **A poisoned seed is listed, not fatal, over `fusionnats`.** graph-ingest refuses the whole batch when one entity in
-  it is poisoned. `fusionnats.Client.Entities` then reads each requested ID alone: the poisoned seed is listed in
-  `unhydrated` with reason `error`, the other seeds answer, and if every seed is poisoned the response is `deferred`
-  with `all_seeds_unhydrated`. A seed not found when read alone is listed `not_found`; any other error from those
-  reads, including an ended context, still fails the call. A `prefix` resolve lists IDs with `prefixIDs` and then
+- **A poisoned seed is listed, not fatal, over `fusionnats`.** graph-ingest's `batch` read names a poisoned entity in
+  `missing` with reason `damaged` and returns the rest. `fusionnats.Client.Entities` sends that one batch: the
+  poisoned seed is listed in `unhydrated` with reason `error`, the other seeds answer, and if every seed is poisoned
+  the response is `deferred` with `all_seeds_unhydrated`. A refused batch is returned as the error, with no second
+  request. A `prefix` resolve lists IDs with `prefixIDs` and then
   reads them, so a poisoned entity under the prefix is listed `error` too. Prefix mode sends up to 40 seeds to one
   `batch` read with no size fit, so very large entities can be refused `response_too_large`. *Do:* read
   `unhydrated` on an answered response, not only on a deferred one.

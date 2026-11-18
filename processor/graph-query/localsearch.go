@@ -188,7 +188,7 @@ func (c *Component) localSearch(lexicalSubject, batchSubject string) queryHandle
 			return nil, err
 		}
 		hits := search.Data.Results
-		matches, missing, err := c.readMatches(ctx, batchSubject, hits, c.labelPredicates)
+		matches, gaps, err := c.readMatches(ctx, batchSubject, hits, c.labelPredicates)
 		if err != nil {
 			return nil, err
 		}
@@ -198,9 +198,10 @@ func (c *Component) localSearch(lexicalSubject, batchSubject string) queryHandle
 			Matches:          matches,
 			Matched:          search.Data.Matched,
 			Excluded:         search.Data.Excluded,
-			Missing:          missing,
+			Missing:          gaps.missing,
+			Damaged:          gaps.damaged,
 			BodiesNotIndexed: search.Data.BodiesNotIndexed,
-			Truncated:        search.Data.Matched > len(hits) || missing > 0,
+			Truncated:        search.Data.Matched > len(hits) || gaps.left(),
 		}
 		var record clustering.Community
 		record, reply.RecordState = groupRecord(c.communities.Load(), group.key)

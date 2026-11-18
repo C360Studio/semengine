@@ -96,16 +96,6 @@ func TestQueryRefusalsCarryACode(t *testing.T) {
 			class: errs.ErrorTransient, code: "internal",
 		},
 		{
-			name: "batch: refused stored value",
-			setup: func(_ *testing.T, _ *Component, b *mockKVBucket) {
-				b.data[stored] = mockKVData{value: []byte(`{"id":`), revision: 1}
-			},
-			call: func(t *testing.T, c *Component) error {
-				return batch(c, request(t, graph.EntityBatchRequest{IDs: []string{stored}}))
-			},
-			class: errs.ErrorFatal, code: "graph_state_reset_required",
-		},
-		{
 			name: "prefix: maximum payload not observable",
 			call: func(t *testing.T, c *Component) error {
 				_, err := c.handleQueryPrefixNATS(context.Background(), request(t, graph.PrefixQueryRequest{Prefix: "acme"}))

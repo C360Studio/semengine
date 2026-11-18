@@ -258,12 +258,10 @@ func (c *Client) decodeEntity(id string, raw []byte) (*fusion.Entity, error) {
 // ID the reply lists nowhere is unhydrated unknown, never not_found
 // (reconcileHydration).
 //
-// The batch's responder refuses the whole batch with code
-// graph_state_reset_required when one stored entity is poisoned, naming it only
-// in text. On that refusal the IDs are read one at a time (entitiesAlone), so a
-// poisoned seed is listed unhydrated error rather than failing every answer it
-// ranks in (ADR-109). A refusal from the client's own check of a reply carries
-// the same code; it is returned and never starts that read. A nil context is
+// The batch is the one request. Its responder names a stored entity it will
+// not serve `damaged`, and that seed is listed unhydrated error, so it fails no
+// answer it ranks in (ADR-109). A refused batch, whatever its class or code, is
+// returned, as is the client's own refusal of the reply. A nil context is
 // refused, even for zero IDs.
 func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, error) {
 	if ctx == nil {
@@ -274,10 +272,6 @@ func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, 
 	}
 	raw, err := c.request(ctx, c.verbs.batch, graph.EntityBatchRequest{IDs: ids})
 	if err != nil {
-		// Only the responder's refusal, before any decode, means poison here.
-		if graph.IsStateContractError(err) {
-			return c.entitiesAlone(ctx, ids)
-		}
 		return fusion.Hydration{}, err
 	}
 	resp, err := decodeReply[graph.EntityBatchResponse](c.verbs.batch, raw)
@@ -290,65 +284,15 @@ func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, 
 	return reconcileHydration(ids, resp), nil
 }
 
-// entitiesAlone reads each distinct ID in ids with its own entity request, in
-// request order, after the batch was refused for poison. An ID the responder
-// refuses with graph_state_reset_required is unhydrated error; one not found is
-// unhydrated not_found. An empty ID is unhydrated error with no request, the
-// reason the batch gives it. Any other error, the client's own refusal of a
-// reply and an ended context included, is returned. It costs one request per
-// distinct ID, and only while poison is present. The context is checked before
-// each request and after each refused one.
-func (c *Client) entitiesAlone(ctx context.Context, ids []string) (fusion.Hydration, error) {
-	out := fusion.Hydration{Entities: make([]*fusion.Entity, 0, len(ids))}
-	seen := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		if id == "" {
-			out.Unhydrated = append(out.Unhydrated, fusion.Unhydrated{Handle: id, Reason: fusion.UnhydratedError})
-			continue
-		}
-		// Stop between requests once the caller has given up.
-		if err := ctx.Err(); err != nil {
-			return fusion.Hydration{}, err
-		}
-		raw, err := c.request(ctx, c.verbs.entity, graph.EntityRequest{ID: id})
-		if err != nil {
-			// A refusal that arrives after the caller gave up is not listed: the
-			// ended context is the answer.
-			if cerr := ctx.Err(); cerr != nil {
-				return fusion.Hydration{}, cerr
-			}
-			switch {
-			case isNotFound(err):
-				out.Unhydrated = append(out.Unhydrated, fusion.Unhydrated{Handle: id, Reason: fusion.UnhydratedNotFound})
-				continue
-			case graph.IsStateContractError(err):
-				out.Unhydrated = append(out.Unhydrated, fusion.Unhydrated{Handle: id, Reason: fusion.UnhydratedError})
-				continue
-			default:
-				return fusion.Hydration{}, err
-			}
-		}
-		ent, err := c.decodeEntity(id, raw)
-		if err != nil {
-			return fusion.Hydration{}, err
-		}
-		out.Entities = append(out.Entities, ent)
-	}
-	return out, nil
-}
-
-// unhydratedReason maps a reply's missing reason into fusion's closed set. The
-// reply is untrusted input, so a reason outside the set, or none, is unknown
-// rather than cast through to a consumer's exhaustive switch.
+// unhydratedReason maps a reply's missing reason into fusion's closed set. A
+// damaged entity is an error to its reader, so fusion's set keeps no reason of
+// its own for it. The reply is untrusted input, so a reason outside the set, or
+// none, is unknown rather than cast through to a consumer's exhaustive switch.
 func unhydratedReason(r graph.MissingReason) fusion.UnhydratedReason {
 	switch r {
 	case graph.MissingNotFound:
 		return fusion.UnhydratedNotFound
-	case graph.MissingError:
+	case graph.MissingError, graph.MissingDamaged:
 		return fusion.UnhydratedError
 	default:
 		return fusion.UnhydratedUnknown

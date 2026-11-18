@@ -706,6 +706,42 @@ func TestSearchDropsMissingHits(t *testing.T) {
 	}
 }
 
+// TestSearchNamesDamagedHit: the word index returns four hits, every one it matched, and the batch
+// sends two of them and names the other two damaged, listed in the reverse of the hits' order. Both
+// verbs answer the two in hit order, name the damaged two in hit order, count none of them missing,
+// set truncated, count no error and refuse nothing (spec, "A damaged hit").
+func TestSearchNamesDamagedHit(t *testing.T) {
+	client := fixtureClient(t)
+	c := startComponent(t, client, `{}`)
+	d3, d2, d1, d4 := drone3, drone2, drone1, drone(4)
+	hits := []graph.LexicalHit{{EntityID: d3, Score: 4}, {EntityID: d2, Score: 3}, {EntityID: d1, Score: 2}, {EntityID: d4, Score: 1}}
+	stubWordIndex(t, client, lexicalReply(t, 7, graph.LexicalSearchData{Results: hits, Matched: 4}))
+	stubBatch(t, client, `{"entities":[`+titled(d1, "one")+`,`+titled(d3, "three")+`],"missing":[`+
+		`{"id":"`+d4+`","reason":"damaged"},{"id":"`+d2+`","reason":"damaged"}]}`)
+	matches := `"matches":[` +
+		`{"id":"` + d3 + `","label":"three","score":4,"entity":` + titled(d3, "three") + `},` +
+		`{"id":"` + d1 + `","label":"one","score":2,"entity":` + titled(d1, "one") + `}],`
+	damaged := `"damaged":["` + d2 + `","` + d4 + `"]`
+
+	raw, err := search(t, client, `{"entity_id":"`+drone1+`","query":"pump"}`)
+	envelope, _ := searchSuccess(t, raw, err)
+	requireSameJSON(t, envelope.Data, `{"community_id":"c360.test.query.system","level":0,"record_state":"not_ready",`+matches+
+		`"matched":4,"missing":0,"bodies_not_indexed":0,`+damaged+`,"truncated":true,`+
+		`"answer":"Found 4 matching entities in c360.test.query.system. Showing the first 2."}`)
+
+	raw, err = client.RequestClassified(t.Context(), globalSearchSubject, []byte(`{"query":"pump station"}`), requestTimeout)
+	if err != nil {
+		t.Fatalf("globalSearch: %v", err)
+	}
+	requireSameJSON(t, decodeEnvelope(t, raw).Data, `{"text":{"level":0,"groups":[`+
+		`{"community_id":"c360.test.query.system","matches":2,"record_state":"not_ready"}],`+matches+
+		`"matched":4,"missing":0,"bodies_not_indexed":0,`+damaged+`,"truncated":true,"unreadable_groups":0,`+
+		`"answer":"Found 4 matching entities in 1 groups. Showing the first 2."},"hints":[]}`)
+	if got := c.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0: a damaged hit is named, not an error of graph-query's", got)
+	}
+}
+
 // TestLocalSearchEntitiesPassUnchanged: a matching entity holding values graph-query does not read, an
 // integer above 2^53 and a key it does not know, reaches the caller as the batch sent it (spec,
 // "Entities pass unchanged"). A stub sends the batch: real graph-ingest decodes numbers itself.

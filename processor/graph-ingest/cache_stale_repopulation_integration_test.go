@@ -96,7 +96,7 @@ func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 	readerDone := make(chan struct{})
 	go func() {
 		defer close(readerDone)
-		_, _, _ = c.fetchEntitiesConcurrent(ctx, []string{id}, 1)
+		_, _ = c.fetchEntitiesConcurrent(ctx, []string{id}, 1)
 	}()
 	// This runs even if an assertion exits early. Release the paused Get exactly
 	// once, then give the owned reader a finite join budget.
@@ -149,8 +149,9 @@ func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 	// A fresh read MUST observe rev2 (the marker), never a resurrected rev1.
 	// Without the guard the paused reader's Set writes rev1 back into the cache
 	// after the append's invalidate, so this read hits stale state and fails.
-	got, _, err := c.fetchEntitiesConcurrent(ctx, []string{id}, 1)
+	fetched, err := c.fetchEntitiesConcurrent(ctx, []string{id}, 1)
 	require.NoError(t, err)
+	got := fetched.entities
 	require.Len(t, got, 1)
 	require.NotNil(t, got[0].GetTriple(semantictest.Predicate(t, "test", "stale", "marker")),
 		"fresh read must observe the rev2 marker — a slow reader must not resurrect "+

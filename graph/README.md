@@ -84,8 +84,9 @@ transport"; `TestGraphImportsNoTransport`).
   `TextSearchData` holds the `level`, the `groups` read (`TextSearchGroup`: `community_id`, `matches`, `record_state`
   and the `record` when it was read), the `matches` (`TextSearchMatch`: `id`, `label`, `score`, `word_rank` and
   `vector_rank` in a `searchGraph` reply when `embedding_enabled` is true, and the `entity` as read), `matched` (the
-  word index's count before the limit), `excluded`, `missing`, `bodies_not_indexed`, `truncated`, `unreadable_groups`
-  and an `answer` sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
+  word index's count before the limit), `excluded`, `missing`, `bodies_not_indexed`, `damaged` (hits whose stored
+  value could not be read, left out of `matches` and not counted in `missing`), `truncated`, `unreadable_groups` and an
+  `answer` sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
   `SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit`, `min_revision`) are what graph-query sends to the
   time-range and bounds verbs, and so what the responders decode. Which hints each search honours, and what is refused,
   is in `processor/graph-query/README.md`.

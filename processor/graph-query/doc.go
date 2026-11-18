@@ -50,7 +50,8 @@
 // each group's best match, with their match counts and records, and a plain answer. Its
 // indexed_revision is the word search's, and a refusal from the word search or the batch verb
 // reaches the caller as it arrived, before any hint is read. A group record that cannot be read is
-// an answer that says so, one Health error and one Warn.
+// an answer that says so, one Health error and one Warn. A hit whose stored value is damaged is
+// left out, named in the reply's damaged list, and not counted in missing; the search goes on.
 //
 // What the question asks beyond its words is listed in hints, honoured or not, and no hint refuses
 // the question. A one-word question is an entity reference, and is not classified; any longer

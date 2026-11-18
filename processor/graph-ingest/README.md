@@ -123,9 +123,10 @@ and any limit, on every path; it is true as listed, not a snapshot.
 `graph.ingest.query.prefixIDs` takes the same `graph.PrefixQueryRequest` and answers `graph.PrefixIDsResponse`: `ids`
 (the page's keys in order), `total` (counted as above) and `next_cursor`. It reads no stored value, so an entity whose
 stored value cannot be read is listed like any other, where `prefix` refuses the whole page. A caller that must
-find such an entity lists its IDs here and reads them one at a time with `entity`: `batch` still refuses the whole
-call when one of its entities is damaged, while a one-ID read that is refused with `graph_state_reset_required`
-points at the one ID it was asked for.
+find such an entity lists its IDs here and reads them with `batch`, which returns the readable entities and names
+each damaged ID in `missing` with reason `damaged`, or one at a time with `entity`, which refuses a damaged ID with
+`graph_state_reset_required`. `batch` does not refuse for damage, even when every requested ID is damaged; a read
+fault that is not damage still fails the whole call, transient `internal`.
 
 ## Hierarchy inference
 
@@ -169,7 +170,7 @@ runs two on one registry.
 | `semengine_graph_ingest_indexing_profile_default_total` | counter | `message_type` |
 | `semengine_graph_ingest_mutation_rejections_total` | counter | `subject`, `reason` |
 | `semengine_graph_ingest_graph_mutation_outcomes_total` | counter | `operation`, `outcome` |
-| `semengine_graph_ingest_batch_query_missing_total` | counter | `reason` |
+| `semengine_graph_ingest_batch_query_missing_total` | counter | `reason` (`not_found`, `error`, `damaged`) |
 | `semengine_graph_ingest_predicate_contract_rejections_total` | counter | `lane`, `reason` |
 | `semengine_graph_ingest_entity_state_contract_rejections_total` | counter | `lane`, `field`, `reason` |
 | `semengine_graph_ingest_processing_duration_seconds` | histogram | |

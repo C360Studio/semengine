@@ -680,6 +680,54 @@ func TestSearchGraphMergedTruncation(t *testing.T) {
 	}
 }
 
+// TestSearchGraphMergedNamesDamagedHit: at tier 1 the word list is [A] and the embedding list
+// [B, A, C, D], so the merged order, worked out by hand from 1 / (60 + place), is A (word 1,
+// vector 2), B (vector 1), C (vector 3), D (vector 4). The batch names B and D, found by meaning
+// alone, damaged, listing D first. The reply answers A then C, names B then D in merged order,
+// counts none missing and sets truncated, though both lists fit the limit and matched is the word
+// hits read (spec, "A damaged hit in a merged answer").
+func TestSearchGraphMergedNamesDamagedHit(t *testing.T) {
+	client := fixtureClient(t)
+	a, b, c, d := drone(1), drone(2), drone(3), drone(4)
+	stubWords(t, client, wordHits(t, 1, a))
+	stubSemantic(t, client, func() ([]byte, error) { return semanticReply(semanticHits(b, a, c, d)), nil })
+	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "batch").Subject, func(context.Context, []byte) ([]byte, error) {
+		return []byte(`{"entities":[` + titled(c, c) + `,` + titled(a, a) + `],"missing":[` +
+			`{"id":"` + d + `","reason":"damaged"},{"id":"` + b + `","reason":"damaged"}]}`), nil
+	})
+	component := startComponent(t, client, tierOneConfig)
+
+	raw, err := askSearchGraph(t, client, `{"query":"zzz qqq","limit":10}`)
+	if err != nil {
+		t.Fatalf("searchGraph: %v", err)
+	}
+	envelope, reply := decodeSearchGraph(t, raw)
+	if got, want := shortRows(reply.ranked(t)), []string{"001 w1 v2", "003 w- v3"}; !slices.Equal(got, want) {
+		t.Errorf("matches = %q, want %q", got, want)
+	}
+	var text struct {
+		Damaged []string `json:"damaged"`
+	}
+	if err := json.Unmarshal(reply.keys["text"], &text); err != nil {
+		t.Fatalf("decode text %s: %v", envelope.Data, err)
+	}
+	if want := []string{b, d}; !slices.Equal(text.Damaged, want) {
+		t.Errorf("damaged = %q, want %q in merged order", text.Damaged, want)
+	}
+	if reply.Text.Matched != 1 || reply.Text.Missing != 0 || !reply.Text.Truncated {
+		t.Errorf("matched %d, missing %d, truncated %v; want 1, 0, true", reply.Text.Matched, reply.Text.Missing, reply.Text.Truncated)
+	}
+	if want := "Found 1 matching entities in 1 groups, and 1 more by meaning. Showing the first 2."; reply.Text.Answer != want {
+		t.Errorf("answer = %q, want %q", reply.Text.Answer, want)
+	}
+	if reply.Merge == nil || *reply.Merge != mergedHint {
+		t.Errorf("merge = %+v, want %+v", reply.Merge, mergedHint)
+	}
+	if got := component.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0: a damaged hit is named, not an error of graph-query's", got)
+	}
+}
+
 // TestSearchGraphBrokenEmbeddingReplyKeepsWordAnswer: an embedding reply graph-query cannot use, a
 // hit whose ID names no entity group or data that is no search reply, is the embedding index's
 // broken reply: the answer is the word list with merge not honoured, code internal, and one error

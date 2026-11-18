@@ -2173,7 +2173,7 @@
     indexed_revision is 0, which claims nothing (graph/query_response.go); and (27) the search verbs' types in graph/query_local_search_types.go and
     graph/query_global_search_types.go: MaxSearchTerms; LocalSearchRequest (entity_id, query, level, limit,
     min_revision; strict) and LocalSearchData (community_id, level, record, record_state, matches, matched, excluded,
-    missing, bodies_not_indexed, truncated, answer); RecordState (read, none, not_ready, unreadable) and
+    missing, bodies_not_indexed, damaged, truncated, answer); RecordState (read, none, not_ready, unreadable) and
     LocalSearchRecord (member_count, community_summary, keywords); GlobalSearchRequest (query, level, limit,
     min_revision; strict) and GlobalSearchData (text always, entity and path only beside an honoured hint, hints);
     GlobalSearchHint (hint, detail, honoured, reason, code); TextSearchData, TextSearchGroup and TextSearchMatch (id,
@@ -4404,8 +4404,8 @@
     semengine_graph_query_search_truncated_total{verb} counts. A label is the first non-empty string value of an
     entity's most salient predicate in vocabulary.DiscoverLabelPredicates, read once at Start. TestSearchScorecard
     holds both verbs to a plain BM25 on the scorecard corpus: recall at 10 within one point of the reference, and
-    mean reciprocal rank at most 0.01 below it. One damaged hit refuses a search until it is fixed (a batch read
-    refuses every entity when one is damaged). searchGraph's semantic fallback is carried, adapted: only with
+    mean reciprocal rank at most 0.01 below it. A damaged hit is left out, named in the reply's damaged list and not counted
+    in missing, and it sets truncated. searchGraph's semantic fallback is carried, adapted: only with
     embedding_enabled, when word search matches nothing or is not ready, labelled in a fallback hint entry with the
     embedding answer in semantic, and a failed fallback named, never hidden; the pin's strategy and degraded_reason
     reply fields are not carried. Not carried: max_communities,
@@ -4433,8 +4433,8 @@
     router.go, the relay validators (pin query.go:299-345) and the files in the rows below. Request counts bound
     the work of pathSearch, hierarchyStats and summary; nothing bounds their elapsed time (ADR-112, "Time"), and a count
     covers one page, live and as listed, not a snapshot (#512). A search verb needs graph-lexical running and is refused transient internal, naming the subject, without it.
-    One damaged hit refuses a search until it is fixed, because a batch read refuses every entity when one is
-    damaged (#656). Word search helps only entities that have text; metric-heavy entities such as sensor or drone
+    A damaged hit does not refuse a search: the batch read names it damaged, and the search leaves it out and lists it
+    in damaged. Word search helps only entities that have text; metric-heavy entities such as sensor or drone
     telemetry gain nothing from it. matches are the word index's sample of at most limit hits; truncated says when
     more matched, and the counter is how often. The nats.go time a lost watch takes to be seen is observed, not
     promised (pkg/graphview row). globalSearch classifies with the keyword tier alone, whose limits the owner
@@ -4826,14 +4826,10 @@
     graph.UnmarshalEntityState and reads entity_not_found, and only that code, as (nil, nil). (5) Entities
     reconciles each batch reply with the request (reconcileHydration, ADR-084 D6): every distinct requested ID once,
     Entities in request order, an ID the reply lists nowhere unhydrated unknown. (6) A poisoned seed (one whose
-    stored value graph-ingest refuses) is listed, not fatal (design D3, owner question 1 on PR #577 comment
-    6749007774): when the batch request itself is refused with graph_state_reset_required (graph.IsStateContractError,
-    before any decode), each distinct ID is read with its own entity request; a hydrated reply is kept,
-    entity_not_found is unhydrated not_found, the reset code is unhydrated error, an empty ID is unhydrated error
-    with no request, and any other error, the client's own decode refusal included, is returned. The client's own
-    validation refusal of a batch reply is returned and never starts that read. (7) Context (#580, fixed here):
-    Entities refuses a nil context, zero IDs included; the per-ID read checks the context before each request and
-    after each refused one, and returns the ended context's error instead of listing the seed. The other methods
+    stored value graph-ingest refuses) is listed, not fatal: graph-ingest's batch reply names it in missing with
+    reason damaged, and reconcileHydration maps that to unhydrated error. Entities sends one batch request and never
+    reads an ID alone; a refused batch, whatever its code, and the client's own validation refusal of a batch reply
+    are returned as the error. (7) Context (#580, fixed here): Entities refuses a nil context, zero IDs included. The other methods
     pass the context to the requester, and natsclient refuses a nil one. Kept as at the pin: the decoded-ID and
     decoded-state validators, Names deduplicated in rank order and capped, the client-side prefix and scope checks,
     zero IDs sending no request
@@ -4841,7 +4837,7 @@
     graph, pkg/errs, pkg/fusion, pkg/types (in-set); standard library otherwise. No NATS import: the requester is a
     local interface with one method, RequestClassified, which *natsclient.Client has; its import closure reaches no
     graph/readiness, graph/embedding or processor/graph-embedding (TestFusionNATSImportsNoEmbedding). No goroutine,
-    no retained context. One request per call, plus one per distinct requested ID while a batch is refused for poison
+    no retained context. One request per call
   known_risks: >-
     Consumer break (migration note, pkg/fusion/MIGRATION.md): New returns an error and refuses a nil requester; no
     Status, no Close; a poisoned seed is listed in unhydrated. Not carried (design D4; notes/2.1.md): Status, Close,
@@ -4872,10 +4868,8 @@
     exact_entity_test.go (TestSliceEFusionEntityUsesExactEntityWire,
     TestSliceEFusionEntityRejectsInvalidExactEvidence); reconcile_test.go (TestReconcileHydration);
     reconcile_prop_test.go (TestReconcileTotal, generated, against a reference model); poison_test.go
-    (TestPoisonedSeedUnhydrated, TestPoisonFallbackNotFound, TestAllSeedsPoisonedDefer, TestPoisonedDuplicateReadOnce,
-    TestPoisonFallbackReturnsOtherError, TestPoisonFallbackEndedContext, TestPoisonFallbackEmptyID,
-    TestOwnValidationNotRetried, TestBatchFaultNotReadAlone, TestPoisonFallbackOneSeedCancelled,
-    TestPoisonFallbackFinalSeedCancelled); the integration-tagged client_integration_test.go
+    (TestDamagedSeedUnhydrated, TestDamagedDuplicateListedOnce, TestAllSeedsDamagedDefer, TestOwnValidationNotRetried,
+    TestBatchRefusalNotReadAlone); the integration-tagged client_integration_test.go
     (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex); internal/harness/contract/fusionnats_test.go
     (TestFusionNATSImportsNoEmbedding and its sensitivity case); internal/harness/contract/reservedsubjects_test.go
     (TestReservedSubjectsDeclaredOnce); internal/smoke/fusion_integration_test.go (checkFusion, run by TestSmoke_OneConfigAnswers);

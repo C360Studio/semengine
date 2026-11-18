@@ -1,7 +1,6 @@
 package graphingest
 
 import (
-	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/metric"
 	"github.com/prometheus/client_golang/prometheus"
@@ -357,9 +356,9 @@ func newBatchMissingMetric() *prometheus.CounterVec {
 	}, []string{"reason"})
 	// Pre-initialize the closed label set: an absent series breaks rate() alerting,
 	// so a reason that has never fired must still be scrapeable at zero. `unknown`
-	// is client-synthesized and never emitted here, so only the two handler-emitted
+	// is client-synthesized and never emitted here, so only the handler-emitted
 	// reasons are seeded.
-	for _, reason := range []graph.MissingReason{graph.MissingNotFound, graph.MissingError} {
+	for _, reason := range batchMissingReasons {
 		batchMissingVec.WithLabelValues(string(reason))
 	}
 	return batchMissingVec

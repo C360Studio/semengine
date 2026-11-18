@@ -59,16 +59,19 @@ type GlobalSearchHint struct {
 // match once, in the order of its best match. Matched is the word index's count of matches before
 // the limit. Excluded is the query's excluded words, omitted when there are none. Missing counts
 // hits that were gone when they were read back, and were left out. BodiesNotIndexed is the word
-// index's count of entities whose offloaded body it did not hold. Truncated is true exactly when
-// Matched is above the hits returned, a hit was missing, or matches were left out for the reply to
-// fit the connection's max_payload. UnreadableGroups is the number of Groups whose record could not
-// be read. Answer is a plain text built from these fields.
+// index's count of entities whose offloaded body it did not hold. Damaged names the hits whose
+// stored value could not be read back, in hit order, left out of Matches and not counted in Missing,
+// omitted when there are none. Truncated is true exactly when Matched is above the hits returned, a
+// hit was missing or damaged, or matches were left out for the reply to fit the connection's
+// max_payload. UnreadableGroups is the number of Groups whose record could not be read. Answer is a
+// plain text built from these fields.
 //
 // In a searchGraph reply when graph-query's embedding_enabled is true, Matches is the merge of the
 // word list and the embedding list, best first by merged score, or the word list alone when the
 // embedding search failed (GlobalSearchData.Merge says which). Matched stays the word index's count,
-// and Truncated is true exactly when the lists read held more entities than the limit, Matched is
-// above the word hits read, a hit was missing, or matches were left out to fit.
+// Damaged is in merged order, and Truncated is true exactly when the lists read held more entities
+// than the limit, Matched is above the word hits read, a hit was missing or damaged, or matches were
+// left out to fit.
 type TextSearchData struct {
 	Level            int               `json:"level"`
 	Groups           []TextSearchGroup `json:"groups"`
@@ -77,6 +80,7 @@ type TextSearchData struct {
 	Excluded         []string          `json:"excluded,omitempty"`
 	Missing          int               `json:"missing"`
 	BodiesNotIndexed int               `json:"bodies_not_indexed"`
+	Damaged          []string          `json:"damaged,omitempty"`
 	Truncated        bool              `json:"truncated"`
 	UnreadableGroups int               `json:"unreadable_groups"`
 	Answer           string            `json:"answer"`

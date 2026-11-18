@@ -22,10 +22,10 @@ and no miss. Any other error from `Resolve` or `Entities` SHALL be returned as t
 ### Requirement: A fatal seed read fails the call
 
 When `Resolve` or `Entities` returns an error `errs.IsFatal` reports, such as `graph_state_reset_required` from a
-reset, `Fuse` SHALL return that error and no response. `Fuse` SHALL refuse a nil context. A poisoned seed does not
-reach `Fuse` as an error from `fusionnats`, which lists it as unhydrated (requirement "A poisoned seed is
-unhydrated, not a failed read"). Nor does a damaged entity under a resolved prefix (requirement "A prefix resolve
-lists IDs, then reads them").
+reset, `Fuse` SHALL return that error and no response. `Fuse` SHALL refuse a nil context. A damaged seed does not
+reach `Fuse` as an error from `fusionnats`, which lists it as unhydrated (requirement "A damaged seed is unhydrated,
+not a failed read"). Nor does a damaged entity under a resolved prefix (requirement "A prefix resolve lists IDs, then
+reads them").
 
 #### Scenario: A reset while hydrating seeds
 
@@ -294,49 +294,15 @@ or prefix `Resolve` SHALL leave both empty.
 - **THEN** the `Resolution` carries 2 and `["race"]`, and a symbol or prefix resolve carries 0 and none
   (`TestWordIndexCountsReachResolution`)
 
-### Requirement: A poisoned seed is unhydrated, not a failed read
-
-When the batch request's `RequestClassified` call returns an error with code `graph_state_reset_required`, `Entities`
-SHALL send one `entity` request per distinct non-empty requested ID, list an ID whose request is refused with that
-code as unhydrated `error` and one not found as unhydrated `not_found`. It SHALL never decide from an error's text.
-
-#### Scenario: One poisoned seed
-
-- **WHEN** the batch is refused for poison and the second of three seeds is poisoned
-- **THEN** the first and third hydrate in request order and the second is unhydrated `error`
-  (`TestPoisonedSeedUnhydrated`, `TestPoisonedSeedOverRealResponders`)
-
-#### Scenario: A poisoned seed requested twice
-
-- **WHEN** the batch is refused for poison and the poisoned ID is requested twice
-- **THEN** it is read once and listed once (`TestPoisonedDuplicateReadOnce`)
-
-### Requirement: Reading seeds alone fails on any other fault
-
-After a poison refusal of the batch, an empty requested ID SHALL be listed as unhydrated `error` with no request,
-and any other error from an `entity` request, an ended context included, SHALL be returned by `Entities`.
-
-#### Scenario: An empty ID
-
-- **WHEN** the batch is refused for poison and the request holds an empty ID
-- **THEN** the empty ID is unhydrated `error` and no `entity` request carries it (`TestPoisonFallbackEmptyID`)
-
-#### Scenario: Another fault while reading alone
-
-- **WHEN** a seed read alone fails transient, or the context ends before a further request or a refused reply
-- **THEN** `Entities` returns that error (`TestPoisonFallbackReturnsOtherError`, `TestPoisonFallbackEndedContext`)
-
 ### Requirement: The client's own decode refusal is returned, never retried
 
-A refusal from the client's own check of a reply (`graph.ValidateDecodedEntityStates` on the batch reply,
-`graph.UnmarshalEntityState` on an `entity` reply) SHALL be returned by `Entities`, and a refused batch reply SHALL
-start no `entity` request.
+A refusal from the client's own check of the batch reply (`graph.ValidateDecodedEntityStates`) SHALL be returned by
+`Entities`, which SHALL send no further request.
 
 #### Scenario: The client's own validation refuses
 
-- **WHEN** the batch reply, or a per-ID reply, fails the client's own stored-value check
-- **THEN** `Entities` returns that refusal, and after a refused batch reply sends no `entity` request
-  (`TestOwnValidationNotRetried`)
+- **WHEN** the batch reply fails the client's own stored-value check
+- **THEN** `Entities` returns that refusal and sends no `entity` request (`TestOwnValidationNotRetried`)
 
 ### Requirement: A prefix resolve lists IDs, then reads them
 
@@ -418,3 +384,20 @@ with their class, code and detail.
 
 - **WHEN** nothing serves `graph.lexical.query.search`
 - **THEN** an NL `Fuse` returns a transient `internal` error naming that subject (`TestNLResolveWithoutWordIndex`)
+
+### Requirement: A damaged seed is unhydrated, not a failed read
+
+`Entities` SHALL list a requested ID the batch reply names `damaged` as unhydrated `error`, hydrate the others in
+request order, and send one request: the batch. A batch refusal of any class or code SHALL be returned by `Entities`
+with no `entity` request.
+
+#### Scenario: One damaged seed
+
+- **WHEN** the batch reply names the second of three seeds `damaged`
+- **THEN** the first and third hydrate in request order and the second is unhydrated `error`
+  (`TestDamagedSeedUnhydrated`, `TestPoisonedSeedOverRealResponders`)
+
+#### Scenario: A refused batch
+
+- **WHEN** the batch is refused with code `graph_state_reset_required`
+- **THEN** `Entities` returns that refusal and sends no `entity` request (`TestBatchRefusalNotReadAlone`)

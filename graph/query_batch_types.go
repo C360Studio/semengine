@@ -32,6 +32,11 @@ const (
 	// string), which is never looked up at all and therefore cannot honestly be called
 	// not_found.
 	MissingError MissingReason = "error"
+	// MissingDamaged is a requested ID whose stored value the stored-value rule refuses;
+	// its entity read refuses fatal graph_state_reset_required. The batch names it here
+	// and returns the other entities, because the caller named the IDs and can act on
+	// each one.
+	MissingDamaged MissingReason = "damaged"
 )
 
 // MissingEntity names one requested ID that is not in the response's entity list.

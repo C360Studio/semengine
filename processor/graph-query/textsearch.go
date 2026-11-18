@@ -57,7 +57,7 @@ func (c *Component) globalText(ctx context.Context, verb string, subjects global
 	if err != nil {
 		return nil, err
 	}
-	answer := listedText{search: search, list: unranked(search.Data.Results), hitGroups: hitGroups}
+	answer := listedText{search: search, list: unranked(search.Data.Results), hitGroups: hitGroups, damaged: search.DamagedEntities}
 	return c.answerText(ctx, verb, subjects, request, route, answer)
 }
 
@@ -110,7 +110,7 @@ func (c *Component) mergedText(ctx context.Context, verb string, subjects global
 	list = list[:min(limit, len(list))]
 	answer := listedText{
 		search: search, list: list, more: more, hitGroups: hitGroups,
-		merge: &semantic.hint, semantic: semantic.data,
+		merge: &semantic.hint, semantic: semantic.data, damaged: max(search.DamagedEntities, semantic.damaged),
 	}
 	encoded, err := c.answerText(ctx, verb, subjects, request, route, answer)
 	if err != nil {
@@ -126,8 +126,9 @@ func (c *Component) mergedText(ctx context.Context, verb string, subjects global
 
 // listedText is what a global search read before its matches are read back: the word search's reply;
 // list, the hits to read back, best first, each with the score and ranks its match carries; more,
-// whether the lists read held more entities than list; each hit's group; and, for searchGraph when
-// the composition runs graph-embedding, the merge hint and the embedding search's data.
+// whether the lists read held more entities than list; each hit's group; for searchGraph when the
+// composition runs graph-embedding, the merge hint and the embedding search's data; and the largest
+// damaged count of the searches the list came from.
 type listedText struct {
 	search    graph.QueryResponse[graph.LexicalSearchData]
 	list      []mergedHit
@@ -135,6 +136,7 @@ type listedText struct {
 	hitGroups map[string]searchGroup
 	merge     *graph.GlobalSearchHint
 	semantic  json.RawMessage
+	damaged   int
 }
 
 // groupHits is each word hit's group at level; a hit whose ID names no group is the word index's
@@ -195,8 +197,9 @@ func (c *Component) answerText(ctx context.Context, verb string, subjects global
 		BodiesNotIndexed: search.Data.BodiesNotIndexed,
 		Truncated:        answer.more || search.Data.Matched > len(search.Data.Results) || gaps.left(),
 	}
-	reply := c.hinted(ctx, subjects, route, request.MinRevision)
+	reply, hintDamaged := c.hinted(ctx, subjects, route, request.MinRevision)
 	reply.Merge, reply.Semantic = answer.merge, answer.semantic
+	damaged := max(answer.damaged, hintDamaged)
 	limit, err := c.natsClient.MaxPayload()
 	if err != nil {
 		return nil, c.unanswered(err)
@@ -208,6 +211,7 @@ func (c *Component) answerText(ctx context.Context, verb string, subjects global
 		if err != nil {
 			return nil, err
 		}
+		response.DamagedEntities = damaged
 		return json.Marshal(response)
 	})
 	if err != nil {
@@ -225,15 +229,18 @@ func (c *Component) answerText(ctx context.Context, verb string, subjects global
 }
 
 // hinted is a global search answer with no text yet: the route's reference verified, first, then
-// the hints no read can verify.
-func (c *Component) hinted(ctx context.Context, subjects globalSearchSubjects, route globalRoute, minRevision uint64) graph.GlobalSearchData {
+// the hints no read can verify. It returns the largest damaged count the verifying reads carried, 0
+// when the hint was not honoured, since nothing it read is in the answer then.
+func (c *Component) hinted(ctx context.Context, subjects globalSearchSubjects, route globalRoute, minRevision uint64) (graph.GlobalSearchData, int) {
 	answer := graph.GlobalSearchData{Hints: []graph.GlobalSearchHint{}}
+	damaged := 0
 	if verified, ok := c.verify(ctx, subjects, route, minRevision); ok {
 		answer.Hints = append(answer.Hints, verified.hint)
 		answer.Entity, answer.Path = verified.entity, verified.path
+		damaged = verified.damaged
 	}
 	answer.Hints = append(answer.Hints, route.hints...)
-	return answer
+	return answer, damaged
 }
 
 // semanticAlone answers a searchGraph whose word search was refused index_not_ready, refusal, from
@@ -246,9 +253,9 @@ func (c *Component) semanticAlone(ctx context.Context, subjects globalSearchSubj
 	if !semantic.hint.Honoured {
 		return nil, refusal
 	}
-	answer := c.hinted(ctx, subjects, route, request.MinRevision)
+	answer, hintDamaged := c.hinted(ctx, subjects, route, request.MinRevision)
 	answer.Merge, answer.Semantic = &semantic.hint, semantic.data
-	return envelope(c, subjects.semantic, 0, answer)
+	return envelope(c, subjects.semantic, indexRead{damaged: max(semantic.damaged, hintDamaged)}, answer)
 }
 
 // isIndexNotReady says err is a refusal with code index_not_ready.

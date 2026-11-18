@@ -215,6 +215,7 @@ func (c *Component) localSearch(lexicalSubject, batchSubject string) queryHandle
 			if err != nil {
 				return nil, err
 			}
+			response.DamagedEntities = search.DamagedEntities
 			return json.Marshal(response)
 		})
 		if err != nil {

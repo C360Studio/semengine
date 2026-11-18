@@ -136,28 +136,32 @@ func (g modelGraph) answer(request graph.PathSearchRequest) graph.PathSearchData
 }
 
 // checkWalk runs the walk over g, through a hop answering as an index does, and holds it to the model:
-// the reply, the smallest revision of the hops it made, and each entity read at most once per direction
-// and only below max_depth. Every run reaches every assertion: a walk that errs fails here, and the
+// the reply, the smallest revision and the largest damaged count of the hops it made, and each entity
+// read at most once per direction and only below max_depth. Each hop's damaged count is its revision
+// modulo 5, so the run draws counts as it draws revisions. Every run reaches every assertion: a walk that errs fails here, and the
 // walk always hops at the start, since max_depth is at least 1.
 func checkWalk(ctx context.Context, t rapid.TB, g modelGraph, request graph.PathSearchRequest, revisionOf func(call string) uint64) graph.PathSearchData {
 	t.Helper()
 	type hopped struct{ entity, direction string }
 	var hops []hopped
 	smallest := uint64(math.MaxUint64)
-	hop := func(_ context.Context, entityID, direction string) ([]graph.RelationshipEdge, uint64, error) {
+	largest := 0
+	hop := func(_ context.Context, entityID, direction string) ([]graph.RelationshipEdge, indexRead, error) {
 		hops = append(hops, hopped{entityID, direction})
 		revision := revisionOf(entityID + " " + direction)
+		damaged := int(revision % 5)
 		smallest = min(smallest, revision)
+		largest = max(largest, damaged)
 		edges := []graph.RelationshipEdge{}
 		for _, edge := range g {
 			if (direction == "outgoing" && edge.FromEntityID == entityID) || (direction == "incoming" && edge.ToEntityID == entityID) {
 				edges = append(edges, edge)
 			}
 		}
-		return edges, revision, nil
+		return edges, indexRead{revision: revision, damaged: damaged}, nil
 	}
 
-	got, revision, err := walkPaths(ctx, request, hop)
+	got, read, err := walkPaths(ctx, request, hop)
 	if err != nil {
 		t.Fatalf("walk: %v", err)
 	}
@@ -165,8 +169,11 @@ func checkWalk(ctx context.Context, t rapid.TB, g modelGraph, request graph.Path
 	if gotJSON != wantJSON {
 		t.Fatalf("request %+v over %+v:\n got %s\nwant %s", request, g, gotJSON, wantJSON)
 	}
-	if revision != smallest {
-		t.Fatalf("revision = %d, want the smallest of the hops, %d", revision, smallest)
+	if read.revision != smallest {
+		t.Fatalf("revision = %d, want the smallest of the hops, %d", read.revision, smallest)
+	}
+	if read.damaged != largest {
+		t.Fatalf("damaged = %d, want the largest of the hops, %d", read.damaged, largest)
 	}
 
 	seen := map[hopped]bool{}

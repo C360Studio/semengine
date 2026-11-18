@@ -129,9 +129,13 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 		return Response{}, err
 	}
 	resp.Provenance = ProvenanceForMode(mode)
-	// Every response built after the resolve answered, a deferral included,
-	// carries the largest damaged count its reads reported, in every mode.
-	resp.DamagedEntities = skips.damaged
+	// A response carries the largest damaged count the reads its answer used
+	// reported, in every mode. An all-seeds-unhydrated deferral lists seeds the
+	// resolve found, so it keeps the count; an index_not_ready deferral answers
+	// nothing, so the reads it set aside add nothing.
+	if !resp.Deferred || resp.DeferReason != graph.ErrorCodeIndexNotReady {
+		resp.DamagedEntities = skips.damaged
+	}
 	// Every response built after a natural-language search answered carries what
 	// the word index left out; symbol and prefix resolves leave nothing out, so
 	// their responses carry neither.

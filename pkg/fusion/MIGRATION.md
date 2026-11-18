@@ -125,8 +125,9 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **`impact.truncated` and `graph.truncated` are set in more cases:** a skipped read for an affected node's file
   (impact), and an incoming counterpart whose read failed (graph). A counterpart that reads as absent keeps its edge
   without evidence and does not set `graph.truncated`.
-- **`damaged_entities` on the response** (absent at 0): the largest count of damaged entities any graph read behind
-  the answer reported leaving out, in every resolve mode, on a miss and a deferral too. It is not `truncated`, which
+- **`damaged_entities` on the response** (absent at 0): the largest count of damaged entities any graph read the
+  answer used reported leaving out, in every resolve mode, on a miss and an `all_seeds_unhydrated` deferral too, never
+  on an `index_not_ready` deferral. It is not `truncated`, which
   still means only that the budget cut nodes off. The graph's indexes do not set the count yet, so it is always
   absent today. *Do:* read it beside `bodies_not_indexed` to tell a user an answer may lack entities that could not
   be read.

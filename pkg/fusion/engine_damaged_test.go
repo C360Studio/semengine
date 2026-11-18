@@ -8,8 +8,9 @@ import (
 )
 
 // TestResponseCarriesDamagedCount holds that a response carries the largest
-// damaged_entities any graph read behind it reported, never their sum, in every
-// resolve mode and on every kind of response built after the resolve answered;
+// damaged_entities any graph read its answer used reported, never their sum, in
+// every resolve mode, on nodes, a miss and an all-seeds-unhydrated deferral,
+// and not on an index_not_ready deferral, which answers nothing;
 // that it leaves truncated alone; and that the key is absent when no read
 // reported one.
 func TestResponseCarriesDamagedCount(t *testing.T) {
@@ -50,6 +51,12 @@ func TestResponseCarriesDamagedCount(t *testing.T) {
 			&fakeGraph{names: []string{"S"}, resolveDamaged: 3, namesDamaged: 2}, 3},
 		"a deferral after the resolve answered": {"q", nil,
 			&fakeGraph{seeds: map[string][]string{"q": {"S"}}, resolveDamaged: 2}, 2},
+		// An index_not_ready deferral answers nothing, so the reads behind it add nothing.
+		"a batch not ready after the resolve at 2": {"q", nil,
+			&fakeGraph{seeds: map[string][]string{"q": {"S"}}, entErr: indexNotReady(), resolveDamaged: 2}, 0},
+		"a relations read not ready after the resolve at 2": {"q", []fusion.Want{fusion.WantRelations},
+			&fakeGraph{seeds: map[string][]string{"q": {"S"}}, entities: entities, neighborsErr: indexNotReady(),
+				resolveDamaged: 2}, 0},
 		"no read reports one": {"q", []fusion.Want{fusion.WantRelations, fusion.WantImpact},
 			&fakeGraph{seeds: map[string][]string{"q": {"S"}}, entities: entities, in: in}, 0},
 	} {
@@ -72,7 +79,7 @@ func TestResponseCarriesDamagedCount(t *testing.T) {
 			got, present := keys["damaged_entities"]
 			switch {
 			case tc.count == 0 && present:
-				t.Errorf("damaged_entities = %s when no read reported one, want no key", got)
+				t.Errorf("damaged_entities = %s, want no key", got)
 			case tc.count > 0 && (!present || resp.DamagedEntities != tc.count):
 				t.Errorf("damaged_entities = %d (key present %v), want %d", resp.DamagedEntities, present, tc.count)
 			}

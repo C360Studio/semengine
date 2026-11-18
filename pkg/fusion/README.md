@@ -62,11 +62,12 @@ or false:
   text; `excluded` lists the question's excluded terms (`-word`), every entity holding one removed. They ride on every
   response built after that search answered, including a miss. Symbol and prefix resolves never set them.
 - `damaged_entities`: the largest count of damaged entities (stored values `graph.UnmarshalEntityState` refuses) that
-  any graph read behind the response reported leaving out: the resolve, a relations or walk read, or a miss's name
+  any graph read the answer used reported leaving out: the resolve, a relations or walk read, or a miss's name
   suggestions. Above 0 the answer about every other entity stands, but a node, edge or suggestion one of them would
-  have given may be missing. Counts are not added, since two reads can count the same entity. It rides on every
-  response built after the resolve answered, a miss and a deferral included, in every resolve mode. It is not
-  `truncated`. The graph's indexes do not set the count yet, so today it is always absent.
+  have given may be missing. Counts are not added, since two reads can count the same entity. It rides on nodes, a
+  miss and an `all_seeds_unhydrated` deferral (whose seeds the resolve found), in every resolve mode; an
+  `index_not_ready` deferral answers nothing and carries none. It is not `truncated`. The graph's indexes do not set
+  the count yet, so today it is always absent.
 - `relations_truncated` (on a node): a role had more than 12 relations, a relations read failed, or a target could not
   be read.
 - `paths_truncated`, and `truncated` on a path: more than 10 paths existed, or a path stopped at a node that could not

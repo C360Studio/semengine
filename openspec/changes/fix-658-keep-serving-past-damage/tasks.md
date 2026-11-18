@@ -13,7 +13,7 @@ copy. #657 stays open for its other follow-ups.
 
 ## 2. PR 1: the count and graph-query's relay (design D3, D4)
 
-- [ ] 2.1 Tests first, then `graph.QueryResponse.DamagedEntities` (`damaged_entities`, omitted at 0) with its doc
+- [x] 2.1 Tests first, then `graph.QueryResponse.DamagedEntities` (`damaged_entities`, omitted at 0) with its doc
   comment (`graph/query_response.go:8-24`). Unit: the field round-trips and is absent at 0.
 - [ ] 2.2 graph-query: `TestComposedReplyCarriesLargestDamagedCount` (stubbed index replies at 2 and 3 give 3, for
   `relationships`, `pathSearch`, `summary`, `entityByAlias`, `localSearch`, `globalSearch`, `searchGraph`), shown

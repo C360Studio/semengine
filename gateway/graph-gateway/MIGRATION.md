@@ -79,6 +79,10 @@ Each of these fails when the component is created, naming the key. Delete the li
 - **A failed field is null; the rest of the answer stands.** A refusal from the graph, such as an entity that does
   not exist, answers HTTP 200 with `data.<field>` null and `class` and `code` in `errors[0].extensions`. A reply
   that does not fit the schema answers 200 with the field null and an error naming the path; SemStreams answered 500.
+- **A top-level `extensions.damagedEntities` can appear.** When the reply behind a field left damaged entities (stored
+  values the graph refuses to read) out, the answer carries `"extensions": {"damagedEntities": n}` beside `data`; the
+  selected fields are unchanged. The graph's indexes do not set the count yet, so it is always absent today. A client
+  that decodes the answer strictly must accept the key.
 - **No responder names the subject.** When graph-query is not running, the answer is HTTP 500 naming the subject,
   such as `graph.query.entity`; SemStreams said `query failed`. Past `query_timeout_ms` the answer is 504.
 - **503 before start and during stop.** Until the component has started, and once it begins stopping, every request

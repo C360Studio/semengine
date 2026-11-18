@@ -30,7 +30,7 @@ type failer interface {
 // one root key, and below it exactly the selected names, each carrying the reply's value.
 func checkProjection(ctx context.Context, tb failer, query, root string, sel selected, reply any) {
 	tb.Helper()
-	resolvers := map[string]resolver{root: func(context.Context, map[string]any) (any, error) { return reply, nil }}
+	resolvers := map[string]resolver{root: func(context.Context, map[string]any) (any, int, error) { return reply, 0, nil }}
 	resp, refused := execute(ctx, resolvers, request{Query: query})
 	if refused || len(resp.Errors) != 0 {
 		tb.Fatalf("query %s: refused=%v errors=%v", query, refused, resp.Errors)

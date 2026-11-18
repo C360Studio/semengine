@@ -32,7 +32,7 @@ copy. #657 stays open for its other follow-ups.
   `fusion.Neighbors` and `fusion.Names` result types (`retrieval.go:41,43`), their callers (`engine_facets.go:255`,
   `engine_lens.go:298`, `:451`), `fusion.Response.DamagedEntities` (`contract.go:181-191`); `pkg/fusion/README.md`,
   `MIGRATION.md` (semsource's `source/fusion/fusiontest/memgraph.go` returns the structs).
-- [ ] 3.2 graph-gateway: `TestAnswerCarriesDamagedCount`, shown failing on `main`; then `resolve.go:82-86` keeps the
+- [x] 3.2 graph-gateway: `TestAnswerCarriesDamagedCount`, shown failing on `main`; then `resolve.go:82-86` keeps the
   count and the response carries `extensions.damagedEntities`; its README.
 
 ## 4. PR 3: the follower records damage (design D1, D5)

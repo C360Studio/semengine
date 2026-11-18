@@ -8,6 +8,7 @@
 // root field asks one graph.query.* verb of graph.QueryVerbs: entity, prefix, predicate and
 // pathSearch. A classified refusal answers HTTP 200 with its class and code in the error's
 // extensions; a request with no responder answers 500 naming the subject, one past query_timeout_ms
-// 504, and every request before Start or once Stop begins 503. Stop returns once no admitted request
-// runs.
+// 504, and every request before Start or once Stop begins 503. An answered field whose reply left
+// damaged entities out carries the count in the answer's top-level extensions.damagedEntities. Stop
+// returns once no admitted request runs.
 package graphgateway

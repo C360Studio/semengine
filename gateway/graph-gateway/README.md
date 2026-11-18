@@ -72,6 +72,13 @@ curl -s "http://$HOST/graph-gateway/graphql" -H 'Content-Type: application/json'
 Every root field is nullable, so a refused field answers null and the rest of `data`, such as `__typename`, stands. No
 partial value of a field is returned: a reply that does not fit anywhere inside it nulls the whole field.
 
+When the reply behind an answered root field carries `damaged_entities` above 0 (the graph left that many damaged
+entities, stored values it refuses to read, out of the answer), the answer carries a top-level
+`"extensions": {"damagedEntities": n}`. `data` still holds exactly the selected fields, and the answer about every
+other entity stands; a row a damaged entity would have given may be missing. `entitiesByPredicate` and `pathSearch`
+can carry it; `entity` and `entitiesByPrefix` read graph-ingest's bare replies, which carry none. A field answered null
+carries none. The graph's indexes do not set the count yet, so today the key is always absent.
+
 ## Configuration
 
 An empty configuration is enough. This is the same configuration written out:

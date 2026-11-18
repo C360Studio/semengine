@@ -115,6 +115,7 @@ callers change together. Merge 1, 2, 3.
 
 ## Risks and open questions
 
-- Embedding can complete a higher revision after a failed read, clearing B until its repair lane reads it again.
+- Embedding can complete a higher revision after a failed read, clearing B until its repair lane reads it again;
+  meanwhile the `entity_read_failed` hold refuses queries transient `index_not_ready`, so B is never left out unsaid.
 - A damaged entity makes `/readyz` not ready while stored, as graph-ingest's poison does today.
 - Owner: Q1 (D2), Q2 (D4), Q3 (D4), in the proposal.

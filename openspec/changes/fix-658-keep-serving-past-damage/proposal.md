@@ -27,7 +27,7 @@ so" (#657 ruling 1).
   gateway pass it on too (Q3).
 - Health names up to 10 damaged entities and how to repair them; the readiness envelope reads `degraded` with a
   `damaged_entity` count. A repair is picked up without a restart. The `reset_required` readiness state, which nothing
-  produces any more, is removed.
+  produces any more, is removed, with `IndexStatusResponse.Code` and `Reason`.
 - ADR-108 and ADR-109 are amended; ADR-074 and ADR-084 get a note. Docs and the ledger follow.
 
 ## Questions for the owner

@@ -177,3 +177,84 @@ func TestComposedReplyCarriesLargestDamagedCount(t *testing.T) {
 		requireDamaged(t, raw, err, 3)
 	})
 }
+
+// TestSearchTruncatedWhileDamaged: a search reply built from a reply that carried damaged_entities
+// above 0 says truncated, though every hit was read back and nothing else was left out: an index that
+// left a damaged entity out may have left out a match. The same reply with no count says not
+// truncated, which shows the count is what sets it. The replies are stubbed, as above.
+func TestSearchTruncatedWhileDamaged(t *testing.T) {
+	ask := func(t *testing.T, client *natsclient.Client, verb, request string) ([]byte, error) {
+		t.Helper()
+		return client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphQuery, verb).Subject, []byte(request), requestTimeout)
+	}
+	// One hit, matched 1, which the batch reads back: nothing but the count can make it truncated.
+	oneHit := `{"results":[{"entity_id":"` + drone1 + `","score":1}],"matched":1}`
+	// requireText holds a reply's damaged_entities and its text's truncated.
+	requireText := func(t *testing.T, raw []byte, err error, damaged int, truncated bool, read func([]byte) bool) {
+		t.Helper()
+		requireDamaged(t, raw, err, damaged)
+		if got := read(decodeEnvelope(t, raw).Data); got != truncated {
+			t.Errorf("truncated = %v, want %v: %s", got, truncated, raw)
+		}
+	}
+	localTruncated := func(data []byte) bool {
+		var reply graph.LocalSearchData
+		if err := json.Unmarshal(data, &reply); err != nil {
+			t.Fatalf("decode %s: %v", data, err)
+		}
+		return reply.Truncated
+	}
+	textTruncated := func(data []byte) bool {
+		var reply graph.GlobalSearchData
+		if err := json.Unmarshal(data, &reply); err != nil || reply.Text == nil {
+			t.Fatalf("decode %s: %v, want a text answer", data, err)
+		}
+		return reply.Text.Truncated
+	}
+
+	for _, damaged := range []int{1, 0} {
+		t.Run(fmt.Sprintf("localSearch, the word index at %d", damaged), func(t *testing.T) {
+			client := fixtureClient(t)
+			replyWith(t, client, graph.ResponderGraphLexical, "search", countedReply("graph-lexical", oneHit, 4, damaged))
+			stubBatchEcho(t, client)
+			startComponent(t, client, `{}`)
+			raw, err := ask(t, client, "localSearch", fmt.Sprintf(`{"entity_id":%q,"query":"drone"}`, drone1))
+			requireText(t, raw, err, damaged, damaged > 0, localTruncated)
+		})
+		t.Run(fmt.Sprintf("globalSearch, the word index at %d", damaged), func(t *testing.T) {
+			client := fixtureClient(t)
+			replyWith(t, client, graph.ResponderGraphLexical, "search", countedReply("graph-lexical", oneHit, 4, damaged))
+			stubBatchEcho(t, client)
+			startComponent(t, client, `{}`)
+			raw, err := ask(t, client, "globalSearch", mergeQuestion)
+			requireText(t, raw, err, damaged, damaged > 0, textTruncated)
+		})
+	}
+
+	// The count comes from the alias read of an entity hint, not the word search: the reply was built
+	// from it too.
+	t.Run("globalSearch, the alias read at 3", func(t *testing.T) {
+		client := fixtureClient(t)
+		replyWith(t, client, graph.ResponderGraphLexical, "search", countedReply("graph-lexical", oneHit, 4, 0))
+		replyWith(t, client, graph.ResponderGraphIndex, "alias", countedReply("graph-index", `{"canonical_id":"`+drone1+`"}`, 4, 3))
+		replyWith(t, client, graph.ResponderGraphIngest, "entity", entityReply(drone1))
+		stubBatchEcho(t, client)
+		startComponent(t, client, `{}`)
+		raw, err := ask(t, client, "globalSearch", `{"query":"held-1"}`)
+		requireText(t, raw, err, 3, true, textTruncated)
+	})
+
+	// At tier 1 both searches read back their one hit, the same entity; the embedding reply carries
+	// the count.
+	for _, damaged := range []int{2, 0} {
+		t.Run(fmt.Sprintf("searchGraph, the embedding index at %d", damaged), func(t *testing.T) {
+			client := fixtureClient(t)
+			replyWith(t, client, graph.ResponderGraphLexical, "search", countedReply("graph-lexical", oneHit, 4, 0))
+			replyWith(t, client, graph.ResponderGraphEmbedding, "search", countedReply("graph-embedding", semanticHits(drone1), 0, damaged))
+			stubBatchEcho(t, client)
+			startComponent(t, client, tierOneConfig)
+			raw, err := ask(t, client, "searchGraph", mergeQuestion)
+			requireText(t, raw, err, damaged, damaged > 0, textTruncated)
+		})
+	}
+}

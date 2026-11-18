@@ -170,8 +170,8 @@ func (c *Component) groupVectorHits(semanticSubject string, hits []graph.Similar
 // answerText reads answer's list back with one batch request, each match carrying its list entry's
 // score and ranks, verifies the route's reference, and encodes the reply, fit to max_payload, under
 // the word search's revision. Truncated is set when the lists read held more than the list, the
-// word index matched more than it returned, a hit was missing or damaged, or matches were left out
-// to fit.
+// word index matched more than it returned, a hit was missing or damaged, a reply the answer was built
+// from carried damaged_entities above 0, or matches were left out to fit.
 func (c *Component) answerText(ctx context.Context, verb string, subjects globalSearchSubjects, request graph.GlobalSearchRequest, route globalRoute, answer listedText) ([]byte, error) {
 	hits := make([]graph.LexicalHit, 0, len(answer.list))
 	ranks := make(map[string]mergedHit, len(answer.list))
@@ -186,6 +186,9 @@ func (c *Component) answerText(ctx context.Context, verb string, subjects global
 	for i := range matches {
 		matches[i].WordRank, matches[i].VectorRank = ranks[matches[i].ID].wordRank, ranks[matches[i].ID].vectorRank
 	}
+	reply, hintDamaged := c.hinted(ctx, subjects, route, request.MinRevision)
+	reply.Merge, reply.Semantic = answer.merge, answer.semantic
+	damaged := max(answer.damaged, hintDamaged)
 	search := answer.search
 	data := graph.TextSearchData{
 		Level:            request.Level,
@@ -195,11 +198,9 @@ func (c *Component) answerText(ctx context.Context, verb string, subjects global
 		Missing:          gaps.missing,
 		Damaged:          gaps.damaged,
 		BodiesNotIndexed: search.Data.BodiesNotIndexed,
-		Truncated:        answer.more || search.Data.Matched > len(search.Data.Results) || gaps.left(),
+		// An index that left damaged entities out may have left out a match.
+		Truncated: answer.more || search.Data.Matched > len(search.Data.Results) || gaps.left() || damaged > 0,
 	}
-	reply, hintDamaged := c.hinted(ctx, subjects, route, request.MinRevision)
-	reply.Merge, reply.Semantic = answer.merge, answer.semantic
-	damaged := max(answer.damaged, hintDamaged)
 	limit, err := c.natsClient.MaxPayload()
 	if err != nil {
 		return nil, c.unanswered(err)

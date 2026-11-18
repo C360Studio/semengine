@@ -201,7 +201,8 @@ func (c *Component) localSearch(lexicalSubject, batchSubject string) queryHandle
 			Missing:          gaps.missing,
 			Damaged:          gaps.damaged,
 			BodiesNotIndexed: search.Data.BodiesNotIndexed,
-			Truncated:        search.Data.Matched > len(hits) || gaps.left(),
+			// An index that left damaged entities out may have left out a match.
+			Truncated: search.Data.Matched > len(hits) || gaps.left() || search.DamagedEntities > 0,
 		}
 		var record clustering.Community
 		record, reply.RecordState = groupRecord(c.communities.Load(), group.key)

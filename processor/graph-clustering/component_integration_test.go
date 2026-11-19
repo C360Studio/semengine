@@ -185,9 +185,9 @@ func awaitApplied(t *testing.T, c *Component, rev uint64) {
 	}
 }
 
-// awaitHealthy waits for Health to report healthy. Completing a repair raises the follower's floor
-// before it clears the follower's record of the damage, so the floor alone does not order a Health
-// read after the clear.
+// awaitHealthy waits for Health to report healthy. Completing a repair clears the follower's record
+// of the damage before it raises the floor, so after the caller's wait on the floor the first read
+// already finds it healthy; waiting keeps the check from resting on that order.
 func awaitHealthy(t *testing.T, c *Component) {
 	t.Helper()
 	await(t, "Health healthy",

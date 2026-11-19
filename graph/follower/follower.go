@@ -1,10 +1,15 @@
 // Package follower follows ENTITY_STATES for a projection owner: it waits for the bucket, holds the
 // one watch on it, replays the stored entities and then the live writes in delivery order, and
-// keeps the owner's readiness: the watermark of applied revisions, the bootstrap latch, the reset
-// latch, the lost-feed state, and the envelope it publishes to GRAPH_STATUS on every heartbeat
-// (ADR-108 Decision 4). The owner, a plug-in, takes each entry through Config.Deliver and reports
-// each outcome back: Complete when a revision is applied, Config.Failed for its unresolved writes,
-// Reset when its state can no longer be trusted. graph-index is the first owner.
+// keeps the owner's readiness: the watermark of applied revisions, the bootstrap latch, the record
+// of damaged entities, the reset latch, the lost-feed state, and the envelope it publishes to
+// GRAPH_STATUS on every heartbeat (ADR-108 Decision 4). The owner, a plug-in, takes each entry
+// through Config.Deliver and reports each outcome back: Complete when a revision is applied,
+// ReportDamaged for a stored value graph.UnmarshalEntityState refuses, Config.Failed for its
+// unresolved writes, Reset when its state can no longer be trusted. graph-index is the first owner.
+//
+// A damaged entity never stops the follower: it is recorded per key, named in Stuck and counted in
+// the envelope, read through DamagedCount and DamagedRefusal, and cleared when a valid write of the
+// key completes or the key is deleted, with no restart.
 //
 // Limits, declared rather than promised:
 //
@@ -111,6 +116,7 @@ type Follower struct {
 	watermark *revlag.Watermark
 	created   time.Time // the backing stream's creation time when Open bound it: its generation
 
+	damaged         damagedRecord // the damaged entities the plug-in reported
 	feedLost        atomic.Bool
 	reset           atomic.Pointer[graph.StateResetReason]
 	snapshotDone    atomic.Bool   // the watch's end-of-snapshot marker arrived
@@ -293,7 +299,10 @@ func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, v
 		f.loseFeed(fmt.Sprintf("the watch delivered a revision out of order: %v", err))
 	}
 	e := Entry{Key: entry.Key(), Revision: entry.Revision(), Deleted: natsclient.IsKVTombstone(entry.Operation())}
-	if !e.Deleted {
+	if e.Deleted {
+		// The damaged value is gone, so nothing of it can be missing from a reply.
+		f.clearDamaged(e.Key, e.Revision)
+	} else {
 		e.Value = entry.Value()
 		e.Bytes = len(e.Value)
 		if validating {
@@ -355,6 +364,7 @@ func (f *Follower) publish(ctx context.Context) {
 // counts as progress for the stuck detector, whether or not it raises the floor.
 func (f *Follower) Complete(key string, revision uint64) {
 	f.watermark.Complete(key, revision)
+	f.clearDamaged(key, revision)
 	f.completions.Add(1)
 }
 
@@ -370,13 +380,16 @@ func (f *Follower) Indexed() uint64 {
 	return indexed
 }
 
-// Stuck returns the states that hold now, each a short sentence: a latched reset, the plug-in's
-// unresolved failures (Config.Failed's count, then each reason with its count in name order when
+// Stuck returns the states that hold now, each a short sentence: a latched reset, the damaged
+// entities the plug-in reported (ReportDamaged), the plug-in's unresolved failures (Config.Failed's count, then each reason with its count in name order when
 // it reports reasons), and a lost feed. It is empty when none holds.
 func (f *Follower) Stuck() []string {
 	var stuck []string
 	if r := f.reset.Load(); r != nil {
 		stuck = append(stuck, fmt.Sprintf("graph state reset required: %s", *r))
+	}
+	if sentence := f.damagedSentence(); sentence != "" {
+		stuck = append(stuck, sentence)
 	}
 	if n, reasons := f.failed(); n > 0 {
 		stuck = append(stuck, unresolved(n, reasons))
@@ -490,24 +503,33 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) graph.IndexStatusResponse {
 	// One Failed call, so the count and its reasons are from one moment.
 	failed, reasons := f.failed()
+	damaged := uint64(f.DamagedCount(nil))
 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
 		Indexed:           indexed,
 		Target:            target,
 		Stuck:             f.stalled(indexed, target),
 		OldestUnappliedAt: indexedAt,
-		FailedCount:       uint64(max(failed, 0)),
+		FailedCount:       uint64(max(failed, 0)) + damaged,
 	})
 	if failed > 0 {
 		status.FailedReasons = reasons
+	}
+	if damaged > 0 {
+		// The follower owns the map Failed returned, so it may add to it.
+		if status.FailedReasons == nil {
+			status.FailedReasons = map[string]uint64{}
+		}
+		status.FailedReasons[damagedReason] = damaged
 	}
 	// An authoritatively empty graph is ready once the snapshot is delivered, though
 	// ComputeIndexStatus's ready needs a target above zero.
 	if !status.Ready && target == 0 && f.snapshotDone.Load() {
 		status.Ready, status.State = true, graph.IndexStateReady
 	}
-	// Unresolved writes, or a feed that no longer delivers, make the index known-incomplete at any
-	// lag (SemStreams ADR-082).
-	if failed > 0 || f.feedLost.Load() {
+	// Unresolved writes, a damaged entity left out, or a feed that no longer delivers, make the
+	// index known-incomplete at any lag (SemStreams ADR-082). The build latch below still reads the
+	// floor, so damage stored at start does not hold the first build.
+	if failed > 0 || damaged > 0 || f.feedLost.Load() {
 		status.Ready, status.State = false, graph.IndexStateDegraded
 	}
 	// The latch: the floor reached the target fixed at the snapshot's end, or the envelope is ready.

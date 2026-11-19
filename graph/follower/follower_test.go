@@ -457,8 +457,8 @@ func builtFollower(key string, failed func() (int64, map[string]uint64), withhol
 // TestWithholdNarrowsQueryReady: after the first build a plug-in's Withhold, not Failed, decides
 // whether failures withhold queries (entity-state-follower spec, "A failure the plug-in does not
 // withhold on"), while the envelope and Stuck keep reading Failed. One failure Withhold does not
-// count lets QueryReady answer; counted, it refuses; uncounted again, the refusal clears. A reset
-// and a lost feed refuse whatever Withhold says.
+// count lets QueryReady answer; counted, it refuses; uncounted again, the refusal clears. A lost
+// feed refuses whatever Withhold says; a damaged entity refuses nothing.
 func TestWithholdNarrowsQueryReady(t *testing.T) {
 	var withheld atomic.Int64
 	failed := func() (int64, map[string]uint64) { return 1, map[string]uint64{"content_error": 1} }
@@ -483,10 +483,10 @@ func TestWithholdNarrowsQueryReady(t *testing.T) {
 
 	f.feedLost.Store(true)
 	requireNotReady(t, "a lost feed with Withhold at 0", f.QueryReady(t.Context()))
-	f.Reset(graph.StateResetReason("test"))
-	var ce *errs.ClassifiedError
-	if err := f.QueryReady(t.Context()); !errors.As(err, &ce) || ce.Code != graph.ErrorCodeGraphStateResetRequired {
-		t.Errorf("a reset with Withhold at 0: QueryReady = %v; want %s", err, graph.ErrorCodeGraphStateResetRequired)
+	f.feedLost.Store(false)
+	f.ReportDamaged(damagedID(1), 1, errors.New("does not decode"))
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("a damaged entity with Withhold at 0: QueryReady = %v; want nil", err)
 	}
 }
 

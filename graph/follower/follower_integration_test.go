@@ -470,34 +470,50 @@ func TestEntryCarriesDeliveredValue(t *testing.T) {
 	}
 }
 
-// TestFollowerLatchesResetOnUnreadableSnapshotValue: a stored value that does not decode latches
-// reset with its reason; the entry is still delivered; QueryReady is fatal; a later Reset changes
-// nothing.
-func TestFollowerLatchesResetOnUnreadableSnapshotValue(t *testing.T) {
+// TestFollowerServesPastDamagedReplay: ENTITY_STATES holds a value that does not decode when Run
+// starts. The test, as the plug-in, decodes each delivered value, reports the one refused and
+// completes both: the first build completes, QueryReady answers nil, and Stuck names the damaged
+// key. A valid write of the key, completed, clears it with no restart.
+func TestFollowerServesPastDamagedReplay(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
-	put(t, kv, entityID(1), []byte("{not json"))
+	put(t, kv, entityID(1), storedEntity(entityID(1)))
+	damaged := entityID(2)
+	target := put(t, kv, damaged, []byte("{not json"))
 	delivered := make(chan Entry, 4)
 	f := open(t, client, func(_ context.Context, e Entry) { delivered <- e }, noFailures)
 	start(t, f)
 
-	// The delivery orders the reads below after the latch: the follower validates before it delivers.
-	if e := <-delivered; e.Key != entityID(1) || e.Deleted || e.Bytes != len("{not json") {
-		t.Fatalf("delivered %+v; want the unreadable entry", e)
+	apply := func(e Entry) {
+		var state graph.EntityState
+		if err := graph.UnmarshalEntityState(e.Key, e.Value, &state); err != nil {
+			f.ReportDamaged(e.Key, e.Revision, err)
+		}
+		f.Complete(e.Key, e.Revision)
 	}
-	reason := string(graph.GraphStateReasonUnreadableEntity)
-	err := f.QueryReady(t.Context())
-	requireCode(t, err, errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired)
-	if !graph.IsStateContractError(err) {
-		t.Errorf("QueryReady error %v does not carry the state contract", err)
+	apply(<-delivered)
+	apply(<-delivered)
+	if got := f.Indexed(); got != target {
+		t.Fatalf("Indexed = %d after both stored entries completed; want the snapshot's last revision %d", got, target)
 	}
-	if !stuckNames(f, reason) {
-		t.Fatalf("Stuck = %q; want it to name %s", f.Stuck(), reason)
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Fatalf("QueryReady with one damaged entity stored at start = %v; want nil", err)
+	}
+	if !stuckNames(f, damaged+" ("+string(graph.GraphStateReasonUnreadableEntity)+")") {
+		t.Errorf("Stuck = %q; want it to name %s", f.Stuck(), damaged)
 	}
 
-	f.Reset(graph.GraphStateReasonNoncanonicalPredicate)
-	if !stuckNames(f, reason) || stuckNames(f, string(graph.GraphStateReasonNoncanonicalPredicate)) {
-		t.Fatalf("Stuck = %q after a second Reset; want only the first reason %s", f.Stuck(), reason)
+	repair := put(t, kv, damaged, storedEntity(damaged))
+	e := <-delivered
+	if e.Key != damaged || e.Revision != repair {
+		t.Fatalf("delivered %+v; want the repair of %s at %d", e, damaged, repair)
+	}
+	apply(e)
+	if n := f.DamagedCount(nil); n != 0 || len(f.Stuck()) != 0 {
+		t.Errorf("after the repair completed: DamagedCount %d, Stuck %q; want 0 and empty", n, f.Stuck())
+	}
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("QueryReady after the repair = %v; want nil", err)
 	}
 }
 

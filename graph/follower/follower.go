@@ -1,11 +1,11 @@
 // Package follower follows ENTITY_STATES for a projection owner: it waits for the bucket, holds the
 // one watch on it, replays the stored entities and then the live writes in delivery order, and
 // keeps the owner's readiness: the watermark of applied revisions, the bootstrap latch, the record
-// of damaged entities, the reset latch, the lost-feed state, and the envelope it publishes to
-// GRAPH_STATUS on every heartbeat (ADR-108 Decision 4). The owner, a plug-in, takes each entry
-// through Config.Deliver and reports each outcome back: Complete when a revision is applied,
-// ReportDamaged for a stored value graph.UnmarshalEntityState refuses, Config.Failed for its
-// unresolved writes, Reset when its state can no longer be trusted. graph-index is the first owner.
+// of damaged entities, the lost-feed state, and the envelope it publishes to GRAPH_STATUS on every
+// heartbeat (ADR-108 Decision 4). The owner, a plug-in, takes each entry through Config.Deliver and
+// reports each outcome back: Complete when a revision is applied, ReportDamaged for a stored value
+// graph.UnmarshalEntityState refuses, Config.Failed for its unresolved writes. The follower decodes
+// no value: the plug-in does, and reports what it cannot read. graph-index is the first owner.
 //
 // A damaged entity never stops the follower: it is recorded per key, named in Stuck and counted in
 // the envelope, read through DamagedCount and DamagedRefusal, and cleared when a valid write of the
@@ -99,9 +99,6 @@ type Config struct {
 // 4).
 const degradedStuckAfter = 30 * time.Second
 
-// resetRemedy is what an operator does about a latched reset.
-const resetRemedy = "export if needed, clear the graph and index buckets, and reingest canonical sources"
-
 // Follower follows ENTITY_STATES for one plug-in. Build it with Open and run it with Run.
 type Follower struct {
 	key       string
@@ -118,7 +115,6 @@ type Follower struct {
 
 	damaged         damagedRecord // the damaged entities the plug-in reported
 	feedLost        atomic.Bool
-	reset           atomic.Pointer[graph.StateResetReason]
 	snapshotDone    atomic.Bool   // the watch's end-of-snapshot marker arrived
 	bootstrapTarget atomic.Uint64 // stored before snapshotDone is raised
 	bootstrapped    atomic.Bool   // the initial build is complete; never cleared
@@ -239,7 +235,7 @@ func (f *Follower) follow(ctx context.Context) error {
 		}
 		return nil
 	}
-	validating := true
+	replaying := true
 	for {
 		select {
 		case <-ctx.Done():
@@ -255,8 +251,8 @@ func (f *Follower) follow(ctx context.Context) error {
 				return nil
 			}
 			if entry == nil {
-				if validating {
-					validating = false
+				if replaying {
+					replaying = false
 					// Every stored entity has been delivered, so the highest revision observed
 					// bounds them: it is the revision the initial build must reach (ADR-084 decision 2).
 					f.bootstrapTarget.Store(f.watermark.Observed())
@@ -264,7 +260,7 @@ func (f *Follower) follow(ctx context.Context) error {
 				}
 				continue
 			}
-			f.observe(ctx, entry, validating)
+			f.observe(ctx, entry)
 		}
 	}
 }
@@ -285,10 +281,9 @@ func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 	return nil
 }
 
-// observe records one delivered revision in the watermark, validates a stored entity during the
-// replay, and hands the entry to the plug-in. A revision the watermark refuses declares the feed
-// lost; the entry is still delivered.
-func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, validating bool) {
+// observe records one delivered revision in the watermark and hands the entry to the plug-in. A
+// revision the watermark refuses declares the feed lost; the entry is still delivered.
+func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry) {
 	// entry.Created() is the KV commit time. staleness_ms is now minus the commit time of the oldest
 	// delivered write not yet applied, or of the newest delivered one when none is in flight (ADR-083
 	// decision 3, as amended).
@@ -305,19 +300,6 @@ func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, v
 	} else {
 		e.Value = entry.Value()
 		e.Bytes = len(e.Value)
-		if validating {
-			var state graph.EntityState
-			if err := graph.UnmarshalEntityState(e.Key, e.Value, &state); err != nil {
-				reason := graph.GraphStateReasonUnreadableEntity
-				var stateErr *graph.StateContractError
-				if errors.As(err, &stateErr) {
-					reason = stateErr.Reason
-				}
-				f.logger.Error("stored entity refused during the startup replay",
-					slog.String("key", e.Key), slog.Any("error", err))
-				f.Reset(reason)
-			}
-		}
 	}
 	f.deliver(ctx, e)
 }
@@ -368,26 +350,18 @@ func (f *Follower) Complete(key string, revision uint64) {
 	f.completions.Add(1)
 }
 
-// Reset latches reason for the life of the process. The first reason holds; later calls change
-// nothing (ADR-074, ADR-084 decision 4).
-func (f *Follower) Reset(reason graph.StateResetReason) {
-	f.reset.CompareAndSwap(nil, &reason)
-}
-
 // Indexed returns the watermark's floor: every delivered revision at or below it is complete.
 func (f *Follower) Indexed() uint64 {
 	indexed, _ := f.watermark.IndexedAt()
 	return indexed
 }
 
-// Stuck returns the states that hold now, each a short sentence: a latched reset, the damaged
-// entities the plug-in reported (ReportDamaged), the plug-in's unresolved failures (Config.Failed's count, then each reason with its count in name order when
-// it reports reasons), and a lost feed. It is empty when none holds.
+// Stuck returns the states that hold now, each a short sentence: the damaged entities the plug-in
+// reported (ReportDamaged), the plug-in's unresolved failures (Config.Failed's count, then each
+// reason with its count in name order when it reports reasons), and a lost feed. It is empty when
+// none holds.
 func (f *Follower) Stuck() []string {
 	var stuck []string
-	if r := f.reset.Load(); r != nil {
-		stuck = append(stuck, fmt.Sprintf("graph state reset required: %s", *r))
-	}
 	if sentence := f.damagedSentence(); sentence != "" {
 		stuck = append(stuck, sentence)
 	}
@@ -415,17 +389,14 @@ func unresolved(n int64, reasons map[string]uint64) string {
 }
 
 // QueryReady says whether a query may be answered now (ADR-109 Decision 1): nil, or a classified
-// refusal. A latched reset is fatal graph_state_reset_required; a lost feed, unresolved writes that
-// withhold queries (Config.Withhold) and an incomplete initial build are transient index_not_ready.
+// refusal. A lost feed, unresolved writes that withhold queries (Config.Withhold) and an incomplete
+// initial build are transient index_not_ready. A damaged entity refuses nothing here: the plug-in
+// leaves it out of each reply and counts it (DamagedCount).
 // Before the initial build is complete the gate reads the envelope, which counts every unresolved
 // write (Config.Failed); once it is complete it answers nil at once.
 func (f *Follower) QueryReady(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errors.New("nil context"), "follower", "QueryReady", "check the context")
-	}
-	if r := f.reset.Load(); r != nil {
-		return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
-			&graph.StateContractError{Reason: *r, Err: errors.New(resetRemedy)})
 	}
 	if f.feedLost.Load() {
 		return notReady("the ENTITY_STATES feed is lost")
@@ -468,14 +439,6 @@ func notReady(why string) error {
 // compute builds the envelope: ComputeIndexStatus over the floor and the stream's last sequence,
 // then the overrides only this producer can see, then the bootstrap latch.
 func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
-	if r := f.reset.Load(); r != nil {
-		return graph.IndexStatusResponse{
-			State:             graph.IndexStateResetRequired,
-			Code:              graph.ErrorCodeGraphStateResetRequired,
-			Reason:            string(*r),
-			BootstrapComplete: f.bootstrapped.Load(),
-		}
-	}
 	indexed, indexedAt := f.watermark.IndexedAt()
 	f.statusMu.Lock()
 	target, created, err := readStream(ctx, f.status)

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/component"
-	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/graph/readiness"
@@ -239,15 +238,11 @@ func (c *Component) deliver(_ context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
 	read, ok, err := c.apply.deliver(e)
 	if err != nil {
-		reason := graph.GraphStateReasonUnreadableEntity
-		var stateErr *graph.StateContractError
-		if errors.As(err, &stateErr) {
-			reason = stateErr.Reason
-		}
 		c.logger.Error("entity state refused; graph reset required",
 			slog.String("entity", e.Key), slog.Any("error", err))
-		c.lifecycle.CountError()
-		c.follower.Load().Reset(reason)
+		if c.follower.Load().ReportDamaged(e.Key, e.Revision, err) {
+			c.lifecycle.CountError()
+		}
 		return
 	}
 	if ok {

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -224,7 +225,7 @@ func TestEntitiesWithValueEmptyResultEncodesEmptyArray(t *testing.T) {
 	if got == nil {
 		t.Fatal("entitiesWithValue returned nil slice, want empty non-nil []string{}")
 	}
-	raw, err := reply(1, graph.PredicateData{Entities: limited(got, 0)})
+	raw, err := reply(position{follower: &follower.Follower{}, revision: 1}, graph.PredicateData{Entities: limited(got, 0)})
 	if err != nil {
 		t.Fatalf("reply: %v", err)
 	}

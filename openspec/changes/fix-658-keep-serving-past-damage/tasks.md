@@ -37,7 +37,7 @@ copy. #657 stays open for its other follow-ups.
 
 ## 4. PR 3: the follower records damage (design D1, D5)
 
-- [ ] 4.1 Tests first in `graph/follower`: the generated check over reports, completions and deletes against a
+- [x] 4.1 Tests first in `graph/follower`: the generated check over reports, completions and deletes against a
   reference model (seed and completed runs recorded); named cases first (report then higher completion clears; a
   completion at the same or a lower revision does not; a delete clears; `Stuck` names at most 10 IDs sorted, with
   reasons, the count and the repair); the envelope reads `degraded` with `failed_reasons["damaged_entity"]` and
@@ -45,12 +45,12 @@ copy. #657 stays open for its other follow-ups.
   (`follower_integration_test.go:476-503`) as a replay that does not stop, and the reset clause of
   `TestWithholdNarrowsQueryReady` (`follower_test.go:483-490`). The generated check draws completions at, below and
   above a report.
-- [ ] 4.2 Then the follower: replace `Reset` and the latch (`follower.go:115`, `:299-309`, `:361-365`, `:378-379`,
+- [x] 4.2 Then the follower: replace `Reset` and the latch (`follower.go:115`, `:299-309`, `:361-365`, `:378-379`,
   `:413-416`, `:458-465`, `resetRemedy` `:97-98`) with the per-key record and its two read methods; package comment.
 
 ## 5. PR 3: the four plug-ins (design D1, D2, D3)
 
-- [ ] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests", among them
+- [x] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests", among them
   `TestDamagedEntityLeftOutAndNamed` (the graph-transport-boundary delta's scenario); shown failing on `main`.
   Rewrite `TestNoncanonicalValueLatchesResetAndHoldsItsRevision` (`index_integration_test.go:480-503`) and the "a
   latched reset" subtest (`lifecycle_integration_test.go:403-410`), and the two reset subtests of

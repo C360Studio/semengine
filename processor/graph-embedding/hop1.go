@@ -2,7 +2,6 @@ package graphembedding
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -135,15 +134,11 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 	if err := graph.UnmarshalEntityState(key, data, &state); err != nil {
 		// Authoritative state this reader cannot trust is a latched reset, not a terminal
 		// skip: the revision stays pending.
-		reason := graph.GraphStateReasonUnreadableEntity
-		var stateErr *graph.StateContractError
-		if errors.As(err, &stateErr) {
-			reason = stateErr.Reason
-		}
 		c.logger.Error("entity state refused; graph reset required",
 			slog.String("entity", key), slog.Any("error", err))
-		c.lifecycle.CountError() // the reset, as graph-index counts one
-		c.follower.Load().Reset(reason)
+		if c.follower.Load().ReportDamaged(key, revision, err) {
+			c.lifecycle.CountError()
+		}
 		return
 	}
 

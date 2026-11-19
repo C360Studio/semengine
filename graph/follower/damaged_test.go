@@ -71,7 +71,7 @@ func (e deleteEntry) Operation() jetstream.KeyValueOp { return jetstream.KeyValu
 
 // deliverDelete hands the follower a delete of key at revision, as the watch delivers one.
 func deliverDelete(ctx context.Context, f *Follower, key string, revision uint64) {
-	f.observe(ctx, deleteEntry{key: key, revision: revision}, false)
+	f.observe(ctx, deleteEntry{key: key, revision: revision})
 }
 
 func requireRecorded(t *testing.T, f *Follower, key string, want bool, after string) {

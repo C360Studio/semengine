@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/vocabulary"
 )
@@ -224,5 +227,48 @@ func TestRepairedEntityReturns(t *testing.T) {
 	// The reply above waited for the repair's revision, whose completion cleared the record.
 	if health := h.c.Health(); !health.Healthy {
 		t.Errorf("Health after the repair = %+v; want healthy", health)
+	}
+}
+
+// TestRemovedNoncanonicalKeyIsNoLongerDamaged: a value is stored under a key KV accepts that is not
+// a six-part entity ID, so graph-index records the key damaged. Health tells the operator to delete
+// such a key; once it is deleted or purged, with no restart, the record is gone: a reply past the
+// removal counts no damaged entity and Health is healthy. legacy-key is read back to decide; a key
+// longer than the shared KV key validator allows is not read, and its delete decides.
+func TestRemovedNoncanonicalKeyIsNoLongerDamaged(t *testing.T) {
+	keys := []struct{ name, key string }{
+		{"legacy-key", "legacy-key"},
+		{"over-long key", strings.Repeat("k", natsclient.MaxKVLiteralKeyBytes+1)},
+	}
+	removals := []struct {
+		name string
+		run  func(ctx context.Context, states jetstream.KeyValue, key string) error
+	}{
+		{"delete", func(ctx context.Context, states jetstream.KeyValue, key string) error { return states.Delete(ctx, key) }},
+		{"purge", func(ctx context.Context, states jetstream.KeyValue, key string) error { return states.Purge(ctx, key) }},
+	}
+	for _, k := range keys {
+		for _, remove := range removals {
+			t.Run(k.name+" "+remove.name, func(t *testing.T) {
+				h := startIndex(t, fixtureClient(t), `{}`)
+				h.awaitIndexed(t, h.put(t, k.key, damagedValue))
+				if got := h.f.DamagedCount(nil); got != 1 {
+					t.Fatalf("damaged entities after a value under %s = %d; want 1", k.name, got)
+				}
+				if err := remove.run(t.Context(), h.states, k.key); err != nil {
+					t.Fatalf("%s %s: %v", remove.name, k.name, err)
+				}
+				// A write after the removal: a reply at its revision waits for the floor to pass
+				// it, so the removal's revision, below it, has completed.
+				a := entityID(1)
+				rev := h.put(t, a, entityValue(t, a, stmt{vocabulary.DCTermsTitle, "Alpha"}))
+				names := countedAnswer[graph.NameData](t, h, "byName", map[string]any{"name": "Alpha"}, rev)
+				requireRelationship(t, "byName Alpha", nameIDs(names.Data.Matches), []string{a})
+				requireDamaged(t, "byName Alpha after the "+remove.name, names, 0)
+				if health := h.c.Health(); !health.Healthy {
+					t.Errorf("Health after the %s of %s = %+v; want healthy", remove.name, k.name, health)
+				}
+			})
+		}
 	}
 }

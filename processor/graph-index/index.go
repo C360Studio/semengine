@@ -41,10 +41,12 @@ const indexWriteMaxAttempts = 3
 const indexRepairInterval = 30 * time.Second
 
 // indexWork names one key for a lane. revision is the delivered revision the work
-// completes once applied; repair work carries 0 and completes nothing.
+// completes once applied; repair work carries 0 and completes nothing. deleted says the
+// delivered revision is a delete or purge.
 type indexWork struct {
 	entityID string
 	revision uint64
+	deleted  bool
 }
 
 // openIndexBuckets acquires the five index buckets graph-index owns, as their owner,
@@ -121,7 +123,7 @@ func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower
 // one (revlag).
 func (c *Component) deliver(ctx context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
-	work := indexWork{entityID: e.Key, revision: e.Revision}
+	work := indexWork{entityID: e.Key, revision: e.Revision, deleted: e.Deleted}
 	if e.Deleted {
 		c.metrics.watchEvents.WithLabelValues("delete").Inc()
 		if c.coalescer != nil {
@@ -167,7 +169,7 @@ func (c *Component) submit(ctx context.Context, work indexWork) {
 // state, not the event it came from, so a repair that read R2 before the follower
 // submitted R1 cannot be undone by R1.
 func (c *Component) processWork(ctx context.Context, work indexWork) {
-	if c.reconcileEntity(ctx, work.entityID, work.revision) && work.revision > 0 {
+	if c.reconcileEntity(ctx, work) && work.revision > 0 {
 		c.follower.Load().Complete(work.entityID, work.revision)
 	}
 }
@@ -179,13 +181,11 @@ func (c *Component) failedTotal() int64 {
 }
 
 // reconcileEntity applies entityID's current authoritative state and reports whether the
-// revision that led here may complete. revision is the delivered one, 0 for a repair pass.
-func (c *Component) reconcileEntity(ctx context.Context, entityID string, revision uint64) bool {
+// revision that led here may complete. work's revision is the delivered one, 0 for a repair pass.
+func (c *Component) reconcileEntity(ctx context.Context, work indexWork) bool {
+	entityID := work.entityID
 	if err := validateEntityLiteralKey(entityID); err != nil {
-		// No row was ever built under a key that is not a literal entity ID, so there is nothing
-		// to remove: the key is recorded damaged and its revision completes.
-		c.reportDamaged(entityID, revision, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
-			&graph.StateContractError{Reason: graph.GraphStateReasonNoncanonicalEntityID, EntityID: entityID, Err: err}))
+		c.reconcileNoncanonical(ctx, work, err)
 		return true
 	}
 	entry, err := c.entities.Get(ctx, entityID)
@@ -209,6 +209,35 @@ func (c *Component) reconcileEntity(ctx context.Context, entityID string, revisi
 			slog.String("entity", entityID), slog.Any("error", err))
 	}
 	return true
+}
+
+// reconcileNoncanonical handles a key that is not a literal entity ID. No row was ever built under
+// such a key, so there is nothing to remove and no owner filter is built from it. The key is
+// damaged while a value is stored under it, and current state decides that, as for every other
+// key: once the key is deleted or purged, its delete, and an older write handled after it, record
+// nothing, so the delete clears the record with no restart. A key the shared KV key validator
+// refuses, one longer than it allows, is not read: its delivered revision decides instead.
+func (c *Component) reconcileNoncanonical(ctx context.Context, work indexWork, invalid error) {
+	revision := work.revision
+	if natsclient.ValidateKVLiteralKey(work.entityID) == nil {
+		entry, err := c.entities.Get(ctx, work.entityID)
+		switch {
+		case natsclient.IsKVNotFoundError(err):
+			c.clearEntityFailed(work.entityID)
+			return
+		case err != nil:
+			c.markEntityFailed(work.entityID)
+			c.logger.Warn("reconcile: authoritative entity read failed; readiness withheld",
+				slog.String("entity", work.entityID), slog.Any("error", err))
+			return
+		}
+		c.clearEntityFailed(work.entityID)
+		revision = entry.Revision()
+	} else if work.deleted {
+		return
+	}
+	c.reportDamaged(work.entityID, revision, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+		&graph.StateContractError{Reason: graph.GraphStateReasonNoncanonicalEntityID, EntityID: work.entityID, Err: invalid}))
 }
 
 // reportDamaged records entityID damaged at revision with refusal, counting one error the first

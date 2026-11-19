@@ -188,8 +188,9 @@ func TestDeleteRemovesEntity(t *testing.T) {
 }
 
 // TestUnreadableEntityRefused: a value that is not a canonical entity state is refused with the
-// state contract's reason and its revision is not completed, so the follower's reset, not a
-// silent skip, answers for it; the index keeps what it held.
+// state contract's reason, nothing is applied and its revision is not completed, so the caller can
+// report the damage before anything changes; removeDamaged then deletes the entity's text and
+// completes the revision, and an older delivery of the key is ignored, as after a delete.
 func TestUnreadableEntityRefused(t *testing.T) {
 	var completed []uint64
 	a := newTestApplier(t, func(_ string, revision uint64) { completed = append(completed, revision) })
@@ -201,7 +202,19 @@ func TestUnreadableEntityRefused(t *testing.T) {
 			graph.GraphStateReasonUnreadableEntity)
 	}
 	if !slices.Equal(completed, []uint64{1}) {
-		t.Fatalf("completed %v; want only revision 1", completed)
+		t.Fatalf("completed %v; want only revision 1 before the removal", completed)
 	}
 	requireHeld(t, a.index, []string{pump}, "pumpname")
+
+	a.removeDamaged(pump, 2)
+	if !slices.Equal(completed, []uint64{1, 2}) {
+		t.Fatalf("completed %v; want revisions 1 and 2 after the removal", completed)
+	}
+	if n := a.index.Len(); n != 0 {
+		t.Fatalf("index holds %d entities after the removal; want 0", n)
+	}
+	mustDeliver(t, a, stateEntry(t, pump, 2, text{name: "pumpname"}))
+	if n := a.index.Len(); n != 0 {
+		t.Fatalf("index holds %d entities after a delivery at the removed revision; want 0", n)
+	}
 }

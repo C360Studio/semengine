@@ -139,8 +139,8 @@ func newApplier(rule entitytext.Rule, maxLen int, complete func(key string, revi
 // reference is read again only when the inline text or reference changes, or at start.
 //
 // A value that is not a canonical entity state is refused with the *graph.StateContractError
-// the decoder returned, nothing is applied, and the revision is not completed: state the index
-// cannot read is the follower's reset to latch, never a skip the floor passes.
+// the decoder returned, nothing is applied, and the revision is not completed: the caller
+// reports the damage and then calls removeDamaged, so the text goes only once it is counted.
 func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -149,10 +149,7 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 		return bodyRead{}, false, nil
 	}
 	if e.Deleted {
-		a.index.Delete(e.Key)
-		a.remove(e.Key, e.Revision)
-		a.report()
-		a.complete(e.Key, e.Revision)
+		a.drop(e.Key, e.Revision)
 		return bodyRead{}, false, nil
 	}
 	var state graph.EntityState
@@ -325,6 +322,22 @@ func (a *applier) setBody(h *held, s bodyState, offloaded *pending) {
 	}
 	h.body, h.offloaded = s, offloaded
 	a.report()
+}
+
+// removeDamaged deletes a damaged entity's text and completes revision, as a delete does. The
+// caller has reported the entity damaged first.
+func (a *applier) removeDamaged(key string, revision uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.drop(key, revision)
+}
+
+// drop deletes key's text and completes revision, under mu.
+func (a *applier) drop(key string, revision uint64) {
+	a.index.Delete(key)
+	a.remove(key, revision)
+	a.report()
+	a.complete(key, revision)
 }
 
 // remove drops what is held for key but revision, the delete's, so a delivery of key at or below

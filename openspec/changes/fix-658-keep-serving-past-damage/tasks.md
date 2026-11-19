@@ -63,7 +63,7 @@ copy. #657 stays open for its other follow-ups.
   replay case; shown failing on `main`. Waits: the follower's floor, then the vector cache past B's delete. Then
   `hop1.go:135-147` reports, removes (`removeRecord`, `:121`) and completes;
   `search` counts within scope, `similar` refuses a damaged source (`query.go:94-143`).
-- [ ] 5.3 graph-lexical: integration tests, replay and live, shown failing on `main`; rewrite `apply_test.go:191-202`.
+- [x] 5.3 graph-lexical: integration tests, replay and live, shown failing on `main`; rewrite `apply_test.go:191-202`.
   Waits: a request with `min_revision` B's revision.
   Then `component.go:240-251` and `apply.go:158-161` report, delete the entity's text and complete; `search` counts
   within scope (`query.go:81-110`).

@@ -119,3 +119,70 @@ func TestDamagedEntityLeftOutOfSearch(t *testing.T) {
 		}
 	})
 }
+
+// TestNoncanonicalKeyKeepsSearchServing: a value is stored under legacy-key, a key KV accepts that
+// is not a six-part entity ID, so no embedding record can be kept under it and there is none to
+// remove. graph-embedding records the key damaged and keeps answering search from the other
+// vectors, counting it, whether the value was there before start or written after; deleting the
+// key clears the record with no restart. A reconcile that finds such a key absent has nothing to
+// remove either, and leaves no unresolved failure behind.
+func TestNoncanonicalKeyKeepsSearchServing(t *testing.T) {
+	const bad = "legacy-key"
+	damaged := []byte("{not json")
+	a := entityID(1)
+
+	requireServingPast := func(t *testing.T, h *harness) {
+		t.Helper()
+		search := answerNow[graph.SemanticData](t, h, "search", `{"query":"gadget"}`)
+		if got := ids(search.reply.Data.Results); !slices.Equal(got, []string{a}) || search.reply.DamagedEntities != 1 {
+			t.Errorf("search gadget = %s; want only %s with damaged_entities 1", search.raw, a)
+		}
+		if health := h.c.Health(); health.Healthy || !strings.Contains(health.LastError, bad) ||
+			strings.Contains(health.LastError, "unresolved") {
+			t.Errorf("Health with %s damaged = %+v; want not healthy, naming it and no unresolved failure", bad, health)
+		}
+		if err := h.states.Delete(t.Context(), bad); err != nil {
+			t.Fatalf("delete %s: %v", bad, err)
+		}
+		// A write after the delete: the floor passing it has passed the delete's revision too.
+		later := entityID(3)
+		h.awaitPast(t, "hop 1 passed a write after the delete", h.put(t, later, entityValue(t, later, nil, "doc.meta.title", "gizmo")))
+		after := answerNow[graph.SemanticData](t, h, "search", `{"query":"gadget"}`)
+		if after.reply.DamagedEntities != 0 {
+			t.Errorf("search gadget after the delete = %s; want no damaged_entities", after.raw)
+		}
+		if health := h.c.Health(); !health.Healthy {
+			t.Errorf("Health after the delete of %s = %+v; want healthy", bad, health)
+		}
+	}
+
+	t.Run("stored before start", func(t *testing.T) {
+		var badRev uint64
+		h := startAfter(t, fixtureClient(t), nil, nil, func(h *harness) {
+			h.titled(t, "gadget", a)
+			badRev = h.put(t, bad, damaged)
+		})
+		h.awaitPast(t, "the replay passed the noncanonical key", badRev)
+		awaitAnswer(t, h, "search", `{"query":"gadget"}`, hitCount[graph.SemanticData](1))
+		requireServingPast(t, h)
+	})
+
+	t.Run("written after start", func(t *testing.T) {
+		h := startEmbedding(t, fixtureClient(t), `{}`, nil)
+		h.titled(t, "gadget", a)
+		awaitAnswer(t, h, "search", `{"query":"gadget"}`, hitCount[graph.SemanticData](1))
+		h.awaitPast(t, "hop 1 passed the noncanonical key", h.put(t, bad, damaged))
+		requireServingPast(t, h)
+	})
+
+	t.Run("absent when reconciled", func(t *testing.T) {
+		h := startEmbedding(t, fixtureClient(t), `{}`, nil)
+		h.titled(t, "gadget", a)
+		awaitAnswer(t, h, "search", `{"query":"gadget"}`, hitCount[graph.SemanticData](1))
+		// A coalesced batch or a repair pass reads a key's current value; this one finds none.
+		h.c.reconcileEntity(t.Context(), bad)
+		if _, err := h.ask(t, "search", `{"query":"gadget"}`); err != nil {
+			t.Errorf("search after reconciling the absent %s: %v; Health = %+v", bad, err, h.c.Health())
+		}
+	})
+}

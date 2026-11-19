@@ -86,7 +86,7 @@ copy. #657 stays open for its other follow-ups.
   `processor/graph-query/MIGRATION.md:127`; ledger rows pkg/fusion `:4682`, pkg/fusion/fusionnats `:4802` (its
   contract `:4824`: an nl Resolve copies `damaged_entities` too, as do byName and relationships) and graph-gateway
   `:1931` (answers carry `extensions.damagedEntities`).
-- [ ] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
+- [x] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
   `IndexStatusResponse.Code` and `Reason` fields (`:33-36`), the gate's branch (`graph/readiness/readiness_gate.go:127`)
   and their tests (`publisher_test.go:88`, `readiness_gate_test.go:101`, `:331`,
   `internal/smoke/stack_integration_test.go:663`);

@@ -53,13 +53,13 @@ const (
 )
 
 // StateContractError means the authoritative graph cannot be safely read
-// or projected. Recovery is reader-class-conditional: the authoritative read
-// surface (graph-ingest's query lanes) scopes refusal to the poisoned entity
-// and recovers as soon as operators repair the stored bytes (delete +
-// recreate through canonical writes) — no restart required. Projection
-// owners (derived views built from watched or replayed entity state) stay in
-// sticky reset-required state and recover only by operator reset and process
-// restart.
+// or projected. Every reader scopes the refusal to the damaged entity and
+// recovers as soon as operators repair the stored bytes (write a valid value
+// or delete the key) — no restart required. The authoritative read surface
+// (graph-ingest's query lanes) refuses reads of that entity; projection
+// owners (derived views built from watched or replayed entity state) record
+// it with follower.ReportDamaged, remove what they built from it, keep
+// serving the other entities, and count the entity in their replies.
 //
 // EntityID names the poisoned entity when the classification site knows it
 // (snapshot sweep entry key, queried entity ID, RMW target, mutation read

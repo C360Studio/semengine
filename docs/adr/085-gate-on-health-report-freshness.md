@@ -22,6 +22,9 @@
 >   prune did. `processor/graph-query` (change 4, PR #504) has no cache keyed by `(level, ID)`: it reads
 >   communities through a `pkg/graphview` view of `COMMUNITY_INDEX`, whose key `{level}.{prefix}` already carries the
 >   level.
+> - `reset_required` is not a state in this repository: the readiness gate's hard stop is `degraded` alone, and a
+>   stored entity that does not decode no longer stops a component (ADR-108 and ADR-109, amended 2026-11-19, #657
+>   ruling 3 and #658 comment 6962917422). Where the text below names `reset_required`, read `degraded`.
 > - Of the rest of the code named here, `IndexStatusResponse` (`graph`) and `EvaluateReadinessGate` (now
 >   `graph/readiness`) were ported in change 2 (PR #93), `processor/graph-index` in change 4 (PR #414) and
 >   `processor/graph-query` in change 4 (PR #504). `pkg/fusion` is ported (change 5, PR C) and

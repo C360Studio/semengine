@@ -10,6 +10,16 @@ respect: the plug-in does not return an outcome from delivery. It reports the ou
 revision applied), `Failed` (the count of writes still unresolved) and `Reset`, because graph-index's apply is
 asynchronous (accepted by the owner, PR #414 comment 6426254115).
 
+**Amendment, 2026-11-19 (#657 ruling 3; #658 comment 6962917422).** Decision 4's reset latch is gone: one damaged
+stored value no longer stops a follower or its plug-in. A plug-in reports each damaged entity with
+`Follower.ReportDamaged` (key, the revision it read, the refusal) instead of `Reset`. The follower keeps one record
+per key and drops it when the plug-in completes a higher revision of the key or a delete of the key is delivered above
+it, so a valid write or a delete clears it with no restart. A report never withholds a query. The follower reads
+`degraded` with `failed_reasons["damaged_entity"]` while any record is held, and `Stuck` names up to 10 IDs with their
+reasons. The follower decodes no value: the plug-in decodes and reports. The `reset_required` envelope state and the
+envelope's `code` and `reason` fields are removed. In the Context below, the *validating phase* and the *reset latch*
+describe the decision as first accepted.
+
 **Amendment, 2026-11-10 (`setup-04a-07-substrate-seam-graph-clustering`, draft PR #582).** Decision 5's sentence
 "graph-clustering and graph-query have no follower" describes the pin's timer loop. The PR #483 ruling replaced that
 loop with changes-only maintenance, so `processor/graph-clustering` is a follower plug-in (key `graph-clustering`).
@@ -79,7 +89,7 @@ not a `Discoverable`, and `MessageLogger` embeds `*BaseService`, whose `Health()
 (`service/base.go:202`), not `component.HealthStatus`. Services compose the state machine; components compose the shell,
 which composes the state machine and adds `Health()`, `DataFlow()` and the counters. The shell is graph-free and lives
 in `component`, public, as the one way a SemEngine component implements `LifecycleComponent`. The
-follower decodes `graph.EntityState`, latches a `graph.StateResetReason` and publishes through `graph/readiness`, so
+follower handles `graph.EntityState` refusals and publishes through `graph/readiness`, so
 it cannot live in `component` (`component-registration` delta; #91 ruling D; #93 `design.md:1308-1310`). It lives in
 one package under `graph/` that imports `graph` and `graph/readiness` and nothing under `processor/`; the first
 follower port names the package. #109's "both in `component`" does not stand for the follower.
@@ -108,10 +118,10 @@ each ported component's own test of the retained-cleanup branch (#77 item 2; the
 
 **Decision 4. What the follower owns, and what passes between it and a plug-in.** The follower owns everything between
 "the bucket exists" and "this entry is yours": the bounded wait for the bucket; one `WatchAll` watcher; the
-snapshot-then-live bootstrap with its validating phase, in which it decodes each delivered value; the reset latch, which
-it sets when that decode fails or when the plug-in reports a reset reason, and which holds for the process lifetime
-(ADR-074 `:66-80`; ADR-079 decisions 2 and 3); the degrade flag, set when the feed is lost or when the plug-in reports a
-required write failed (ADR-082); the bootstrap-complete latch and bootstrap target (ADR-084 decision 2, `:84-100`;
+snapshot-then-live bootstrap; the damaged-entity record, one entry per key that a plug-in reports as undecodable,
+which a valid write or a delete of the key clears while the process runs (amended 2026-11-19, above; the text this
+replaces was a reset latch held for the process lifetime, ADR-074 `:66-80`; ADR-079 decisions 2 and 3); the degrade
+flag, set when the feed is lost or when the plug-in reports a required write failed (ADR-082); the bootstrap-complete latch and bootstrap target (ADR-084 decision 2, `:84-100`;
 ADR-088 decision 5, `:61-66`: process-lifetime scope for these producers); the watermark, advanced by the plug-in's
 completions (ADR-066); and the readiness tick. A lost feed is declared: at the pin graph-index returns from a closed
 channel (`:1001-1004`) and from a failed `WatchAll` (`:982-985`) with no mark, and its stuck-watermark detector

@@ -131,12 +131,13 @@ func (c *Component) semanticSearch(ctx context.Context, subject, question string
 }
 
 // semanticRead is what searchGraph read of the embedding search: the hint naming the step, honoured
-// with the reply's data as its bytes came and its hits, or not honoured naming the refusal, the
-// timeout (an internal refusal, after query_timeout_ms) or the broken reply.
+// with the reply's data as its bytes came, its hits and its damaged count, or not honoured naming the
+// refusal, the timeout (an internal refusal, after query_timeout_ms) or the broken reply.
 type semanticRead struct {
-	hint graph.GlobalSearchHint
-	data json.RawMessage
-	hits []graph.SimilarityHit
+	hint    graph.GlobalSearchHint
+	data    json.RawMessage
+	hits    []graph.SimilarityHit
+	damaged int
 }
 
 // readSemantic reads outcome, the embedding search's reply on subject, for a hint with detail. It
@@ -162,5 +163,5 @@ func (c *Component) readSemantic(subject string, outcome semanticOutcome, detail
 		return failed(c.brokenReply(subject, errors.New("holds no results")))
 	}
 	hint.Honoured = true
-	return semanticRead{hint: hint, data: reply.Data, hits: data.Results}
+	return semanticRead{hint: hint, data: reply.Data, hits: data.Results, damaged: reply.DamagedEntities}
 }

@@ -85,3 +85,46 @@ func TestNewQueryResponseRefusesEmptyProducer(t *testing.T) {
 		t.Errorf("refused response = %+v, want the zero value", resp)
 	}
 }
+
+// TestQueryResponseDamagedEntitiesOmittedAtZero: a reply that left damaged entities out
+// says how many under damaged_entities, and the count survives a decode; a reply that
+// left none out carries no such key, so a caller that never meets damage sees the
+// envelope it always decoded.
+func TestQueryResponseDamagedEntitiesOmittedAtZero(t *testing.T) {
+	resp, err := NewQueryResponse("graph-index", 9, []string{"a"})
+	if err != nil {
+		t.Fatalf("NewQueryResponse: %v", err)
+	}
+	resp.DamagedEntities = 2
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal into a map: %v", err)
+	}
+	if got := string(fields["damaged_entities"]); got != "2" {
+		t.Errorf("damaged_entities = %q, want 2 (wire: %s)", got, raw)
+	}
+	var decoded QueryResponse[[]string]
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decode into QueryResponse: %v", err)
+	}
+	if decoded.DamagedEntities != 2 {
+		t.Errorf("decoded DamagedEntities = %d, want 2", decoded.DamagedEntities)
+	}
+
+	resp.DamagedEntities = 0
+	raw, err = json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	fields = nil
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal into a map: %v", err)
+	}
+	if got, ok := fields["damaged_entities"]; ok {
+		t.Errorf("damaged_entities at 0 = %s, want the key absent (wire: %s)", got, raw)
+	}
+}

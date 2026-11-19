@@ -19,6 +19,11 @@
 // into graph.RelationshipEdge. Both answer in a graph.QueryResponse from graph-query carrying the index
 // reply's revision, and return any refusal unchanged.
 //
+// A reply graph-query builds from index replies (graph-index, graph-lexical, graph-embedding) carries
+// damaged_entities, the largest count any of them carried of damaged entities their producer left out,
+// and none when every one carried none. Counts are not added, since two reads may count the same
+// entity. A forward passes the count on in the bytes it passes unchanged.
+//
 // pathSearch walks the index's outgoing and incoming verbs breadth first from a start entity and answers
 // the entities and edges within max_depth and max_nodes, each once. hierarchyStats and summary read one
 // page of entity IDs under a prefix from graph-ingest's prefix verb, so a count covers that page and no

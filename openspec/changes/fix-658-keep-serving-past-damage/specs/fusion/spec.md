@@ -15,8 +15,10 @@
 
 ### Requirement: A response counts the damaged entities its reads left out
 
-Every response SHALL carry `damaged_entities`, the largest count any `RetrievalClient` read made for it reported,
-omitted at 0. It SHALL NOT set `truncated`, which says the budget cut nodes off.
+Every response SHALL carry `damaged_entities`, the largest count any `RetrievalClient` read its answer used reported,
+omitted at 0: on nodes, a miss, or an `all_seeds_unhydrated` deferral, whose unhydrated seeds the resolve found. An
+`index_not_ready` deferral answers nothing and SHALL carry none. It SHALL NOT set `truncated`, which says the budget
+cut nodes off.
 
 #### Scenario: A walk read reports damage
 

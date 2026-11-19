@@ -16,6 +16,8 @@ import (
 type recorder struct {
 	replies map[string]any
 	errs    map[string]error
+	// damaged is the count each resolver returns beside its reply or its error.
+	damaged map[string]int
 	called  []string
 	args    []map[string]any
 }
@@ -23,13 +25,13 @@ type recorder struct {
 func (r *recorder) resolvers() map[string]resolver {
 	out := map[string]resolver{}
 	for _, name := range []string{"entity", "entitiesByPrefix", "entitiesByPredicate", "pathSearch"} {
-		out[name] = func(_ context.Context, args map[string]any) (any, error) {
+		out[name] = func(_ context.Context, args map[string]any) (any, int, error) {
 			r.called = append(r.called, name)
 			r.args = append(r.args, args)
 			if err := r.errs[name]; err != nil {
-				return nil, err
+				return nil, r.damaged[name], err
 			}
-			return r.replies[name], nil
+			return r.replies[name], r.damaged[name], nil
 		}
 	}
 	return out
@@ -227,7 +229,8 @@ func TestReplyNotFittingSchemaNamesPath(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &recorder{replies: map[string]any{"entity": tc.reply}, errs: map[string]error{"entity": tc.err}}
+			r := &recorder{replies: map[string]any{"entity": tc.reply}, errs: map[string]error{"entity": tc.err},
+				damaged: map[string]int{"entity": 2}}
 			resp, refused := run(t, r,
 				`{ __typename entity(id: "x") { kvRevision entity { id triples { subject } } } }`, nil)
 			if refused {
@@ -237,6 +240,10 @@ func TestReplyNotFittingSchemaNamesPath(t *testing.T) {
 			want := map[string]any{"__typename": "Query", "entity": nil}
 			if !reflect.DeepEqual(resp.Data, want) {
 				t.Fatalf("data = %v, want %v", resp.Data, want)
+			}
+			// Nothing of the reply is answered, so its damaged count is not either.
+			if resp.Extensions != nil {
+				t.Errorf("extensions = %v for a field answered null, want none", resp.Extensions)
 			}
 			var wire struct {
 				Errors []struct {

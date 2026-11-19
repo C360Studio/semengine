@@ -3,7 +3,8 @@
 Tests come first. Each code task ends at a clean-tree local `task verify`. "Shown to fail" means failing-first output
 in `notes/<task>.md`, or a `task mutate:check` run. Premises are in `inventory.md` and `design.md`. Three pull
 requests, merged in order: PR 1 (task 2), PR 2 (task 3), PR 3 on draft #693 (tasks 4 to 6), which closes the
-issue, #658. #657 stays open for its other follow-ups.
+issue, #658. PR 1 brings this change folder to `main`; PR 2 and PR 3 tick their tasks against that
+copy. #657 stays open for its other follow-ups.
 
 ## 1. Design
 
@@ -12,26 +13,26 @@ issue, #658. #657 stays open for its other follow-ups.
 
 ## 2. PR 1: the count and graph-query's relay (design D3, D4)
 
-- [ ] 2.1 Tests first, then `graph.QueryResponse.DamagedEntities` (`damaged_entities`, omitted at 0) with its doc
+- [x] 2.1 Tests first, then `graph.QueryResponse.DamagedEntities` (`damaged_entities`, omitted at 0) with its doc
   comment (`graph/query_response.go:8-24`). Unit: the field round-trips and is absent at 0.
-- [ ] 2.2 graph-query: `TestComposedReplyCarriesLargestDamagedCount` (stubbed index replies at 2 and 3 give 3, for
+- [x] 2.2 graph-query: `TestComposedReplyCarriesLargestDamagedCount` (stubbed index replies at 2 and 3 give 3, for
   `relationships`, `pathSearch`, `summary`, `entityByAlias`, `localSearch`, `globalSearch`, `searchGraph`), shown
   failing on `main`; then carry the count through `decodeIndexReply` (`processor/graph-query/query.go:367`) to
   `envelope` (`:381`), `localsearch.go:214` and `textsearch.go:207`. `TestForwardPassesBytesBothWays` stays.
-- [ ] 2.3 If Q2 is yes: `TestSearchTruncatedWhileDamaged`, then the `truncated` expressions (`localsearch.go:204`,
+- [x] 2.3 If Q2 is yes: `TestSearchTruncatedWhileDamaged`, then the `truncated` expressions (`localsearch.go:204`,
   `textsearch.go:196`, the merged path) and the `Truncated` doc comments
   (`graph/query_local_search_types.go:56`, `graph/query_global_search_types.go:65`, `:73`).
-- [ ] 2.4 Docs: `graph/README.md`, `processor/graph-query/README.md`, `processor/graph-query/MIGRATION.md` (a bullet
+- [x] 2.4 Docs: `graph/README.md`, `processor/graph-query/README.md`, `processor/graph-query/MIGRATION.md` (a bullet
   for semsource's `truncated` reader and semconnect's predicate reader).
 
 ## 3. PR 2: fusion and graph-gateway (design D4; Q3 ruled yes, 2026-11-18)
 
-- [ ] 3.1 fusion: `TestReadsPassOnDamagedCount` and `TestResponseCarriesDamagedCount`, shown failing on `main`; then
+- [x] 3.1 fusion: `TestReadsPassOnDamagedCount` and `TestResponseCarriesDamagedCount`, shown failing on `main`; then
   `fusionnats.decodeReply` (`client.go:446-465`) returns the count, `Resolution.DamagedEntities`, the
   `fusion.Neighbors` and `fusion.Names` result types (`retrieval.go:41,43`), their callers (`engine_facets.go:255`,
   `engine_lens.go:298`, `:451`), `fusion.Response.DamagedEntities` (`contract.go:181-191`); `pkg/fusion/README.md`,
   `MIGRATION.md` (semsource's `source/fusion/fusiontest/memgraph.go` returns the structs).
-- [ ] 3.2 graph-gateway: `TestAnswerCarriesDamagedCount`, shown failing on `main`; then `resolve.go:82-86` keeps the
+- [x] 3.2 graph-gateway: `TestAnswerCarriesDamagedCount`, shown failing on `main`; then `resolve.go:82-86` keeps the
   count and the response carries `extensions.damagedEntities`; its README.
 
 ## 4. PR 3: the follower records damage (design D1, D5)
@@ -49,7 +50,8 @@ issue, #658. #657 stays open for its other follow-ups.
 
 ## 5. PR 3: the four plug-ins (design D1, D2, D3)
 
-- [ ] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests"; shown failing on `main`.
+- [ ] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests", among them
+  `TestDamagedEntityLeftOutAndNamed` (the graph-transport-boundary delta's scenario); shown failing on `main`.
   Rewrite `TestNoncanonicalValueLatchesResetAndHoldsItsRevision` (`index_integration_test.go:480-503`) and the "a
   latched reset" subtest (`lifecycle_integration_test.go:403-410`), and the two reset subtests of
   `TestErrorCountCountsOutcomesNotOperations` (`index_integration_test.go:528-550`) as one error per newly damaged
@@ -79,7 +81,11 @@ issue, #658. #657 stays open for its other follow-ups.
 - [ ] 6.2 `docs/admission-ledger.yaml` rows graph/follower `:3620-3666`, graph-index `:3560-3566`, `:3606`, ADR-074
   `:3668-3680`, graph-embedding `:4598`, graph-clustering `:4927`; READMEs and MIGRATION notes listed in
   `inventory.md` § 3; `.agents/skills/query-pattern/SKILL.md:53-56`; `graph/index_status.go:80-81` (graph-index now
-  emits `failed_reasons`).
+  emits `failed_reasons`). The "always absent today" lines PR 2 left: `pkg/fusion/README.md:69-70`,
+  `pkg/fusion/MIGRATION.md:131-132`, `gateway/graph-gateway/README.md:80`, `gateway/graph-gateway/MIGRATION.md:84`,
+  `processor/graph-query/MIGRATION.md:127`; ledger rows pkg/fusion `:4682`, pkg/fusion/fusionnats `:4802` (its
+  contract `:4824`: an nl Resolve copies `damaged_entities` too, as do byName and relationships) and graph-gateway
+  `:1931` (answers carry `extensions.damagedEntities`).
 - [ ] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
   `IndexStatusResponse.Code` and `Reason` fields (`:33-36`), the gate's branch (`graph/readiness/readiness_gate.go:127`)
   and their tests (`publisher_test.go:88`, `readiness_gate_test.go:101`, `:331`,

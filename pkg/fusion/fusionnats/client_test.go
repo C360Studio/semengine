@@ -596,8 +596,8 @@ func TestAuthoritativeRepliesRejectPoisonBeforeProjection(t *testing.T) {
 }
 
 // assertNoProjection checks that a refused reply yielded nothing usable. A
-// Hydration or Resolution is a struct whose zero value is the empty result, so
-// those are checked for empty lists rather than nil.
+// Hydration, Resolution, Neighbors or Names is a struct whose zero value is the
+// empty result, so those are checked for empty lists rather than nil.
 func assertNoProjection(t *testing.T, got any) {
 	t.Helper()
 	switch v := got.(type) {
@@ -606,6 +606,10 @@ func assertNoProjection(t *testing.T, got any) {
 		assert.Empty(t, v.Unhydrated, "a refused reply asserts nothing about what it could not hydrate")
 	case fusion.Resolution:
 		assert.Equal(t, fusion.Resolution{}, v, "no partial projection may escape")
+	case fusion.Neighbors:
+		assert.Equal(t, fusion.Neighbors{}, v, "no partial projection may escape")
+	case fusion.Names:
+		assert.Equal(t, fusion.Names{}, v, "no partial projection may escape")
 	default:
 		assert.Nil(t, got, "no partial projection may escape")
 	}
@@ -626,7 +630,7 @@ func TestNeighbors_OutgoingFiltersPredicates(t *testing.T) {
 	assert.Equal(t, []fusion.Edge{
 		{Predicate: "code.calls.fn", Target: "a.b.c.d.e.callee1"},
 		{Predicate: "code.calls.fn", Target: "a.b.c.d.e.callee2"},
-	}, edges, "code.imports.pkg is filtered out; the outgoing target is to_entity_id")
+	}, edges.Edges, "code.imports.pkg is filtered out; the outgoing target is to_entity_id")
 }
 
 func TestNeighbors_IncomingTargetsFromEnd(t *testing.T) {
@@ -638,7 +642,7 @@ func TestNeighbors_IncomingTargetsFromEnd(t *testing.T) {
 	edges, err := c.Neighbors(t.Context(), "a.b.c.d.e.seed", []string{"code.calls.fn"}, fusion.Incoming)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"entity_id":"a.b.c.d.e.seed","direction":"incoming"}`, string(fake.lastData))
-	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.caller1"}}, edges,
+	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.caller1"}}, edges.Edges,
 		"the incoming target is from_entity_id")
 }
 
@@ -649,7 +653,7 @@ func TestNeighbors_NoPredicatesMeansNoFilter(t *testing.T) {
 	})}
 	edges, err := newClient(t, fake).Neighbors(t.Context(), "a.b.c.d.e.seed", nil, fusion.Outgoing)
 	require.NoError(t, err)
-	assert.Len(t, edges, 2)
+	assert.Len(t, edges.Edges, 2)
 }
 
 // TestNeighborsReadsPredicate holds that an edge's predicate is read from the
@@ -661,14 +665,14 @@ func TestNeighborsReadsPredicate(t *testing.T) {
 	}})
 	edges, err := newClient(t, &fakeRequester{resp: reply}).Neighbors(t.Context(), "a.b.c.d.e.seed", nil, fusion.Outgoing)
 	require.NoError(t, err)
-	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.x"}}, edges)
+	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.x"}}, edges.Edges)
 
 	pinWire := enveloped(t, []map[string]string{{
 		"from_entity_id": "a.b.c.d.e.seed", "to_entity_id": "a.b.c.d.e.x", "edge_type": "code.calls.fn",
 	}})
 	edges, err = newClient(t, &fakeRequester{resp: pinWire}).Neighbors(t.Context(), "a.b.c.d.e.seed", []string{"code.calls.fn"}, fusion.Outgoing)
 	require.NoError(t, err)
-	assert.Empty(t, edges, "edge_type is not the tree's key")
+	assert.Empty(t, edges.Edges, "edge_type is not the tree's key")
 }
 
 func TestNames_DedupesAndCaps(t *testing.T) {
@@ -683,7 +687,7 @@ func TestNames_DedupesAndCaps(t *testing.T) {
 	names, err := c.Names(t.Context(), "Wid", 2)
 	require.NoError(t, err)
 	assert.Equal(t, subjectByName, fake.lastSubject)
-	assert.Equal(t, []string{"Widget", "Gadget"}, names, "deduplicated in rank order, capped at 2")
+	assert.Equal(t, []string{"Widget", "Gadget"}, names.Names, "deduplicated in rank order, capped at 2")
 }
 
 // TestEntitiesRefusesNilContext holds that a nil context is refused before the
@@ -695,4 +699,58 @@ func TestEntitiesRefusesNilContext(t *testing.T) {
 	_, err := newClient(t, fake).Entities(nil, nil)
 	require.Error(t, err)
 	assert.Zero(t, fake.calls)
+}
+
+// damagedEnvelope is data as an enveloped row's reply whose producer left
+// damaged entities out.
+func damagedEnvelope[T any](t *testing.T, data T, damaged int) []byte {
+	t.Helper()
+	reply, err := graph.NewQueryResponse("graph-index", 1, data)
+	require.NoError(t, err)
+	reply.DamagedEntities = damaged
+	return mustJSON(t, reply)
+}
+
+// TestReadsPassOnDamagedCount holds that every read whose reply is enveloped
+// returns the reply's damaged_entities beside what it found, and 0 when the
+// reply carries none.
+func TestReadsPassOnDamagedCount(t *testing.T) {
+	const seed, callee = "a.b.c.d.e.seed", "a.b.c.d.e.callee"
+	relationships := []graph.RelationshipEdge{{FromEntityID: seed, ToEntityID: callee, Predicate: "code.calls.fn"}}
+	names := graph.NameData{Matches: []graph.NameMatch{{EntityID: callee, MatchedName: "Callee"}}}
+	words := graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: callee, Score: 1}}}
+
+	t.Run("relationships", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, relationships, 2)}).
+			Neighbors(t.Context(), seed, nil, fusion.Outgoing)
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Neighbors{
+			Edges: []fusion.Edge{{Predicate: "code.calls.fn", Target: callee}}, DamagedEntities: 2,
+		}, got)
+	})
+	t.Run("names", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, names, 3)}).Names(t.Context(), "Cal", 5)
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Names{Names: []string{"Callee"}, DamagedEntities: 3}, got)
+	})
+	t.Run("symbol resolve", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, names, 4)}).
+			Resolve(t.Context(), fusion.ResolveQuery{Query: "Callee", Mode: fusion.ResolveModeSymbol, Limit: 5})
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Resolution{Seeds: []fusion.Seed{{ID: callee}}, DamagedEntities: 4}, got)
+	})
+	t.Run("natural-language resolve", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, words, 5)}).
+			Resolve(t.Context(), fusion.ResolveQuery{Query: "the callee", Mode: fusion.ResolveModeNL, Limit: 5})
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Resolution{
+			Seeds: []fusion.Seed{{ID: callee, Similarity: 1, HasSimilarity: true}}, DamagedEntities: 5,
+		}, got)
+	})
+	t.Run("no count", func(t *testing.T) {
+		c := newClient(t, &fakeRequester{resp: enveloped(t, relationships)})
+		got, err := c.Neighbors(t.Context(), seed, nil, fusion.Outgoing)
+		require.NoError(t, err)
+		assert.Zero(t, got.DamagedEntities)
+	})
 }

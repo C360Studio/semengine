@@ -61,29 +61,30 @@ func (c *Component) rootResolvers() (map[string]resolver, error) {
 }
 
 // ask sends body to verb's subject under ctx and query_timeout_ms and returns the reply body, the
-// envelope's data when the row is enveloped. A refusal the responder sent returns as it arrived,
-// keeping class, code and detail; any other failure is a noAnswer.
-func (c *Component) ask(ctx context.Context, verb graph.QueryVerb, request any) ([]byte, error) {
+// envelope's data when the row is enveloped, and the envelope's count of damaged entities its
+// producer left out (0 for a bare row, which has no envelope). A refusal the responder sent returns
+// as it arrived, keeping class, code and detail; any other failure is a noAnswer.
+func (c *Component) ask(ctx context.Context, verb graph.QueryVerb, request any) ([]byte, int, error) {
 	body, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("marshal %s request: %w", verb.Name, err)
+		return nil, 0, fmt.Errorf("marshal %s request: %w", verb.Name, err)
 	}
 	reply, err := c.natsClient.RequestClassified(ctx, verb.Subject, body, c.timeout())
 	if err != nil {
 		var refusal *errs.ClassifiedError
 		if errors.As(err, &refusal) {
-			return nil, err
+			return nil, 0, err
 		}
-		return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, &noAnswer{verb.Subject, err})
+		return nil, 0, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, &noAnswer{verb.Subject, err})
 	}
 	if !verb.Enveloped {
-		return reply, nil
+		return reply, 0, nil
 	}
 	var envelope graph.QueryResponse[json.RawMessage]
 	if err := json.Unmarshal(reply, &envelope); err != nil {
-		return nil, unfit(verb, err)
+		return nil, 0, unfit(verb, err)
 	}
-	return envelope.Data, nil
+	return envelope.Data, envelope.DamagedEntities, nil
 }
 
 // unfit is a reply that does not decode as verb's row declares, or fails a check its resolver makes:
@@ -96,54 +97,54 @@ func unfit(verb graph.QueryVerb, err error) error {
 // and decoding the stored value with graph.UnmarshalEntityState, as graph.ExactEntityReader does
 // (graph/exact_entity.go, SemStreams ADR-091 § 4).
 func (c *Component) entity(verb graph.QueryVerb) resolver {
-	return func(ctx context.Context, args map[string]any) (any, error) {
+	return func(ctx context.Context, args map[string]any) (any, int, error) {
 		id, _ := args["id"].(string)
-		reply, err := c.ask(ctx, verb, graph.EntityRequest{ID: id})
+		reply, damaged, err := c.ask(ctx, verb, graph.EntityRequest{ID: id})
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		var exact struct {
 			Entity     json.RawMessage `json:"entity"`
 			KVRevision uint64          `json:"kv_revision"`
 		}
 		if err := json.Unmarshal(reply, &exact); err != nil {
-			return nil, unfit(verb, err)
+			return nil, 0, unfit(verb, err)
 		}
 		if len(exact.Entity) == 0 || string(exact.Entity) == "null" {
-			return nil, unfit(verb, errors.New("no entity"))
+			return nil, 0, unfit(verb, errors.New("no entity"))
 		}
 		if exact.KVRevision == 0 {
-			return nil, unfit(verb, errors.New("zero kv_revision"))
+			return nil, 0, unfit(verb, errors.New("zero kv_revision"))
 		}
 		var state graph.EntityState
 		if err := graph.UnmarshalEntityState(id, exact.Entity, &state); err != nil {
-			return nil, unfit(verb, err)
+			return nil, 0, unfit(verb, err)
 		}
-		return map[string]any{"entity": entityValue(state), "kvRevision": exact.KVRevision}, nil
+		return map[string]any{"entity": entityValue(state), "kvRevision": exact.KVRevision}, damaged, nil
 	}
 }
 
 // entitiesByPrefix answers {entities, total, next_cursor} after graph.ValidateDecodedEntityStates. An
 // empty prefix matches every entity, as graph-ingest's prefix verb reads it.
 func (c *Component) entitiesByPrefix(verb graph.QueryVerb) resolver {
-	return func(ctx context.Context, args map[string]any) (any, error) {
+	return func(ctx context.Context, args map[string]any) (any, int, error) {
 		request := graph.PrefixQueryRequest{}
 		request.Prefix, _ = args["prefix"].(string)
 		request.Cursor, _ = args["cursor"].(string)
 		var err error
 		if request.Limit, err = intArg(args, "limit"); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		reply, err := c.ask(ctx, verb, request)
+		reply, damaged, err := c.ask(ctx, verb, request)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		var page graph.PrefixQueryResponse
 		if err := json.Unmarshal(reply, &page); err != nil {
-			return nil, unfit(verb, err)
+			return nil, 0, unfit(verb, err)
 		}
 		if err := graph.ValidateDecodedEntityStates(page.Entities); err != nil {
-			return nil, unfit(verb, err)
+			return nil, 0, unfit(verb, err)
 		}
 		entities := make([]any, len(page.Entities))
 		for i, state := range page.Entities {
@@ -153,14 +154,14 @@ func (c *Component) entitiesByPrefix(verb graph.QueryVerb) resolver {
 		if page.NextCursor != "" {
 			next = page.NextCursor
 		}
-		return map[string]any{"entities": entities, "total": page.Total, "next_cursor": next}, nil
+		return map[string]any{"entities": entities, "total": page.Total, "next_cursor": next}, damaged, nil
 	}
 }
 
 // entitiesByPredicate answers {entities}: the IDs of the entities holding predicate, with value
 // when it is given.
 func (c *Component) entitiesByPredicate(verb graph.QueryVerb) resolver {
-	return func(ctx context.Context, args map[string]any) (any, error) {
+	return func(ctx context.Context, args map[string]any) (any, int, error) {
 		request := graph.PredicateRequest{}
 		request.Predicate, _ = args["predicate"].(string)
 		if value, ok := args["value"].(string); ok {
@@ -168,59 +169,59 @@ func (c *Component) entitiesByPredicate(verb graph.QueryVerb) resolver {
 		}
 		var err error
 		if request.Limit, err = intArg(args, "limit"); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		reply, err := c.ask(ctx, verb, request)
+		reply, damaged, err := c.ask(ctx, verb, request)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		var matches graph.PredicateData
 		if err := json.Unmarshal(reply, &matches); err != nil {
-			return nil, unfit(verb, err)
+			return nil, 0, unfit(verb, err)
 		}
 		entities := make([]any, len(matches.Entities))
 		for i, id := range matches.Entities {
 			entities[i] = id
 		}
-		return map[string]any{"entities": entities}, nil
+		return map[string]any{"entities": entities}, damaged, nil
 	}
 }
 
 // pathSearch answers {entities {id depth}, paths, truncated}. direction is sent lower-cased, and a
 // null item in predicates is refused before anything is sent.
 func (c *Component) pathSearch(verb graph.QueryVerb) resolver {
-	return func(ctx context.Context, args map[string]any) (any, error) {
+	return func(ctx context.Context, args map[string]any) (any, int, error) {
 		request := graph.PathSearchRequest{}
 		request.StartEntity, _ = args["startEntity"].(string)
 		direction, _ := args["direction"].(string)
 		request.Direction = strings.ToLower(direction)
 		var err error
 		if request.MaxDepth, err = intArg(args, "maxDepth"); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if request.MaxNodes, err = intArg(args, "maxNodes"); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if request.Predicates, err = predicatesArg(args); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		reply, err := c.ask(ctx, verb, request)
+		reply, damaged, err := c.ask(ctx, verb, request)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		var found graph.PathSearchData
 		if err := json.Unmarshal(reply, &found); err != nil {
-			return nil, unfit(verb, err)
+			return nil, 0, unfit(verb, err)
 		}
 		paths, err := pathsOf(found)
 		if err != nil {
-			return nil, unfit(verb, err)
+			return nil, 0, unfit(verb, err)
 		}
 		entities := make([]any, len(found.Entities))
 		for i, entity := range found.Entities {
 			entities[i] = map[string]any{"id": entity.EntityID, "depth": entity.Depth}
 		}
-		return map[string]any{"entities": entities, "paths": paths, "truncated": found.Truncated}, nil
+		return map[string]any{"entities": entities, "paths": paths, "truncated": found.Truncated}, damaged, nil
 	}
 }
 

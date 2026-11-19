@@ -78,11 +78,13 @@ func (c *Component) globalSearch(verb string, subjects globalSearchSubjects) que
 }
 
 // verifiedHint is what verifying a route's reference found: the hint it settles, first in the
-// reply's list, and the entity's bytes or the walk when the hint is honoured.
+// reply's list, and the entity's bytes or the walk when the hint is honoured, with the largest
+// damaged count the index reads behind them carried.
 type verifiedHint struct {
-	hint   graph.GlobalSearchHint
-	entity json.RawMessage
-	path   *graph.PathSearchData
+	hint    graph.GlobalSearchHint
+	entity  json.RawMessage
+	path    *graph.PathSearchData
+	damaged int
 }
 
 // verify reads route's reference through the shared resolver, asking the alias verb with
@@ -100,7 +102,7 @@ func (c *Component) verify(ctx context.Context, subjects globalSearchSubjects, r
 	notHonoured := func(err error) (verifiedHint, bool) {
 		return verifiedHint{hint: notHonouredBy(hint, err)}, true
 	}
-	id, err := c.resolveGlobal(ctx, subjects, route.reference, minRevision)
+	id, alias, err := c.resolveGlobal(ctx, subjects, route.reference, minRevision)
 	if err != nil {
 		return notHonoured(err)
 	}
@@ -117,7 +119,7 @@ func (c *Component) verify(ctx context.Context, subjects globalSearchSubjects, r
 			return notHonoured(err)
 		}
 		hint.Honoured = true
-		return verifiedHint{hint: hint, entity: entity}, true
+		return verifiedHint{hint: hint, entity: entity, damaged: alias.damaged}, true
 	}
 	if err := c.readPathStart(ctx, subjects.entity, id); err != nil {
 		return notHonoured(err)
@@ -126,12 +128,12 @@ func (c *Component) verify(ctx context.Context, subjects globalSearchSubjects, r
 		StartEntity: id, Direction: directionBoth, MaxDepth: globalPathDepth, MaxNodes: globalPathNodes,
 		MinRevisionField: graph.MinRevisionField{MinRevision: minRevision},
 	}
-	found, _, err := walkPaths(ctx, walk, c.indexHop(subjects.outgoing, subjects.incoming, minRevision))
+	found, hops, err := walkPaths(ctx, walk, c.indexHop(subjects.outgoing, subjects.incoming, minRevision))
 	if err != nil {
 		return notHonoured(err)
 	}
 	hint.Honoured = true
-	return verifiedHint{hint: hint, path: &found}, true
+	return verifiedHint{hint: hint, path: &found, damaged: alias.and(hops).damaged}, true
 }
 
 // notHonouredBy is hint not honoured because of err: err's message is the reason, and its code
@@ -145,16 +147,15 @@ func notHonouredBy(hint graph.GlobalSearchHint, err error) graph.GlobalSearchHin
 
 // resolveGlobal reads a reference through the shared resolver, asking the alias verb with
 // minRevision. A reference that names no entity returns the ID "".
-func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) (string, error) {
+func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) (string, indexRead, error) {
 	aliasRequest, err := json.Marshal(struct {
 		Alias string `json:"alias"`
 		graph.MinRevisionField
 	}{reference, graph.MinRevisionField{MinRevision: minRevision}})
 	if err != nil {
-		return "", internalError(err)
+		return "", indexRead{}, internalError(err)
 	}
-	id, _, err := c.resolveReference(ctx, subjects.alias, aliasRequest, reference)
-	return id, err
+	return c.resolveReference(ctx, subjects.alias, aliasRequest, reference)
 }
 
 // globalRoute is what classifying a question found: the reference to verify and the kind of hint it

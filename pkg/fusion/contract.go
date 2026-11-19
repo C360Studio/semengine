@@ -188,8 +188,18 @@ type Response struct {
 	// resolve.
 	BodiesNotIndexed int      `json:"bodies_not_indexed,omitempty"`
 	Excluded         []string `json:"excluded,omitempty"`
-	Truncated        bool     `json:"truncated"`
-	ContractVersion  string   `json:"contract_version"`
+	// DamagedEntities is the largest count of damaged entities (stored values
+	// the graph refuses to read) that any graph read this response's answer
+	// used reported leaving out: the resolve, a relations or walk read, or a
+	// miss's name suggestions. An all-seeds-unhydrated deferral carries the
+	// resolve's count; an index_not_ready deferral answers nothing and carries
+	// none. Above 0 the answer about every other entity stands, but
+	// a node, edge or suggestion one of them would have given may be missing.
+	// Counts are not added, since two reads can count the same entity. It is not
+	// Truncated, which says the budget cut nodes off. Omitted at 0.
+	DamagedEntities int    `json:"damaged_entities,omitempty"`
+	Truncated       bool   `json:"truncated"`
+	ContractVersion string `json:"contract_version"`
 }
 
 const (

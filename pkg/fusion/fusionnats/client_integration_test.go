@@ -362,14 +362,14 @@ func TestRealRespondersAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Neighbors outgoing: %v", err)
 	}
-	if want := []fusion.Edge{{Predicate: linkPredicate, Target: beta}}; !reflect.DeepEqual(out, want) {
+	if want := (fusion.Neighbors{Edges: []fusion.Edge{{Predicate: linkPredicate, Target: beta}}}); !reflect.DeepEqual(out, want) {
 		t.Errorf("Neighbors(%s, outgoing) = %+v, want %+v", alpha, out, want)
 	}
 	in, err := c.Neighbors(ctx, beta, []string{linkPredicate}, fusion.Incoming)
 	if err != nil {
 		t.Fatalf("Neighbors incoming: %v", err)
 	}
-	if want := []fusion.Edge{{Predicate: linkPredicate, Target: alpha}, {Predicate: linkPredicate, Target: omega}}; !reflect.DeepEqual(in, want) {
+	if want := (fusion.Neighbors{Edges: []fusion.Edge{{Predicate: linkPredicate, Target: alpha}, {Predicate: linkPredicate, Target: omega}}}); !reflect.DeepEqual(in, want) {
 		t.Errorf("Neighbors(%s, incoming) = %+v, want %+v", beta, in, want)
 	}
 
@@ -377,7 +377,7 @@ func TestRealRespondersAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Names: %v", err)
 	}
-	if !reflect.DeepEqual(names, []string{"Widget Omega"}) {
+	if !reflect.DeepEqual(names, fusion.Names{Names: []string{"Widget Omega"}}) {
 		t.Errorf("Names = %v, want [Widget Omega]", names)
 	}
 }

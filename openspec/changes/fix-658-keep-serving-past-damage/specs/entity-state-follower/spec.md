@@ -24,8 +24,8 @@ above it. No report SHALL stop the follower or refuse every query.
 
 - **WHEN** generated sequences over a few keys are applied: reports, completions at the reported revision, below it
   and above it, and deletes
-- **THEN** a key is recorded exactly when its last report is above every later completion and delete of it, checked
-  against a reference model with the seed and the completed runs recorded (`TestPropDamagedSetFollowsLatestEvent`)
+- **THEN** a key is recorded exactly when some report of it is at or above every later completion and delete of it,
+  checked against a reference model with the seed and the completed runs recorded (`TestPropDamagedSetFollowsLatestEvent`)
 
 #### Scenario: A completion below the report
 

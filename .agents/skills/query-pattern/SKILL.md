@@ -51,12 +51,13 @@ serves now), so a verb not in the table has no responder yet.
    developer contract § NATS RPC) on the verb's subject, read from `graph.QueryVerbs()`. Never spell the subject as a literal;
    `TestReservedSubjectsDeclaredOnce` fails on one outside its declaration.
 5. **Relationships, aliases, predicates or names, straight from graph-index:** send a classified request on the
-   matching `graph.index.query.*` verb, read from `graph.QueryVerbs()`. Every one of the eight refuses with transient `index_not_ready`
-   during the index's startup rebuild and while it has lost its feed, so retry it; it refuses with fatal
-   `graph_state_reset_required` after a stored entity could not be decoded, so do not retry. Compare a write's
-   `kv_revision` with the reply's `indexed_revision` to know whether the answer includes that write, the `alias` verb
-   included. The `alias` verb also refuses with class invalid and code `alias_ambiguous` when two or more entities
-   carry the alias; do not retry it until a holder drops the alias.
+   matching `graph.index.query.*` verb, read from `graph.QueryVerbs()`. Every one of the eight refuses with transient
+   `index_not_ready` during the index's startup rebuild and while it has lost its feed, so retry it; a stored entity
+   that could not be decoded does not stop them: every reply counts such entities it may have left out in
+   `damaged_entities`, and only `outgoing` of a damaged entity is refused, fatal `graph_state_reset_required`, so do
+   not retry that. Compare a write's `kv_revision` with the reply's `indexed_revision` to know whether the answer
+   includes that write, the `alias` verb included. The `alias` verb also refuses with class invalid and code
+   `alias_ambiguous` when two or more entities carry the alias; do not retry it until a holder drops the alias.
 6. **Anything else:** there is no admitted read. Raw KV access and subjects are not a fallback for an application;
    direct bucket access is for the declared owner (`natsclient.OpenFrameworkBucket` with the descriptor from
    `graph/kvcatalog`) and for operator diagnostics.

@@ -97,15 +97,14 @@ first-build window, and each later worker's port proves its own withheld calls.
 ### Decision 2. Ready means boot committed and every component healthy
 
 Healthy means running and not stuck. There is one readiness endpoint, `/readyz`, and a component determines its own
-health from its own stuck states, which are named: a damaged stored entity (amended; the pin's `reset_required`, pin ADR-074 `:69-71`,
-re-read, is gone); graph-index's
-unresolved write failures (`query.go:213-216`); graph-ingest's poison inventory (pin ADR-079 D3,
-`docs/adr/079-per-entity-poison-response-authoritative-surface.md:38-46`;
+health from its own stuck states, which are named: a damaged stored entity (amended; the pin's `reset_required`, pin
+ADR-074 `:69-71`, re-read, is gone); graph-index's unresolved write failures (`query.go:213-216`); graph-ingest's
+poison inventory (pin ADR-079 D3, `docs/adr/079-per-entity-poison-response-authoritative-surface.md:38-46`;
 `#93:processor/graph-ingest/component.go:831`); a failed backlog observation while it persists
-(`#93:processor/graph-ingest/readiness.go:137-146`). A stuck state that clears (a repair, an observation that
-succeeds) raises `Healthy` again; a damaged entity clears when a valid value is written or the key is deleted, with no restart
-(amended; `reset_required` never cleared in process, ADR-084 D4 :130-131). The rule binds every
-component's `Health()`, worker or not.
+(`#93:processor/graph-ingest/readiness.go:137-146`). A stuck state that clears (a repair, an observation that succeeds)
+raises `Healthy` again; a damaged entity clears when a valid value is written or the key is deleted, with no restart
+(amended; `reset_required` never cleared in process, ADR-084 D4 :130-131). The rule binds every component's `Health()`,
+worker or not.
 
 A count of past errors is a metric: `ErrorCount` stays on `HealthStatus` (`#93:component/discovery.go:74-81`) and
 never lowers `Healthy`. This changes the pin. Six components carry `Healthy: c.running && errorCount == 0 && ...`

@@ -69,10 +69,10 @@ Read these. Nothing errors.
   timing.
 - **The error count now rises, and `Healthy` ignores it.** In SemStreams `error_count` and `error_rate` were always 0:
   nothing wrote the count, though `Healthy` would have dropped had it risen. Here the count (`ErrorCount`) rises by one
-  when an entity becomes failed (it was not failed before) and by one per latched reset (a stored `ENTITY_STATES`
-  value the component cannot decode; `Health` then reads "graph state reset required" until the process restarts);
+  when an entity becomes failed (it was not failed before) and by one per newly damaged entity (a stored `ENTITY_STATES`
+  value the component cannot decode; `Health` then names it until a valid write or a delete of its key);
   a repeated failure of an entity already failed adds nothing.
-  `Healthy` is false only while a stuck state holds: a latched reset, unresolved failed entities, a lost
+  `Healthy` is false only while a stuck state holds: a damaged entity, unresolved failed entities, a lost
   `ENTITY_STATES` feed, or a lost embedding watch (ADR-109 Decision 2). An alert on `error_count > 0` or
   `error_rate > 0` never fired before and will fire now. *Do:* read the failed count from the readiness record, not
   from the error count, and review any alert on the error count.
@@ -83,7 +83,8 @@ Read these. Nothing errors.
 - **Queries are refused while the graph state is not ready.** The pin answered from a bucket scan when its cache was
   cold. Here a verb is refused transient `index_not_ready` before the first build completes, while the
   `ENTITY_STATES` feed is lost, and while a hop-1 failure stands (a failed record delete, pending write or entity
-  read); a latched reset is refused fatal `graph_state_reset_required`. A failure in the Worker (for example a
+  read). A damaged entity does not refuse a verb: its vector is removed and the reply counts it in `damaged_entities`;
+  `similar` from it is refused fatal `graph_state_reset_required`. A failure in the Worker (for example a
   document whose text cannot be extracted) does not refuse anything: the other vectors answer and `failed_records`
   counts the entity. The published status still reads `degraded` for it. *Do:* retry on `index_not_ready`.
 

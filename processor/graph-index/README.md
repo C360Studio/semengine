@@ -99,8 +99,8 @@ A stored `ENTITY_STATES` value that cannot be decoded makes that one entity *dam
 rows it built from the entity's earlier value and goes on indexing every other entity. A damaged entity does not stop
 the verbs:
 
-- every reply counts the damaged entities it may have left out in `damaged_entities` (omitted at 0); a verb with a
-  `scope` counts only the damaged entities inside it. The reply's other rows are right;
+- every reply counts every damaged entity in `damaged_entities` (omitted at 0), since any of them may be one it left
+  out. The reply's other rows are right;
 - `outgoing` of a damaged entity is refused with the fatal code `graph_state_reset_required`, because the caller named
   the entity the index cannot answer for;
 - a valid write of the entity or a delete of its key clears the damage with no restart.

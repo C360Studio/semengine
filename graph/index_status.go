@@ -74,8 +74,9 @@ type IndexStatusResponse struct {
 	//
 	// Both are additive and omitempty: a producer with no failures emits neither,
 	// and graph-index, which counts unresolved writes without reasons, emits
-	// FailedReasons only for damaged entities (damaged_entity). FailedReasons is bounded to a fixed reason enum (a handful of keys),
-	// keeping the watched key compact on the hot KV path. FailedCount is echoed from
+	// FailedReasons only for damaged entities (damaged_entity). FailedReasons is
+	// bounded to a fixed reason enum (a handful of keys), keeping the watched key
+	// compact on the hot KV path. FailedCount is echoed from
 	// the projection input (it also drives State=degraded); FailedReasons is set by
 	// the producer after the projection. There is no first-failure time.
 	FailedCount   uint64            `json:"failed_count,omitempty"`

@@ -155,8 +155,12 @@ func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, err
 
 // damagedSince is a reply's damaged_entities: the larger of before, counted before the cache was
 // read, and the count now, both of the damaged entities keep accepts (all of them when keep is
-// nil). Hop 1 reports an entity before its record is removed and the report clears only once a
-// valid write's vector is written, so a vector the read missed is counted by one of the two.
+// nil). Hop 1 reports an entity before its record is removed from EMBEDDING_INDEX and the report
+// clears only once a valid write's vector is written there, so a record missing from the bucket
+// is counted by one of the two. The guarantee covers the bucket, not the in-memory vector cache
+// the verbs rank from, which follows the bucket a little behind: just after a repair a reply can
+// miss the entity with no count, and just after damage the cache can still rank its old vector,
+// counted.
 func (c *Component) damagedSince(before int, keep func(string) bool) int {
 	return max(before, c.follower.Load().DamagedCount(keep))
 }

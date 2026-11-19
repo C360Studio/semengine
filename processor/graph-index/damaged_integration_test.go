@@ -115,9 +115,9 @@ func nameIDs(matches []graph.NameMatch) []string {
 	return ids
 }
 
-// requireHealthNames waits until Health is not healthy and names id with the decode refusal's
-// reason; the report precedes the completion every reply above waited for, so the first read
-// already holds it.
+// requireHealthNames reads Health once and requires it not healthy, naming id with the decode
+// refusal's reason. One read is enough: the damage is reported before the entity's completion,
+// and every reply the caller read before this waited on a min_revision that completion reaches.
 func requireHealthNames(t *testing.T, h *harness, id string) {
 	t.Helper()
 	health := h.c.Health()

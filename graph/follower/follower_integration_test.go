@@ -496,8 +496,12 @@ func TestFollowerServesPastDamagedReplay(t *testing.T) {
 	if got := f.Indexed(); got != target {
 		t.Fatalf("Indexed = %d after both stored entries completed; want the snapshot's last revision %d", got, target)
 	}
-	if err := f.QueryReady(t.Context()); err != nil {
-		t.Fatalf("QueryReady with one damaged entity stored at start = %v; want nil", err)
+	// With damage stored, the first build latches only once Run has recorded the end of the startup
+	// replay, which nothing above orders before this read; QueryReady can answer index_not_ready
+	// until then, so the test waits for it to answer nil. go test -timeout bounds the wait.
+	if _, err := probe.Await(t.Context(), func(ctx context.Context) (error, error) { return f.QueryReady(ctx), nil },
+		func(err error) bool { return err == nil }); err != nil {
+		t.Fatalf("QueryReady with one damaged entity stored at start never answered nil: %v", err)
 	}
 	if !stuckNames(f, damaged+" ("+string(graph.GraphStateReasonUnreadableEntity)+")") {
 		t.Errorf("Stuck = %q; want it to name %s", f.Stuck(), damaged)

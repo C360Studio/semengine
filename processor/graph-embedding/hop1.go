@@ -14,8 +14,8 @@ import (
 
 // Hop 1 turns an ENTITY_STATES revision into a pending EMBEDDING_INDEX record, which the
 // Worker (hop 2) embeds. A revision completes in the follower when the Worker reports its
-// terminal outcome (onTerminal), or at once when hop 1 ends it: no text, deleted, a generated
-// record already standing (ADR-066 § 3). Every hop-1 mutation holds hop1Mu, so the follower's
+// terminal outcome (onTerminal), or at once when hop 1 ends it: no text, deleted, damaged, a
+// generated record already standing (ADR-066 § 3). Every hop-1 mutation holds hop1Mu, so the follower's
 // deliveries, the coalescer's batches and the repair lane never interleave on one entity.
 //
 // Hop 1's own failures (a failed record delete, pending write or entity read) go to the failed
@@ -132,13 +132,7 @@ func (c *Component) removeRecord(ctx context.Context, key string, revision uint6
 func (c *Component) queueEntity(ctx context.Context, key string, revision uint64, data []byte) {
 	var state graph.EntityState
 	if err := graph.UnmarshalEntityState(key, data, &state); err != nil {
-		// Authoritative state this reader cannot trust is a latched reset, not a terminal
-		// skip: the revision stays pending.
-		c.logger.Error("entity state refused; graph reset required",
-			slog.String("entity", key), slog.Any("error", err))
-		if c.follower.Load().ReportDamaged(key, revision, err) {
-			c.lifecycle.CountError()
-		}
+		c.removeDamaged(ctx, key, revision, err)
 		return
 	}
 
@@ -184,6 +178,21 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 	// Saved: hop 1 has converged, and the Worker owns the terminal outcome, reported through
 	// onTerminal.
 	c.failed.queued(key, revision)
+}
+
+// removeDamaged ends a revision whose stored value graph.UnmarshalEntityState refused, under
+// hop1Mu: the entity is damaged. It is reported to the follower first, so a reply that no longer
+// finds the entity's vector already counts it, and then its record is removed, so no reply answers
+// from a value the store no longer holds, and the revision completes, so the component keeps
+// serving. A valid write or a delete of the key clears the report with no restart. ErrorCount
+// counts the entity once, however often it is read damaged again.
+func (c *Component) removeDamaged(ctx context.Context, key string, revision uint64, refusal error) {
+	if c.follower.Load().ReportDamaged(key, revision, refusal) {
+		c.lifecycle.CountError()
+		c.logger.Error("entity state refused; left out of the embeddings until a valid write or a delete",
+			slog.String("entity", key), slog.Uint64("revision", revision), slog.Any("error", refusal))
+	}
+	c.removeRecord(ctx, key, revision, "embedding record delete failed for a damaged entity; the repair lane retries it")
 }
 
 // removeTextless ends a revision with no text to embed: it removes any record the entity

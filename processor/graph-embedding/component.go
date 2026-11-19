@@ -261,7 +261,7 @@ func (c *Component) InputPorts() []component.Port { return slices.Clone(c.inputs
 func (c *Component) OutputPorts() []component.Port { return slices.Clone(c.outputs) }
 
 // Health reports the shell's verdict (component.Lifecycle.Health) over the follower's stuck
-// states (a latched reset, unresolved writes, a lost feed), a lost Worker watch and a lost vector
+// states (damaged entities, unresolved writes, a lost feed), a lost Worker watch and a lost vector
 // cache watch.
 func (c *Component) Health() component.HealthStatus {
 	var stuck []string

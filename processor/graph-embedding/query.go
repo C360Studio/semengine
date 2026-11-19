@@ -91,11 +91,12 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 	if len(req.Scope) > 0 {
 		keep = func(id string) bool { return graph.MatchesAnyIDPrefix(id, req.Scope) }
 	}
+	damagedBefore := c.follower.Load().DamagedCount(keep)
 	results, unreadable, err := c.rank("", vectors[0], keep, limit)
 	if err != nil {
 		return nil, err
 	}
-	return reply(graph.SemanticData{
+	return reply(c.damagedSince(damagedBefore, keep), graph.SemanticData{
 		Results:           results,
 		EmbedderType:      c.embedderType,
 		UnreadableRecords: unreadable,
@@ -104,7 +105,8 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 }
 
 // handleSimilar answers the entities whose vectors are most like a given entity's, never the
-// entity itself. The source vector is read from EMBEDDING_INDEX, not the cache.
+// entity itself. The source vector is read from EMBEDDING_INDEX, not the cache. A damaged source
+// is refused with the refusal the follower recorded for it, as an entity read refuses it.
 func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, error) {
 	var req graph.SimilarRequest
 	if err := decodeRequest(data, &req); err != nil {
@@ -121,7 +123,14 @@ func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, err
 	if err := c.queryReady(ctx); err != nil {
 		return nil, err
 	}
+	damagedBefore := c.follower.Load().DamagedCount(nil)
 	record, err := c.storage.GetEmbedding(ctx, req.EntityID)
+	// The source is checked after its record is read: hop 1 reports an entity damaged before it
+	// removes the record, so a record read before the report is the entity's value as it stood,
+	// and a read that found the record gone already sees the report here.
+	if refusal := c.follower.Load().DamagedRefusal(req.EntityID); refusal != nil {
+		return nil, refusal
+	}
 	if err != nil {
 		// An undecodable source record stays class invalid with no code, as GetEmbedding returns
 		// it: graph-clustering counts it toward its abort rather than reading it as "no neighbours".
@@ -140,12 +149,21 @@ func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	return reply(graph.SimilarData{Results: results, UnreadableRecords: unreadable, FailedRecords: c.workerFailures()})
+	return reply(c.damagedSince(damagedBefore, nil),
+		graph.SimilarData{Results: results, UnreadableRecords: unreadable, FailedRecords: c.workerFailures()})
+}
+
+// damagedSince is a reply's damaged_entities: the larger of before, counted before the cache was
+// read, and the count now, both of the damaged entities keep accepts (all of them when keep is
+// nil). Hop 1 reports an entity before its record is removed and the report clears only once a
+// valid write's vector is written, so a vector the read missed is counted by one of the two.
+func (c *Component) damagedSince(before int, keep func(string) bool) int {
+	return max(before, c.follower.Load().DamagedCount(keep))
 }
 
 // queryReady refuses a request the verbs cannot answer truthfully now, after its entry checks and
-// before any read: the follower's QueryReady (a latched reset fatal, a lost feed, an
-// incomplete first build or a held hop-1 failure transient index_not_ready), then a lost vector
+// before any read: the follower's QueryReady (a lost feed, an incomplete first build or a held
+// hop-1 failure transient index_not_ready), then a lost vector
 // cache watch, transient index_not_ready. similar reads its source from the bucket before the
 // cache, so the lost watch is refused here rather than left to the cache.
 func (c *Component) queryReady(ctx context.Context) error {
@@ -227,12 +245,13 @@ func checkCommon(minRevision uint64, limit int) (int, error) {
 }
 
 // reply is a successful reply: data in the graph.QueryResponse envelope, producer
-// graph-embedding, at indexed_revision 0, which claims nothing.
-func reply[T any](data T) ([]byte, error) {
+// graph-embedding, at indexed_revision 0, which claims nothing, counting damaged entities left out.
+func reply[T any](damaged int, data T) ([]byte, error) {
 	response, err := graph.NewQueryResponse(graph.ResponderGraphEmbedding, 0, data)
 	if err != nil {
 		return nil, internalError(err)
 	}
+	response.DamagedEntities = damaged
 	return json.Marshal(response)
 }
 

@@ -58,7 +58,7 @@ copy. #657 stays open for its other follow-ups.
   entity. Waits: a request with `min_revision` B's revision. Then `index.go:184-192` and `:412-427` report,
   remove rows (`deleteFromIndexes`, `:520`) and complete; `queryRevision` (`query.go:79`) sets the count; `outgoing`
   refuses a damaged entity.
-- [ ] 5.2 graph-embedding: rewrite the "after a reset" subtest (`withhold_integration_test.go:153-165`) and the
+- [x] 5.2 graph-embedding: rewrite the "after a reset" subtest (`withhold_integration_test.go:153-165`) and the
   reset step of `TestHealthIgnoresErrorCount` (`health_integration_test.go:76-86`, which would wait forever); add the
   replay case; shown failing on `main`. Waits: the follower's floor, then the vector cache past B's delete. Then
   `hop1.go:135-147` reports, removes (`removeRecord`, `:121`) and completes;

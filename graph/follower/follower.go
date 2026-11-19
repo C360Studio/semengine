@@ -343,10 +343,12 @@ func (f *Follower) publish(ctx context.Context) {
 }
 
 // Complete records that revision of key is applied, with every earlier revision of it. Each call
-// counts as progress for the stuck detector, whether or not it raises the floor.
+// counts as progress for the stuck detector, whether or not it raises the floor. The damage record
+// clears before the floor rises, so a reader that waits on the floor never finds a repaired entity
+// still named damaged.
 func (f *Follower) Complete(key string, revision uint64) {
-	f.watermark.Complete(key, revision)
 	f.clearDamaged(key, revision)
+	f.watermark.Complete(key, revision)
 	f.completions.Add(1)
 }
 

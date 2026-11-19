@@ -570,13 +570,11 @@ func requireLexicalKept(t *testing.T, o observer, s stack, revision uint64, befo
 	}
 }
 
-// communityAnswer is one localSearch reply, or the refusal, with graph-clustering's envelope read
-// beside it.
+// communityAnswer is one localSearch reply, or the refusal.
 type communityAnswer struct {
-	reply      graph.QueryResponse[graph.LocalSearchData]
-	raw        []byte
-	err        error
-	clustering graph.IndexStatusResponse
+	reply graph.QueryResponse[graph.LocalSearchData]
+	raw   []byte
+	err   error
 }
 
 // matchIDs is the entity IDs of matches, in the order the reply gave them.
@@ -596,8 +594,7 @@ func matchIDs(matches []graph.TextSearchMatch) []string {
 // localSearch attaches the group's record when graph-query's own view of COMMUNITY_INDEX holds it.
 // Neither GRAPH_STATUS nor a bucket read orders a read of that view, so localSearch on the lead at
 // min_revision revision is asked until it answers with the record of all w's members; a refusal
-// that the word index is not ready or below revision is asked again, and a latched
-// graph-clustering envelope, which no later tick clears, fails at once. Then each word of wordHits
+// that the word index is not ready or below revision is asked again. Then each word of wordHits
 // is searched both ways (checkWordSearches).
 func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) {
 	t.Helper()
@@ -606,30 +603,20 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 	word := w[lead].words()[0]
 	request := graph.LocalSearchRequest{EntityID: lead, Query: word, MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
 	what := fmt.Sprintf("localSearch %q on %s at min_revision %d", word, lead, revision)
-	got := await(t, s, what+" to answer", func(ctx context.Context) (communityAnswer, error) {
-		status, err := o.readStatus(ctx, readiness.KeyGraphClustering)
-		if err != nil {
-			return communityAnswer{}, err
-		}
-		answer := communityAnswer{clustering: status}
+	got := await(t, s, what+" to answer", func(context.Context) (communityAnswer, error) {
+		var answer communityAnswer
 		answer.raw, answer.err = o.ask(t, "localSearch", request)
 		if answer.err == nil {
 			answer.err = json.Unmarshal(answer.raw, &answer.reply)
 		}
 		return answer, nil
 	}, func(a communityAnswer) bool {
-		if latched(a.clustering) != "" {
-			return true
-		}
 		if wordIndexCatchingUp(a.err) {
 			return false
 		}
 		record := a.reply.Data.Record
 		return a.err != nil || (record != nil && record.MemberCount == len(w))
 	})
-	if reason := latched(got.clustering); reason != "" {
-		t.Fatalf("%s/%s latched: %s", graph.BucketGraphStatus, readiness.KeyGraphClustering, reason)
-	}
 	if got.err != nil {
 		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
 	}
@@ -1103,7 +1090,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 // running stack": the NATS server restarts on the same URL with its file storage while the stack
 // keeps running, and the same process, never restarted, applies a new entity, an edit and a delete
 // published after it, answers what it did before plus those writes, and lists its seven components
-// healthy, with no envelope reporting a lost feed or reset_required.
+// healthy, with no envelope reporting a lost feed.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -1148,8 +1135,7 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	s.ingestStatusBefore = o.statusRevision(t, readiness.KeyGraphIngest)
 
 	// The waits in checkWritesAfterRestart read the ENTITY_STATES revision after the two writes, so
-	// the envelopes the stack wrote before the restart cannot pass them; a latched envelope fails
-	// at once, naming it.
+	// the envelopes the stack wrote before the restart cannot pass them.
 	after := checkWritesAfterRestart(t, o, s, f, before)
 	t.Logf("the writes published after the restart were indexed and answered %v after Restart returned (recorded, not asserted)",
 		time.Since(restarted).Round(time.Millisecond))

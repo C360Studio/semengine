@@ -161,6 +161,15 @@ backend (`cmd/cs-graph-backend/main.go:127`).
   later release: above 0, the index left that many damaged entities out, so the list may lack some that hold the
   predicate. Nothing fails if you ignore it, and the answer is
   right about every entity it lists; read it to tell your caller the list may be short.
+- Your readiness tool no longer compiles. `graph.IndexStateResetRequired` and the readiness record's `Code` and
+  `Reason` fields are gone. It checks them at `conformance/cmd/index-readiness/main.go:155-156`, copies `Code` and
+  `Reason` into its evidence at `:216-217`, and builds them in `TestWaitForReadinessFailsImmediatelyOnResetRequired`
+  (`main_test.go:138-150`). SemStreams' graph-index wrote `reset_required` and stopped indexing when it met an entity
+  it could not decode. SemEngine's graph-index leaves that entity out, keeps indexing the rest, and reports `degraded`
+  with `failed_reasons["damaged_entity"]` counting the entities left out, so your wait for a revision still finishes.
+  Delete the check, the two evidence fields and the test. To stop the run on damage instead, fail when
+  `failed_reasons["damaged_entity"]` is above 0. A record that still reads `reset_required` comes from an older
+  build, and the readiness gate refuses it as a state it does not know.
 
 ## Whoever keeps the SPARQL gateway
 

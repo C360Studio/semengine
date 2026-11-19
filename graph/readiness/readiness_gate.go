@@ -33,7 +33,7 @@ type DeferReason string
 const (
 	// DeferNone is the reason attached to a proceed.
 	DeferNone DeferReason = ""
-	// DeferHardStop is a degraded or reset_required index: broken, not behind.
+	// DeferHardStop is a degraded index: broken, not behind.
 	DeferHardStop DeferReason = "hard_stop"
 	// DeferStatusUnknown is a status feed the consumer cannot vouch for (never
 	// received, or older than the freshness window). It fails closed and is never
@@ -91,9 +91,9 @@ func DeferReasons() []DeferReason {
 //     transport fact; nothing licenses proceeding on state the consumer cannot vouch
 //     for.
 //  2. An UNRECOGNIZED State defers. The check is an allow-list over graph.IndexStates(),
-//     not a deny-list for degraded/reset_required: a blank or future state must not
-//     read as "not degraded, therefore healthy".
-//  3. Hard stops (degraded, reset_required) defer.
+//     not a deny-list for degraded: a blank, future or retired state must not read
+//     as "not degraded, therefore healthy".
+//  3. A hard stop (degraded) defers.
 //  4. An incomplete initial build defers likewise. This guards against reading an
 //     index halfway through a format cutover, and is why bootstrap_complete is on the
 //     wire.
@@ -119,12 +119,12 @@ func EvaluateReadinessGate(r Reading) DeferReason {
 		return DeferStatusUnknown
 	}
 	if !recognizedState(status.State) {
-		// Allow-list, not deny-list. Checking only for degraded/reset_required would
-		// let a blank or future state proceed as healthy — fail-OPEN on exactly the
+		// Allow-list, not deny-list. Checking only for degraded would let a blank,
+		// future or retired state proceed as healthy — fail-OPEN on exactly the
 		// field ADR-084 made load-bearing.
 		return DeferUnrecognizedState
 	}
-	if status.State == graph.IndexStateDegraded || status.State == graph.IndexStateResetRequired {
+	if status.State == graph.IndexStateDegraded {
 		return DeferHardStop
 	}
 	if !status.BootstrapComplete {

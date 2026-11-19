@@ -96,14 +96,6 @@ func TestEvaluateReadinessGate(t *testing.T) {
 			wantReason: DeferHardStop,
 		},
 		{
-			name: "reset_required defers",
-			reading: Reading{
-				Status: graph.IndexStatusResponse{State: graph.IndexStateResetRequired, BootstrapComplete: true},
-				Fresh:  true,
-			},
-			wantReason: DeferHardStop,
-		},
-		{
 			name:       "an unknown status defers",
 			reading:    Reading{Status: healthy(true, 0), Fresh: false},
 			wantReason: DeferStatusUnknown,
@@ -217,15 +209,17 @@ func TestEvaluateReadinessGate_CoverageNeitherLicensesNorWithholds(t *testing.T)
 }
 
 // TestEvaluateReadinessGate_UnrecognizedStateFailsClosed pins the allow-list. A gate
-// that checked only for degraded/reset_required would read a blank or future State as
+// that checked only for degraded would read a blank, future or retired State as
 // "not a hard stop, therefore healthy" and proceed — a fail-OPEN on exactly the field
 // ADR-084 made load-bearing when health replaced coverage, and the ONLY thing standing
 // between a garbled envelope and a served answer.
 //
 // A blank State is reachable without any malice: an empty envelope, a partially written
-// key, or a consumer built against a newer producer that added a state.
+// key, or a consumer built against a newer producer that added a state. "reset_required"
+// is the opposite case: an older producer's state, which no current producer writes, so
+// an envelope still carrying it comes from a build this reader does not match.
 func TestEvaluateReadinessGate_UnrecognizedStateFailsClosed(t *testing.T) {
-	for _, state := range []graph.IndexState{"", "ready_ish", "REBUILDING", "unknown", "Ready"} {
+	for _, state := range []graph.IndexState{"", "ready_ish", "REBUILDING", "unknown", "Ready", "reset_required"} {
 		status := graph.IndexStatusResponse{
 			State: state, BootstrapComplete: true, TargetRevision: 100, StalenessMs: 1,
 		}
@@ -328,7 +322,6 @@ func TestDeferReasons_AreTheClosedSet(t *testing.T) {
 		{Status: healthy(false, 1<<63), Fresh: true},
 		{Status: graph.IndexStatusResponse{}, Fresh: true},
 		{Status: graph.IndexStatusResponse{State: graph.IndexStateDegraded, BootstrapComplete: true}, Fresh: true},
-		{Status: graph.IndexStatusResponse{State: graph.IndexStateResetRequired, BootstrapComplete: true}, Fresh: true},
 		{Status: graph.IndexStatusResponse{State: graph.IndexStateBuilding}, Fresh: true},
 		{Status: graph.IndexStatusResponse{State: "someday"}, Fresh: true},
 	}

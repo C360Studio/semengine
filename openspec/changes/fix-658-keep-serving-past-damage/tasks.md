@@ -75,10 +75,10 @@ copy. #657 stays open for its other follow-ups.
 
 ## 6. PR 3: records and docs
 
-- [ ] 6.1 ADR-108 status and D4 (`docs/adr/108-processor-shell.md:8-11`, `:109-112`), ADR-109 D1 `:72-77`, D2
+- [x] 6.1 ADR-108 status and D4 (`docs/adr/108-processor-shell.md:8-11`, `:109-112`), ADR-109 D1 `:72-77`, D2
   `:88-95`, row `:195`: amended citing #657 ruling 3 and #658 comment 6962917422. ADR-074 port note `:13-18` and ADR-084
   (`:139-142`): one bullet each. `graph/state_contract.go:55-62` comment.
-- [ ] 6.2 `docs/admission-ledger.yaml` rows graph/follower `:3620-3666`, graph-index `:3560-3566`, `:3606`, ADR-074
+- [x] 6.2 `docs/admission-ledger.yaml` rows graph/follower `:3620-3666`, graph-index `:3560-3566`, `:3606`, ADR-074
   `:3668-3680`, graph-embedding `:4598`, graph-clustering `:4927`; READMEs and MIGRATION notes listed in
   `inventory.md` § 3; `.agents/skills/query-pattern/SKILL.md:53-56`; `graph/index_status.go:80-81` (graph-index now
   emits `failed_reasons`). The "always absent today" lines PR 2 left: `pkg/fusion/README.md:69-70`,

@@ -30,6 +30,7 @@ import (
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
@@ -163,16 +164,35 @@ func put(t *testing.T, kv jetstream.KeyValue, key string, value []byte) uint64 {
 
 // awaitApplied waits until the follower's floor reaches rev: every delivered revision at or below
 // it has been applied to the maintainer, and the follower answers queries, so a tick publishes.
-// On an empty ENTITY_STATES, awaitApplied(t, c, 0) returns once the watch's snapshot has ended:
-// the follower reads an empty bucket ready only then, so a later write is delivered live, never
-// in the replay, where a value that does not decode latches the reset.
+// A refusal that is not transient fails the test at once, since nothing would lift it. On an empty
+// ENTITY_STATES, awaitApplied(t, c, 0) returns once the watch's snapshot has ended: the follower
+// reads an empty bucket ready only then, so a later write is delivered live, never in the replay.
 func awaitApplied(t *testing.T, c *Component, rev uint64) {
 	t.Helper()
-	await(t, fmt.Sprintf("revision %d applied and the follower ready", rev),
-		func(ctx context.Context) (bool, error) {
+	type reading struct {
+		applied bool
+		refusal error
+	}
+	got := await(t, fmt.Sprintf("revision %d applied and the follower ready", rev),
+		func(ctx context.Context) (reading, error) {
 			f := c.follower.Load()
-			return f.Indexed() >= rev && f.QueryReady(ctx) == nil, nil
-		}, func(ok bool) bool { return ok })
+			return reading{f.Indexed() >= rev, f.QueryReady(ctx)}, nil
+		}, func(r reading) bool {
+			return (r.applied && r.refusal == nil) || (r.refusal != nil && !errs.IsTransient(r.refusal))
+		})
+	if got.refusal != nil {
+		t.Fatalf("revision %d applied: QueryReady = %v; want the follower ready", rev, got.refusal)
+	}
+}
+
+// awaitHealthy waits for Health to report healthy. Completing a repair raises the follower's floor
+// before it clears the follower's record of the damage, so the floor alone does not order a Health
+// read after the clear.
+func awaitHealthy(t *testing.T, c *Component) {
+	t.Helper()
+	await(t, "Health healthy",
+		func(context.Context) (component.HealthStatus, error) { return c.Health(), nil },
+		func(s component.HealthStatus) bool { return s.Healthy })
 }
 
 // memberCounts reads every COMMUNITY_INDEX record through a reader of the test's own, keyed
@@ -219,51 +239,51 @@ func envelope(ctx context.Context, client *natsclient.Client) (status graph.Inde
 }
 
 // TestRefusedValueReportedNotWithheld: a live write to ENTITY_STATES whose bytes are not an entity
-// state is applied as a refused entity: the tick still publishes every group, the refused entity
-// counted in none, Health and the envelope's failed_reasons name refused_entity, and queries are
-// not withheld. A later valid write for the key is counted and clears the refusal at the next tick
-// (graph-clustering spec, "A value that does not decode").
+// state is a damaged entity: the tick still publishes every group, the damaged entity counted in
+// none, Health names the entity, the envelope's failed_reasons name damaged_entity 1, the error is
+// counted once, and queries are not withheld. A later valid write for the key is counted at the
+// next tick and clears the damage (graph-clustering spec, "A value that does not decode").
 func TestRefusedValueReportedNotWithheld(t *testing.T) {
 	client := fixtureClient(t)
 	c, states := startClustering(t, client, tickByHand)
+	const b2 = "acme.ops.test.beta.doc.b2"
 
 	put(t, states, "acme.ops.test.alpha.doc.a1", storedEntity("acme.ops.test.alpha.doc.a1"))
 	put(t, states, "acme.ops.test.beta.doc.b1", storedEntity("acme.ops.test.beta.doc.b1"))
-	rev := put(t, states, "acme.ops.test.beta.doc.b2", []byte("not an entity state"))
+	rev := put(t, states, b2, []byte("not an entity state"))
 	awaitApplied(t, c, rev)
 	c.tick(t.Context())
 
 	want := map[string]int{"0.acme.ops.test.alpha": 1, "0.acme.ops.test.beta": 1, "1.acme.ops.test": 2, "2.acme.ops": 2}
 	if got := memberCounts(t, client); !maps.Equal(got, want) {
-		t.Fatalf("member counts = %v; want %v, the refused entity in no group", got, want)
+		t.Fatalf("member counts = %v; want %v, the damaged entity in no group", got, want)
 	}
+	// deliver reports the damage before it completes the revision awaitApplied waited for.
 	health := c.Health()
-	if health.Healthy || !strings.Contains(health.LastError, "refused_entity 1") {
-		t.Fatalf("Health = %+v; want unhealthy naming refused_entity 1", health)
+	if health.Healthy || !strings.Contains(health.LastError, "1 damaged entity: "+b2) || health.ErrorCount != 1 {
+		t.Fatalf("Health = %+v; want unhealthy naming the damaged entity %s, ErrorCount 1", health, b2)
 	}
 	if err := c.follower.Load().QueryReady(t.Context()); err != nil {
-		t.Fatalf("QueryReady = %v; want nil, a refused entity withholds nothing", err)
+		t.Fatalf("QueryReady = %v; want nil, a damaged entity withholds nothing", err)
 	}
 	// The follower publishes the envelope on its heartbeat; the read waits for one carrying the count.
-	status := await(t, "an envelope naming refused_entity", func(ctx context.Context) (graph.IndexStatusResponse, error) {
+	status := await(t, "an envelope naming damaged_entity", func(ctx context.Context) (graph.IndexStatusResponse, error) {
 		status, _, err := envelope(ctx, client)
 		return status, err
 	}, func(s graph.IndexStatusResponse) bool { return s.FailedCount > 0 })
-	if status.FailedCount != 1 || !maps.Equal(status.FailedReasons, map[string]uint64{"refused_entity": 1}) ||
+	if status.FailedCount != 1 || !maps.Equal(status.FailedReasons, map[string]uint64{"damaged_entity": 1}) ||
 		status.State != graph.IndexStateDegraded {
-		t.Fatalf("envelope = %+v; want degraded, failed_count 1, failed_reasons {refused_entity: 1}", status)
+		t.Fatalf("envelope = %+v; want degraded, failed_count 1, failed_reasons {damaged_entity: 1}", status)
 	}
 
-	rev = put(t, states, "acme.ops.test.beta.doc.b2", storedEntity("acme.ops.test.beta.doc.b2"))
+	rev = put(t, states, b2, storedEntity(b2))
 	awaitApplied(t, c, rev)
 	c.tick(t.Context())
 	want = map[string]int{"0.acme.ops.test.alpha": 1, "0.acme.ops.test.beta": 2, "1.acme.ops.test": 3, "2.acme.ops": 3}
 	if got := memberCounts(t, client); !maps.Equal(got, want) {
 		t.Fatalf("member counts after the valid write = %v; want %v", got, want)
 	}
-	if health := c.Health(); !health.Healthy {
-		t.Fatalf("Health after the valid write = %+v; want healthy", health)
-	}
+	awaitHealthy(t, c)
 }
 
 // suiteOwner is graph-clustering as the lifecycle suite's owner. Observe lists what the component
@@ -430,7 +450,7 @@ func TestStopWaitsForDelivery(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
 	held := &heldLine{
-		message: "entity refused by the community maintainer; it is left out of the records",
+		message: "entity state refused; left out of the community records until a valid write or a delete",
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}

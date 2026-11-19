@@ -246,34 +246,78 @@ func TestLostFeedStopsPublication(t *testing.T) {
 	}
 }
 
-// TestResetStopsPublication: a stored entity the replay refuses latches the follower's reset, and a
-// tick that starts afterwards writes nothing, though the maintainer holds the valid entity beside
-// it (graph-clustering spec, "Publication waits for the replay and stops on a broken feed").
-func TestResetStopsPublication(t *testing.T) {
+// TestDamagedReplayValuePublishesTheRest: graph-clustering started with one valid and one damaged
+// entity stored publishes the valid entity's groups at its first tick, the damaged entity in none,
+// and Health names the damaged one (graph-clustering spec, "A damaged value in the replay"). The
+// damaged entity's write is applied as a delete, so the groups the two share carry its revision.
+func TestDamagedReplayValuePublishesTheRest(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
 	const a1, b1 = "acme.ops.test.alpha.doc.a1", "acme.ops.test.beta.doc.b1"
-	put(t, states, a1, storedEntity(a1))
-	rev := put(t, states, b1, []byte("not an entity state"))
+	r1 := put(t, states, a1, storedEntity(a1))
+	r2 := put(t, states, b1, []byte("not an entity state"))
 
 	c := newClustering(t, client, tickByHand)
 	if err := c.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	t.Cleanup(func() { stopComponent(t, c) })
-	// The follower latches the reset before it delivers the refused entity, and delivers in
-	// order, so once both revisions are applied the reset is latched and a1 is held.
-	await(t, "both stored entities applied",
-		func(context.Context) (uint64, error) { return c.follower.Load().Indexed(), nil },
-		func(indexed uint64) bool { return indexed >= rev })
-	if health := c.Health(); !strings.Contains(health.LastError, "graph state reset required") {
-		t.Fatalf("Health = %+v; want the latched reset named", health)
+	awaitApplied(t, c, r2)
+	// deliver reports the damage before it completes the revision awaitApplied waited for.
+	if health := c.Health(); health.Healthy || !strings.Contains(health.LastError, "1 damaged entity: "+b1) {
+		t.Fatalf("Health = %+v; want unhealthy naming the damaged entity %s", health, b1)
 	}
 
 	c.tick(t.Context())
-	if got := records(t, client); len(got) != 0 {
-		t.Fatalf("records after a tick on a latched reset = %v; want none", got)
+	want := map[string]mark{"0.acme.ops.test.alpha": {1, r1}, "1.acme.ops.test": {1, r2}, "2.acme.ops": {1, r2}}
+	if got := records(t, client); !maps.Equal(got, want) {
+		t.Fatalf("records after the first tick = %v; want %v, the damaged entity in no group", got, want)
 	}
+}
+
+// TestDamagedOverwriteLeavesGroup: a member overwritten with bytes that do not decode leaves its
+// groups at the next tick while a group it is not in stays as it was, and Health names it; written
+// valid again, it is counted at the next tick and Health is healthy, with no restart
+// (graph-clustering spec, "A valid member overwritten with damage" and "Repair"). The expected
+// records are worked out by hand from the writes.
+func TestDamagedOverwriteLeavesGroup(t *testing.T) {
+	client := fixtureClient(t)
+	c, states := startClustering(t, client, tickByHand)
+	const a1, b1, b2 = "acme.ops.test.alpha.doc.a1", "acme.ops.test.beta.doc.b1", "acme.ops.test.beta.doc.b2"
+
+	r1 := put(t, states, a1, storedEntity(a1))
+	put(t, states, b1, storedEntity(b1))
+	r3 := put(t, states, b2, storedEntity(b2))
+	awaitApplied(t, c, r3)
+	c.tick(t.Context())
+	want := map[string]mark{"0.acme.ops.test.alpha": {1, r1}, "0.acme.ops.test.beta": {2, r3},
+		"1.acme.ops.test": {3, r3}, "2.acme.ops": {3, r3}}
+	if got := records(t, client); !maps.Equal(got, want) {
+		t.Fatalf("records before the damage = %v; want %v", got, want)
+	}
+
+	r4 := put(t, states, b2, []byte("not an entity state"))
+	awaitApplied(t, c, r4)
+	c.tick(t.Context())
+	want = map[string]mark{"0.acme.ops.test.alpha": {1, r1}, "0.acme.ops.test.beta": {1, r4},
+		"1.acme.ops.test": {2, r4}, "2.acme.ops": {2, r4}}
+	if got := records(t, client); !maps.Equal(got, want) {
+		t.Fatalf("records after the damage = %v; want %v, the damaged entity in no group", got, want)
+	}
+	// deliver reports the damage before it completes the revision awaitApplied waited for.
+	if health := c.Health(); health.Healthy || !strings.Contains(health.LastError, "1 damaged entity: "+b2) {
+		t.Fatalf("Health after the damage = %+v; want unhealthy naming the damaged entity %s", health, b2)
+	}
+
+	r5 := put(t, states, b2, storedEntity(b2))
+	awaitApplied(t, c, r5)
+	c.tick(t.Context())
+	want = map[string]mark{"0.acme.ops.test.alpha": {1, r1}, "0.acme.ops.test.beta": {2, r5},
+		"1.acme.ops.test": {3, r5}, "2.acme.ops": {3, r5}}
+	if got := records(t, client); !maps.Equal(got, want) {
+		t.Fatalf("records after the repair = %v; want %v", got, want)
+	}
+	awaitHealthy(t, c)
 }
 
 // heldLines holds every log record with message inside the component's logger, one at a time,

@@ -67,7 +67,7 @@ copy. #657 stays open for its other follow-ups.
   Waits: a request with `min_revision` B's revision.
   Then `component.go:240-251` and `apply.go:158-161` report, delete the entity's text and complete; `search` counts
   within scope (`query.go:81-110`).
-- [ ] 5.4 graph-clustering: rewrite `TestResetStopsPublication` (`publication_integration_test.go:249-277`) so the
+- [x] 5.4 graph-clustering: rewrite `TestResetStopsPublication` (`publication_integration_test.go:249-277`) so the
   replay publishes the other groups, shown failing on `main`, and `TestRefusedValueReportedNotWithheld` to expect
   `damaged_entity` and the ID in `Health`; add `TestDamagedOverwriteLeavesGroup`. Waits: the floor, then a tick by
   hand. Then `deliver` (`component.go:269-290`) reports and applies a delete in

@@ -93,9 +93,9 @@ copy. #657 stays open for its other follow-ups.
   `TestEvaluateReadinessGate_UnrecognizedStateFailsClosed` gains `reset_required`; a semconnect migration note
   (`conformance/cmd/index-readiness/main.go:155`). File the adoption-sweep issue for one damage-record type
   (graph-ingest `poison_inventory.go:84`, graph-clustering `maintainer.go:143`, the follower).
-- [ ] 6.4 Before PR 3 is marked ready: post on #658 what counts as done; PR title and body match.
+- [x] 6.4 Before PR 3 is marked ready: post on #658 what counts as done; PR title and body match.
 
 ## 7. Close
 
-- [ ] 7.1 Review request with the archive in the reviewed head; `reviewed-by:` in the PR body when the record lands.
-- [ ] 7.2 Archive the change and sync the specs as the last content commit of PR 3.
+- [x] 7.1 Review request with the archive in the reviewed head; `reviewed-by:` in the PR body when the record lands.
+- [x] 7.2 Archive the change and sync the specs as the last content commit of PR 3.

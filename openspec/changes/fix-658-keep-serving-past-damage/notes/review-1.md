@@ -130,8 +130,66 @@ legacy-key`; delete it, `put` a1 again, `awaitApplied` and `tick`, require `Heal
 
 ## Not covered
 
-- graph-index's over-long key: if the coalescer flushes a write of it after its delete has been handled, the write is
-  recorded at its own revision and stays until a later revision of the key; reading current state closes this for every
-  key the validator accepts. No writer in this module stores a key over the validator's limits.
 - No spec scenario names the two new tests yet; the requirements they prove ("A damaged entity is left out and
   counted", graph-index and graph-embedding deltas) already cover a noncanonical key and a delete without restart.
+
+## Round 2
+
+Codex's re-review at `355f0e742657ab49e2b46e8240db1e97cb74684b` asked for changes: one HIGH finding.
+
+### HIGH: a captured coalesced write records a deleted over-long key again
+
+The round-1 fallback for a key the shared KV key validator refuses carried `deleted` on `indexWork` and recorded a
+write at its delivered revision. With `coalesce_ms` above zero, `revisionCoalescer.fire` takes the pending set and
+unlocks before handing it to the lanes, so the key's delete could be delivered, clear the record and complete before
+that batch reached the lane; the older write then recorded the deleted key again, and nothing later cleared it.
+
+Fix (`53204baaa4be3711b24f6a5415e957676b02eb6e`): `deliver` (`processor/graph-index/index.go:123`) checks the key
+with `natsclient.ValidateKVLiteralKey` (`:130`) before any coalescing or lane, and `settleUnreadable` (`:156`)
+settles a refused key there, in delivery order: a write is recorded damaged at its revision, a delete or purge records
+nothing (its delivery already cleared the record), and the revision completes. Such a key never enters the coalescer,
+a lane or the repair set, so the round-1 `deleted` field is removed and `reconcileNoncanonical` (`:240`) always reads
+current state. The shared validator is unchanged and the follower's record stays the one damage owner. The round-1
+section above describes the `deleted` fallback this replaces.
+
+Test: `TestUnreadableKeyRemovalOutlastsCoalescedWrite` (`processor/graph-index/damaged_integration_test.go:282`),
+subtests `delete` and `purge` (both tombstones take the same delivery path; both run). It builds graph-index through
+its production JSON with `coalesce_ms` 3600000, so only the test fires the coalescer, and `workers` 1, so one lane
+takes every key in submit order. It writes the 1,025-byte key, then valid entity A, and waits for A's revision in the
+coalescer's pending set: delivery is one entry at a time in order, so the key's write was delivered before it. The test
+then fires the coalescer by hand with its own callback wrapped (`:303`): the wrapper hands the lanes every key but the
+over-long one at once and holds that key's write until the test releases it. The delete or purge then runs against
+real NATS; the test waits for the floor to reach the bucket's last sequence, requires no damage recorded, releases the
+held write, and writes A again through the same lane. A `byName` reply at that write's revision must count no damaged
+entity, and `Health` must be healthy.
+
+The wrapper is a test-only replacement of the coalescer's existing unexported callback field, set in the test; no
+production code changed for it, and no production caller can reach it. With the fix the held list is empty, since the
+key never reaches the coalescer; on the old code it holds the key's write, which is the interleaving under test. No
+ordering through production calls alone holds a taken batch back from its lane, so the wrapper is the pause.
+
+Shown failing on `355f0e74` (the new test added, production code unchanged; the key and the Health timestamps
+elided as `...`):
+
+```text
+--- FAIL: TestUnreadableKeyRemovalOutlastsCoalescedWrite (0.45s)
+    --- FAIL: TestUnreadableKeyRemovalOutlastsCoalescedWrite/delete (0.30s)
+        damaged_integration_test.go:368: byName Alpha after the delete: damaged_entities = 1; want the key absent
+        damaged_integration_test.go:370: Health after the delete = {Healthy:false ... ErrorCount:1 LastError:1 damaged entity: kkk...k (noncanonical_entity_id); write a valid value for each key or delete it ... Status:degraded}; want healthy
+    --- FAIL: TestUnreadableKeyRemovalOutlastsCoalescedWrite/purge (0.14s)
+        damaged_integration_test.go:368: byName Alpha after the purge: damaged_entities = 1; want the key absent
+        damaged_integration_test.go:370: Health after the purge = {Healthy:false ... Status:degraded}; want healthy
+```
+
+The Health line was then shortened to print the status and error count, since the key is over a thousand bytes.
+
+Wrong changes, each a copy under `/tmp` mapped in with
+`go test -overlay <json> -tags integration -race -count=1 -cpu 1 -timeout 3m -run
+'TestUnreadableKeyRemovalOutlastsCoalescedWrite|TestRemovedNoncanonicalKeyIsNoLongerDamaged' ./processor/graph-index`
+(SHA-256 of `index.go` checked before and after, matching):
+
+| Wrong change | Outcome |
+| --- | --- |
+| `index.go` as at `355f0e74` | detected: both new subtests, `damaged_entities = 1` (`:368`), Health degraded (`:371`); `TestRemovedNoncanonicalKeyIsNoLongerDamaged` passes |
+| `settleUnreadable` records a delete damaged too | detected: new subtests at `:357` (damage once the removal completed), both over-long subtests of `TestRemovedNoncanonicalKeyIsNoLongerDamaged` at `:267` |
+| `settleUnreadable` records nothing for a write | detected: both over-long subtests of `TestRemovedNoncanonicalKeyIsNoLongerDamaged` at `:256` (no damage after the write) |

@@ -3650,8 +3650,8 @@
     for every plug-in (owner ruling (a1), PR #550 comment 6721867279); an empty graph counts as caught up once the
     snapshot is delivered
   dependencies_and_side_effects: >-
-    graph, graph/kvcatalog, graph/readiness, internal/resource, internal/revlag, metric, natsclient, pkg/errs
-    (in-set); nats.go/jetstream; one KV watch on ENTITY_STATES, status reads on its stream, writes to GRAPH_STATUS,
+    graph, graph/kvcatalog, graph/readiness, internal/damage, internal/resource, internal/revlag, metric, natsclient,
+    pkg/errs (in-set); nats.go/jetstream; one KV watch on ENTITY_STATES, status reads on its stream, writes to GRAPH_STATUS,
     and one heartbeat goroutine, all ended and joined by Run's return
   known_risks: >-
     a restored stream can keep the creation time Open read, so a delete and restore inside one stall of the watch is

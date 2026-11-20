@@ -17,7 +17,7 @@ draft #701, which closes #700.
 
 ## 3. The follower (design D5)
 
-- [ ] 3.1 `graph/follower/damaged.go` reads `damage.Record`; `damagedEntry`, `damagedRecord` and the hand-written
+- [x] 3.1 `graph/follower/damaged.go` reads `damage.Record`; `damagedEntry`, `damagedRecord` and the hand-written
   sort go. `damaged_test.go`, `follower_test.go` and `follower_integration_test.go` pass with no edit. Ledger: the
   `graph/follower` row's dependencies name `internal/damage`.
 

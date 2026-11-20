@@ -368,7 +368,7 @@ func requireStillIndexing(t *testing.T, h *harness) {
 // TestHealthIgnoresErrorCountAndTracksStuckStates: Healthy is false exactly while a stuck state
 // holds, and ErrorCount never lowers it (spec "Health reads named stuck states only"; ADR-109 D2).
 // A required write that fails lowers Healthy, naming it; its repair raises Healthy again while
-// ErrorCount stays at one. A latched reset lowers Healthy, naming it.
+// ErrorCount stays at one. A damaged entity lowers Healthy, naming it.
 func TestHealthIgnoresErrorCountAndTracksStuckStates(t *testing.T) {
 	t.Run("a failed write and its repair", func(t *testing.T) {
 		h := startIndex(t, fixtureClient(t), `{}`)
@@ -400,11 +400,11 @@ func TestHealthIgnoresErrorCountAndTracksStuckStates(t *testing.T) {
 				health, h.c.failedTotal())
 		}
 	})
-	t.Run("a latched reset", func(t *testing.T) {
+	t.Run("a damaged entity", func(t *testing.T) {
 		h := startIndex(t, fixtureClient(t), `{}`)
 		h.put(t, entityID(1), entityValue(t, entityID(3), stmt{armed, true}))
-		want := "graph state reset required: " + string(graph.GraphStateReasonNoncanonicalEntityID)
-		await(t, "Health names the reset",
+		want := "1 damaged entity: " + entityID(1) + " (" + string(graph.GraphStateReasonNoncanonicalEntityID) + ")"
+		await(t, "Health names the damaged entity",
 			func(context.Context) (component.HealthStatus, error) { return h.c.Health(), nil },
 			func(got component.HealthStatus) bool { return !got.Healthy && strings.Contains(got.LastError, want) })
 	})

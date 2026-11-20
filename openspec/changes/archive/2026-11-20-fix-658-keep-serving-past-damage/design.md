@@ -105,7 +105,9 @@ Failing first, over real NATS, with `t.Context()` and no sleeps; the oracle is t
   then a tick by hand. On `main` each request is refused fatal.
 - Follower: a generated check (rapid, seed and runs recorded) drawing reports, completions at, below and above the
   report, and deletes, against a model; named cases run first.
-- graph-query, fusion, gateway: stubbed replies at 2 and 3 give 3; on `main` the count is absent.
+- graph-query, fusion: stubbed replies at 2 and 3 give 3. graph-gateway: a request reads one reply, so `pathSearch`
+  over a stubbed reply at 1 and `entitiesByPredicate` over one at 3 each return that count. On `main` the count is
+  absent.
 
 ## Size and merge order
 

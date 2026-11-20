@@ -1954,7 +1954,8 @@
     admitted through internal/httpadmission, Stop waiting for every admitted request; mounted at
     /<instance>/graphql by the service manager. Strict configuration: ports (exactly one required graph_queries
     nats-request output on graph.query.*, graph.query v1) and query_timeout_ms (default 60000); any other key or port
-    refused naming it
+    refused naming it. An answer whose root fields read a reply with damaged_entities above 0 carries the largest
+    count as the top-level extensions.damagedEntities, absent at 0; data still holds exactly the selected fields
   dependencies_and_side_effects: >-
     production: component, graph, internal/httpadmission, natsclient, pkg/errs (in-set); github.com/vektah/gqlparser/v2
     v2.5.64 and github.com/agnivade/levenshtein v1.2.2 (both MIT, new modules); one route on the service manager's mux;
@@ -3557,13 +3558,15 @@
     index layouts, owner reconciliation (ADR-077, ADR-078), the revision coalescer and the query handlers as at the
     pin, with these adaptations (specs graph-index, entity-state-follower, graph-readiness,
     graph-transport-boundary, lifecycle-suite; design D3-D10, D12): (1) the ENTITY_STATES watch, snapshot replay,
-    reset latch, lost-feed state, watermark and readiness envelope move to graph/follower, and graph-index plugs in
-    through Deliver, Failed, Complete and Reset (D3); (2) lifecycle through component.Lifecycle: a second Start is
+    damaged-entity record, lost-feed state, watermark and readiness envelope move to graph/follower, and graph-index
+    plugs in through Deliver, Failed, Complete and ReportDamaged (D3); (2) lifecycle through component.Lifecycle: a second Start is
     refused with errs.ErrAlreadyStarted, the run context is not a child of Start's context, Stop drains accepted pool
     work and writes it before the run context ends, and Health's Healthy ignores the error count (D4; ADR-108,
     ADR-109 D2, ADR-113); (3) DataFlow counts one input per delivered ENTITY_STATES entry, not one per write (D4);
     (4) every one of the eight verbs refuses with transient index_not_ready during startup replay and while the
-    feed is lost, and with fatal graph_state_reset_required after a reset (D5; ADR-109 D1; owner ruling item 2);
+    feed is lost; a stored value that does not decode is a damaged entity, so the verbs go on answering, count it in
+    damaged_entities, and refuse fatal graph_state_reset_required only a request that names it (D5; ADR-109 D1,
+    amended; #657 ruling 3);
     (5) every reply is a graph.QueryResponse naming producer graph-index and indexed_revision, the follower's floor
     read before the handler's first bucket read, the alias reply included (D6; #103); (6) query subjects are bound from graph.QueryVerbs and Start fails on a
     declared verb with no handler (D6); (7) the keyed pool is internal/dispatch.KeyedPool, keyed_dispatcher.go does
@@ -3603,8 +3606,8 @@
     TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
     TestConfigRefusesInputsTheFollowerDoesNotRead), factory_test.go, metrics_test.go, lifecycle_test.go,
     query_test.go, revision_coalescer_test.go, index_integration_test.go (TestIndexReplacementThroughEveryIndex,
-    TestFailedWriteWithholdsReadinessAndRepairClearsIt, TestNoncanonicalValueLatchesResetAndHoldsItsRevision,
-    TestKVUnsafeAliasIsIndexed), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
+    TestFailedWriteWithholdsReadinessAndRepairClearsIt, TestDamagedEntityLeftOutAndNamed (damaged_integration_test.go),
+    TestRepairedEntityReturns (damaged_integration_test.go), TestKVUnsafeAliasIsIndexed), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
     TestStopWritesAcceptedWork, TestSecondStartIsRefused, TestStartContextEndStopsNothing,
     TestHealthIgnoresErrorCountAndTracksStuckStates, TestLatchBootstrap_ContinuousWrite), query_integration_test.go
     (TestGraphIndexServesExactlyTheDeclaredVerbs, TestQueryDuringStartupReplayIsIndexNotReady,
@@ -3630,16 +3633,19 @@
     specs entity-state-follower and graph-readiness; design D3: Open waits a bounded number of attempts for
     ENTITY_STATES and returns a transient error naming the bucket, opens the readers, ensures GRAPH_STATUS and
     registers the gauges on the injected registry; Run follows one WatchAll on the caller's goroutine, observes each
-    revision in the watermark before calling Deliver, decodes each snapshot value with graph.UnmarshalEntityState
-    (a refusal latches reset and the entry is still delivered), fixes the bootstrap target at the snapshot's end
-    marker, publishes the envelope at once and then every readiness.DefaultHeartbeat from a goroutine it joins, and
-    returns with no watcher left; Complete, Failed and Reset are the plug-in's three outcomes (ADR-108 D4 as
-    changed: Deliver returns nothing because graph-index's apply is asynchronous); the lost-feed state is set when
+    revision in the watermark before calling Deliver, decodes no value (the plug-in does), fixes the bootstrap target
+    at the snapshot's end marker, publishes the envelope at once and then every readiness.DefaultHeartbeat from a
+    goroutine it joins, and returns with no watcher left; Complete, Failed and ReportDamaged are the plug-in's three
+    outcomes (ADR-108 D4 as changed: Deliver returns nothing because graph-index's apply is asynchronous);
+    ReportDamaged records one damaged entity per key at the highest revision reported, and the record is dropped when
+    the plug-in completes a higher revision of the key or a delete is delivered above it, with no restart; a report
+    never withholds a query (#657 ruling 3); DamagedCount and DamagedRefusal read the record; the lost-feed state is set when
     WatchAll fails, when Updates() closes under a live Run context, or when the backing stream's creation time
     differs from the one Open read, and holds until the process restarts (owner ruling item 2); QueryReady answers
-    nil or a classified refusal (reset: fatal graph_state_reset_required; lost feed, unresolved writes, incomplete
-    build: transient index_not_ready); the envelope carries failed_count (the pin wrote 0) and, when the plug-in's
-    Failed returns them, failed_reasons, and no first_failure_at; the stuck detector counts the plug-in's Complete
+    nil or a classified refusal (lost feed, unresolved writes, incomplete build: transient index_not_ready; a
+    damaged entity refuses nothing); the envelope carries failed_count (the pin wrote 0) and, when the plug-in's
+    Failed returns them, failed_reasons, with the damaged entities added as failed_reasons["damaged_entity"] and
+    Stuck naming up to 10 of them, and no first_failure_at; the stuck detector counts the plug-in's Complete
     calls and reads degraded in the envelope only, once the follower has been behind for 30 s with no completion,
     for every plug-in (owner ruling (a1), PR #550 comment 6721867279); an empty graph counts as caught up once the
     snapshot is delivered
@@ -3659,7 +3665,10 @@
     graph/follower/follower_test.go (TestOpenRefusesMissingInputs), follower_integration_test.go
     (TestFollowerOpenRefusesAbsentBucket, TestFollowerRunReturnsAndLeavesNothing, TestFollowerConcurrentQueryReady,
     TestFollowerPublishesOnEveryHeartbeat, TestFollowerSnapshotEndSetsBootstrapTarget,
-    TestFollowerLatchesResetOnUnreadableSnapshotValue, TestFollowerDeclaresLostFeed), follower_test.go
+    TestFollowerServesPastDamagedReplay, TestFollowerDeclaresLostFeed), damaged_test.go
+    (TestDamagedEntityClearsOnHigherCompletion, TestDamagedEntityClearsOnDelete, TestDamagedEntityCountsOneError,
+    TestDamagedCountAndRefusal, TestStuckNamesDamagedEntities, TestEnvelopeCountsDamagedEntities,
+    TestDamagedEntityNeverWithholdsQuery, TestPropDamagedSetFollowsLatestEvent), follower_test.go
     (TestHeldLowRevisionWithProgress, TestGraphIndexHeldRevisionNotDegraded, TestNoCompletionsReadsDegraded,
     TestEnvelopeCarriesFailedReasons, TestGraphIndexEnvelopeUnchanged)
   owner: setup-04a-04-graph-roots-graph-index developer
@@ -3669,13 +3678,15 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the pin's decision record for the canonical predicate contract and the sticky graph_state_reset_required state,
-    which graph/follower and processor/graph-index implement (lines 69-71); carried with the graph-index port
+    which graph/follower and processor/graph-index implemented (lines 69-71) until a damaged entity stopped being
+    sticky; carried with the graph-index port
   destination: docs/adr/074-canonical-predicate-contract.md
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
     no edits to the pin's decision text; a port note added under the title naming which of its records and code are
-    ported and where the sticky reset lives
+    ported and, since the damaged-entity change, that the sticky reset is not kept and where a damaged entity is
+    recorded
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-index technical writer
   disposition: adapt
@@ -4621,7 +4632,9 @@
     declared output is refused, as at the pin; (6) the injected store registry is kept only when a store-read input
     is declared (ADR-063), as at the pin. Behaviour: (7) the lifecycle is component.Lifecycle and the ENTITY_STATES
     watch, snapshot replay, watermark and readiness envelope are graph/follower's, with the pin's own watch, reset
-    latch, status bucket, heartbeat and readiness.go not carried (D1; ADR-108, #109); (8) a revision completes when
+    latch, status bucket, heartbeat and readiness.go not carried (D1; ADR-108, #109); a stored value that does not
+    decode is a damaged entity: the plug-in reports it with ReportDamaged, removes the entity's vectors, goes on
+    serving, and counts it in damaged_entities; (8) a revision completes when
     the Worker reports its terminal outcome or hop 1 ends it, and with coalesce_ms above zero completing a coalesced
     entity drains its lower revisions (ADR-066 section 3); (9) embedding.Worker.Run runs under the one run context
     and a Run that returns while it is live is a stuck state in Health until restart (D2; ADR-113); (10) the failed
@@ -4698,7 +4711,9 @@
     natural-language resolve carries, each omitted when empty, and a symbol or prefix response never does; an nl
     answer's provenance is lexical, a fourth value ADR-062 does not list (setup-04b-04-removal-keywords D3, D4;
     owner question 2 ruled (b), epic #10 comment 6880665588); these replace the embedding search's
-    unreadable_records and failed_records (D3). (4)
+    unreadable_records and failed_records (D3); Response.DamagedEntities (damaged_entities, omitted at 0) is the largest
+    count of damaged entities any read of the answer reported leaving out, carried by Resolution, Neighbors and Names;
+    it is not Truncated, and an index_not_ready deferral carries none. (4)
     Every left-out piece is declared: Neighbors results are sorted by predicate then target and deduplicated before
     any cap; relations_truncated, paths_truncated, Impact.Truncated and GraphProjection.Truncated mark a cap or a
     skipped read; a path never names a node by its entity ID; each skip counts on
@@ -4822,7 +4837,8 @@
     empty (ADR-071); seeds keep the hits' order and scores; a refusal from the word index is returned as it arrived,
     and any other failure of that request is transient internal naming graph.lexical.query.search
     (setup-04b-04-removal-keywords D2); Neighbors reads the edge's predicate; an nl Resolve copies the word index
-    reply's bodies_not_indexed and excluded into fusion.Resolution (D3); Entity decodes through
+    reply's bodies_not_indexed and excluded into fusion.Resolution (D3), and every resolve mode, byName and
+    relationships copy the reply's damaged_entities into Resolution, Neighbors and Names; Entity decodes through
     graph.UnmarshalEntityState and reads entity_not_found, and only that code, as (nil, nil). (5) Entities
     reconciles each batch reply with the request (reconcileHydration, ADR-084 D6): every distinct requested ID once,
     Entities in request order, an ID the reply lists nowhere unhydrated unknown. (6) A poisoned seed (one whose
@@ -4923,8 +4939,9 @@
     outside text_suffixes until a consumer sets graph-lexical's list, semsource's .signature and .comment included
     (MIGRATION.md). The readiness
     key counts what the Maintainer holds, not what is published. A tick already running when the feed is lost
-    finishes, so a record published just before the loss was noticed may be stale. The replay of a stored value that
-    cannot be decoded latches the follower's reset until restart. Not carried: the four graph.clustering.query.*
+    finishes, so a record published just before the loss was noticed may be stale. A stored value that cannot
+    be decoded is reported to the follower as a damaged entity and left out of its groups' records until a valid
+    write or a delete of the key; the other entities keep publishing. Not carried: the four graph.clustering.query.*
     verbs, the readiness gate on graph-index and graph-embedding (ADR-082, ADR-085), the enhancement and review
     workers (#485, #488), label propagation and the edge providers (ADR-099), anomaly detection (never ported), the
     indexing-profile check (ADR-054 not ported), and the pin's Prometheus globals
@@ -4935,7 +4952,7 @@
     (TestCreateGraphClusteringRequiresNATSClient, TestRegisterAddsGraphClustering), lifecycle_test.go
     (TestLifecycleBeforeStart), the integration-tagged files (TestRefusedValueReportedNotWithheld, TestStopLeavesNothing,
     TestStopWaitsForDelivery, TestRecordsFollowChanges, TestNothingPublishedBeforeReplay, TestLostFeedStopsPublication,
-    TestResetStopsPublication, TestPersistentPublicationFailureIsStuck, TestStopWaitsForTick,
+    TestDamagedReplayValuePublishesTheRest, TestDamagedOverwriteLeavesGroup, TestPersistentPublicationFailureIsStuck, TestStopWaitsForTick,
     TestDetectionIntervalIsRead, TestWatchOrderAcrossKeys, TestTextSuffixesIsRead); graph/follower (TestEntryCarriesDeliveredValue,
     TestFollowerDeclaresLostFeedOnOutOfOrderDelivery, TestStuckNamesReasons);
     internal/harness/contract/embeddingprovider_test.go (TestGraphClusteringImportsNoProviderModule,

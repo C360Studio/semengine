@@ -92,8 +92,8 @@ The component writes `COMMUNITY_INDEX` itself and declares no output port for it
 
 The ticker starts a tick only while the follower says the graph state is ready. So nothing is written before the
 replay of `ENTITY_STATES` has been applied, and once the follower reports a lost feed (a watch closed, a bucket
-recreated, a revision out of order) or a latched reset (a stored value that cannot be decoded during the replay), no
-later tick starts. A tick already running when the loss is detected finishes, so a record published just before the
+recreated, a revision out of order), no later tick starts. A stored value that cannot be decoded (a *damaged* entity)
+stops no tick. A tick already running when the loss is detected finishes, so a record published just before the
 loss was noticed may already be out of date. The first tick runs one `detection_interval` after `Start`. A tick that
 takes longer than the interval delays the next; ticks never overlap.
 
@@ -101,18 +101,20 @@ takes longer than the interval delays the next; ticks never overlap.
 
 `Health` is `Healthy` once started, and unhealthy while any of these holds:
 
-- a stored `ENTITY_STATES` value could not be decoded during the replay (`graph state reset required: <reason>`, until
-  the process restarts);
+- a stored `ENTITY_STATES` value could not be decoded, in the replay or live (a *damaged* entity): the component
+  reports it to the follower, applies it as a delete so its groups keep nothing from its last good value, and the other
+  groups still publish. `Stuck` names the count, up to 10 IDs with their reasons, and the repair: write a valid value
+  for the key or delete it. A valid write or a delete of the key clears it with no restart;
 - the `ENTITY_STATES` feed is lost (until the process restarts);
 - the last tick left entities out of the records because the Maintainer refused them (reason `refused_entity`, one
   count per entity); the other groups are still published, and the state clears on a tick that refuses none;
 - the last tick's publication failed (reason `publication_failed`, count 1); the changed groups stay pending and the
   next tick retries them. The state clears on a tick that succeeds.
 
-The readiness record on `GRAPH_STATUS` carries `failed_count` and `failed_reasons` (the two tick reasons above), and
-reads `degraded` while either is non-zero or the feed is lost. A failed write returns no refusal count, so while
-publication fails the last known `refused_entity` count is kept until a tick reports one again or succeeds.
-Nothing withholds ticks: the component reports 0 to the follower's withhold.
+The readiness record on `GRAPH_STATUS` carries `failed_count` and `failed_reasons` (the two tick reasons above, plus
+`damaged_entity` with the count of damaged entities), and reads `degraded` while any is non-zero or the feed is lost. A
+failed write returns no refusal count, so while publication fails the last known `refused_entity` count is kept until a
+tick reports one again or succeeds. Nothing withholds ticks: the component reports 0 to the follower's withhold.
 `DataFlow` counts one input per delivered `ENTITY_STATES` entry, update or delete.
 
 ## Metrics

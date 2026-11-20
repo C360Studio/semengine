@@ -37,7 +37,7 @@ copy. #657 stays open for its other follow-ups.
 
 ## 4. PR 3: the follower records damage (design D1, D5)
 
-- [ ] 4.1 Tests first in `graph/follower`: the generated check over reports, completions and deletes against a
+- [x] 4.1 Tests first in `graph/follower`: the generated check over reports, completions and deletes against a
   reference model (seed and completed runs recorded); named cases first (report then higher completion clears; a
   completion at the same or a lower revision does not; a delete clears; `Stuck` names at most 10 IDs sorted, with
   reasons, the count and the repair); the envelope reads `degraded` with `failed_reasons["damaged_entity"]` and
@@ -45,12 +45,12 @@ copy. #657 stays open for its other follow-ups.
   (`follower_integration_test.go:476-503`) as a replay that does not stop, and the reset clause of
   `TestWithholdNarrowsQueryReady` (`follower_test.go:483-490`). The generated check draws completions at, below and
   above a report.
-- [ ] 4.2 Then the follower: replace `Reset` and the latch (`follower.go:115`, `:299-309`, `:361-365`, `:378-379`,
+- [x] 4.2 Then the follower: replace `Reset` and the latch (`follower.go:115`, `:299-309`, `:361-365`, `:378-379`,
   `:413-416`, `:458-465`, `resetRemedy` `:97-98`) with the per-key record and its two read methods; package comment.
 
 ## 5. PR 3: the four plug-ins (design D1, D2, D3)
 
-- [ ] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests", among them
+- [x] 5.1 graph-index: integration tests, replay and live, as the design's "Proving tests", among them
   `TestDamagedEntityLeftOutAndNamed` (the graph-transport-boundary delta's scenario); shown failing on `main`.
   Rewrite `TestNoncanonicalValueLatchesResetAndHoldsItsRevision` (`index_integration_test.go:480-503`) and the "a
   latched reset" subtest (`lifecycle_integration_test.go:403-410`), and the two reset subtests of
@@ -58,16 +58,16 @@ copy. #657 stays open for its other follow-ups.
   entity. Waits: a request with `min_revision` B's revision. Then `index.go:184-192` and `:412-427` report,
   remove rows (`deleteFromIndexes`, `:520`) and complete; `queryRevision` (`query.go:79`) sets the count; `outgoing`
   refuses a damaged entity.
-- [ ] 5.2 graph-embedding: rewrite the "after a reset" subtest (`withhold_integration_test.go:153-165`) and the
+- [x] 5.2 graph-embedding: rewrite the "after a reset" subtest (`withhold_integration_test.go:153-165`) and the
   reset step of `TestHealthIgnoresErrorCount` (`health_integration_test.go:76-86`, which would wait forever); add the
   replay case; shown failing on `main`. Waits: the follower's floor, then the vector cache past B's delete. Then
   `hop1.go:135-147` reports, removes (`removeRecord`, `:121`) and completes;
   `search` counts within scope, `similar` refuses a damaged source (`query.go:94-143`).
-- [ ] 5.3 graph-lexical: integration tests, replay and live, shown failing on `main`; rewrite `apply_test.go:191-202`.
+- [x] 5.3 graph-lexical: integration tests, replay and live, shown failing on `main`; rewrite `apply_test.go:191-202`.
   Waits: a request with `min_revision` B's revision.
   Then `component.go:240-251` and `apply.go:158-161` report, delete the entity's text and complete; `search` counts
   within scope (`query.go:81-110`).
-- [ ] 5.4 graph-clustering: rewrite `TestResetStopsPublication` (`publication_integration_test.go:249-277`) so the
+- [x] 5.4 graph-clustering: rewrite `TestResetStopsPublication` (`publication_integration_test.go:249-277`) so the
   replay publishes the other groups, shown failing on `main`, and `TestRefusedValueReportedNotWithheld` to expect
   `damaged_entity` and the ID in `Health`; add `TestDamagedOverwriteLeavesGroup`. Waits: the floor, then a tick by
   hand. Then `deliver` (`component.go:269-290`) reports and applies a delete in
@@ -75,10 +75,10 @@ copy. #657 stays open for its other follow-ups.
 
 ## 6. PR 3: records and docs
 
-- [ ] 6.1 ADR-108 status and D4 (`docs/adr/108-processor-shell.md:8-11`, `:109-112`), ADR-109 D1 `:72-77`, D2
+- [x] 6.1 ADR-108 status and D4 (`docs/adr/108-processor-shell.md:8-11`, `:109-112`), ADR-109 D1 `:72-77`, D2
   `:88-95`, row `:195`: amended citing #657 ruling 3 and #658 comment 6962917422. ADR-074 port note `:13-18` and ADR-084
   (`:139-142`): one bullet each. `graph/state_contract.go:55-62` comment.
-- [ ] 6.2 `docs/admission-ledger.yaml` rows graph/follower `:3620-3666`, graph-index `:3560-3566`, `:3606`, ADR-074
+- [x] 6.2 `docs/admission-ledger.yaml` rows graph/follower `:3620-3666`, graph-index `:3560-3566`, `:3606`, ADR-074
   `:3668-3680`, graph-embedding `:4598`, graph-clustering `:4927`; READMEs and MIGRATION notes listed in
   `inventory.md` § 3; `.agents/skills/query-pattern/SKILL.md:53-56`; `graph/index_status.go:80-81` (graph-index now
   emits `failed_reasons`). The "always absent today" lines PR 2 left: `pkg/fusion/README.md:69-70`,
@@ -86,16 +86,16 @@ copy. #657 stays open for its other follow-ups.
   `processor/graph-query/MIGRATION.md:127`; ledger rows pkg/fusion `:4682`, pkg/fusion/fusionnats `:4802` (its
   contract `:4824`: an nl Resolve copies `damaged_entities` too, as do byName and relationships) and graph-gateway
   `:1931` (answers carry `extensions.damagedEntities`).
-- [ ] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
+- [x] 6.3 Remove `graph.IndexStateResetRequired` from `graph/index_status.go` and `IndexStates()`, the
   `IndexStatusResponse.Code` and `Reason` fields (`:33-36`), the gate's branch (`graph/readiness/readiness_gate.go:127`)
   and their tests (`publisher_test.go:88`, `readiness_gate_test.go:101`, `:331`,
   `internal/smoke/stack_integration_test.go:663`);
   `TestEvaluateReadinessGate_UnrecognizedStateFailsClosed` gains `reset_required`; a semconnect migration note
   (`conformance/cmd/index-readiness/main.go:155`). File the adoption-sweep issue for one damage-record type
   (graph-ingest `poison_inventory.go:84`, graph-clustering `maintainer.go:143`, the follower).
-- [ ] 6.4 Before PR 3 is marked ready: post on #658 what counts as done; PR title and body match.
+- [x] 6.4 Before PR 3 is marked ready: post on #658 what counts as done; PR title and body match.
 
 ## 7. Close
 
-- [ ] 7.1 Review request with the archive in the reviewed head; `reviewed-by:` in the PR body when the record lands.
-- [ ] 7.2 Archive the change and sync the specs as the last content commit of PR 3.
+- [x] 7.1 Review request with the archive in the reviewed head; `reviewed-by:` in the PR body when the record lands.
+- [x] 7.2 Archive the change and sync the specs as the last content commit of PR 3.

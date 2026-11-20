@@ -127,8 +127,8 @@ The component writes `EMBEDDING_INDEX` and `EMBEDDING_DEDUP` itself and declares
 ## Health and readiness
 
 `Health` is `Healthy` once started, and unhealthy while any of these holds: a stored `ENTITY_STATES` value could not
-be decoded (Health reads `graph state reset required: <reason>`, and both query verbs are refused with the error
-code `graph_state_reset_required`), failed entities are unresolved, the `ENTITY_STATES` feed is lost, the Worker's
+be decoded (a *damaged* entity; `Stuck` names the count, up to 10 IDs with their reasons, and the repair: write a valid
+value for the key or delete it), failed entities are unresolved, the `ENTITY_STATES` feed is lost, the Worker's
 watch on `EMBEDDING_INDEX` ended while the component ran, or the vector cache's watch on `EMBEDDING_INDEX` ended
 (Health reads `vector cache watch lost; restart the process`). The error count (`ErrorCount`) rises by one when an
 entity becomes failed (it was not failed before; see "Failed entities and the repair lane" below) and by one for each
@@ -196,7 +196,11 @@ in neither.
 Before answering, each verb asks the follower whether the graph state is ready. It is refused transient
 `index_not_ready` before the first build completes, while the `ENTITY_STATES` feed is lost, while a hop-1 failure
 (`delete_failed`, `pending_write_failed`, `entity_read_failed`) stands, and while the cache has not applied its first
-snapshot or has lost its watch. A latched reset is refused fatal `graph_state_reset_required`. A failure in the Worker
+snapshot or has lost its watch. A damaged entity does not withhold either verb: the component removes the entity's
+vector, `search` and `similar` answer from the other vectors, and each reply counts the damaged entities it may have
+left out in `damaged_entities` (omitted at 0; `search` counts only those inside its scope). `similar` from a damaged
+entity is refused fatal `graph_state_reset_required`. A valid write or a delete of the key clears the damage with no
+restart. A failure in the Worker
 (hop 2, such as a `content_error` for a document whose text cannot be extracted) does not withhold anything: the
 verbs answer from the other vectors and `failed_records` counts it. The status the component publishes still reads
 degraded while such a failure stands. A malformed request is refused `invalid_request` whatever the readiness.

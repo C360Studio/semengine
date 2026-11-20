@@ -31,7 +31,7 @@ transport"; `TestGraphImportsNoTransport`).
 - **The wire types.** The query request and reply types, the mutation requests and responses
   (`ReconcilePredicatesRequest` names the one source it reconciles), `ExactEntity` and `ExactEntityReader` for the
   authority read, and `IndexStatusResponse`, the readiness envelope a producer writes to `GRAPH_STATUS`. Its state
-  field is an `IndexState`, one of the four `IndexState*` constants that `IndexStates()` lists. The computation that
+  field is an `IndexState`, one of the three `IndexState*` constants that `IndexStates()` lists. The computation that
   fills the envelope is in `graph/readiness`.
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,

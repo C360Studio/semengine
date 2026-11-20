@@ -77,7 +77,8 @@ entities, stored values it refuses to read, out of the answer), the answer carri
 `"extensions": {"damagedEntities": n}`. `data` still holds exactly the selected fields, and the answer about every
 other entity stands; a row a damaged entity would have given may be missing. `entitiesByPredicate` and `pathSearch`
 can carry it; `entity` and `entitiesByPrefix` read graph-ingest's bare replies, which carry none. A field answered null
-carries none. The graph's indexes do not set the count yet, so today the key is always absent.
+carries none. The graph's indexes set the count, so the key appears while a stored value is damaged and disappears
+once a valid value is written or the key is deleted.
 
 ## Configuration
 

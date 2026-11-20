@@ -30,10 +30,6 @@ package graph
 type IndexStatusResponse struct {
 	Ready bool       `json:"ready"` // target>0 && indexed_revision>=target_revision
 	State IndexState `json:"state"` // one of IndexStates()
-	// Code and Reason carry bounded operator-actionable fatal readiness state.
-	// They are empty during ordinary building/ready/degraded operation.
-	Code   string `json:"code,omitempty"`
-	Reason string `json:"reason,omitempty"`
 	// BootstrapComplete reports whether this producer has finished its INITIAL BUILD
 	// in the current process lifetime: enumeration of ENTITY_STATES plus replay up to
 	// the enumeration-time target, including the authoritatively-empty 0/0 outcome. It
@@ -77,9 +73,10 @@ type IndexStatusResponse struct {
 	// WITHOUT any unbounded per-entity list on the watched key.
 	//
 	// Both are additive and omitempty: a producer with no failures emits neither,
-	// and graph-index, which counts failures without reasons, emits FailedCount
-	// only. FailedReasons is bounded to a fixed reason enum (a handful of keys),
-	// keeping the watched key compact on the hot KV path. FailedCount is echoed from
+	// and graph-index, which counts unresolved writes without reasons, emits
+	// FailedReasons only for damaged entities (damaged_entity). FailedReasons is
+	// bounded to a fixed reason enum (a handful of keys), keeping the watched key
+	// compact on the hot KV path. FailedCount is echoed from
 	// the projection input (it also drives State=degraded); FailedReasons is set by
 	// the producer after the projection. There is no first-failure time.
 	FailedCount   uint64            `json:"failed_count,omitempty"`
@@ -137,17 +134,16 @@ type IndexStatusResponse struct {
 }
 
 // IndexState is the readiness envelope's state field. Its wire values are the
-// four constants below; a value outside them is a state this reader does not
+// three constants below; a value outside them is a state this reader does not
 // know, and the readiness gate defers on it.
 type IndexState string
 
 // Index readiness states. Fusion keeps no copy of them: it reads no envelope
 // (ADR-109 decision 1).
 const (
-	IndexStateBuilding      IndexState = "building"
-	IndexStateReady         IndexState = "ready"
-	IndexStateDegraded      IndexState = "degraded"
-	IndexStateResetRequired IndexState = "reset_required"
+	IndexStateBuilding IndexState = "building"
+	IndexStateReady    IndexState = "ready"
+	IndexStateDegraded IndexState = "degraded"
 )
 
 // IndexStates returns the closed set of readiness states, in a new slice on
@@ -160,6 +156,5 @@ func IndexStates() []IndexState {
 		IndexStateBuilding,
 		IndexStateReady,
 		IndexStateDegraded,
-		IndexStateResetRequired,
 	}
 }

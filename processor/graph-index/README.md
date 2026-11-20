@@ -93,9 +93,17 @@ Every one of the eight verbs refuses:
   `ENTITY_STATES` revision that was newest when the rebuild's snapshot ended. Once reached, the index stays ready; a
   later lag does not refuse queries;
 - with the transient code `index_not_ready` for as long as the follower has lost its feed (below), and while index
-  writes that failed are unresolved;
-- with the fatal code `graph_state_reset_required` after a stored `ENTITY_STATES` value could not be decoded (ADR-074).
-  The state holds until the process restarts; the stored state has to be wiped and rebuilt first.
+  writes that failed are unresolved.
+
+A stored `ENTITY_STATES` value that cannot be decoded makes that one entity *damaged* (ADR-074). The index removes the
+rows it built from the entity's earlier value and goes on indexing every other entity. A damaged entity does not stop
+the verbs:
+
+- every reply counts every damaged entity in `damaged_entities` (omitted at 0), since any of them may be one it left
+  out. The reply's other rows are right;
+- `outgoing` of a damaged entity is refused with the fatal code `graph_state_reset_required`, because the caller named
+  the entity the index cannot answer for;
+- a valid write of the entity or a delete of its key clears the damage with no restart.
 
 A caller treats `index_not_ready` as retry later and `graph_state_reset_required` as do not retry.
 
@@ -158,13 +166,15 @@ four outputs must be exactly the four index buckets above; an input or output th
 
 ## Health and readiness
 
-`Health` is `Healthy` once started, and unhealthy while any of these holds: a stored value could not be decoded
-(`graph_state_reset_required`), index writes are unresolved, or the `ENTITY_STATES` feed is lost. The error count is
-reported and never lowers `Healthy` by itself (ADR-109). `DataFlow` counts one input per delivered `ENTITY_STATES`
-entry, update or delete, before merging.
+`Health` is `Healthy` once started, and unhealthy while any of these holds: a stored value could not be decoded (a
+damaged entity), index writes are unresolved, or the `ENTITY_STATES` feed is lost. Its `Stuck` text names the count, up
+to 10 damaged entity IDs with the reason for each, and the repair: write a valid value for the key or delete it. The
+error count is reported and never lowers `Healthy` by itself (ADR-109). `DataFlow` counts one input per delivered
+`ENTITY_STATES` entry, update or delete, before merging.
 
 The follower publishes the readiness record to `GRAPH_STATUS` at once and then every heartbeat, with `indexed_revision`,
-`target_revision` and `failed_count`. The state reads `degraded` when index writes are unresolved, the feed is lost, or
+`target_revision` and `failed_count`. The state reads `degraded` when index writes are unresolved, a damaged entity is
+stored (`failed_reasons` then holds `damaged_entity`, the count of them, with no IDs), the feed is lost, or
 the follower has been behind for 30 seconds with no completed write. Any completed write counts, so one entity held
 while others finish reads not ready, not degraded.
 

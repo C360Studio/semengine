@@ -11,12 +11,15 @@
 > - Of the records named here, none is carried except this one. ADR-065, ADR-068, ADR-073 and ADR-091 are not ported;
 >   ADR-091 partly supersedes this record, and its mutation-authority decision is not part of this port.
 > - The code this record names is ported: `vocabulary.ParsePredicate`, `graph.MarshalEntityState` and
->   `graph.UnmarshalEntityState`. The sticky `graph_state_reset_required` state of "Stored-state poison" is kept in
->   `graph/follower` (`Follower.Reset` latches the first reason for the process lifetime; `QueryReady` then refuses
->   with the fatal code) and fed by `processor/graph-index`. Where the text says "graph-index observes unreadable
->   ENTITY_STATES", the follower's validating phase decodes each stored value with `graph.UnmarshalEntityState` until
->   the snapshot ends, and graph-index reports an entity ID that is not canonical. As at the pin, graph-index keeps
->   indexing the other entities after a reset; whether to apply after a reset is the plug-in's choice.
+>   `graph.UnmarshalEntityState`. The sticky `graph_state_reset_required` state of "Stored-state poison" is not kept
+>   (#657 ruling 3; #658 comment 6962917422). A stored value that does not decode is damage to one entity: the
+>   plug-in (graph-index, graph-embedding, graph-lexical, graph-clustering) decodes each value with
+>   `graph.UnmarshalEntityState` and reports a failure to `graph/follower` with `Follower.ReportDamaged`, and the
+>   follower holds one record per key. A valid write or a delete of the key clears it with no restart; wiping the
+>   store and restarting is not needed. The plug-in removes what it built from the entity's earlier value, keeps
+>   serving the others, and its replies count the entities left out (`damaged_entities`). A query that names a damaged
+>   entity is still refused with the fatal code `graph_state_reset_required`. The component reads `degraded` with
+>   `failed_reasons["damaged_entity"]` while a record is held.
 > - The deployment text ("clean beta cutover", the wipe-and-reseed procedure) is the pin's. SemEngine's own rule is
 >   that deployments start fresh and no legacy-format reader or migration is carried.
 

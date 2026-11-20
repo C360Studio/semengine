@@ -148,19 +148,23 @@ func TestQueriesWithheldUntilReady(t *testing.T) {
 		}
 	})
 
-	t.Run("after a reset", func(t *testing.T) {
+	t.Run("a damaged entity withholds nothing", func(t *testing.T) {
 		h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 		a := entityID(1)
 		h.titled(t, "gadget", a)
 		awaitAnswer(t, h, "search", `{"query":"gadget"}`, hitCount[graph.SemanticData](1))
-		h.put(t, entityID(3), []byte("not an entity state"))
-		// The follower latches the reset before Health can name it.
-		await(t, "the reset latched", func(context.Context) (component.HealthStatus, error) { return h.c.Health(), nil },
-			func(health component.HealthStatus) bool {
-				return strings.Contains(health.LastError, "graph state reset required")
-			})
-		refusedNow(t, h, "after a reset", "search", `{"query":"gadget"}`, errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired)
-		refusedNow(t, h, "after a reset", "similar", `{"entity_id":"`+a+`"}`, errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired)
+		// Hop 1 reports the damaged entity before it completes the revision, so the floor
+		// passing it orders the requests after the report. The entity never had a vector, so the
+		// cache already holds what the replies read.
+		h.awaitPast(t, "hop 1 passed the damaged revision", h.put(t, entityID(3), []byte("not an entity state")))
+		search := answerNow[graph.SemanticData](t, h, "search", `{"query":"gadget"}`)
+		if got := ids(search.reply.Data.Results); !slices.Equal(got, []string{a}) || search.reply.DamagedEntities != 1 {
+			t.Errorf("search with a damaged entity = %s; want only %s with damaged_entities 1", search.raw, a)
+		}
+		similar := answerNow[graph.SimilarData](t, h, "similar", `{"entity_id":"`+a+`"}`)
+		if similar.reply.DamagedEntities != 1 {
+			t.Errorf("similar with a damaged entity = %s; want damaged_entities 1", similar.raw)
+		}
 	})
 }
 

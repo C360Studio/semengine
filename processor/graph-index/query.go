@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
@@ -72,31 +73,44 @@ func (c *Component) subscribeQueries(ctx context.Context) error {
 	return nil
 }
 
+// position is what a handler read before its first bucket read: the revision the reply
+// carries and the damaged entities recorded then.
+type position struct {
+	follower *follower.Follower
+	revision uint64
+	damaged  int
+}
+
 // queryRevision refuses the query while the follower withholds readiness (QueryReady) or
-// has not reached minRevision (zero means none), and otherwise returns the revision the
+// has not reached minRevision (zero means none), and otherwise returns the position the
 // reply carries. It is read here, before the handler's first bucket read, so every revision
 // at or below it is reflected in what the handler then reads.
-func (c *Component) queryRevision(ctx context.Context, minRevision uint64) (uint64, error) {
+func (c *Component) queryRevision(ctx context.Context, minRevision uint64) (position, error) {
 	f := c.follower.Load()
 	if err := f.QueryReady(ctx); err != nil {
-		return 0, err
+		return position{}, err
 	}
 	revision := f.Indexed()
 	if minRevision > revision {
-		return 0, errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached,
+		return position{}, errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached,
 			map[string]any{"indexed_revision": revision},
 			fmt.Errorf("min_revision %d is above the indexed revision %d", minRevision, revision))
 	}
-	return revision, nil
+	return position{follower: f, revision: revision, damaged: f.DamagedCount(nil)}, nil
 }
 
 // reply is a successful reply: data in the graph.QueryResponse envelope, producer
-// graph-index, carrying revision.
-func reply[T any](revision uint64, data T) ([]byte, error) {
-	response, err := graph.NewQueryResponse(graph.ResponderGraphIndex, revision, data)
+// graph-index, carrying the position's revision and the damaged entities it may have left out.
+// The count is the larger of the record before the handler's reads and after them: a lane
+// records an entity before it removes the entity's rows, and clears it only after writing its
+// valid rows, so rows a read missed are counted by one of the two, unless the entity was
+// damaged and repaired again while the handler read.
+func reply[T any](at position, data T) ([]byte, error) {
+	response, err := graph.NewQueryResponse(graph.ResponderGraphIndex, at.revision, data)
 	if err != nil {
 		return nil, internalError(err)
 	}
+	response.DamagedEntities = max(at.damaged, at.follower.DamagedCount(nil))
 	return json.Marshal(response)
 }
 
@@ -130,7 +144,8 @@ func decodeEntityRequest(data []byte) (entityRequest, error) {
 }
 
 // handleQueryOutgoing answers an entity's outgoing relationships: its OUTGOING_INDEX row,
-// or none.
+// or none. For a damaged entity it answers the refusal the follower recorded, read after the
+// row, so an entity recorded while the row was read is refused rather than answered empty.
 func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
@@ -138,13 +153,17 @@ func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
 	entry, err := c.outgoingBucket.Get(ctx, req.EntityID)
 	if natsclient.IsKVNotFoundError(err) {
-		return reply(revision, graph.OutgoingRelationshipsData{Relationships: []graph.OutgoingEntry{}})
+		// A damaged entity's row is removed: say why it is absent rather than answer none.
+		if refusal := at.follower.DamagedRefusal(req.EntityID); refusal != nil {
+			return nil, refusal
+		}
+		return reply(at, graph.OutgoingRelationshipsData{Relationships: []graph.OutgoingEntry{}})
 	}
 	if err != nil {
 		return nil, internalError(err)
@@ -153,7 +172,10 @@ func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byt
 	if err := json.Unmarshal(entry.Value, &entries); err != nil {
 		return nil, internalError(err)
 	}
-	return reply(revision, graph.OutgoingRelationshipsData{Relationships: entries})
+	if refusal := at.follower.DamagedRefusal(req.EntityID); refusal != nil {
+		return nil, refusal
+	}
+	return reply(at, graph.OutgoingRelationshipsData{Relationships: entries})
 }
 
 // handleQueryIncoming answers the edges that point at an entity, read from the
@@ -169,7 +191,7 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +214,7 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 		return cmp.Or(strings.Compare(a.FromEntityID, b.FromEntityID), strings.Compare(a.Predicate, b.Predicate))
 	})
 	entries = slices.Compact(entries)
-	return reply(revision, graph.IncomingRelationshipsData{Relationships: entries})
+	return reply(at, graph.IncomingRelationshipsData{Relationships: entries})
 }
 
 // incomingEntryFromKey reads an INCOMING_INDEX key, target.source6.hex(predicate), whose
@@ -253,7 +275,7 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -275,9 +297,9 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 			fmt.Errorf("alias %q is held by %d entities", req.Alias, len(holders)))
 	}
 	for canonicalID := range holders {
-		return reply(revision, graph.AliasData{CanonicalID: &canonicalID})
+		return reply(at, graph.AliasData{CanonicalID: &canonicalID})
 	}
-	return reply(revision, graph.AliasData{})
+	return reply(at, graph.AliasData{})
 }
 
 // handleQueryPredicate answers the entities carrying a predicate, sorted; with a value,
@@ -292,7 +314,7 @@ func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]by
 	if _, err := predicateExactFilter(req.Predicate); err != nil {
 		return nil, invalidPredicateQuery(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +328,7 @@ func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]by
 			return nil, internalError(err)
 		}
 	}
-	return reply(revision, graph.PredicateData{Entities: limited(entities, req.Limit)})
+	return reply(at, graph.PredicateData{Entities: limited(entities, req.Limit)})
 }
 
 // limited returns the first limit values; a limit of zero or less keeps them all.
@@ -412,7 +434,7 @@ func (c *Component) handleQueryPredicateList(ctx context.Context, data []byte) (
 			return nil, invalidPredicateQuery(err)
 		}
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +451,7 @@ func (c *Component) handleQueryPredicateList(ctx context.Context, data []byte) (
 	for _, key := range malformed {
 		c.skipMalformedRow("predicate", key, "key is not predicate.entity")
 	}
-	return reply(revision, graph.PredicateListData{Predicates: predicates, Total: len(predicates)})
+	return reply(at, graph.PredicateListData{Predicates: predicates, Total: len(predicates)})
 }
 
 // handleQueryPredicateStats answers a predicate's entity count and the first sample_limit
@@ -451,7 +473,7 @@ func (c *Component) handleQueryPredicateStats(ctx context.Context, data []byte) 
 	if req.SampleLimit <= 0 {
 		req.SampleLimit = 10
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +481,7 @@ func (c *Component) handleQueryPredicateStats(ctx context.Context, data []byte) 
 	if err != nil {
 		return nil, internalError(err)
 	}
-	return reply(revision, graph.PredicateStatsData{
+	return reply(at, graph.PredicateStatsData{
 		Predicate:      req.Predicate,
 		EntityCount:    len(entities),
 		SampleEntities: limited(entities, req.SampleLimit),
@@ -486,7 +508,7 @@ func (c *Component) handleQueryPredicateCompound(ctx context.Context, data []byt
 	if req.Operator != "AND" && req.Operator != "OR" {
 		return nil, invalidRequest(errors.New("operator must be AND or OR"))
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -509,7 +531,7 @@ func (c *Component) handleQueryPredicateCompound(ctx context.Context, data []byt
 		}
 	}
 	slices.Sort(entities)
-	return reply(revision, graph.CompoundPredicateData{
+	return reply(at, graph.CompoundPredicateData{
 		Entities: limited(entities, req.Limit),
 		Operator: req.Operator,
 		Matched:  len(entities),
@@ -617,7 +639,7 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +675,7 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 		}
 		items = append(items, graph.NameIndexItem{EntityID: entityID, Name: v.Name, Predicate: predicate, Priority: v.Priority})
 	}
-	return reply(revision, graph.NameData{Matches: rankNameMatches(items, req.Name, req.Limit)})
+	return reply(at, graph.NameData{Matches: rankNameMatches(items, req.Name, req.Limit)})
 }
 
 // nameRank pairs a match with its label-predicate priority for ordering.

@@ -81,15 +81,6 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 				IndexedRevision: 480, TargetRevision: 500, Lag: 20, StalenessMs: 1200,
 			},
 		},
-		{
-			name: "reset required carries code and reason",
-			key:  KeyGraphIndex,
-			status: graph.IndexStatusResponse{
-				State:  graph.IndexStateResetRequired,
-				Code:   graph.ErrorCodeGraphStateResetRequired,
-				Reason: string(graph.GraphStateReasonNoncanonicalPredicate),
-			},
-		},
 	}
 
 	for _, tt := range tests {

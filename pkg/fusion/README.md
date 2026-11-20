@@ -66,8 +66,9 @@ or false:
   suggestions. Above 0 the answer about every other entity stands, but a node, edge or suggestion one of them would
   have given may be missing. Counts are not added, since two reads can count the same entity. It rides on nodes, a
   miss and an `all_seeds_unhydrated` deferral (whose seeds the resolve found), in every resolve mode; an
-  `index_not_ready` deferral answers nothing and carries none. It is not `truncated`. The graph's indexes do not set
-  the count yet, so today it is always absent.
+  `index_not_ready` deferral answers nothing and carries none. It is not `truncated`. The graph's indexes
+  (graph-index, graph-embedding, graph-lexical) set the count, so it appears while any stored value is damaged and
+  disappears once a valid value is written or the key is deleted.
 - `relations_truncated` (on a node): a role had more than 12 relations, a relations read failed, or a target could not
   be read.
 - `paths_truncated`, and `truncated` on a path: more than 10 paths existed, or a path stopped at a node that could not

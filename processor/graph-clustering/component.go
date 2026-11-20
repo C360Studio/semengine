@@ -24,9 +24,10 @@ import (
 // key names graph-clustering once: its registration, its logger and its GRAPH_STATUS key.
 const key = readiness.KeyGraphClustering
 
-// The Failed reasons graph-clustering names itself: reasonRefusedEntity for entities the last tick
-// that reported them left out of the records, reasonPublicationFailed while the last tick's
-// publication failed.
+// The Failed reasons graph-clustering names itself: reasonRefusedEntity for decoded entities the
+// maintainer refused, which the last tick that reported them left out of the records, and
+// reasonPublicationFailed while the last tick's publication failed. A value that does not decode
+// is not among them: the follower records it as a damaged entity.
 const (
 	reasonRefusedEntity     = "refused_entity"
 	reasonPublicationFailed = "publication_failed"
@@ -153,8 +154,8 @@ func (c *Component) InputPorts() []component.Port { return slices.Clone(c.inputs
 func (c *Component) OutputPorts() []component.Port { return nil }
 
 // Health reports the shell's verdict (component.Lifecycle.Health) over the follower's stuck
-// states: a latched reset, the failures the last tick reported (refused entities, a failed
-// publication), a lost feed.
+// states: the damaged entities it recorded, by ID, the failures the last tick reported (refused
+// entities, a failed publication), a lost feed.
 func (c *Component) Health() component.HealthStatus {
 	var stuck []string
 	if f := c.follower.Load(); f != nil {
@@ -198,8 +199,8 @@ func (c *Component) start(ctx context.Context) error {
 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
 		Deliver:         c.deliver,
 		Failed:          c.failed,
-		// A refused entity is left out of its groups' records; the others still publish, so no
-		// failure withholds anything.
+		// A damaged or refused entity is left out of its groups' records; the others still
+		// publish, so no failure withholds anything.
 		Withhold: func() int64 { return 0 },
 	})
 	if err != nil {
@@ -262,36 +263,45 @@ func (c *Component) runTicks(ctx context.Context, tick func(context.Context)) {
 
 // deliver is the follower's Deliver, on its Run goroutine: it applies the delivered value at its
 // revision to the maintainer, then completes the revision at once, so the graph-clustering key's
-// indexed revision counts what the maintainer holds, not what is published. A value that does not
-// decode is applied as a refused entity, which contributes nothing to its groups; the next tick
-// counts it under refused_entity. The maintainer ignores a delivery at or below the revision it
-// last applied for the key.
+// indexed revision counts what the maintainer holds, not what is published. The maintainer ignores
+// a delivery at or below the revision it last applied for the key.
+//
+// A value that does not decode is a damaged entity. It is reported to the follower first, so a
+// tick that publishes without the entity runs while Health already names it; then it is applied
+// as a delete, so its groups keep nothing from its last good value, and its revision completes, so
+// the replay finishes and the other groups publish. A valid write or a delete of the key clears it.
 func (c *Component) deliver(_ context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
+	f := c.follower.Load()
 	var err error
 	if e.Deleted {
 		err = c.maintainer.Delete(e.Key, e.Revision)
 	} else {
 		var state graph.EntityState
-		if err = graph.UnmarshalEntityState(e.Key, e.Value, &state); err != nil {
-			// A nil state is the maintainer's refusal; its own error says less than the decoder's.
-			_ = c.maintainer.Upsert(e.Key, e.Revision, nil)
+		if refusal := graph.UnmarshalEntityState(e.Key, e.Value, &state); refusal != nil {
+			if f.ReportDamaged(e.Key, e.Revision, refusal) {
+				c.lifecycle.CountError()
+				c.logger.Error("entity state refused; left out of the community records until a valid write or a delete",
+					slog.String("entity", e.Key), slog.Uint64("revision", e.Revision), slog.Any("error", refusal))
+			}
+			err = c.maintainer.Delete(e.Key, e.Revision)
 		} else {
 			err = c.maintainer.Upsert(e.Key, e.Revision, &state)
 		}
 	}
 	if err != nil {
 		// The entity contributes nothing until a later write for it applies; the tick that
-		// follows names it in an *IncompleteError, which Failed reports.
+		// follows names a refused one in an *IncompleteError, which Failed reports.
 		c.logger.Warn("entity refused by the community maintainer; it is left out of the records",
 			slog.String("key", e.Key), slog.Uint64("revision", e.Revision), slog.Any("error", err))
 	}
-	c.follower.Load().Complete(e.Key, e.Revision)
+	f.Complete(e.Key, e.Revision)
 }
 
 // failed is the follower's Failed, from the last tick's outcome: the refused entities the last
 // tick that reported them left out of the records, under refused_entity, and 1 under
-// publication_failed while the last tick's publication failed; none before the first tick.
+// publication_failed while the last tick's publication failed; none before the first tick. The
+// follower adds the damaged entities it recorded to the envelope itself.
 func (c *Component) failed() (int64, map[string]uint64) {
 	c.outcomeMu.Lock()
 	refused, publicationFailed := c.refused, c.publicationFailed
@@ -314,10 +324,11 @@ func (c *Component) failed() (int64, map[string]uint64) {
 }
 
 // tick runs one publication: none while the follower's QueryReady refuses (the replay not yet
-// applied, a lost feed, a latched reset), so no record is built from a partial replay or a broken
-// feed; otherwise the maintainer's bootstrap is ended, its changed groups are published, and the
-// outcome is kept for Failed. A tick the run context ends is not an outcome: Stop is under way, and
-// the work stays pending in the maintainer.
+// applied, a lost feed), so no record is built from a partial replay or a broken feed; a damaged
+// entity refuses nothing, since deliver applied it as a delete. Otherwise the maintainer's
+// bootstrap is ended, its changed groups are published, and the outcome is kept for Failed. A tick
+// the run context ends is not an outcome: Stop is under way, and the work stays pending in the
+// maintainer.
 func (c *Component) tick(ctx context.Context) {
 	if err := c.follower.Load().QueryReady(ctx); err != nil {
 		return

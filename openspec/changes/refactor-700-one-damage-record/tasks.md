@@ -11,9 +11,9 @@ draft #701, which closes #700.
 
 ## 2. The shared record (design D2, D3)
 
-- [ ] 2.1 Tests first in `internal/damage`: the named cases and `TestPropRecordFollowsLatestEvent` (design "Proving
+- [x] 2.1 Tests first in `internal/damage`: the named cases and `TestPropRecordFollowsLatestEvent` (design "Proving
   tests"), shown failing against a stub; seed and completed runs recorded.
-- [ ] 2.2 `internal/damage`: `Record` and `Entry` with a package comment; `docs/repository-map.md` row.
+- [x] 2.2 `internal/damage`: `Record` and `Entry` with a package comment; `docs/repository-map.md` row.
 
 ## 3. The follower (design D5)
 

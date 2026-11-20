@@ -272,3 +272,104 @@ func TestRemovedNoncanonicalKeyIsNoLongerDamaged(t *testing.T) {
 		}
 	}
 }
+
+// TestUnreadableKeyRemovalOutlastsCoalescedWrite: a key longer than the shared KV key validator
+// allows cannot be read back, so its delivered events decide whether it is damaged. With
+// coalescing on, a write of it taken into a batch must not record it damaged after its delete or
+// purge has been applied: no later event for the key would clear that record. The batch is handed
+// to the lanes only after the removal's revision has completed, and a reply past a later write
+// through the same lane must count no damaged entity.
+func TestUnreadableKeyRemovalOutlastsCoalescedWrite(t *testing.T) {
+	removals := []struct {
+		name string
+		run  func(ctx context.Context, states jetstream.KeyValue, key string) error
+	}{
+		{"delete", func(ctx context.Context, states jetstream.KeyValue, key string) error { return states.Delete(ctx, key) }},
+		{"purge", func(ctx context.Context, states jetstream.KeyValue, key string) error { return states.Purge(ctx, key) }},
+	}
+	for _, remove := range removals {
+		t.Run(remove.name, func(t *testing.T) {
+			// The window is far past go test's deadline, so only the test fires the coalescer. One
+			// lane takes every key, in submit order.
+			h := startIndex(t, fixtureClient(t), `{"coalesce_ms":3600000,"workers":1}`)
+			bad := strings.Repeat("k", natsclient.MaxKVLiteralKeyBytes+1)
+			a := entityID(1)
+
+			// The coalescer's own callback, wrapped: it hands the lanes every key but bad at once, and
+			// bad's write only once release is closed, as a batch taken just before the removal and
+			// scheduled after it would.
+			original := h.c.coalescer.callback
+			captured, release := make(chan struct{}), make(chan struct{})
+			h.c.coalescer.callback = func(ctx context.Context, batch []coalescedEntity) {
+				var held []coalescedEntity
+				rest := batch[:0:0]
+				for _, e := range batch {
+					if e.entityID == bad {
+						held = append(held, e)
+					} else {
+						rest = append(rest, e)
+					}
+				}
+				original(ctx, rest)
+				select {
+				case <-captured:
+				default:
+					close(captured)
+				}
+				<-release
+				original(ctx, held)
+			}
+			t.Cleanup(func() {
+				select {
+				case <-release:
+				default:
+					close(release)
+				}
+			})
+			pendingAt := func(key string, rev uint64) {
+				await(t, "write of "+key+" handed to the coalescer", func(context.Context) (bool, error) {
+					h.c.coalescer.mu.Lock()
+					defer h.c.coalescer.mu.Unlock()
+					return h.c.coalescer.pending[key] == rev, nil
+				}, func(v bool) bool { return v })
+			}
+
+			h.put(t, bad, damagedValue)
+			// Entries are delivered one at a time in order, so a's pending revision means bad's write
+			// was delivered before it.
+			pendingAt(a, h.put(t, a, entityValue(t, a, stmt{vocabulary.DCTermsTitle, "Alpha"})))
+			returned := make(chan struct{})
+			go func() {
+				h.c.coalescer.fire(t.Context())
+				close(returned)
+			}()
+			<-captured
+
+			if err := remove.run(t.Context(), h.states, bad); err != nil {
+				t.Fatalf("%s: %v", remove.name, err)
+			}
+			status, err := h.states.Status(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.awaitIndexed(t, status.(*jetstream.KeyValueBucketStatus).StreamInfo().State.LastSeq)
+			if got := h.f.DamagedCount(nil); got != 0 {
+				t.Fatalf("damaged entities once the %s completed = %d; want 0", remove.name, got)
+			}
+
+			close(release)
+			<-returned
+			// The one lane applies this write after whatever the batch handed it for bad.
+			rev := h.put(t, a, entityValue(t, a, stmt{vocabulary.DCTermsTitle, "Alpha"}))
+			pendingAt(a, rev)
+			h.c.coalescer.fire(t.Context())
+			names := countedAnswer[graph.NameData](t, h, "byName", map[string]any{"name": "Alpha"}, rev)
+			requireRelationship(t, "byName Alpha", nameIDs(names.Data.Matches), []string{a})
+			requireDamaged(t, "byName Alpha after the "+remove.name, names, 0)
+			// The key is over a thousand bytes, so only the status is printed.
+			if health := h.c.Health(); !health.Healthy {
+				t.Errorf("Health after the %s is %s with %d errors; want healthy", remove.name, health.Status, health.ErrorCount)
+			}
+		})
+	}
+}

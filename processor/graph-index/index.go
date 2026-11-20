@@ -41,12 +41,10 @@ const indexWriteMaxAttempts = 3
 const indexRepairInterval = 30 * time.Second
 
 // indexWork names one key for a lane. revision is the delivered revision the work
-// completes once applied; repair work carries 0 and completes nothing. deleted says the
-// delivered revision is a delete or purge.
+// completes once applied; repair work carries 0 and completes nothing.
 type indexWork struct {
 	entityID string
 	revision uint64
-	deleted  bool
 }
 
 // openIndexBuckets acquires the five index buckets graph-index owns, as their owner,
@@ -118,26 +116,48 @@ func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower
 }
 
 // deliver is the follower's Deliver: it counts the entry, before any coalescing, and
-// routes its key. A delete drops the key's pending coalesced revision and goes to the
-// lane at once; the delete's revision is greater, so completing it completes the dropped
-// one (revlag).
+// routes its key. A key the shared KV key validator refuses is settled here and never
+// routed (settleUnreadable). A delete drops the key's pending coalesced revision and goes
+// to the lane at once; the delete's revision is greater, so completing it completes the
+// dropped one (revlag).
 func (c *Component) deliver(ctx context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
-	work := indexWork{entityID: e.Key, revision: e.Revision, deleted: e.Deleted}
+	event := "update"
 	if e.Deleted {
-		c.metrics.watchEvents.WithLabelValues("delete").Inc()
+		event = "delete"
+	}
+	c.metrics.watchEvents.WithLabelValues(event).Inc()
+	if natsclient.ValidateKVLiteralKey(e.Key) != nil {
+		c.settleUnreadable(e)
+		return
+	}
+	work := indexWork{entityID: e.Key, revision: e.Revision}
+	if e.Deleted {
 		if c.coalescer != nil {
 			c.coalescer.Remove(e.Key)
 		}
 		c.submit(ctx, work)
 		return
 	}
-	c.metrics.watchEvents.WithLabelValues("update").Inc()
 	if c.coalescer != nil {
 		c.coalescer.Add(e.Key, e.Revision)
 		return
 	}
 	c.submit(ctx, work)
+}
+
+// settleUnreadable handles a key the shared KV key validator refuses, one longer than it allows
+// or with more tokens. Such a key cannot be read back, and no row was ever built under it, so its
+// delivered events decide, in the order they arrive: a write records it damaged at the write's
+// revision, and a delete or purge, whose delivery has already cleared the record, records
+// nothing. Each revision completes here. Were such a write queued in the coalescer or a lane, it
+// could be applied after the key's delete and record a key that no longer exists, with no later
+// event to clear it.
+func (c *Component) settleUnreadable(e follower.Entry) {
+	if !e.Deleted {
+		c.reportDamaged(e.Key, e.Revision, noncanonicalRefusal(e.Key, validateEntityLiteralKey(e.Key)))
+	}
+	c.follower.Load().Complete(e.Key, e.Revision)
 }
 
 // submitBatch is the coalescer's callback: each key goes to its lane as reconciliation
@@ -185,7 +205,7 @@ func (c *Component) failedTotal() int64 {
 func (c *Component) reconcileEntity(ctx context.Context, work indexWork) bool {
 	entityID := work.entityID
 	if err := validateEntityLiteralKey(entityID); err != nil {
-		c.reconcileNoncanonical(ctx, work, err)
+		c.reconcileNoncanonical(ctx, entityID, err)
 		return true
 	}
 	entry, err := c.entities.Get(ctx, entityID)
@@ -215,29 +235,29 @@ func (c *Component) reconcileEntity(ctx context.Context, work indexWork) bool {
 // such a key, so there is nothing to remove and no owner filter is built from it. The key is
 // damaged while a value is stored under it, and current state decides that, as for every other
 // key: once the key is deleted or purged, its delete, and an older write handled after it, record
-// nothing, so the delete clears the record with no restart. A key the shared KV key validator
-// refuses, one longer than it allows, is not read: its delivered revision decides instead.
-func (c *Component) reconcileNoncanonical(ctx context.Context, work indexWork, invalid error) {
-	revision := work.revision
-	if natsclient.ValidateKVLiteralKey(work.entityID) == nil {
-		entry, err := c.entities.Get(ctx, work.entityID)
-		switch {
-		case natsclient.IsKVNotFoundError(err):
-			c.clearEntityFailed(work.entityID)
-			return
-		case err != nil:
-			c.markEntityFailed(work.entityID)
-			c.logger.Warn("reconcile: authoritative entity read failed; readiness withheld",
-				slog.String("entity", work.entityID), slog.Any("error", err))
-			return
-		}
-		c.clearEntityFailed(work.entityID)
-		revision = entry.Revision()
-	} else if work.deleted {
+// nothing, so the delete clears the record with no restart. Every key here passes the shared KV
+// key validator, which gates the read: deliver settles the keys it refuses (settleUnreadable).
+func (c *Component) reconcileNoncanonical(ctx context.Context, entityID string, invalid error) {
+	entry, err := c.entities.Get(ctx, entityID)
+	switch {
+	case natsclient.IsKVNotFoundError(err):
+		c.clearEntityFailed(entityID)
+		return
+	case err != nil:
+		c.markEntityFailed(entityID)
+		c.logger.Warn("reconcile: authoritative entity read failed; readiness withheld",
+			slog.String("entity", entityID), slog.Any("error", err))
 		return
 	}
-	c.reportDamaged(work.entityID, revision, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
-		&graph.StateContractError{Reason: graph.GraphStateReasonNoncanonicalEntityID, EntityID: work.entityID, Err: invalid}))
+	c.clearEntityFailed(entityID)
+	c.reportDamaged(entityID, entry.Revision(), noncanonicalRefusal(entityID, invalid))
+}
+
+// noncanonicalRefusal is the refusal recorded for entityID, a key that is not a literal entity ID;
+// invalid is why.
+func noncanonicalRefusal(entityID string, invalid error) error {
+	return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+		&graph.StateContractError{Reason: graph.GraphStateReasonNoncanonicalEntityID, EntityID: entityID, Err: invalid})
 }
 
 // reportDamaged records entityID damaged at revision with refusal, counting one error the first

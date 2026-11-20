@@ -1,6 +1,6 @@
 # Proposal: refactor-700-one-damage-record
 
-Approved-by:
+Approved-by: cglusky (2026-11-20) <https://github.com/C360Studio/semengine/issues/700#issuecomment-7046753323> sha256:db10b7786fa0
 
 Track: `design`. Capabilities modified: `graph-ingest-recovery` (three requirements added; the behaviour they state
 is today's). `entity-state-follower` keeps its requirements unchanged.

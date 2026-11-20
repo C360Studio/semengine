@@ -6,9 +6,8 @@ draft #701, which closes #700.
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, the spec delta), INVENTORY PASS, a passing
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`, the spec delta), INVENTORY PASS, a passing
   pre-owner design review, and rulings on Q1 and Q2.
-  Hold: OPEN-Q proposal awaits owner approval (#700)
 
 ## 2. The shared record (design D2, D3)
 

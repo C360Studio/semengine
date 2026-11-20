@@ -50,6 +50,15 @@ entry in sorted order. A new entry SHALL invalidate that entity's query-cache en
 #### Scenario: Eleven poisoned entities
 
 - **WHEN** 11 entities are recorded
-- **THEN** Health names 11, the first 10 IDs in sorted order with reasons and 1 more
-  (`TestHealthNamesTenPoisonedEntities`), and the debug status lists all 11 in sorted order
-  (`TestDebugStatusEnumeratesFullInventory`)
+- **THEN** Health names 11, the first 10 IDs in sorted order with reasons and 1 more, and the debug status lists all
+  11 in sorted order (`TestHealthNamesTenPoisonedEntities`)
+
+#### Scenario: Detection invalidates the cached entry
+
+- **WHEN** an entity is cached and its stored value is then poisoned outside graph-ingest and detected
+- **THEN** the new entry deletes the entity's query-cache entry (`TestDetectionInvalidatesCachedEntry`)
+
+#### Scenario: Concurrent records and clears
+
+- **WHEN** reports and clears of distinct keys run concurrently and all have returned
+- **THEN** the gauge equals the number of keys left recorded (`TestGaugeFollowsConcurrentRecordAndClear`)

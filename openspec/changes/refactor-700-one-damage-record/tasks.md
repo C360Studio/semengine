@@ -24,10 +24,14 @@ draft #701, which closes #700.
 
 ## 4. graph-ingest (design D4)
 
-- [ ] 4.1 `TestHealthNamesTenPoisonedEntities`, shown failing against a sample cap changed to 9.
-- [ ] 4.2 `processor/graph-ingest/poison_inventory.go` and `component.go:123-125` read `damage.Record`: record, drop,
-  Health message, `DebugStatus` and the size fast path; the gauge follows the record (design D4). The sweep keeps
-  `entityPoisonRecord`. Change only the 11 size reads and the `poisonInventoryEntry` helper body (inventory section 4);
+- [ ] 4.1 `TestHealthNamesTenPoisonedEntities` (Health sample and the debug listing of 11), shown failing against a
+  sample cap changed to 9.
+- [ ] 4.2 `TestGaugeFollowsConcurrentRecordAndClear` (design "Proving tests"), shown failing against a gauge set after
+  the lock is released, or recorded as inconclusive in `notes/4.2.md` if the race does not fail reliably. Then
+  `processor/graph-ingest/poison_inventory.go` and `component.go:123-125` read `damage.Record`: record, drop, Health
+  message, `DebugStatus` and the size fast path; the gauge follows the record (design D4), with the choice recorded in
+  `notes/4.2.md`. The sweep keeps `entityPoisonRecord`. Change only the 10 size reads and the `poisonInventoryEntry`
+  helper body (inventory section 4);
   every other graph-ingest test passes with no edit. Ledger: the `processor/graph-ingest` row's dependencies name
   `internal/damage`.
 

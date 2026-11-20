@@ -2,8 +2,8 @@
 
 Approved-by:
 
-Track: `design`. Capabilities modified: `graph-ingest-recovery` (one requirement added; the behaviour it states is
-today's). `entity-state-follower` keeps its requirements unchanged.
+Track: `design`. Capabilities modified: `graph-ingest-recovery` (three requirements added; the behaviour they state
+is today's). `entity-state-follower` keeps its requirements unchanged.
 
 ## Why
 
@@ -22,7 +22,7 @@ asked for one type (#700) so damage is recorded, cleared and sampled one way.
   re-check against the stored bytes and debug listing stay graph-ingest's, built on the shared record.
 - graph-clustering's maintainer keeps its `refused` set: it records input the maintainer refuses, not a damaged
   stored value, and its stored damage already goes to the follower's record.
-- `graph-ingest-recovery` gains the requirement that states graph-ingest's record and clear rule.
+- `graph-ingest-recovery` gains three requirements that state graph-ingest's record, clear rule and reports.
 
 ## Questions for the owner
 
@@ -32,7 +32,8 @@ asked for one type (#700) so damage is recorded, cleared and sampled one way.
   a type. The other choices: all three (the maintainer would keep a second copy of each revision beside its
   members, for no reader), or none (two short records stay, each tested).
 - **Q2. "Existing damage tests pass unchanged".** The follower's and graph-clustering's do. graph-ingest's assertions
-  do too, but 11 test lines in 6 files and one helper read graph-ingest's private record size and must read it
+  do too, but 10 test lines in 5 files (9 `entityPoisonSize.Load()`, 1 `len(c.entityPoison)`) and one helper read
+  graph-ingest's private record state and must read it
   through the new type instead; no assertion, expected value or message changes. Recommended: accept that.
 
 ## Out of scope

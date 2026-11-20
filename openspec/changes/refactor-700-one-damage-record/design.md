@@ -7,9 +7,11 @@ Premises are pinned in `inventory.md` (base `c6377db9`).
 Two records of damaged entities exist: graph-ingest's poison inventory (`processor/graph-ingest/poison_inventory.go`)
 and the follower's damage record (`graph/follower/damaged.go`). Both key by entity ID, keep the revision and the
 refusal, replace an entry with a report at the same or a higher revision, and name the first 10 IDs in sorted order.
-They differ at one boundary, for a reason each has: graph-ingest clears on a proof at or above the recorded revision
-(a valid read at that revision proves its bytes are fine, `poison_inventory.go:176-183`); the follower clears only
-above it (a plug-in reports damage and then completes that same revision, `damaged.go:65-73`). The owner asked for
+They differ at one boundary, for a reason each has: graph-ingest clears on a proof at or above the recorded revision,
+because two of its proofs name the poisoned revision itself: a delete passes the caller's expected revision, the one
+it removed (`entity_writes.go:469`, `:475`), and a re-check that finds the key absent passes the recorded revision
+(`poison_inventory.go:159`). The follower clears only above it (a plug-in reports damage and then completes that same
+revision, `damaged.go:65-73`). The owner asked for
 one type (#700, comment 7030083210); the done-when is that the sites in scope read one type and each component's
 existing damage tests pass unchanged.
 
@@ -55,11 +57,12 @@ existing damage tests pass unchanged.
   its proof revision plus one, because a proof at a revision covers that revision.
 - `Len() int`, `Count(keep func(id string) bool) int` (nil keeps all), `Get(key) (Entry, bool)`,
   `Sorted(limit int) []Entry` (key order, all when `limit` is 0 or less).
-- Safe for concurrent use. With nothing recorded, `Len` does not wait on a report or clear in flight, so graph-ingest's
-  commit and read paths keep their one-load cost.
+- Safe for concurrent use.
+- Cost note, not a requirement: graph-ingest's commit and read paths check for an empty record today with one atomic
+  load (`poison_inventory.go:196`, `:207`, `:218`). The shared type should keep that cost; the reviewer checks it.
 
 Invariant (every sequence of reports and clears): a key is recorded exactly when some report of it is at or above
-every later clear's bound minus one; `Len` equals the number of recorded keys; `Sorted(n)` is the first n of them in
+every later clear's bound; `Len` equals the number of recorded keys; `Sorted(n)` is the first n of them in
 key order. Spec homes: `entity-state-follower` "A damaged entity is recorded per key and cleared by its repair"
 (follower bounds) and the `graph-ingest-recovery` delta (graph-ingest bounds).
 
@@ -70,7 +73,11 @@ report is new; the re-check against the key's current bytes; the boot sweep and 
 `entityPoisonRecord` type (so `TestBootSweepLogCap` and the `poisonInventoryEntry` helper's callers keep it); the
 Health message from `Len` and `Sorted(10)`; `DebugStatus` from `Sorted(0)`, reason by `errors.As` on the stored
 `*graph.StateContractError`; and the gauge, which equals `Len` once no report or clear is in flight, including
-under concurrent reports and clears of different keys. The developer picks how the gauge follows the record. No read
+under concurrent reports and clears of different keys. Today the gauge is set while the record's lock is held
+(`poison_inventory.go:104`, `:188`). If it is set after the lock is released, an older count can be written last.
+That can happen when queries and mutations run concurrently during a mass-poison event, and alerting reads this
+gauge. `TestGaugeFollowsConcurrentRecordAndClear` proves it. The developer picks how the gauge follows the record and
+records the choice in `notes/4.2.md`. No read
 or write decision consults the record (pin ADR-079 decision 1, kept; `TestPoisonInventoryIsObservabilityOnly`).
 
 ## D5. The follower on the shared record
@@ -84,13 +91,17 @@ the envelope's `damaged_entity` count read it; `clearDamaged` calls `Clear(key, 
 - New, in `internal/damage`, written first: named cases (report then a clear above it drops; a clear at the
   recorded revision does not; a lower report is ignored and returns false; `below` 0 drops nothing; `Sorted` order
   and limit); `TestPropRecordFollowsLatestEvent`, a generated check of reports and clears over a few keys against a
-  reference model, seed and completed runs recorded, run with `-race` under concurrent callers for `Len`.
+  reference model, run sequentially, with the seed and completed runs recorded.
 - Unchanged and passing: the follower's 8 damage tests and its envelope tests; graph-clustering's
   `TestRefusedEntityMakesTickIncomplete` and the maintainer property tests; graph-ingest's 16 tests in
   `poison_scoping_test.go`, `TestBootSweep*`, and `TestIntegration_BootSweepInventoriesResidentPoisonRealNATS`.
-  graph-ingest's 11 size reads and one helper change how they read the record (Q2), not what they assert.
-- New in graph-ingest: `TestHealthNamesTenPoisonedEntities` (11 recorded: count 11, first 10 sorted, "+1 more"),
-  which no test covers today.
+  graph-ingest's 10 size reads (9 `entityPoisonSize.Load()`, 1 `len(c.entityPoison)`) and one helper body change how
+  they read the record (Q2), not what they assert.
+- New in graph-ingest: `TestHealthNamesTenPoisonedEntities` (11 recorded: Health gives count 11, the first 10 sorted
+  and "+1 more", and the debug status lists all 11 in sorted order), which no test covers today.
+- New in graph-ingest: `TestGaugeFollowsConcurrentRecordAndClear`, under `-race`. Goroutines report and clear
+  distinct keys concurrently and are joined with a `sync.WaitGroup`. After the join, the gauge equals an independent
+  count of the keys left recorded.
 
 ## Adoption
 

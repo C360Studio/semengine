@@ -78,9 +78,9 @@ failures), graph-lexical and graph-index `failed()` (write failures), `laneGuard
 - graph-ingest: `poison_scoping_test.go` (16 tests from `:71` to `:817`), `query_contract_guard_test.go`
   (`TestBootSweep*` `:41-201`, gauge reads `:69,141,190,226,239`, Health text `:83` — `"1 poisoned entity"`),
   `poison_scoping_integration_test.go:95`. **Private-state reads:** `component_fixture_test.go:237-239` (helper
-  `poisonInventoryEntry`, 38 call sites, returns `entityPoisonRecord`); `entityPoisonSize.Load()` at
+  `poisonInventoryEntry`, 37 call sites, returns `entityPoisonRecord`); 9 `entityPoisonSize.Load()` reads at
   `keyed_ingest_test.go:388`, `merge_entity_write_gate_test.go:61`, `poison_scoping_test.go:642,700,708,717`,
-  `query_contract_guard_test.go:318,353,432`; `len(c.entityPoison)` at `query_prefix_ids_test.go:303-305`. Tests
+  `query_contract_guard_test.go:318,353,432`; 1 `len(c.entityPoison)` read at `query_prefix_ids_test.go:303-305`. Tests
   assign the gauge as a `prometheus.Gauge` (`poison_scoping_test.go:41`). `TestBootSweepLogCap` builds
   `map[string]entityPoisonRecord` (`:620-627`). No graph-ingest test checks the 10-ID Health sample
   (`git grep -n entityPoisonSampleCap -- 'processor/graph-ingest/*_test.go'`: none).

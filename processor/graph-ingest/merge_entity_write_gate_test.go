@@ -58,7 +58,7 @@ func TestMergeEntity_InvalidCandidateNeverCommits(t *testing.T) {
 			var stateErr *graph.StateContractError
 			require.False(t, errors.As(err, &stateErr),
 				"canonical resident state must not be blamed (no reset classification)")
-			require.Equal(t, int64(0), c.entityPoisonSize.Load(),
+			require.Equal(t, 0, c.entityPoison.Len(),
 				"caller-invalid candidate must not be inventoried as poison")
 
 			storedAfter := bucket.data[validID]

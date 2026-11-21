@@ -19,6 +19,7 @@ import (
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/internal/cache"
+	"github.com/c360studio/semengine/internal/damage"
 	"github.com/c360studio/semengine/internal/dispatch"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
@@ -117,12 +118,11 @@ type Component struct {
 
 	// Per-entity poison inventory. Observability
 	// only — no read or write path consults it for a decision; refusal derives
-	// solely from decoding stored bytes at each seam. entityPoisonSize mirrors
-	// len(entityPoison) so hot-path clear checks cost one atomic load when the
-	// inventory is empty. See poison_inventory.go.
-	entityPoisonMu   sync.Mutex
-	entityPoison     map[string]entityPoisonRecord
-	entityPoisonSize atomic.Int64
+	// solely from decoding stored bytes at each seam. Its Len is one atomic load,
+	// so hot-path clear checks stay cheap while it is empty. poisonGaugeMu orders
+	// the gauge writes that follow it. See poison_inventory.go.
+	entityPoison  damage.Record
+	poisonGaugeMu sync.Mutex
 
 	// Entity-query-cache read-after-write coherence guard. cacheGen is a per-key
 	// invalidation generation counter: invalidateEntityCacheEntry bumps the key's
@@ -373,7 +373,7 @@ func (c *Component) OutputPorts() []component.Port {
 // DebugStatus.
 func (c *Component) Health() component.HealthStatus {
 	var poison, fault string
-	if c.entityPoisonSize.Load() > 0 {
+	if c.entityPoison.Len() > 0 {
 		poison = c.entityPoisonHealthMessage()
 	}
 	if f := c.backlogObservationFault.Load(); f != nil {

@@ -234,10 +234,11 @@ func assertIngestResetRequired(t *testing.T, err error) {
 
 // poisonInventoryEntry reads one inventory record under the inventory lock.
 func poisonInventoryEntry(c *Component, id string) (entityPoisonRecord, bool) {
-	c.entityPoisonMu.Lock()
-	defer c.entityPoisonMu.Unlock()
-	rec, ok := c.entityPoison[id]
-	return rec, ok
+	entry, ok := c.entityPoison.Get(id)
+	if !ok {
+		return entityPoisonRecord{}, false
+	}
+	return entityPoisonRecord{contractErr: poisonContractError(entry.Refusal), revision: entry.Revision}, true
 }
 
 // mergeTestGraphable is a minimal Graphable payload that stamps a caller-supplied

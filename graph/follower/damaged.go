@@ -3,10 +3,7 @@ package follower
 import (
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
-	"sync"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -17,20 +14,6 @@ const damagedSample = 10
 
 // damagedReason is the envelope's failed_reasons key for recorded damaged entities.
 const damagedReason = "damaged_entity"
-
-// damagedEntry is one damaged entity: the highest revision a plug-in reported for it and the
-// refusal it read there.
-type damagedEntry struct {
-	revision uint64
-	refusal  error
-}
-
-// damagedRecord holds the damaged entities, one entry per key. A plug-in reports from its delivery
-// and from repair lanes of its own, and queries read it, so every access holds the lock.
-type damagedRecord struct {
-	mu      sync.Mutex
-	entries map[string]damagedEntry
-}
 
 // ReportDamaged records that key's stored value at revision, the revision the plug-in read, is
 // damaged: refusal is what graph.UnmarshalEntityState returned for it. The entry is kept at the
@@ -48,72 +31,40 @@ func (f *Follower) ReportDamaged(key string, revision uint64, refusal error) boo
 			&graph.StateContractError{Reason: graph.GraphStateReasonUnreadableEntity, EntityID: key,
 				Err: errors.New("reported damaged with no refusal")})
 	}
-	d := &f.damaged
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	current, recorded := d.entries[key]
-	if recorded && revision < current.revision {
-		return false
-	}
-	if d.entries == nil {
-		d.entries = map[string]damagedEntry{}
-	}
-	d.entries[key] = damagedEntry{revision: revision, refusal: refusal}
-	return !recorded
+	return f.damaged.Report(key, revision, refusal)
 }
 
 // clearDamaged drops key's entry when revision, completed or deleted, is above the reported one.
 func (f *Follower) clearDamaged(key string, revision uint64) {
-	d := &f.damaged
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if current, recorded := d.entries[key]; recorded && revision > current.revision {
-		delete(d.entries, key)
-	}
+	f.damaged.Clear(key, revision)
 }
 
 // DamagedCount returns how many damaged entities are recorded, of all of them when keep is nil, or
 // of those whose ID keep returns true for. A reply counts with it what it may have left out.
 func (f *Follower) DamagedCount(keep func(id string) bool) int {
-	d := &f.damaged
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if keep == nil {
-		return len(d.entries)
-	}
-	n := 0
-	for id := range d.entries {
-		if keep(id) {
-			n++
-		}
-	}
-	return n
+	return f.damaged.Count(keep)
 }
 
 // DamagedRefusal returns the refusal recorded for id, or nil when id is not recorded damaged. A
 // query that names a damaged entity answers with it.
 func (f *Follower) DamagedRefusal(id string) error {
-	d := &f.damaged
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.entries[id].refusal
+	entry, _ := f.damaged.Get(id)
+	return entry.Refusal
 }
 
 // damagedSentence is Stuck's sentence for the recorded damaged entities, or "" when none is: the
 // count, the first damagedSample IDs in sorted order with their reasons, the number not named, and
 // the repair.
 func (f *Follower) damagedSentence() string {
-	d := &f.damaged
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	total := len(d.entries)
+	// One read gives the count and the sample, so the two agree when a report lands meanwhile.
+	entries := f.damaged.Sorted(0)
+	total := len(entries)
 	if total == 0 {
 		return ""
 	}
-	ids := slices.Sorted(maps.Keys(d.entries))
 	named := make([]string, 0, min(total, damagedSample))
-	for _, id := range ids[:min(total, damagedSample)] {
-		named = append(named, fmt.Sprintf("%s (%s)", id, damagedReasonOf(d.entries[id].refusal)))
+	for _, e := range entries[:min(total, damagedSample)] {
+		named = append(named, fmt.Sprintf("%s (%s)", e.Key, damagedReasonOf(e.Refusal)))
 	}
 	noun := "entities"
 	if total == 1 {

@@ -41,6 +41,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/graph/readiness"
+	"github.com/c360studio/semengine/internal/damage"
 	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/internal/resource"
 	"github.com/c360studio/semengine/internal/revlag"
@@ -113,7 +114,7 @@ type Follower struct {
 	watermark *revlag.Watermark
 	created   time.Time // the backing stream's creation time when Open bound it: its generation
 
-	damaged         damagedRecord // the damaged entities the plug-in reported
+	damaged         damage.Record // the damaged entities the plug-in reported
 	feedLost        atomic.Bool
 	snapshotDone    atomic.Bool   // the watch's end-of-snapshot marker arrived
 	bootstrapTarget atomic.Uint64 // stored before snapshotDone is raised

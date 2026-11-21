@@ -204,8 +204,11 @@ func (c *Component) clearEntityPoisonOnValidRead(entityID string, readRev uint64
 // count + first-N sorted entity IDs with their bounded reasons. Full
 // enumeration lives in DebugStatus.
 func (c *Component) entityPoisonHealthMessage() string {
-	total := c.entityPoison.Len()
-	sample := c.entityPoison.Sorted(entityPoisonSampleCap)
+	// One read gives the count and the sample, so the two agree when a report or
+	// repair lands meanwhile.
+	entries := c.entityPoison.Sorted(0)
+	total := len(entries)
+	sample := entries[:min(total, entityPoisonSampleCap)]
 	parts := make([]string, 0, len(sample))
 	for _, e := range sample {
 		parts = append(parts, fmt.Sprintf("%s (%s)", e.Key, poisonContractError(e.Refusal).Reason))

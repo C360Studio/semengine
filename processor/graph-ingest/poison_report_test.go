@@ -105,3 +105,44 @@ func TestGaugeFollowsConcurrentRecordAndClear(t *testing.T) {
 		t.Fatalf("gauge = %v after the join, want %d keys left recorded", got, left)
 	}
 }
+
+// TestHealthCountMatchesNamedIDsWhileChanging reads Health while one key is reported and
+// repaired over and over, with a second key recorded throughout. With fewer than 10 recorded,
+// every message must name exactly as many IDs as its count and claim none more: a count and a
+// sample taken from two reads disagree when a report or repair lands between them. The anchor
+// key keeps a poison message in every Health, so the assertion runs on each read.
+//
+// spec: graph-ingest-recovery / graph-ingest reports its poisoned entities
+func TestHealthCountMatchesNamedIDsWhileChanging(t *testing.T) {
+	c, _ := poisonScopingTestComponent(t)
+	const (
+		anchor = "acme.ops.test.system.widget.anchor"
+		id     = "acme.ops.test.system.widget.flicker"
+		rounds = 100000
+	)
+	reason := graph.GraphStateReasonUnreadableEntity
+	c.recordEntityPoison(&graph.StateContractError{Reason: reason, EntityID: anchor}, 1)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		for i := range rounds {
+			c.recordEntityPoison(&graph.StateContractError{Reason: reason, EntityID: id}, uint64(i+1))
+			c.dropEntityPoisonRecord(id, uint64(i+1))
+		}
+	})
+	defer wg.Wait() // joins the writer even when an assertion fails
+	close(start)
+	prefix := graph.ErrorCodeGraphStateResetRequired + ": "
+	named := " (" + string(reason) + ")"
+	for range rounds {
+		msg := c.Health().LastError
+		var count int
+		if _, err := fmt.Sscanf(msg, prefix+"%d poisoned", &count); err != nil {
+			t.Fatalf("Health message %q has no poison count: %v", msg, err)
+		}
+		if listed := strings.Count(msg, named); listed != count || strings.Contains(msg, "more;") {
+			t.Fatalf("Health count %d, %d IDs named: %q", count, listed, msg)
+		}
+	}
+}

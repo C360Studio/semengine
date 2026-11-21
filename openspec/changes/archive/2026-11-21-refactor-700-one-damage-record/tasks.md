@@ -36,5 +36,5 @@ draft #701, which closes #700.
 
 ## 5. Close-out
 
-- [ ] 5.1 Archive the change and sync `graph-ingest-recovery` (`openspec archive refactor-700-one-damage-record`), the
+- [x] 5.1 Archive the change and sync `graph-ingest-recovery` (`openspec archive refactor-700-one-damage-record`), the
   last content commit.

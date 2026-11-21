@@ -2538,7 +2538,7 @@
     setup-04a-04-graph-roots-graph-query-reads)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
-    internal/dispatch, internal/graphmutation, message, metric, natsclient,
+    internal/damage, internal/dispatch, internal/graphmutation, message, metric, natsclient,
     payloadregistry, pkg/errs, pkg/retry, pkg/types, types, vocabulary (in-set); nats.go/jetstream,
     prometheus/client_golang; JetStream consumers, KV reads/writes, request subscriptions, keyed
     lane pool, and status loop started in Start and released by Stop

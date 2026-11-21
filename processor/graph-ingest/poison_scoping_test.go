@@ -639,7 +639,7 @@ func TestBootSweepLogCap(t *testing.T) {
 
 	c.recordBootSweepPoison(context.Background(), sweep)
 
-	assert.Equal(t, int64(total), c.entityPoisonSize.Load(), "every entry is inventoried regardless of the log cap")
+	assert.Equal(t, total, c.entityPoison.Len(), "every entry is inventoried regardless of the log cap")
 	assert.Equal(t, bootSweepErrorLogCap, strings.Count(logs.String(), "code="+graph.ErrorCodeGraphStateResetRequired),
 		"individual ERRORs are capped")
 	assert.Equal(t, 1, strings.Count(logs.String(), "log cap"), "one count-only WARN summarizes the rest")
@@ -697,7 +697,7 @@ func TestVerifyAfterRecordDropsStaleRecordAfterCompletedRepair(t *testing.T) {
 	c.inventoryEntityPoison(ctx, &graph.StateContractError{
 		Reason: graph.GraphStateReasonUnreadableEntity, EntityID: idCommit,
 	}, 3)
-	assert.Equal(t, int64(0), c.entityPoisonSize.Load(),
+	assert.Equal(t, 0, c.entityPoison.Len(),
 		"a record made after a completed repair commit must not survive verification")
 
 	// Repair-by-delete won the race: the key is absent at record time.
@@ -705,7 +705,7 @@ func TestVerifyAfterRecordDropsStaleRecordAfterCompletedRepair(t *testing.T) {
 	c.inventoryEntityPoison(ctx, &graph.StateContractError{
 		Reason: graph.GraphStateReasonUnreadableEntity, EntityID: idDelete,
 	}, 2)
-	assert.Equal(t, int64(0), c.entityPoisonSize.Load(),
+	assert.Equal(t, 0, c.entityPoison.Len(),
 		"a record made after a completed repair delete must not survive verification")
 
 	// No repair happened: the record survives verification.
@@ -714,7 +714,7 @@ func TestVerifyAfterRecordDropsStaleRecordAfterCompletedRepair(t *testing.T) {
 	c.inventoryEntityPoison(ctx, &graph.StateContractError{
 		Reason: graph.GraphStateReasonNoncanonicalPredicate, EntityID: idKeep,
 	}, 4)
-	assert.Equal(t, int64(1), c.entityPoisonSize.Load(),
+	assert.Equal(t, 1, c.entityPoison.Len(),
 		"resident poison keeps its record through verification")
 }
 

@@ -23,9 +23,9 @@ draft #701, which closes #700.
 
 ## 4. graph-ingest (design D4)
 
-- [ ] 4.1 `TestHealthNamesTenPoisonedEntities` (Health sample and the debug listing of 11), shown failing against a
+- [x] 4.1 `TestHealthNamesTenPoisonedEntities` (Health sample and the debug listing of 11), shown failing against a
   sample cap changed to 9.
-- [ ] 4.2 `TestGaugeFollowsConcurrentRecordAndClear` (design "Proving tests"), shown failing against a gauge set after
+- [x] 4.2 `TestGaugeFollowsConcurrentRecordAndClear` (design "Proving tests"), shown failing against a gauge set after
   the lock is released, or recorded as inconclusive in `notes/4.2.md` if the race does not fail reliably. Then
   `processor/graph-ingest/poison_inventory.go` and `component.go:123-125` read `damage.Record`: record, drop, Health
   message, `DebugStatus` and the size fast path; the gauge follows the record (design D4), with the choice recorded in

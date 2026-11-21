@@ -300,9 +300,7 @@ func TestPrefixIDsCursorWalkMatchesSortedKeys(t *testing.T) {
 
 		walkPrefixIDs(rt, c, prefix, limit, maxPayload, want)
 
-		c.entityPoisonMu.Lock()
-		recorded := len(c.entityPoison)
-		c.entityPoisonMu.Unlock()
+		recorded := c.entityPoison.Len()
 		if recorded != 0 {
 			rt.Fatalf("the walk recorded %d damaged entities, want 0", recorded)
 		}

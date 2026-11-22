@@ -680,7 +680,7 @@ def ensure_item(node, is_pr, want_in_prog):
             status_mutations.append(
                 f'm{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{status_field_id}", value: {{singleSelectOptionId: "{want_opt}"}}}}) {{ projectV2Item {{ id }} }}'
             )
-    if stage_field_id and st_idx in stage_opts and (cur_stage is None or (st_idx == 1 and not cur_stage.startswith("1."))):
+    if stage_field_id and st_idx in stage_opts and not (cur_stage or "").startswith(f"{st_idx}."):
         mut_idx += 1
         status_mutations.append(
             f's{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{stage_field_id}", value: {{singleSelectOptionId: "{stage_opts[st_idx]}"}}}}) {{ projectV2Item {{ id }} }}'

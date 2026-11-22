@@ -1,6 +1,6 @@
 # Proposal: chore-716-serial-milestones-status
 
-Approved-by:
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/716#issuecomment-7080997682> sha256:76f3f3d3b74c
 
 Track: `quick`. Modifies one capability (`port-status`) to update its scenario example and Project v2 stage mapping for
 the serial release milestones; adds no new requirement.

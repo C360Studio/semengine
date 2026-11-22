@@ -221,31 +221,32 @@ func makeIssuesJSON(n int) (string, string, string) {
 // project (or explicit number), refuses malformed discovery or truncated GraphQL collections before
 // any write, paginates open issues/PRs beyond 100, and updates item fields.
 func TestPortStatusSyncProject(t *testing.T) {
-	t.Run("selects exact SemEngine Port Tracker title and maps serial milestones to stage slots", func(t *testing.T) {
+	t.Run("selects exact SemEngine Port Tracker title and maps new and existing items to serial stage slots", func(t *testing.T) {
 		issues := `[` +
 			`{"number":706,"title":"claimed alpha7","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},` +
-			`{"number":707,"title":"unclaimed alpha7","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},` +
-			`{"number":564,"title":"alpha8 hardening","milestone":{"title":"v0.1.0-alpha.8"},"labels":[{"name":"bug"}]},` +
+			`{"number":707,"title":"already-staged alpha7","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},` +
+			`{"number":712,"title":"new alpha7","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},` +
+			`{"number":564,"title":"restaged alpha8","milestone":{"title":"v0.1.0-alpha.8"},"labels":[{"name":"bug"}]},` +
 			`{"number":25,"title":"alpha9 rules","milestone":{"title":"v0.1.0-alpha.9"},"labels":[{"name":"class:port-refactor"}]},` +
 			`{"number":36,"title":"alpha10 maxdelivery","milestone":{"title":"v0.1.0-alpha.10"},"labels":[{"name":"class:port-refactor"}]},` +
-			`{"number":484,"title":"tier2 slot","milestone":{"title":"tier-2"},"labels":[{"name":"type:epic"}]}` +
+			`{"number":484,"title":"tier2 slot","milestone":{"title":"tier-2"},"labels":[{"name":"type:epic"}]},` +
+			`{"number":500,"title":"re-bucketed backlog","milestone":{"title":"backlog"},"labels":[{"name":"class:port-refactor"}]}` +
 			`]`
 		gh := `case "$*" in
   *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
   *"issue list"*) printf '%s\n' '` + issues + `' ;;
   *"pr list"*) printf '%s\n' '` + cleanPRsJSON + `' ;;
   *"project list"*) printf '%s\n' '{"projects":[{"number":99,"title":"SemEngine experiments"},{"number":7,"title":"SemEngine Port Tracker"}],"totalCount":2}' ;;
-  *"project field-list 7"*) printf '%s\n' '{"fields":[{"id":"F_STATUS","name":"Status","options":[{"id":"OPT_TODO","name":"Todo"},{"id":"OPT_INPROG","name":"In Progress"}]},{"id":"F_STAGE","name":"Stage","options":[{"id":"OPT_S1","name":"1. In Progress"},{"id":"OPT_S2","name":"2. Alpha 7"},{"id":"OPT_S3","name":"3. Alpha 8"},{"id":"OPT_S4","name":"4. Alpha 9"},{"id":"OPT_S5","name":"5. Alpha 10"},{"id":"OPT_S6","name":"6. Deferred"}]},{"id":"F_START","name":"Start Date"},{"id":"F_TARGET","name":"Target Date"}]}' ;;
-  *"project view 7"*) printf '%s\n' '{"id":"P7","items":{"totalCount":7}}' ;;
+  *"project field-list 7"*) printf '%s\n' '{"fields":[{"id":"F_STATUS","name":"Status","options":[{"id":"OPT_TODO","name":"Todo"},{"id":"OPT_INPROG","name":"In Progress"}]},{"id":"F_STAGE","name":"Stage","options":[{"id":"OPT_S1","name":"1. In Progress (Active PRs)"},{"id":"OPT_S2","name":"2. v0.1.0-alpha.7"},{"id":"OPT_S3","name":"3. v0.1.0-alpha.8"},{"id":"OPT_S4","name":"4. v0.1.0-alpha.9"},{"id":"OPT_S5","name":"5. v0.1.0-alpha.10"},{"id":"OPT_S6","name":"6. tier-2 / backlog"}]},{"id":"F_START","name":"Start Date"},{"id":"F_TARGET","name":"Target Date"}]}' ;;
+  *"project view 7"*) printf '%s\n' '{"id":"P7","items":{"totalCount":9}}' ;;
   *addProjectV2ItemById*PR711*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_PR711"}}}}' ;;
   *addProjectV2ItemById*I706*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I706"}}}}' ;;
-  *addProjectV2ItemById*I707*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I707"}}}}' ;;
-  *addProjectV2ItemById*I564*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I564"}}}}' ;;
+  *addProjectV2ItemById*I712*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I712"}}}}' ;;
   *addProjectV2ItemById*I25*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I25"}}}}' ;;
   *addProjectV2ItemById*I36*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I36"}}}}' ;;
   *addProjectV2ItemById*I484*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I484"}}}}' ;;
   *updateProjectV2ItemFieldValue*) printf '%s\n' '{"data":{"m1":{"projectV2Item":{"id":"PVTI_OK"}}}}' ;;
-  *graphql*) printf '%s\n' '{"data":{"repository":{"pullRequests":{"totalCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"PR711","number":711,"title":"fusion nl","milestone":{"title":"v0.1.0-alpha.7"},"closingIssuesReferences":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"number":706}]},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]},"issues":{"totalCount":6,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"I706","number":706,"title":"claimed alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I707","number":707,"title":"unclaimed alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I564","number":564,"title":"alpha8 hardening","milestone":{"title":"v0.1.0-alpha.8"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I25","number":25,"title":"alpha9 rules","milestone":{"title":"v0.1.0-alpha.9"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I36","number":36,"title":"alpha10 maxdelivery","milestone":{"title":"v0.1.0-alpha.10"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I484","number":484,"title":"tier2 slot","milestone":{"title":"tier-2"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]}}}}' ;;
+  *graphql*) printf '%s\n' '{"data":{"repository":{"pullRequests":{"totalCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"PR711","number":711,"title":"fusion nl","milestone":{"title":"v0.1.0-alpha.7"},"closingIssuesReferences":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"number":706}]},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]},"issues":{"totalCount":8,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"I706","number":706,"title":"claimed alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I707","number":707,"title":"already-staged alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"id":"PVTI_I707_EXISTING","project":{"number":7},"status":{"name":"Todo","optionId":"OPT_TODO"},"stage":{"name":"2. v0.1.0-alpha.7","optionId":"OPT_S2"},"startDate":{"date":"2026-11-15"},"targetDate":{"date":"2026-11-25"}}]}},{"id":"I712","number":712,"title":"new alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I564","number":564,"title":"restaged alpha8","milestone":{"title":"v0.1.0-alpha.8"},"projectItems":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"id":"PVTI_I564_EXISTING","project":{"number":7},"status":{"name":"Todo","optionId":"OPT_TODO"},"stage":{"name":"4. v0.1.0-alpha.9","optionId":"OPT_S4"},"startDate":{"date":"2026-11-15"},"targetDate":{"date":"2026-11-25"}}]}},{"id":"I25","number":25,"title":"alpha9 rules","milestone":{"title":"v0.1.0-alpha.9"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I36","number":36,"title":"alpha10 maxdelivery","milestone":{"title":"v0.1.0-alpha.10"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I484","number":484,"title":"tier2 slot","milestone":{"title":"tier-2"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I500","number":500,"title":"re-bucketed backlog","milestone":{"title":"backlog"},"projectItems":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"id":"PVTI_I500_EXISTING","project":{"number":7},"status":{"name":"Todo","optionId":"OPT_TODO"},"stage":{"name":"3. v0.1.0-alpha.8","optionId":"OPT_S3"},"startDate":{"date":"2026-11-15"},"targetDate":{"date":"2026-11-25"}}]}}]}}}}' ;;
   *) echo "unexpected gh call: $*" >&2; exit 3 ;;
 esac`
 		r := runPortStatus(t, gh, "--sync-project")
@@ -261,16 +262,20 @@ esac`
 		for _, wantPair := range [][2]string{
 			{`itemId: "PVTI_PR711"`, `singleSelectOptionId: "OPT_S1"`},
 			{`itemId: "PVTI_I706"`, `singleSelectOptionId: "OPT_S1"`},
-			{`itemId: "PVTI_I707"`, `singleSelectOptionId: "OPT_S2"`},
-			{`itemId: "PVTI_I564"`, `singleSelectOptionId: "OPT_S3"`},
+			{`itemId: "PVTI_I712"`, `singleSelectOptionId: "OPT_S2"`},
+			{`itemId: "PVTI_I564_EXISTING"`, `singleSelectOptionId: "OPT_S3"`},
 			{`itemId: "PVTI_I25"`, `singleSelectOptionId: "OPT_S4"`},
 			{`itemId: "PVTI_I36"`, `singleSelectOptionId: "OPT_S5"`},
 			{`itemId: "PVTI_I484"`, `singleSelectOptionId: "OPT_S6"`},
+			{`itemId: "PVTI_I500_EXISTING"`, `singleSelectOptionId: "OPT_S6"`},
 		} {
 			wantLine := wantPair[0] + `, fieldId: "F_STAGE", value: {` + wantPair[1] + `}`
 			if !strings.Contains(r.ghLog, wantLine) {
 				t.Errorf("gh log missing stage assignment %s:\n%s", wantLine, r.ghLog)
 			}
+		}
+		if strings.Contains(r.ghLog, `itemId: "PVTI_I707_EXISTING", fieldId: "F_STAGE"`) {
+			t.Errorf("gh log should not rewrite already-matching stage on PVTI_I707_EXISTING:\n%s", r.ghLog)
 		}
 	})
 

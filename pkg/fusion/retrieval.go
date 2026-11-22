@@ -55,8 +55,9 @@ type Seed struct {
 	// ID is the resolved entity ID.
 	ID string
 	// Similarity is the resolve mode's own relevance score, when it has one.
-	// An NL resolve reports the word index's score, on no fixed scale and
-	// comparable only within one resolve; symbol and prefix report none.
+	// An NL resolve reports the word index's score, or the merged score when
+	// meaning results were merged in; either is on no fixed scale and
+	// comparable only within one resolve. Symbol and prefix report none.
 	Similarity float64
 	// HasSimilarity distinguishes "this mode scored it 0" from "this mode does not
 	// score". Without it a prefix seed would surface as a perfect zero-relevance
@@ -72,11 +73,17 @@ type Seed struct {
 // DamagedEntities, in every mode, is the reply's count of damaged entities
 // (stored values the graph refuses to read) the index held and left out, so
 // the seeds may lack one of them. 0 says nothing was left out.
+//
+// Provenance is where the seeds came from, when the client can tell: a
+// natural-language search answered from words alone and one that used meaning
+// as well are different answers to trust. Empty says the client does not
+// tell, and the response carries its mode's provenance (ProvenanceForMode).
 type Resolution struct {
 	Seeds            []Seed
 	BodiesNotIndexed int
 	Excluded         []string
 	DamagedEntities  int
+	Provenance       Provenance
 }
 
 // Neighbors is what a Neighbors read found: the edges, and the reply's count of

@@ -119,7 +119,8 @@ type Node struct {
 	Rank int `json:"rank,omitempty"`
 	// Similarity is the resolve mode's own relevance score, present only when
 	// IncludeScores was set AND the mode reports one (an nl resolve does, with the word
-	// index's score; symbol and prefix do not). Joined to this node by entity ID, never by position.
+	// index's score, or the merged score when meaning results were merged in; symbol and
+	// prefix do not). Joined to this node by entity ID, never by position.
 	//
 	// A POINTER so the wire is self-describing: absent means the mode does not score,
 	// present means this is the score — including a genuine 0.0, which a bare

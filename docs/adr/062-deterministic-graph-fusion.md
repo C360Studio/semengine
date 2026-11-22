@@ -31,6 +31,10 @@
 >   ranked word match is neither an exact lookup (`deterministic`) nor a semantic search (`embedding`).
 >   `ProvenanceForMode` maps `nl` to `lexical`, `symbol` and `prefix` to `deterministic`, and any other mode to
 >   `embedding`, the conservative default.
+>   Amended since: an `nl` resolve now asks graph-query's `mergedSearch` verb, which asks the word search and, at
+>   tier 1, the embedding search too, and merges them as `searchGraph` does. `fusion.Resolution.Provenance` lets a
+>   resolve report its own value: `embedding` when at least one returned seed came from the embedding list, `lexical`
+>   otherwise. `ProvenanceForMode` still gives the mode's value when the resolve reports none.
 > - Also changed: `Resolve` returns what the word index left out of an `nl` search, `bodies_not_indexed` and
 >   `excluded`, which every response built after it carries; every piece the engine leaves out
 >   is declared on the response (`relations_truncated`, `paths_truncated` and the facets' `truncated`), and

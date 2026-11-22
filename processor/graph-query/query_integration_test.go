@@ -60,7 +60,7 @@ func forwardRows(t *testing.T) []forward {
 
 // declaredRows is every verb graph-query serves, with the row its first downstream request goes to
 // when it is sent the row's request: the forwards, then entityByAlias, relationships, pathSearch,
-// hierarchyStats, summary, localSearch, globalSearch and searchGraph.
+// hierarchyStats, summary, localSearch, globalSearch, searchGraph and mergedSearch.
 // The tests of what a forward does with bytes keep to forwardRows, since the others read theirs.
 func declaredRows(t *testing.T) []forward {
 	t.Helper()
@@ -104,6 +104,11 @@ func declaredRows(t *testing.T) []forward {
 		},
 		forward{
 			verb:       verbRow(t, graph.ResponderGraphQuery, "searchGraph"),
+			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
+			request:    []byte(`{"query":"sn-1"}`),
+		},
+		forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, "mergedSearch"),
 			downstream: verbRow(t, graph.ResponderGraphLexical, "search"),
 			request:    []byte(`{"query":"sn-1"}`),
 		},
@@ -565,7 +570,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 			declared = append(declared, verb.Name)
 		}
 	}
-	want := []string{"entity", "batch", "prefix", "prefixIDs", "byName", "predicate", "entityByAlias", "relationships", "pathSearch", "hierarchyStats", "summary", "localSearch", "globalSearch", "searchGraph", "semantic", "similar", "spatial", "temporal"}
+	want := []string{"entity", "batch", "prefix", "prefixIDs", "byName", "predicate", "entityByAlias", "relationships", "pathSearch", "hierarchyStats", "summary", "localSearch", "globalSearch", "searchGraph", "mergedSearch", "semantic", "similar", "spatial", "temporal"}
 	if !reflect.DeepEqual(declared, want) {
 		t.Fatalf("the verb table declares %v for graph-query, want %v", declared, want)
 	}

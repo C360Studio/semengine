@@ -4416,10 +4416,13 @@
     entity's most salient predicate in vocabulary.DiscoverLabelPredicates, read once at Start. TestSearchScorecard
     holds both verbs to a plain BM25 on the scorecard corpus: recall at 10 within one point of the reference, and
     mean reciprocal rank at most 0.01 below it. A damaged hit is left out, named in the reply's damaged list and not counted
-    in missing, and it sets truncated. searchGraph's semantic fallback is carried, adapted: only with
-    embedding_enabled, when word search matches nothing or is not ready, labelled in a fallback hint entry with the
-    embedding answer in semantic, and a failed fallback named, never hidden; the pin's strategy and degraded_reason
-    reply fields are not carried. Not carried: max_communities,
+    in missing, and it sets truncated. mergedSearch (new, not in the pin) answers the word search's request with the
+    ranked entity IDs of searchGraph's merge and reads no entity: a score and, for a result from the embedding
+    list, a vector_rank; it waits for the embedding search at most min(query_timeout_ms, 4 s), and a failed
+    embedding search counts on the shared merge-failed counter. searchGraph's use of the embedding search is adapted: only with
+    embedding_enabled, it merges the word and embedding lists by rank, or answers the embedding list alone when the
+    word index is not ready, labelled in a merge hint entry, and a failed merge named, never hidden; the pin's
+    strategy and degraded_reason reply fields are not carried. Not carried: max_communities,
     summarize_threshold, include_summaries, include_relationships, include_sources, auto-summary, entity digests,
     the strategies, and the reply's count, duration_ms, degraded and answer_model fields. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
@@ -4432,9 +4435,9 @@
     pkg/errs, pkg/graphview, pkg/types, vocabulary (in-set; reads its label predicate set once at Start); tests also use nats.go; one request subscription per served verb;
     zero to two downstream requests per call (a refused request makes none, entityByAlias up to two), except
     pathSearch, at most 1 plus max_nodes, doubled for direction both, summary, two (predicateList, then one prefix
-    page), localSearch, one word search and one batch read, and globalSearch and searchGraph, the same two and, for
-    searchGraph with embedding_enabled, one embedding search when the words match nothing or the index is not
-    ready, and, for an entity or path hint, an alias request and an entity read, plus the walk of pathSearch for a path; one goroutine
+    page), localSearch, one word search and one batch read, mergedSearch, one word search and, with embedding_enabled,
+    one embedding search, and globalSearch and searchGraph, the same two and, for
+    searchGraph with embedding_enabled, one embedding search, and, for an entity or path hint, an alias request and an entity read, plus the walk of pathSearch for a path; one goroutine
     (the community supervisor, joined by Stop) watching COMMUNITY_INDEX read-only, and counters on the injected
     registry; no write to any bucket
   known_risks: >-
@@ -4454,12 +4457,17 @@
     search; a path start is the hyphenated word the classifier finds, never a whole ID. Until change 7 brings the
     responders nothing reads a time range or an area, and those hints are never honoured. The scorecard's reference
     is a BM25 computed in the test, so it bounds how far below a plain BM25 a verb may fall, not how good the
-    ranking is for a consumer's questions. searchGraph's fallback answer is as good as the embedding provider's
+    ranking is for a consumer's questions. An embedder slower than mergedSearch's 4 s wait gives the word list;
+    searchGraph's own wait for the embedding search is query_timeout_ms alone. searchGraph's embedding results are as good as the embedding provider's
     model; what happens when a semantic answer pushes the reply past the NATS payload limit is not specified or
     tested. Not
     carried: the pin's searchgraph.go strategy and degraded_reason reply fields
   proving_tests: >-
-    processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
+    processor/graph-query tests (TestMergedSearchMatchesSearchGraphOrder, TestMergedSearchScopesBothSearches,
+    TestMergedSearchDecodesStrictly, TestMergedSearchReplyShape, TestMergedSearchTierZeroAsksOnlyWords,
+    TestMergedSearchFailedMergeKeepsWords, TestMergedSearchEmbeddingWaitBound,
+    TestMergedSearchBrokenEmbeddingIDKeepsWords, TestMergedSearchBrokenWordIDRefused,
+    TestMergedSearchOtherRefusalIsReturned, TestMergedSearchWordIndexNotReady, TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
     TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
     TestUnknownConfigKeyIsRefused, TestStartThroughTheTable, TestEntityByAlias,
     TestRelationshipsEnvelopeKeepsIndexRevision, TestRelationshipsRowKeys, TestRelationshipsRefusesUnknownDirection,
@@ -4520,7 +4528,8 @@
     one markdownlint disable comment (a long line) and a port note under the title naming the pin path and SHA, and
     that graph-embedding, which it describes, is in the tree (change 5, PR B), and that fusion sends the scope:
     pkg/fusion passes Request.Scope to Resolve (PR C) and pkg/fusion/fusionnats sends it on the semantic request
-    when it is not empty (PR D)
+    when it is not empty (PR D); amended since: an nl resolve goes to graph-query's mergedSearch, which applies the
+    scope to the word search and, at tier 1, the embedding search
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-query-reads technical writer
   disposition: adapt
@@ -4709,8 +4718,10 @@
     is "2" (D1). (2) The graph facet's view_revision is gone (D2). (3) Resolve returns a Resolution whose
     BodiesNotIndexed and Excluded, the word index's bodies_not_indexed and excluded, every response built after a
     natural-language resolve carries, each omitted when empty, and a symbol or prefix response never does; an nl
-    answer's provenance is lexical, a fourth value ADR-062 does not list (setup-04b-04-removal-keywords D3, D4;
-    owner question 2 ruled (b), epic #10 comment 6880665588); these replace the embedding search's
+    answer's provenance is lexical or embedding, by the answer: Resolution.Provenance is embedding when a returned seed
+    came from the embedding list and lexical otherwise, and an empty one leaves the mode's value (lexical lies
+    outside ADR-062's three; setup-04b-04-removal-keywords D3, D4; owner question 2 ruled (b), epic #10 comment
+    6880665588; fix-706-fusion-nl-merged-search D2); these replace the embedding search's
     unreadable_records and failed_records (D3); Response.DamagedEntities (damaged_entities, omitted at 0) is the largest
     count of damaged entities any read of the answer reported leaving out, carried by Resolution, Neighbors and Names;
     it is not Truncated, and an index_not_ready deferral carries none. (4)
@@ -4729,7 +4740,8 @@
     StoreResolver; registers two counters on the injected metrics registry when one is given
   known_risks: >-
     Consumer break (migration note, owner 2026-11-02 on PR #504): NewEngine's signature, RetrievalClient without
-    Status and with Resolution, an nl answer's provenance lexical where it was embedding, the wire's index and
+    Status and with Resolution, an nl answer's provenance lexical or embedding by what it holds, where it was always
+    embedding; a seed's similarity the merged score at tier 1, the wire's index and
     view_revision gone, four defer_reason values gone, a reset the
     pin deferred is an error on a seed read and a truncated facet on a walk read, refs listed by predicate then
     target. A fatal Resolve or Entities fails the call (D1); fusionnats lists a poisoned seed unhydrated error
@@ -4748,7 +4760,7 @@
     TestFatalWalkReadSkipped, TestEndedContextReturnsError, TestEndedContextDuringBodyRead,
     TestEngine_GenuineError_Propagates); contract_test.go (TestContractVersionIsTwo,
     TestFuse_AnsweredResponseIsNotMarkedDeferred); engine_search_counts_test.go (TestNLAnswerCarriesWordIndexCounts,
-    TestSymbolAnswerOmitsCounts); lens_test.go (TestProvenanceForMode); engine_labels_test.go (TestEdgesSortedBeforeCap,
+    TestSymbolAnswerOmitsCounts); engine_search_counts_test.go (TestResolutionProvenanceWins); lens_test.go (TestProvenanceForMode); engine_labels_test.go (TestEdgesSortedBeforeCap,
     TestRelationsCapLabelled, TestRelationsFaultLabelled, TestRelationsUnreadTargetLabelled, TestPathsCapLabelled,
     TestPathStopsAtUnreadNode, TestImpactUnreadFileTruncates, TestGraphCounterpartFaultTruncates,
     TestGraphCapsIgnoreTripleOrder, TestGraphEvidenceCapIgnoresTripleOrder); construction_test.go
@@ -4805,8 +4817,9 @@
     public graph.query.* verbs), what is not carried (the research-graph-execute extraction, lensregistry) and what
     SemEngine changed (fusion reads no readiness status: ADR-109 D1, owner ruling on PR #550 comment 6716972354; a
     Resolution carrying search counts; declared truncation; NewEngine with a logger and an error; fusionvocab.New
-    takes the ancestor function; fusionnats watches no key and lists a poisoned seed unhydrated error).
-    setup-04a-05-fusionnats edited the note for fusionnats
+    takes the ancestor function; fusionnats watches no key and lists a poisoned seed unhydrated error; an nl resolve
+    asks graph-query's mergedSearch and reports its own provenance, embedding or lexical).
+    setup-04a-05-fusionnats edited the note for fusionnats; fix-706-fusion-nl-merged-search amended it for mergedSearch
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-05-fusion technical writer
   disposition: adapt
@@ -4818,8 +4831,8 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the RetrievalClient over NATS (ADR-062): a product passes fusionnats.New(natsClient, timeout) to
-    fusion.NewEngine and gets its answers from graph-query's public graph.query.* verbs and, for an nl resolve,
-    graph-lexical's word search. semsource's code-context
+    fusion.NewEngine and gets its answers from graph-query's public graph.query.* verbs, an nl resolve going to
+    mergedSearch. semsource's code-context
     calls fusionnats.New (processor/code-context/component.go:136) and its governance tests call Client.Neighbors
     (internal/governance/fusion_gateway_integration_test.go:304) (inventory § 5)
   destination: pkg/fusion/fusionnats
@@ -4827,17 +4840,18 @@
     the pin's client with these adaptations (spec fusion; design D1-D3). (1) New(requester, timeout) (*Client,
     error) refuses a nil requester and a negative timeout; a zero timeout is passed to the requester
     (natsclient's DefaultRequestTimeout). New reads the rows it uses, graph-query's entity, batch, prefixIDs,
-    byName and relationships and graph-lexical's search (setup-04b-04-removal-keywords D2), from graph.QueryVerbs()
+    byName, relationships and mergedSearch, from graph.QueryVerbs()
     and refuses, naming the verb, when one is missing; the package spells no subject. (2) The client holds no goroutine, watch, context or lock and has no Status and no Close; it
     reads no readiness status: index_not_ready arrives on the reply (owner ruling 4, PR #550 comment 6716972354;
     ADR-109 D1, D3). (3) Each reply is decoded as its row declares: an enveloped row (byName, relationships,
-    graph-lexical's search) as a graph.QueryResponse, refused when it names no producer; a bare row (entity, batch, prefix) as the
+    mergedSearch) as a graph.QueryResponse, refused when it names no producer; a bare row (entity, batch, prefix) as the
     row's type, unknown keys ignored. (4) Requests use graph.EntityRequest, EntityBatchRequest, PrefixQueryRequest
-    and, for an nl Resolve, graph.LexicalSearchRequest with the question unchanged, whose scope is left out when
-    empty (ADR-071); seeds keep the hits' order and scores; a refusal from the word index is returned as it arrived,
-    and any other failure of that request is transient internal naming graph.lexical.query.search
-    (setup-04b-04-removal-keywords D2); Neighbors reads the edge's predicate; an nl Resolve copies the word index
-    reply's bodies_not_indexed and excluded into fusion.Resolution (D3), and every resolve mode, byName and
+    and, for an nl Resolve, graph.LexicalSearchRequest, sent to mergedSearch, with the question unchanged, whose
+    scope is left out when empty (ADR-071); seeds keep the reply's order and carry its score; a refusal reaches the
+    caller as it arrived, and any other failure of that request is transient internal naming
+    graph.query.mergedSearch (fix-706-fusion-nl-merged-search); the Resolution's Provenance is embedding when a
+    returned result has a vector_rank, lexical otherwise; Neighbors reads the edge's predicate; an nl Resolve copies
+    the reply's bodies_not_indexed and excluded into fusion.Resolution (D3), and every resolve mode, byName and
     relationships copy the reply's damaged_entities into Resolution, Neighbors and Names; Entity decodes through
     graph.UnmarshalEntityState and reads entity_not_found, and only that code, as (nil, nil). (5) Entities
     reconciles each batch reply with the request (reconcileHydration, ADR-084 D6): every distinct requested ID once,
@@ -4871,22 +4885,24 @@
     prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
     questions outright when the composition offers no embedder; closed by the embedding_enabled key: left out or false,
     a word question is refused invalid not_enabled, set true it is a transient internal refusal naming
-    graph.embedding.query.search, design D5 Q-B; since setup-04b-04-removal-keywords an nl resolve asks
-    graph-lexical and never reaches graph-query's semantic). Issues: #195 adopted here (the
+    graph.embedding.query.search, design D5 Q-B; since setup-04b-04-removal-keywords an nl resolve never reaches
+    graph-query's semantic). Issues: #195 adopted here (the
     integration test opens its client with natsfixture.Open) and stays open for other packages; #110 stays open for
     item 3; #563 stays open (fusionnats never calls searchGraph)
   proving_tests: >-
     pkg/fusion/fusionnats: client_test.go (TestNewRefusesNilRequester, TestNewRefusesNegativeTimeout,
     TestNewZeroTimeoutUsesDefault, TestSubjectsComeFromVerbTable, TestVerbLookupNamesMissingRow,
-    TestEnvelopedRowNeedsProducer, TestNeighborsReadsPredicate, TestNLResolveAsksTheWordIndex,
-    TestNLWordIndexRefusalReturned, TestNLIndexNotReadyDefers, TestWordIndexCountsReachResolution,
+    TestEnvelopedRowNeedsProducer, TestNeighborsReadsPredicate, TestNLResolveAsksTheMergedSearch,
+    TestNLWordIndexRefusalReturned, TestNLIndexNotReadyDefers, TestMergedResolveProvenance,
+    TestNLMeaningAloneWhileWordIndexBuilds, TestWordIndexCountsReachResolution,
     TestEntitiesRefusesNilContext and the pin's resolve, entity, batch, neighbors and names tests);
     exact_entity_test.go (TestSliceEFusionEntityUsesExactEntityWire,
     TestSliceEFusionEntityRejectsInvalidExactEvidence); reconcile_test.go (TestReconcileHydration);
     reconcile_prop_test.go (TestReconcileTotal, generated, against a reference model); poison_test.go
     (TestDamagedSeedUnhydrated, TestDamagedDuplicateListedOnce, TestAllSeedsDamagedDefer, TestOwnValidationNotRetried,
     TestBatchRefusalNotReadAlone); the integration-tagged client_integration_test.go
-    (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex); internal/harness/contract/fusionnats_test.go
+    (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex,
+    TestNLMergedOverRealResponders); internal/harness/contract/fusionnats_test.go
     (TestFusionNATSImportsNoEmbedding and its sensitivity case); internal/harness/contract/reservedsubjects_test.go
     (TestReservedSubjectsDeclaredOnce); internal/smoke/fusion_integration_test.go (checkFusion, run by TestSmoke_OneConfigAnswers);
     notes/2.1.md-3.1.md of the change record seeds and mutation checks

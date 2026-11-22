@@ -278,6 +278,12 @@ func (p *KeyedPool[W]) runOne(ctx context.Context, lane int, item keyedItem[W]) 
 // no wait of its own. A nil ctx is refused with an error and begins no
 // shutdown.
 //
+// Shutdown logs a warning only when ctx ends while it is waiting for
+// accepted work: that is a drain that did not finish in the time the
+// caller gave it. Called with a ctx that has already ended, it begins
+// the drain and returns ctx.Err() without a warning, because the caller
+// has no time left to wait and joins with Wait instead.
+//
 // Shutdown does not end the context NewKeyedPool was given; ending it
 // is the owner's, and makes the remaining Process calls see an ended
 // context.
@@ -297,6 +303,9 @@ func (p *KeyedPool[W]) Shutdown(ctx context.Context) error {
 	case <-p.stopDone:
 		return nil
 	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return err // the caller begins the drain and joins with Wait; nothing has failed
 	}
 	select {
 	case <-p.stopDone:

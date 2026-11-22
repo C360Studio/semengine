@@ -128,7 +128,12 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 	if err != nil {
 		return Response{}, err
 	}
-	resp.Provenance = ProvenanceForMode(mode)
+	// The resolve knows where its seeds came from when it says so; a client
+	// that does not say leaves the mode's provenance.
+	resp.Provenance = resolution.Provenance
+	if resp.Provenance == "" {
+		resp.Provenance = ProvenanceForMode(mode)
+	}
 	// A response carries the largest damaged count the reads its answer used
 	// reported, in every mode. An all-seeds-unhydrated deferral lists seeds the
 	// resolve found, so it keeps the count; an index_not_ready deferral answers

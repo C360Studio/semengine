@@ -10,7 +10,7 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
 
 ## 2. graph-query: mergedSearch
 
-- [ ] 2.1 Tests first, shown failing on main (`notes/2.1.md`):
+- [x] 2.1 Tests first, shown failing on main (`notes/2.1.md`):
   - graph-query (D4, D6): `TestMergedSearchMatchesSearchGraphOrder` (tier 0 and tier 1, searchGraph as the oracle),
     `TestMergedSearchScopesBothSearches`, `TestMergedSearchDecodesStrictly`, `TestMergedSearchReplyShape`,
     `TestMergedSearchTierZeroAsksOnlyWords`, `TestMergedSearchFailedMergeKeepsWords`,
@@ -21,7 +21,7 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
   - `TestQueryVerbsDeclareEachRespondersVerbs` and `TestGraphQueryServesExactlyTheDeclaredVerbs` with the new row.
   Premises: `processor/graph-query/textsearch.go:76-125,144-169`, `merge.go:32,124-131`, `globalsearch.go:187-201`,
   `metrics.go:16`, `config.go:16`, `graph/query_verbs.go:133`.
-- [ ] 2.2 `graph.MergedSearchData` and its result type with doc comments; the `mergedSearch` row; the handler,
+- [x] 2.2 `graph.MergedSearchData` and its result type with doc comments; the `mergedSearch` row; the handler,
   sharing searchGraph's ask-and-merge step (D4) with the embedding wait bound (D6); the merge-failed counter's help
   text; `processor/graph-query/query.go:59-74` wiring. Accept: 2.1 passes, `task verify`.
 

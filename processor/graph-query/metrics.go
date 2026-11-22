@@ -13,8 +13,8 @@ type queryMetrics struct {
 	// searchTruncated counts the search answers cut short, by verb: the number that says when a
 	// keyword index per community is due.
 	searchTruncated *prometheus.CounterVec
-	// searchMergeFailed counts the searchGraph answers given as the word list alone because the
-	// embedding search failed: how often tier 1 search ran at tier 0.
+	// searchMergeFailed counts the searchGraph and mergedSearch answers given as the word list alone
+	// because the embedding search failed: how often tier 1 search ran at tier 0.
 	searchMergeFailed prometheus.Counter
 }
 
@@ -32,7 +32,7 @@ func newQueryMetrics(registry *metric.MetricsRegistry) (*queryMetrics, error) {
 		}, []string{"verb"}),
 		searchMergeFailed: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "semengine", Subsystem: subsystem, Name: "search_merge_failed_total",
-			Help: "searchGraph answers given as the word list alone because the embedding search failed",
+			Help: "searchGraph and mergedSearch answers given as the word list alone because the embedding search failed",
 		}),
 	}
 	if registry == nil {

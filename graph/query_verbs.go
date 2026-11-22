@@ -63,12 +63,13 @@ var entityVerb = QueryVerb{
 // (search, similar, bounds, range), of which only search and similar have a responder in
 // the tree, and graph-lexical's search, which takes a LexicalSearchRequest. On graph.query.*,
 // graph-query's forwards answer as the verb they forward to does, and
-// entityByAlias, relationships, pathSearch, summary, localSearch and globalSearch, which read index
-// replies or a community record, are enveloped from graph-query, and hierarchyStats, which reads graph-ingest
-// alone, is bare; a verb a consumer serves under graph.query.* is not in this table. A Name is
-// unique only within its Responder. pathSearch takes a PathSearchRequest, hierarchyStats a
-// HierarchyStatsRequest, summary a SummaryRequest, localSearch a LocalSearchRequest, and globalSearch and
-// searchGraph a GlobalSearchRequest; bounds takes a SpatialBoundsRequest and range a TemporalRangeRequest.
+// entityByAlias, relationships, pathSearch, summary, localSearch, globalSearch, searchGraph and
+// mergedSearch, which read index replies or a community record, are enveloped from graph-query, and
+// hierarchyStats, which reads graph-ingest alone, is bare; a verb a consumer serves under
+// graph.query.* is not in this table. A Name is unique only within its Responder. pathSearch takes a
+// PathSearchRequest, hierarchyStats a HierarchyStatsRequest, summary a SummaryRequest, localSearch a
+// LocalSearchRequest, globalSearch and searchGraph a GlobalSearchRequest, and mergedSearch a
+// LexicalSearchRequest; bounds takes a SpatialBoundsRequest and range a TemporalRangeRequest.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,
@@ -132,6 +133,8 @@ func QueryVerbs() []QueryVerb {
 			Enveloped: true, Reply: reflect.TypeFor[GlobalSearchData]()},
 		{Name: "searchGraph", Subject: "graph.query.searchGraph", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[GlobalSearchData]()},
+		{Name: "mergedSearch", Subject: "graph.query.mergedSearch", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[MergedSearchData]()},
 		{Name: "semantic", Subject: "graph.query.semantic", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
 		{Name: "similar", Subject: "graph.query.similar", Responder: ResponderGraphQuery,

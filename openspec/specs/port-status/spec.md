@@ -29,8 +29,9 @@ whitespace or any open issue lacks a milestone or has zero labels; otherwise it 
 
 #### Scenario: Clean milestones and issues pass the check
 
-- **WHEN** `scripts/port-status.sh --check` runs against open milestones `setup`, `slice-04a`, `slice-04b`, and
-  `slice-04c` and every open issue has a milestone and at least one label
+- **WHEN** `scripts/port-status.sh --check` runs against open milestones `v0.1.0-alpha.7`, `v0.1.0-alpha.8`,
+  `v0.1.0-alpha.9`, `v0.1.0-alpha.10`, `tier-2`, and `backlog` and every open issue has a milestone and at least one
+  label
 - **THEN** it prints `hygiene: ok` and exits 0
 
 #### Scenario: An open issue missing a milestone or label fails the check

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
@@ -173,6 +174,58 @@ func TestConcurrentReportsAndClears(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("Sorted keys = %v, want %v", got, want)
+	}
+}
+
+// TestConcurrentReportAndClearOfOneKey runs reports and clears of one key from several
+// goroutines under -race, the case of a query reporting a key damaged while a repair clears it.
+// Every clear uses the bound B. Reports use revisions below B and exactly one at B, and every
+// worker reports in falling order and clears after each report, so its last call is a clear.
+//
+// Whatever the order, a report at or above B survives every clear at B, and a lower report
+// never replaces it, so after the join the key is recorded at the highest such revision with
+// that report's refusal. The layout also makes each wrong rule show in any order: a Clear that
+// drops an entry at its bound has a clear after the report at B to drop it, and a Report that
+// lets a lower revision replace a higher one has a clear after the last lower report.
+//
+// The calls overlap only when goroutines run at the same moment, which one processor never
+// gives, so the test raises GOMAXPROCS to at least 2 for its own run: the gates run at -cpu 1.
+// It must not call t.Parallel, because GOMAXPROCS is process-wide.
+func TestConcurrentReportAndClearOfOneKey(t *testing.T) {
+	prev := runtime.GOMAXPROCS(max(2, runtime.GOMAXPROCS(0)))
+	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
+	const (
+		key              = "k"
+		bound            = uint64(1000)
+		workers, perWork = 8, 100
+	)
+	// refusals[i] is the refusal reported at revision bound-i, so the final refusal names the
+	// report that set it.
+	refusals := make([]error, workers*perWork)
+	for i := range refusals {
+		refusals[i] = fmt.Errorf("refusal at %d", bound-uint64(i))
+	}
+	var r damage.Record
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Go(func() {
+			<-start
+			// Worker w reports bound-w, bound-w-workers, ...: falling, and only worker 0
+			// reports bound itself.
+			for i := range perWork {
+				offset := w + i*workers
+				r.Report(key, bound-uint64(offset), refusals[offset])
+				r.Clear(key, bound)
+			}
+		})
+	}
+	close(start)
+	wg.Wait() // every Report and Clear has returned
+	// Reports at or above the bound: only bound itself, so the highest is bound.
+	wantEntry(t, &r, key, bound, refusals[0])
+	if n := r.Len(); n != 1 {
+		t.Fatalf("Len = %d, want 1", n)
 	}
 }
 

@@ -6,108 +6,123 @@ Facts: `inventory.md` (INVENTORY PASS at 48c2e10d), cited by section.
 
 - fusion asks graph-lexical alone (§ 1).
 - The merge and its fallback live only in graph-query (`merge.go:32`, `textsearch.go:76-125`; § 2 A).
-- "The composition runs embeddings" is graph-query's fact (`config.go:33`), reported per reply in `merge`
-  (§ 2 B, C). fusionnats has no such knob (`client.go:76`).
+- "The composition runs embeddings" is graph-query's fact (`config.go:33`), reported per reply in `merge` (§ 2 B, C).
 - Provenance comes from the mode alone (`lens.go:203-212`, `engine_lens.go:131`).
 - searchGraph refuses `scope` (`globalsearch.go:189`) and searches unscoped (`textsearch.go:50-52,81-83`;
-  `merge.go:125`).
-- ADR-071 requires scope where the seeds are found, before the limit (review additions).
+  `merge.go:125`). ADR-071 requires scope where the seeds are found, before the limit (review additions).
+- Timeouts: fusionnats at 0 is natsclient's 5 s (`natsclient/request.go:18`; SemSource passes 0,
+  `processor/code-context/component.go:142`). graph-query waits up to `query_timeout_ms`, 15 s by default
+  (`config.go:16`).
 
 ## Goals / Non-Goals
 
-Goals: the owner's ruling on #706; tier 0 unchanged; fusion's contract on damaged seeds, refusals and readiness
-unchanged. Non-goals: as in the proposal.
+Goals: the owner's ruling on #706; tier 0 unchanged; a tier 1 answer never slower to fail than today's. Fusion's
+contract on damaged seeds and refusals is unchanged. Non-goals: as in the proposal.
 
 ## Decisions
 
 **D1. Which surface an nl resolve asks.**
 
-- (A) **searchGraph, given a `scope` key.** Smallest graph-query diff: one field, passed to both searches. Costs:
-  - every hit is read back with its bytes (`textsearch.go:182`), and fusion reads them again (`engine_lens.go:150`);
-    the archive rejected this for fusion (removal-keywords `design.md:51-52`);
+- (A) **searchGraph, given a `scope` key.** Smallest graph-query diff. Costs:
+  - every hit is read back, and fusion reads them again (`textsearch.go:182`, `engine_lens.go:150`); the archive
+    rejected this for fusion (removal-keywords `design.md:51-52`);
   - damaged and missing hits leave the list (graph-query spec `:671-708`), so a damaged seed stops reaching fusion as
     `unhydrated error` (fusion spec `:388-403`);
   - the payload fit drops the lowest seeds (`textsearch.go:209`);
-  - a one-word question triggers alias and entity reads, and a path question a walk (`globalsearch.go:210-213`);
-  - with the word index not ready the text is null and the hits arrive as raw `semantic` bytes
-    (`textsearch.go:252-260`);
-  - `scope` would also reach `globalSearch`, which shares the request type.
-- (B) **A new `mergedSearch` verb returning ranked IDs only (recommended).** It takes `graph.LexicalSearchRequest`, so
-  there is no new request type. It answers `graph.MergedSearchData`: `results` (`entity_id`, `score`, `word_rank`,
-  `vector_rank`), `matched`, `excluded`, `bodies_not_indexed` and `merge`. It shares searchGraph's ask-and-merge step.
-  Costs: one verb row, one reply type, one handler, and moving the shared step out of `mergedText`. In exchange there
-  is no read-back, payload cut, side read or null-text case, and damaged seeds reach fusion's batch as today. It is not
-  the archive's rejected "forward beside a row": no row returns a merged list.
-- (C) **fusionnats asks both searches and merges with `mergeRanks` moved to `graph`.** One merge function, but the
-  fallback policy is copied (timeout, broken reply, `index_not_ready`, cancel on word refusal; graph-query spec
-  `:752-788,:854-866`). fusionnats would also have to learn whether embeddings run, by probing the embedding subject
-  per call. #706's author rejects a second home for the merge.
+  - one-word and path questions trigger side reads (`globalsearch.go:210-213`);
+  - an unready word index gives null text (`textsearch.go:252-260`);
+  - `scope` would reach `globalSearch` too.
+- (B) **A new `mergedSearch` returning ranked IDs only (recommended).** It takes `graph.LexicalSearchRequest` and
+  answers `graph.MergedSearchData`, sharing searchGraph's ask-and-merge step. Costs: one verb row, one reply type, one
+  handler, and moving the shared step out of `mergedText`. In exchange there is no read-back, payload cut, side read
+  or null text, and damaged seeds reach fusion's batch as today.
+- (C) **fusionnats asks graph-lexical's `search` and graph-query's `semantic`, and merges with `mergeRanks` exported
+  from `graph`.** No probe is needed: `semantic` refuses `not_enabled` at tier 0 (`query.go:45-46`). #706's Ask
+  allows it ("graph-embedding's search with fallback"). Its advantage is that fusionnats owns the embedding deadline
+  under its own timeout. Its costs:
+  - the owner's words, "uses the merged search";
+  - the fallback policy copied into fusionnats (graph-query spec `:752-788,:854-866`);
+  - a second exported home for the merge rule;
+  - sending both at once needs a goroutine in a client that "starts nothing" (fusion spec `:232-241`), and sending them
+    one after the other adds the embedding wait to every question.
 - (D) **Do nothing.** Ruled out by the owner.
 
-Adopter seam: under B a product learns nothing new. A tier 1 stack (graph-embedding plus `embedding_enabled: true`)
-merges by default, and a tier 0 stack answers as today. The provenance on each response says which happened.
-Owner question 1.
+Adopter seam under B: nothing new to learn. Tier 1 (graph-embedding plus `embedding_enabled: true`) merges by default;
+each response's provenance says what happened. Owner question 1.
 
 **D2. Where the seeds came from.**
 
 - (a) **One value per response (recommended).** `fusion.Resolution.Provenance`: `embedding` when `merge` is present
-  and honoured, `lexical` otherwise. The engine uses it when set, else `ProvenanceForMode(mode)`, so symbol, prefix
-  and other `RetrievalClient`s are unchanged. A Resolve that fails (deferral) keeps the mode's value: no reply said
-  what answered.
-- (b) **One value per seed.** A `Seed.Provenance` and a new wire field `Node.Provenance`, read from each match's
-  ranks. More precise, but two new fields, and a node found by both lists still needs a rule.
+  and honoured (merged, or meaning alone while the word index builds), `lexical` otherwise. The engine uses it when
+  set, else `ProvenanceForMode(mode)`; a failed Resolve keeps the mode's value. Other `RetrievalClient`s are
+  unchanged.
+- (b) **One value per seed.** It adds `Seed.Provenance`, a wire field `Node.Provenance`, and `word_rank`/`vector_rank`
+  on the reply to compute it from. A seed in both lists still needs a rule.
 
 Label: `embedding` (recommended). Values are ordered by uncertainty (`contract.go:57`), and an unearned claim takes
-the conservative value (`lens.go:196-199`). The alternative is a new `hybrid`, which every consumer's switch must
-learn. ADR-062's note is amended either way. Owner questions 2 and 3.
+the conservative value (`lens.go:196-199`). A new `hybrid` is one every consumer's switch must learn. Owner
+questions 2 and 3.
 
 **D3. The score a seed carries.** The reply's `score`: the word score when not merged, the merged score when merged.
-The alternative, the word score only, gives vector-only seeds no score. `Seed.Similarity` and `Node.Similarity`
-docs change, and `include_scores` readers get a migration note. Ranking is unaffected: it ranks by resolve order
-(`engine_lens.go:35-47`).
+Word-score-only would give vector-only seeds no score. Ranking is unaffected (`engine_lens.go:35-47`). The
+`Seed.Similarity` and `Node.Similarity` docs change.
 
-**D4. mergedSearch's behaviour.** For the same question, limit and scope, its result IDs are searchGraph's match IDs
-in the same order whenever nothing is missing or damaged and searchGraph's reply fits. This equality is the oracle.
+**D4. mergedSearch's behaviour.** For the same query and limit, its result IDs equal searchGraph's match IDs in
+order, whenever searchGraph left no hit missing or damaged and its reply fit. This equality is the oracle.
 
-- It decodes strictly, and refuses a blank query, a limit outside 0 or 1–100, and a malformed scope prefix
-  (`semtypes.ValidateEntityIDPrefix`) with `invalid_request` before any request.
-- Word search: scope and `min_revision` pass to it. Embedding search: scope, no `min_revision`.
-- Word refusal other than `index_not_ready`: returned as it arrived, and the embedding search is cancelled.
-- Word index not ready at tier 1: the vector list alone, `merge` with detail `index_not_ready`, revision 0. If the
-  embedding search fails too, the `index_not_ready` refusal is returned.
-- Embedding search refused, broken or late: the word list, `merge` not honoured, one Warn naming the verb, one count
-  on the merge-failed counter.
-- `damaged_entities` is the larger of the two replies'. The revision is the word search's.
-- At most 100 results of IDs and numbers, so there is no payload fit.
+- It decodes strictly and refuses, before any request, a blank query, a limit outside 0 or 1–100, and a malformed
+  scope prefix (`semtypes.ValidateEntityIDPrefix`). Scope reaches both searches; `min_revision` the word search alone.
+- A word refusal other than `index_not_ready` is returned as it arrived, and the embedding search is cancelled.
+- Word index not ready, embedding answers: the embedding list, `merge` honoured with detail `index_not_ready`,
+  revision 0. Both fail: the `index_not_ready` refusal.
+- Embedding refused, broken, late (D6), or holding a hit whose ID is not a literal entity ID: the word list, `merge`
+  not honoured. searchGraph keeps the same rule for a broken vector ID (`textsearch.go:98-103,158-169`).
+- A word hit whose ID is not a literal entity ID is refused, as searchGraph refuses it (`textsearch.go:144-154`).
+- A failed merge logs one Warn naming the verb and adds one to `searchMergeFailed` (`metrics.go:16`), which stays
+  shared and unlabelled; its help text widens to both verbs.
+- The reply holds `results` (`entity_id`, `score`), the word search's `excluded` and `bodies_not_indexed`, and
+  `merge`. `matched` and ranks are left out because nothing reads them under D2(a). It carries the word search's
+  revision and the larger `damaged_entities`. At most 100 results, so no payload fit.
+
+**D6. How long mergedSearch waits for the embedding search.** The default caller budget is 5 s; an embedder taking
+5–15 s would turn questions that answer today into failures.
+
+- (a) **min(`query_timeout_ms`, 2.5 s), half natsclient's default (recommended).** It works out of the box: a slow or
+  cold embedder gives today's word answer, labelled `lexical` and counted.
+- (b) **A config key.** A fact every product must learn.
+- (c) **Raise fusionnats' default above 15 s.** fusionnats would be predicting graph-query's config.
+
+The same hazard in searchGraph is a defect this change does not fix; task 4.1 files it.
 
 **D5. One pull request.** Graph types and verb row, graph-query handler, fusion, docs. The verb's caller lands with
 it.
 
 ## Risks / Trade-offs
 
-- **Timeout.** SemSource builds fusionnats with timeout 0, i.e. 5 s (`processor/code-context/component.go:142`;
-  `natsclient/request.go:18`). graph-query waits up to `query_timeout_ms`, 15 s by default, for the embedding search
-  (`config.go:16`). A slower embedder fails the nl question transient before graph-query falls back to words. That
-  error is loud, not silent, and searchGraph already has it. The migration note says to set `query_timeout_ms` below
-  the fusion timeout.
-- **Error cause.** With no graph-lexical composed, the refusal now comes through graph-query: transient `internal`,
-  naming `graph.lexical.query.search`. `natsclient.IsNoResponders` no longer holds on fusion's error
-  (`TestNLResolveWithoutWordIndex` is updated).
-- **Bounded port scope.** mergedSearch is a second graph-query search verb over the same step. The shared step,
-  proven by the equal-order test, keeps it from drifting from searchGraph.
+- A tier 1 embedder that always answers in 2.5–5 s never merges through fusion. The provenance (`lexical`), the
+  Warn and the counter say so; searchGraph is unaffected.
+- With no graph-lexical, fusion's error comes through graph-query: transient `internal` naming
+  `graph.lexical.query.search`, and `natsclient.IsNoResponders` no longer holds (`TestNLResolveWithoutWordIndex`).
+- mergedSearch is a second search verb over the same step. The equal-order test keeps the two from drifting apart.
 
 ## Migration Plan
 
 Consumers migrate. SemSource:
 
-- Expect `provenance: embedding` on nl answers at tier 1.
-- Expect `similarity` to be the merged score with `include_scores`.
+- Expect `provenance: embedding` on nl answers at tier 1, and `similarity` as the merged score with
+  `include_scores`.
+- At tier 1, while the word index builds after a start, expect answers from meaning alone (`embedding`, no
+  `excluded`) where a deferral came before.
 - Update `nlDisabledClient`'s comment (`nl_disabled.go:31-45`). Tier 0 is unchanged.
-- Keep `query_timeout_ms` below the fusionnats timeout.
-- `fusiontest.MemGraph` (`memgraph.go:86`) compiles unchanged; `Provenance` left empty means the mode's value.
+- `fusiontest.MemGraph` (`memgraph.go:86`) compiles unchanged: an empty `Provenance` means the mode's value.
 
 ## Open Questions
 
-1. **Owner:** a new lean verb (B, recommended), or scope on searchGraph (A)?
-2. **Owner:** provenance per response (recommended) or per seed?
-3. **Owner:** label a merged answer `embedding` (recommended) or a new `hybrid`?
+1. **Owner:** should fusion ask a new small search that returns only the ranked IDs and filters by ID prefix
+   (recommended)? Or should the existing graph search learn to filter by ID prefix, with fusion reading its full
+   answer? The second reads every match twice, can cut seeds to fit a message, and drops damaged ones without
+   listing them.
+2. **Owner:** one label for the whole answer (recommended; consumers read one `provenance` field, as today), or a
+   label on every result (each node gains a field saying words, meaning or both)?
+3. **Owner:** label a mixed answer `embedding` (recommended; no new value, so consumers' code keeps working), or a
+   new `hybrid` (more exact, but every consumer that switches on provenance must add it)?

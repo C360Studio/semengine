@@ -76,11 +76,9 @@ graph-query hop, in the ADDED requirement "An NL resolve asks the merged search"
 ### Requirement: An NL resolve asks the merged search
 
 An NL `Resolve` SHALL send one `graph.LexicalSearchRequest` holding the query, the limit and the scope (left out when
-empty) to graph-query's `mergedSearch` row of `graph.QueryVerbs()`. It SHALL return the reply's results as seeds in
-the reply's order, each with the result's `score` as the mode's own score.
-
-The question SHALL pass unchanged, so the word index's query rules apply, and a refusal SHALL reach the caller with
-its class, code and detail.
+empty) to graph-query's `mergedSearch` row of `graph.QueryVerbs()`, and SHALL return the reply's results as seeds in
+order, each with its `score` as the mode's own score. The question SHALL pass unchanged, and a refusal SHALL reach
+the caller with its class, code and detail.
 
 #### Scenario: Seeds from the merged search
 
@@ -97,8 +95,15 @@ its class, code and detail.
 
 #### Scenario: The word index is not ready
 
-- **WHEN** the merged search refuses an NL resolve transient `index_not_ready`
+- **WHEN** the merged search refuses an NL resolve transient `index_not_ready` (at tier 0, or at tier 1 when the
+  embedding search failed too)
 - **THEN** `Fuse` answers `deferred` with `defer_reason` `index_not_ready` (`TestNLIndexNotReadyDefers`)
+
+#### Scenario: Meaning alone while the word index builds
+
+- **WHEN** the reply holds the embedding list with `merge` honoured and detail `index_not_ready`
+- **THEN** `Fuse` answers those entities as nodes, not deferred, with provenance `embedding` and no
+  `bodies_not_indexed` or `excluded` (`TestNLMeaningAloneWhileWordIndexBuilds`)
 
 #### Scenario: No word index composed
 

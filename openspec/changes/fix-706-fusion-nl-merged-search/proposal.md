@@ -19,7 +19,7 @@ where they came from." `v0.1.0-alpha.7` waits for this fix.
 - graph-query gains `graph.query.mergedSearch`. It takes the word search's own request (`query`, `limit`, `scope`,
   `min_revision`) and answers the ranked list searchGraph would build: entity IDs, scores, the word index's
   `excluded` and `bodies_not_indexed`, and the `merge` hint. It reads no entity back. Both inner searches are scoped
-  (ADR-071). It waits at most 2.5 s for the embedding search. At tier 0 the list is the word list alone. The
+  (ADR-071). It waits at most 4 s for the embedding search. At tier 0 the list is the word list alone. The
   ask-both-and-merge step is shared with searchGraph.
 - `fusionnats` sends an `nl` resolve to `mergedSearch`. Seeds keep the reply's order and score.
 - `fusion.Resolution` gains `Provenance`: `embedding` when the reply's `merge` hint is honoured, else `lexical`. A
@@ -33,7 +33,7 @@ Per-seed provenance (owner question 2). A new provenance value (owner question 3
 ## Impact
 
 - Tier 0: unchanged; the same word list, `provenance: lexical`. Tier 1: nl seeds come from the merge, labelled
-  `embedding`. An embedder slower than 2.5 s gives the word answer, labelled `lexical`, with one Warn and one
+  `embedding`. An embedder slower than 4 s gives the word answer, labelled `lexical`, with one Warn and one
   merge-failed count.
 - Tier 1, while the word index is still building after a start: an nl question is answered from meaning alone,
   labelled `embedding`, where today it defers `index_not_ready`. It still defers when the embedding search fails too.

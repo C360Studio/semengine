@@ -113,10 +113,10 @@ as the scenarios below state, and return any other word refusal as it arrived.
 
 ### Requirement: mergedSearch bounds its embedding wait
 
-`mergedSearch` SHALL wait for the embedding search at most `query_timeout_ms` or 2.5 seconds, whichever is less, so
+`mergedSearch` SHALL wait for the embedding search at most `query_timeout_ms` or 4 seconds, whichever is less, so
 a caller on natsclient's default timeout gets the word answer from a slow embedder rather than a timeout.
 
 #### Scenario: A slow embedding search
 
-- **WHEN** `query_timeout_ms` is 15000 and the embedding search has not answered 2.5 seconds after it was sent
+- **WHEN** `query_timeout_ms` is 15000 and the embedding search has not answered 4 seconds after it was sent
 - **THEN** the reply is the word list with `merge` not honoured (`TestMergedSearchEmbeddingWaitBound`)

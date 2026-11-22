@@ -90,8 +90,10 @@ it.
 **D6. How long mergedSearch waits for the embedding search.** The default caller budget is 5 s; an embedder taking
 5–15 s would turn questions that answer today into failures.
 
-- (a) **min(`query_timeout_ms`, 2.5 s), half natsclient's default (recommended).** It works out of the box: a slow or
-  cold embedder gives today's word answer, labelled `lexical` and counted.
+- (a) **min(`query_timeout_ms`, 4 s) (owner, 2026-11-22).** It leaves about 1 s of a caller's default 5 s for the word
+  search and the reply. A slow embedder gives today's word answer, labelled `lexical` and counted. Measured against
+  semembed (arctic-embed-s, local, 2026-11-22): a query takes about 0.01 s idle and 0.33 s beside graph-embedding's
+  default 5 workers; heavy batching (4 × 32 documents) queues it to 6.5 s; a starting semembed refuses at once.
 - (b) **A config key.** A fact every product must learn.
 - (c) **Raise fusionnats' default above 15 s.** fusionnats would be predicting graph-query's config.
 
@@ -99,7 +101,7 @@ The same hazard in searchGraph is a defect this change does not fix; it is #712.
 
 ## Risks / Trade-offs
 
-- A tier 1 embedder that always answers in 2.5–5 s never merges through fusion. The provenance (`lexical`), the
+- A tier 1 embedder that always answers in 4–5 s never merges through fusion. The provenance (`lexical`), the
   Warn and the counter say so; searchGraph is unaffected.
 - With no graph-lexical, fusion's error comes through graph-query: transient `internal` naming
   `graph.lexical.query.search`, and `natsclient.IsNoResponders` no longer holds (`TestNLResolveWithoutWordIndex`).
@@ -118,10 +120,7 @@ Consumers migrate. SemSource:
 
 ## Open Questions
 
-1. **Owner:** should fusion ask a new small search that returns only the ranked IDs and filters by ID prefix
-   (recommended)? Or should the existing graph search learn to filter by ID prefix, with fusion reading its full
-   answer? The second reads every match twice, can cut seeds to fit a message, and drops damaged ones without
-   listing them.
+1. **Owner (2026-11-22):** B, a new small search that returns only the ranked IDs and filters by ID prefix.
 2. **Owner:** one label for the whole answer (recommended; consumers read one `provenance` field, as today), or a
    label on every result (each node gains a field saying words, meaning or both)?
 3. **Owner:** label a mixed answer `embedding` (recommended; no new value, so consumers' code keeps working), or a

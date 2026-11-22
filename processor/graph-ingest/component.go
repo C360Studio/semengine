@@ -119,10 +119,8 @@ type Component struct {
 	// Per-entity poison inventory. Observability
 	// only — no read or write path consults it for a decision; refusal derives
 	// solely from decoding stored bytes at each seam. Its Len is one atomic load,
-	// so hot-path clear checks stay cheap while it is empty. poisonGaugeMu orders
-	// the gauge writes that follow it. See poison_inventory.go.
-	entityPoison  damage.Record
-	poisonGaugeMu sync.Mutex
+	// so hot-path clear checks stay cheap while it is empty. See poison_inventory.go.
+	entityPoison damage.Record
 
 	// Entity-query-cache read-after-write coherence guard. cacheGen is a per-key
 	// invalidation generation counter: invalidateEntityCacheEntry bumps the key's
@@ -166,7 +164,7 @@ type Component struct {
 	casRetries                    prometheus.Counter     // SemStreams ADR-072 entity-merge CAS-conflict retries (contention observability)
 	staleSets                     prometheus.Counter     // stream-lane sets not applied as older
 	duplicateTriplesSuppressed    *prometheus.CounterVec // append duplicates not stored, by lane (closed enum)
-	poisonedEntities              prometheus.Gauge       // per-entity poison inventory size (single gauge, no per-entity labels)
+	poisonedEntities              prometheus.GaugeFunc   // per-entity poison inventory size, read at scrape (single gauge, no per-entity labels)
 	metricsRegistry               *metric.MetricsRegistry
 
 	// Keyed-concurrent entity ingest (SemStreams ADR-072). The pool partitions

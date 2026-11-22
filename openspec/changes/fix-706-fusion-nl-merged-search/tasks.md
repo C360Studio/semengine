@@ -27,7 +27,7 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
 
 ## 3. fusion: ask the merged search, say where seeds came from
 
-- [ ] 3.1 Tests first, shown failing (`notes/3.1.md`):
+- [x] 3.1 Tests first, shown failing (`notes/3.1.md`):
   - fusionnats unit tests: `TestNLResolveAsksTheMergedSearch` (replaces `TestNLResolveAsksTheWordIndex`),
     `TestMergedResolveProvenance`, `TestNLMeaningAloneWhileWordIndexBuilds`, plus `TestSubjectsComeFromVerbTable`
     and `TestVerbLookupNamesMissingRow` for the `mergedSearch` row;
@@ -36,7 +36,7 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
   `TestProvenanceForMode`, `TestDeferralProvenanceFollowsMode` and the smoke's lexical check stay as they are.
   Premises: `pkg/fusion/fusionnats/client.go:23-58,100-101,148-186`, `pkg/fusion/engine_lens.go:131`,
   `pkg/fusion/retrieval.go:75-80`.
-- [ ] 3.2 Implement D1 (B), D2 (a) and D3: `fusion.Resolution.Provenance`, the engine's choice at
+- [x] 3.2 Implement D1 (B), D2 (a) and D3: `fusion.Resolution.Provenance`, the engine's choice at
   `engine_lens.go:131`, fusionnats' `mergedSearch` row and decode; `Seed.Similarity` and `Node.Similarity` doc
   comments. Accept: 3.1 passes, `task verify`.
 

@@ -20,10 +20,9 @@ type requester interface {
 	RequestClassified(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error)
 }
 
-// verbs are the rows of graph.QueryVerbs() the client uses: graph-query's, and
-// graph-lexical's search for an NL resolve.
+// verbs are the rows of graph.QueryVerbs() the client uses, all graph-query's.
 type verbs struct {
-	entity, batch, prefixIDs, byName, relationships, wordSearch graph.QueryVerb
+	entity, batch, prefixIDs, byName, relationships, mergedSearch graph.QueryVerb
 }
 
 // lookupVerbs reads the client's rows from table, refusing one that is missing
@@ -40,7 +39,7 @@ func lookupVerbs(table []graph.QueryVerb) (verbs, error) {
 		{graph.ResponderGraphQuery, "prefixIDs", &v.prefixIDs},
 		{graph.ResponderGraphQuery, "byName", &v.byName},
 		{graph.ResponderGraphQuery, "relationships", &v.relationships},
-		{graph.ResponderGraphLexical, "search", &v.wordSearch},
+		{graph.ResponderGraphQuery, "mergedSearch", &v.mergedSearch},
 	} {
 		found := false
 		for _, verb := range table {
@@ -98,7 +97,7 @@ func (c *Client) Resolve(ctx context.Context, q fusion.ResolveQuery) (fusion.Res
 	case fusion.ResolveModePrefix:
 		return c.resolvePrefix(ctx, q.Query, q.Limit)
 	case fusion.ResolveModeNL:
-		return c.resolveWords(ctx, q.Query, q.Scope, q.Limit)
+		return c.resolveMerged(ctx, q.Query, q.Scope, q.Limit)
 	default:
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: unsupported resolve mode %q", q.Mode)
 	}
@@ -145,19 +144,21 @@ func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fu
 	return fusion.Resolution{Seeds: seeds}, nil
 }
 
-// resolveWords resolves a natural-language query through graph-lexical's word
-// search. The query passes unchanged, so the word index's query rules apply and
-// its refusals are returned as it sent them. A non-empty scope keeps only
-// entities under its ID prefixes (ADR-071); an empty one is left out of the
-// request. Seeds keep the reply's order and carry each hit's score as the
-// mode's own score; the reply's bodies_not_indexed, excluded and
-// damaged_entities ride along in the Resolution. A request nothing answers, graph-lexical not composed
-// included, is a transient internal error naming the subject.
-func (c *Client) resolveWords(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
+// resolveMerged resolves a natural-language query through graph-query's
+// merged search: the word index's search, merged with the embedding search
+// when graph-query runs one. The query passes unchanged, so the word index's
+// query rules apply and its refusals are returned as it sent them. A non-empty
+// scope keeps only entities under its ID prefixes (ADR-071); an empty one is
+// left out of the request. Seeds keep the reply's order and carry each
+// result's score as the mode's own score; the reply's bodies_not_indexed,
+// excluded and damaged_entities ride along in the Resolution. A request nothing
+// answers, graph-query not composed included, is a transient internal error
+// naming the subject.
+func (c *Client) resolveMerged(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
 	if err := validateScope(scope); err != nil {
 		return fusion.Resolution{}, err
 	}
-	verb := c.verbs.wordSearch
+	verb := c.verbs.mergedSearch
 	raw, err := c.request(ctx, verb, graph.LexicalSearchRequest{Query: query, Limit: limit, Scope: scope})
 	if err != nil {
 		var refusal *errs.ClassifiedError
@@ -167,7 +168,7 @@ func (c *Client) resolveWords(ctx context.Context, query string, scope []string,
 		return fusion.Resolution{}, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
 			fmt.Errorf("fusionnats: request to %s: %w", verb.Subject, err))
 	}
-	resp, damaged, err := decodeReply[graph.LexicalSearchData](verb, raw)
+	resp, damaged, err := decodeReply[graph.MergedSearchData](verb, raw)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
@@ -178,10 +179,18 @@ func (c *Client) resolveWords(ctx context.Context, query string, scope []string,
 		ids = append(ids, hit.EntityID)
 	}
 	if err := graph.ValidateDecodedEntityIDs(ids); err != nil {
-		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate word search: %w", err)
+		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate merged search: %w", err)
+	}
+	// An honoured merge means meaning results are in the answer, merged with
+	// the words or alone while the word index builds; otherwise the answer
+	// came from words alone.
+	provenance := fusion.ProvenanceLexical
+	if resp.Merge != nil && resp.Merge.Honoured {
+		provenance = fusion.ProvenanceEmbedding
 	}
 	return fusion.Resolution{
 		Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded, DamagedEntities: damaged,
+		Provenance: provenance,
 	}, nil
 }
 

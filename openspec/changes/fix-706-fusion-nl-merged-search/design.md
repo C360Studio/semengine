@@ -52,8 +52,9 @@ each response's provenance says what happened. Owner question 1.
 
 **D2. Where the seeds came from.**
 
-- (a) **One value per response (recommended).** `fusion.Resolution.Provenance`: `embedding` when `merge` is present
-  and honoured (merged, or meaning alone while the word index builds), `lexical` otherwise. The engine uses it when
+- (a) **One value per response (recommended).** `fusion.Resolution.Provenance`: `embedding` when at least one returned
+  result came from the embedding list (it carries a `vector_rank`), `lexical` otherwise. An honoured `merge` alone
+  is not enough: the embedding list may be empty, or all its hits may fall below the limit. The engine uses it when
   set, else `ProvenanceForMode(mode)`; a failed Resolve keeps the mode's value. Other `RetrievalClient`s are
   unchanged.
 - (b) **One value per seed.** It adds `Seed.Provenance`, a wire field `Node.Provenance`, and `word_rank`/`vector_rank`

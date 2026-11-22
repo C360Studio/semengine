@@ -38,8 +38,8 @@ into the `Resolution`; a symbol or prefix `Resolve` SHALL leave both empty.
 
 `ProvenanceForMode` SHALL map `nl` to `lexical`, `symbol` and `prefix` to `deterministic`, and any other mode to
 `embedding`. A response SHALL carry its `Resolution`'s `Provenance` when the resolve set one, and its lens's mode's
-provenance otherwise, a failed resolve included. An NL `Resolve` in `fusionnats` SHALL set `embedding` when the
-reply's `merge` is present and honoured, and `lexical` otherwise.
+provenance otherwise, a failed resolve included. An NL `Resolve` in `fusionnats` SHALL set `embedding` when at
+least one result in the reply carries a `vector_rank`, and `lexical` otherwise.
 
 #### Scenario: Each mode's provenance
 
@@ -48,12 +48,13 @@ reply's `merge` is present and honoured, and `lexical` otherwise.
 
 #### Scenario: A merged answer
 
-- **WHEN** the merged search reply's `merge` is honoured
+- **WHEN** the merged search reply holds a result with a `vector_rank`
 - **THEN** the `Resolution` and the response carry `embedding` (`TestMergedResolveProvenance`)
 
 #### Scenario: Words alone
 
-- **WHEN** the reply has no `merge`, or a `merge` not honoured
+- **WHEN** no result in the reply carries a `vector_rank`: the reply has no `merge`, a `merge` not honoured, or an
+  honoured `merge` whose embedding list was empty or fell below the limit
 - **THEN** the `Resolution` and the response carry `lexical` (`TestMergedResolveProvenance`)
 
 #### Scenario: A client that sets none

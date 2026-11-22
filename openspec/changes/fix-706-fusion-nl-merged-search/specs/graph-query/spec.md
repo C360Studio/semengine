@@ -48,15 +48,15 @@ alone.
 
 ### Requirement: mergedSearch answers the ranked list without reading it back
 
-`mergedSearch` SHALL answer enveloped `graph.MergedSearchData` and read no entity: `results`, each `entity_id` and
-`score`; the word search's `excluded` and `bodies_not_indexed`; and `merge` when `embedding_enabled` is true. Its
+`mergedSearch` SHALL answer enveloped `graph.MergedSearchData` and read no entity: `results`, each `entity_id`,
+`score`, and `vector_rank` when the entity is in the embedding list; the word search's `excluded` and `bodies_not_indexed`; and `merge` when `embedding_enabled` is true. Its
 revision SHALL be the word search's, and its `damaged_entities` the larger of the replies it read.
 
 #### Scenario: Results and counts in the reply
 
 - **WHEN** a tier 1 question matches one entity by words and meaning and another by meaning only
-- **THEN** both are in `results` with their merged scores, the reply carries the word search's counts and revision,
-  and no entity read was sent (`TestMergedSearchReplyShape`)
+- **THEN** both are in `results` with their merged scores and their `vector_rank`s, the reply carries the word
+  search's counts and revision, and no entity read was sent (`TestMergedSearchReplyShape`)
 
 ### Requirement: mergedSearch ranks as searchGraph does
 

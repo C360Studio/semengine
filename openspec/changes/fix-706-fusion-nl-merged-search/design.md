@@ -81,9 +81,10 @@ order, whenever searchGraph left no hit missing or damaged and its reply fit. Th
 - A word hit whose ID is not a literal entity ID is refused, as searchGraph refuses it (`textsearch.go:144-154`).
 - A failed merge logs one Warn naming the verb and adds one to `searchMergeFailed` (`metrics.go:16`), which stays
   shared and unlabelled; its help text widens to both verbs.
-- The reply holds `results` (`entity_id`, `score`), the word search's `excluded` and `bodies_not_indexed`, and
-  `merge`. `matched` and ranks are left out because nothing reads them under D2(a). It carries the word search's
-  revision and the larger `damaged_entities`. At most 100 results, so no payload fit.
+- The reply holds `results` (`entity_id`, `score`, and `vector_rank` when from the embedding list, which D2(a)
+  reads), the word search's `excluded` and `bodies_not_indexed`, and `merge`. `matched` and `word_rank` are left
+  out because nothing reads them. It carries the word search's revision and the larger `damaged_entities`.
+  At most 100 results, so no payload fit.
 
 **D5. One pull request.** Graph types and verb row, graph-query handler, fusion, docs. The verb's caller lands with
 it.

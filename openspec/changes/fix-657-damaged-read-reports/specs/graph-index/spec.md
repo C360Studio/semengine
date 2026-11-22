@@ -53,3 +53,4 @@ damaged has no membership row, so the filter does not read it, and the reply cou
 - **WHEN** B is recorded damaged (a reply counts `damaged_entities` 1) and a `PREDICATE_INDEX` membership row for B
   under predicate P is then stored
 - **THEN** `predicate` P with a value is refused fatal `graph_state_reset_required` with `entity_ids` [B]
+- **AND** the test that verifies this is `TestValueFilterRefusesDamagedEntityItReads`

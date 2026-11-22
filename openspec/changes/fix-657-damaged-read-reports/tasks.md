@@ -17,7 +17,7 @@ Single PR, `Closes #657`.
   damaged B does. Then add the helper; `stateRefusal`, `noncanonicalRefusal`, the follower's fallback refusal and
   `aggregateEntityPoisonError` set the detail; fix the comments at `graph/state_contract.go:62-67` and
   `pkg/errs/errs.go:302-307`.
-- [ ] 2.2 Value filter: a test with B recorded damaged and then a membership row for B stored (on `main` it answers
+- [x] 2.2 Value filter: a test with B recorded damaged and then a membership row for B stored (on `main` it answers
   transient `internal`); then the value filter refuses fatal with the IDs it read.
 - [ ] 2.3 Skipped rows: extend `TestMalformedIndexRowsAreSkippedLoggedAndCounted` to assert each reply's
   `data.unreadable_records` (absent on `main`); then add the field to the seven reply types and count per request.

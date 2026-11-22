@@ -324,6 +324,9 @@ func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]by
 	}
 	if req.Value != nil {
 		entities, err = c.entitiesWithValue(ctx, entities, req.Predicate, *req.Value, req.Limit)
+		if graph.IsStateContractError(err) {
+			return nil, err
+		}
 		if err != nil {
 			return nil, internalError(err)
 		}
@@ -366,7 +369,9 @@ func (c *Component) predicateEntities(ctx context.Context, predicate string) ([]
 // entitiesWithValue keeps, in order, the entities whose current ENTITY_STATES value holds
 // predicate with value, stopping once limit are found (zero or less: no limit). An entity
 // deleted since the membership was read is left out; any other read failure fails the
-// whole query rather than answer part of it.
+// whole query rather than answer part of it. A stored value that does not decode stops the
+// read at that entity with graph.UnmarshalEntityState's refusal, which names it: the request
+// cannot be answered until it is repaired, so reading on would only add names to the refusal.
 func (c *Component) entitiesWithValue(ctx context.Context, entityIDs []string, predicate, value string, limit int) ([]string, error) {
 	matched := []string{}
 	for _, entityID := range entityIDs {

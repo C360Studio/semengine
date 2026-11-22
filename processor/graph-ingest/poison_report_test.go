@@ -2,6 +2,7 @@ package graphingest
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -112,8 +113,15 @@ func TestGaugeFollowsConcurrentRecordAndClear(t *testing.T) {
 // sample taken from two reads disagree when a report or repair lands between them. The anchor
 // key keeps a poison message in every Health, so the assertion runs on each read.
 //
+// On one processor the writer lands between the two reads only when the scheduler happens to
+// switch there, which is rare. The gates run at -cpu 1, so the test raises GOMAXPROCS to at
+// least 2 for its own run: writer and reader then run in parallel and the clash shows on most
+// runs. It must not call t.Parallel, because GOMAXPROCS is process-wide.
+//
 // spec: graph-ingest-recovery / graph-ingest reports its poisoned entities
 func TestHealthCountMatchesNamedIDsWhileChanging(t *testing.T) {
+	prev := runtime.GOMAXPROCS(max(2, runtime.GOMAXPROCS(0)))
+	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
 	c, _ := poisonScopingTestComponent(t)
 	const (
 		anchor = "acme.ops.test.system.widget.anchor"

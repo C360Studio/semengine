@@ -19,7 +19,7 @@ Single PR, `Closes #657`.
   `pkg/errs/errs.go:302-307`.
 - [x] 2.2 Value filter: a test with B recorded damaged and then a membership row for B stored (on `main` it answers
   transient `internal`); then the value filter refuses fatal with the IDs it read.
-- [ ] 2.3 Skipped rows: extend `TestMalformedIndexRowsAreSkippedLoggedAndCounted` to assert each reply's
+- [x] 2.3 Skipped rows: extend `TestMalformedIndexRowsAreSkippedLoggedAndCounted` to assert each reply's
   `data.unreadable_records` (absent on `main`); then add the field to the seven reply types and count per request.
 - [ ] 2.4 Embedding scope: a `FindSimilar` test with two unreadable records, one in scope (on `main` the scoped call
   counts 2); then `graphview.View.ListCounted` takes a key filter and `FindSimilar` passes `keep`.

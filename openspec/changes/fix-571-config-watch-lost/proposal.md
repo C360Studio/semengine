@@ -1,6 +1,6 @@
 # Proposal: fix-571-config-watch-lost
 
-Approved-by:
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/571#issuecomment-7080972423> sha256:fe7305622c68
 
 Track: `quick`. Capabilities modified: `config-manager` (one requirement added) and `operator-surface` ("Health and
 service listings are served as at the pin": a `config` sub-status joins the `nats` one). Two packages, `config` and

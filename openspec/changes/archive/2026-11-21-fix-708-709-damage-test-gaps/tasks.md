@@ -15,5 +15,5 @@ Each code task ends at a clean-tree local `task verify`. Single PR, closing #708
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-708-709-damage-test-gaps --yes`; `task spec:check` and `task docs:check`
+- [x] 3.1 Archive: `openspec archive fix-708-709-damage-test-gaps --yes`; `task spec:check` and `task docs:check`
   pass.

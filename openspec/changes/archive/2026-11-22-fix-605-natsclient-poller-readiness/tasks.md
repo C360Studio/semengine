@@ -17,5 +17,5 @@ Each code task ends at a clean-tree local `task verify`. Single PR, `Addresses #
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-605-natsclient-poller-readiness --yes`, which syncs `transport-client`;
+- [x] 3.1 Archive: `openspec archive fix-605-natsclient-poller-readiness --yes`, which syncs `transport-client`;
   `task spec:check` and `task docs:check` pass.

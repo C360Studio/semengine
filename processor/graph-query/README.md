@@ -32,6 +32,7 @@ tier 0 composition gets. The time-range and area searches wait for their respond
 | `localSearch` | `graph.lexical.query.search` scoped to one group, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the group's record | enveloped by `graph-query`, `data` a `graph.LocalSearchData` |
 | `globalSearch` | `graph.lexical.query.search` over every entity, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the groups' records; the alias, entity and edge verbs to verify an `entity` or `path` hint | enveloped by `graph-query`, `data` a `graph.GlobalSearchData` |
 | `searchGraph` | the same handler as `globalSearch`; when `embedding_enabled` is true, also `graph.embedding.query.search`, sent with the word search | the same, `data` equal to `globalSearch`'s when `embedding_enabled` is false; when true, one list merging words and meaning |
+| `mergedSearch` | `graph.lexical.query.search`; when `embedding_enabled` is true, also `graph.embedding.query.search`, sent with the word search; no entity read | enveloped by `graph-query`, `data` a `graph.MergedSearchData`: ranked entity IDs and scores only |
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
@@ -264,6 +265,50 @@ answer. The classifier takes the first start of "from A to B" and ignores B. To 
 
 `indexed_revision` is the word index's. `min_revision` goes to the word index, and to the alias read a hint makes.
 
+#### `mergedSearch`
+
+The ranked entity IDs of `searchGraph`'s merge, with no entity read back. Fusion's natural-language resolve calls it:
+it needs only IDs and scores, and reading up to 100 entities it would then discard is wasted work. It takes the word
+search's request, a `graph.LexicalSearchRequest` (`query`, `limit`, `scope`, `min_revision`), decoded strictly. Before
+any request it refuses, `invalid_request`, an unknown key, a blank `query`, a `limit` outside 0 or 1 to 100, and a
+`scope` member that is not an entity-ID prefix (an empty member means every entity). `scope` reaches both searches;
+`min_revision` reaches the word search alone. The word search needs graph-lexical, but not graph-ingest.
+
+The reply `data` is a `graph.MergedSearchData`:
+
+- `results`: at most `limit` entries, best first, entity ID ascending on ties, each with `entity_id`, `score` and
+  `vector_rank`. `vector_rank` is the entity's place in the embedding list, counting from 1, and is left out when the
+  entity came from the word list alone or nothing was merged. A reply in which no result has a `vector_rank` holds no
+  meaning result, even when `merge` is honoured: the embedding list may have been empty, or all its hits may have
+  fallen below `limit`.
+- `score`: the merged score (the sum of 1 / (60 + place) over the lists holding the entity) when `merge` is honoured,
+  otherwise the word index's score. Compare scores only within one reply.
+- `excluded` and `bodies_not_indexed`: the word search's, as `localSearch` reports them; absent or 0 when the word
+  index was not ready.
+- `merge`: there exactly when `embedding_enabled` is true, a hint entry as in `searchGraph`'s reply. With it absent,
+  `results` is the word list alone.
+
+With `embedding_enabled` true, both searches are asked together for 100 entities each, and the results are the first
+`limit` of the merge, in the order `searchGraph` gives its matches (a hit missing or damaged in `searchGraph`'s
+`batch` read is the one difference, since `mergedSearch` reads none). `mergedSearch` waits for the embedding search at
+most `query_timeout_ms` or 4 seconds, whichever is less, so a caller on the default 5 second request timeout keeps
+about a second for the word search and the reply. The failure cases:
+
+- **The embedding search is refused, broken, or silent past that wait**, or returns a hit whose ID is not a literal
+  entity ID: `results` is the word list, `merge` is not honoured with the reason, and one Warn,
+  `mergedSearch answered the word list alone: the embedding search failed`, and one count on
+  `semengine_graph_query_search_merge_failed_total` follow, once the reply is encoded.
+- **The word search is refused `index_not_ready` and the embedding search answers**: `results` is the embedding list,
+  `merge` has `detail` `index_not_ready`, and `indexed_revision` is 0. When both fail, the `index_not_ready` refusal
+  is returned.
+- **Any other word refusal** is returned as it arrived. A word hit whose ID is not a literal entity ID is the word
+  index's broken reply, refused transient `internal`.
+- **With `embedding_enabled` false**, no request goes to graph-embedding, `merge` is absent and `results` is the word
+  list.
+
+`indexed_revision` is the word search's, and `damaged_entities` is the larger count among the replies read.
+`searchGraph`'s own wait for the embedding search is not bounded this way (`query_timeout_ms` only).
+
 #### `searchGraph`'s search by meaning
 
 With `embedding_enabled` false, `searchGraph` makes no request to graph-embedding. With it true, it sends the word
@@ -409,7 +454,7 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 | Name | Type | Meaning |
 | --- | --- | --- |
 | `semengine_graph_query_search_truncated_total` | counter vec | `localSearch`, `globalSearch` and `searchGraph` answers cut short, by `verb` (`localSearch`, `globalSearch`, `searchGraph`) |
-| `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` answers given as the word list alone because the embedding search was refused, broken, or silent past `query_timeout_ms` |
+| `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` and `mergedSearch` answers given as the word list alone because the embedding search was refused, broken, or silent past `query_timeout_ms` |
 
 A search answer is cut short when more entities matched than the `limit` returned, a hit was deleted or damaged
 before it was read, a reply it was built from carried `damaged_entities` above 0, or matches were left out to fit

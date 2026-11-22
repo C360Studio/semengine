@@ -885,7 +885,7 @@
     connection status is a typed atomic that Status() reads without the client's lock. Removed:
     StatusCircuitOpen, natsclient.ErrCircuitOpen (and errs.ErrCircuitOpen), Client.Failures,
     Client.Backoff, and Status.FailureCount, LastFailureTime and Reconnects; Client.RTT and the
-    health monitor stay. Connect dials each time it is called, bounded by its context, and a failed
+    health monitor stay (the health monitor until fix-605-natsclient-poller-readiness, below). Connect dials each time it is called, bounded by its context, and a failed
     call refuses no other call. The records below that name the breaker, its timer or its tests
     (circuit threshold, Failures(), the circuit-open rows) describe the pin and the earlier
     changes, and are history.
@@ -943,10 +943,11 @@
     natsclient-close-joins-its-goroutines,
     the six sites (the health monitor :2151, the metrics poller :868, the claim releases of both consumer
     APIs, now one site, owned_delivery.go:133, the connection-loss timer's body :2040 and, until
-    simplify-04a-16 removed the breaker, the circuit timer's body :590) start through one helper, startBackground (:223), which under mu
+    simplify-04a-16 removed the breaker, the circuit timer's body :590; the health monitor until
+    fix-605-natsclient-poller-readiness removed it) start through one helper, startBackground (:223), which under mu
     refuses once Close has begun and otherwise counts the work as client-owned (an owned-work
     count under mu, which the join waits to reach zero) before the goroutine starts; Connect admits the
-    monitor and the poller through it. The first Close stops the monitor, the timer and the
+    poller through it. The first Close stops the timers and the
     poller, drains and closes the
     connection, clears the connection and the JetStream handle, and only then sets Status to
     Disconnected (the status keeps its value through the drain), bounded by its own context. Every
@@ -1144,6 +1145,19 @@
     return (nil, another client's, not comparable) are refused at once as invalid; a handle stays known for the
     client's life, so after its handlers finished or after Close returned nil it returns nil at once. The client keeps
     one map entry per consumer it returns, the handle as a lookup key only. Consumer: storage/objectstore's cleanup.
+    Changed surface, fix-605-natsclient-poller-readiness (owner approval, #605 comment 7085526705): the health poller
+    (startHealthMonitoring, stopHealthMonitoring, its healthInterval, healthTicker and healthDone fields and the
+    "health monitor" work kind) and its option WithHealthInterval are removed, so only Connect, the nats.go connection
+    handlers and Close set Status(); nats.go's own pings and the connection-loss timer are unchanged.
+    RequestReadyClassified is removed with requestMsgReady, DefaultReadinessProbeTimeout, DefaultReadinessBudget and
+    the two backoff constants: it retried every error for its whole budget and had no caller here or in a consumer.
+    Dropped tests: health_monitor_integration_test.go (TestHealthMonitorTickReturnsStatusAndClose),
+    readiness_integration_test.go (the four TestIntegration_RequestReady* tests) and the RequestReadyClassified row of
+    TestExportedNilContextRefusedOnRequestAndBucketPaths; they tested removed code. Connect now reports
+    nats.ErrConnectionClosed when Close began after admission whether or not it starts the metrics poller
+    (TestClientCloseDuringConnectStartsNothing, default and metrics subtests). Consumers delete their
+    WithHealthInterval line: semsource cmd/semsource/run.go, semteams internal/natstest/natstest.go. Records below
+    that name the health monitor, its tests or requestMsgReady describe earlier changes and are history.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource, internal/kvwatch (in-set; no exported signature names it);
     storagereport's report consumer stops its STORAGE_REPORT watch through internal/kvwatch.Stop, which drains the
@@ -1153,7 +1167,7 @@
     github.com/nats-io/nats-server/v2 v2.15.0 (embedded broker, client_connect_test.go:104),
     stretchr/testify, prometheus client_model and testutil; the integration lane imports
     internal/harness/natsfixture and internal/harness/probe and no natsclient test imports
-    testcontainers (task 3.7b). Dials NATS; runs the health monitor, the metrics poller,
+    testcontainers (task 3.7b). Dials NATS; runs the metrics poller,
     claim-release goroutines and two timers, each started through startBackground, and hands message
     handlers and connection event handlers to nats.go goroutines; Close joins all of them (design
     D3, tasks 3.7c and 3.7c2)

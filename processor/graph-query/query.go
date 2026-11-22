@@ -21,7 +21,7 @@ type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 // queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its
 // handler. A forward answers from the row it names here by responder and name, since semantic
 // forwards to search, and entityByAlias, relationships, pathSearch, hierarchyStats, summary,
-// localSearch and globalSearch from the rows they name, so a row that is gone leaves its verb with
+// localSearch, globalSearch, searchGraph and mergedSearch from the rows they name, so a row that is gone leaves its verb with
 // no handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
@@ -81,6 +81,15 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	}
 	if lexical != "" && batch != "" {
 		handlers["localSearch"] = c.localSearch(lexical, batch)
+	}
+	if lexical != "" {
+		// mergedSearch reads only the two search verbs; it merges when the composition runs
+		// graph-embedding.
+		semantic := ""
+		if c.config.EmbeddingEnabled {
+			semantic = subjectOf(graph.ResponderGraphEmbedding, "search")
+		}
+		handlers["mergedSearch"] = c.mergedSearch(lexical, semantic)
 	}
 	return handlers
 }

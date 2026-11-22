@@ -79,6 +79,15 @@
 // embedding reply with no results list is broken, not empty. A word index that was not ready leaves text null; if the embedding search fails too, the
 // index_not_ready refusal is returned. globalSearch never asks graph-embedding.
 //
+// mergedSearch takes the word search's request (query, limit, scope, min_revision) and answers the
+// ranked entity IDs of searchGraph's merge, each with its score and, when it came from the
+// embedding list, its place there as vector_rank; it reads no entity. It asks graph-lexical, and
+// graph-embedding too when embedding_enabled is true, both scoped by the request's scope, and
+// waits for the embedding search at most query_timeout_ms or 4 seconds, whichever is less. A
+// failed embedding search leaves the word list, with merge not honoured, one Warn and one count on
+// semengine_graph_query_search_merge_failed_total; a word index not ready leaves the embedding
+// list alone, and both failing returns the index_not_ready refusal.
+//
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a
 // wait to write to a broker that has stopped reading (ADR-112, "Time"). A key the configuration does

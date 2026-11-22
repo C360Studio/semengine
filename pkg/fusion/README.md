@@ -105,14 +105,13 @@ if err != nil {
 `New` refuses a nil requester and a negative timeout. It starts nothing: the client holds no goroutine, no watch and
 no lock, so it has no `Close`, and it reads no readiness status. A read whose index is still catching up is refused
 with code `index_not_ready`, and the engine reads that reply. Each method sends one request to one of graph-query's
-`graph.query.*` verbs, or for an `nl` resolve to graph-lexical's word search, with the subject read from
-`graph.QueryVerbs()`:
+`graph.query.*` verbs (an `nl` resolve uses `mergedSearch`), with the subject read from `graph.QueryVerbs()`:
 
 | Method | Verb |
 | --- | --- |
 | `Resolve`, `symbol` | `byName` |
 | `Resolve`, `prefix` | `prefixIDs` (lists IDs only), then `batch` |
-| `Resolve`, `nl` | graph-lexical's `search` (with the request's `scope` when it is not empty) |
+| `Resolve`, `nl` | `mergedSearch` (with the request's `scope` when it is not empty) |
 | `Entity` | `entity` |
 | `Entities` | `batch` |
 | `Neighbors` | `relationships` |
@@ -124,7 +123,7 @@ graph-ingest's `batch` read returns the readable entities and names each poisone
 others hydrate, and the answer goes on. If every seed is poisoned the response is `deferred` with
 `all_seeds_unhydrated`. A seed the batch reports not found is listed with reason `not_found`. A refused batch,
 whatever its code, is returned as the error and no other request is sent.
-Every read whose reply is enveloped (`Resolve` over `byName` or the word search, `Neighbors`, `Names`) copies the
+Every read whose reply is enveloped (`Resolve` over `byName` or `mergedSearch`, `Neighbors`, `Names`) copies the
 reply's `damaged_entities` into what it returns: `Resolution.DamagedEntities`, `Neighbors.DamagedEntities` or
 `Names.DamagedEntities`.
 `Entities` refuses a nil context.
@@ -142,14 +141,23 @@ when it holds a poisoned entity; only the listing is safe. One limit remains: a 
 to one `batch` read with no check that the reply fits the message size limit, so a prefix over very large entities
 can be refused with `response_too_large`.
 
-An `nl` question goes to the word index unchanged, so its query rules apply: a question it refuses, such as one
-holding `name:`, comes back as graph-lexical sent it, class invalid, code `invalid_request`. A stack with no
-graph-lexical fails every `nl` question with a transient `internal` error naming `graph.lexical.query.search`.
+An `nl` question goes to graph-query's `mergedSearch` verb, which sends it unchanged to graph-lexical's word search,
+so the word index's query rules apply: a question it refuses, such as one holding `name:`, comes back as graph-lexical
+sent it, class invalid, code `invalid_request`. When graph-query runs the embedding search (`embedding_enabled` true,
+tier 1), `mergedSearch` also asks graph-embedding and merges the two ranked lists as `searchGraph` does; it waits at
+most 4 seconds, or graph-query's `query_timeout_ms` when that is shorter, for the embedding search. If that search is
+refused, broken or late, the answer is the word list alone. At tier 0 the answer is the word list. While the word
+index is still building, a tier 1 question is answered from the embedding list alone; it is deferred
+`index_not_ready` only when the embedding search fails too. A stack with no graph-lexical, or with no graph-query,
+fails every `nl` question with a transient `internal` error naming the subject nothing answered.
 
-An `nl` answer's `provenance` is `lexical`: its seeds are ranked word matches, neither an exact lookup nor an
-embedding search. `symbol` and `prefix` answers are `deterministic`. `symbol` and `prefix` questions need no
-graph-lexical; `TestSmoke_OneConfigAnswers` (`internal/smoke`) asks all three of a tier 0 stack with no
-graph-embedding.
+An `nl` answer's `provenance` is `embedding` when at least one returned seed came from the embedding list, and
+`lexical` otherwise (tier 0, a failed or late embedding search, or an embedding list that added nothing to the
+returned seeds). `symbol` and `prefix` answers are `deterministic`. With `include_scores`, a seed's `similarity` is
+the reply's `score`: the word index's score from a word-only answer, or the merged score (the sum of 1 / (60 + place)
+over the lists holding the entity) from a merged one. It is comparable only within one answer. `symbol` and `prefix`
+questions need no graph-lexical; `TestSmoke_OneConfigAnswers` (`internal/smoke`) asks all three of a tier 0 stack
+with no graph-embedding.
 
 ## Packages
 

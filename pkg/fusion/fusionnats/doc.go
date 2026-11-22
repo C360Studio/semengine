@@ -1,7 +1,6 @@
 // Package fusionnats is the NATS implementation of fusion.RetrievalClient
 // (ADR-062): it maps the engine's resolve and expand calls onto graph-query's
-// public verbs and graph-lexical's word search, so the fusion engine can run
-// against a live graph.
+// public verbs, so the fusion engine can run against a live graph.
 //
 // It is a subpackage of pkg/fusion so that fusion itself imports no NATS client
 // and stays testable without a live graph. This package is where the engine
@@ -13,7 +12,7 @@
 //
 //	Resolve (symbol)  byName
 //	Resolve (prefix)  prefixIDs (the IDs only, read afterwards through batch)
-//	Resolve (nl)      graph-lexical's search
+//	Resolve (nl)      mergedSearch (word search, merged with the embedding search at tier 1)
 //	Entity            entity
 //	Entities          batch
 //	Neighbors         relationships

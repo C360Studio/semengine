@@ -73,16 +73,16 @@ func BenchmarkFindSimilar50k(b *testing.B) {
 }
 
 // BenchmarkVectorCacheLockHold50k is the time FindSimilar holds the view's lock over 50,000
-// vectors: graphview.View.ListCounted runs its whole body, the copy and the sort of every key,
-// under the view's one mutex (pkg/graphview/view.go ListCounted), so its uncontended call time is
-// the hold time plus one uncontended lock and unlock. While it holds the lock the view applies no
+// vectors: with a nil keep, graphview.View.ListCounted does nothing outside the view's one mutex
+// but return, the copy and the sort of every key included (pkg/graphview/view.go ListCounted), so
+// its uncontended call time is the hold time plus one uncontended lock and unlock. While it holds the lock the view applies no
 // write.
 func BenchmarkVectorCacheLockHold50k(b *testing.B) {
 	cache, _ := benchCache(b)
 	view := cache.view.Load()
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, _, err := view.ListCounted(""); err != nil {
+		if _, _, err := view.ListCounted(nil); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -18,8 +18,11 @@ type NameMatch struct {
 
 // NameData contains the ranked entities for a name lookup. Order IS the ranking:
 // exact-case matches first, then by label-predicate salience, then entity ID.
+// UnreadableRecords is the number of stored index rows, a key or a value, the lookup left out
+// because they are not the index's layout; 0 says none was.
 type NameData struct {
-	Matches []NameMatch `json:"matches"`
+	Matches           []NameMatch `json:"matches"`
+	UnreadableRecords int         `json:"unreadable_records"`
 }
 
 // NameIndexItem is one entity's claim on a name, stored in NAME_INDEX.

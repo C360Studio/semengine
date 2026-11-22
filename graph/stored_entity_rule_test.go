@@ -3,6 +3,8 @@ package graph
 import (
 	"context"
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,13 +31,28 @@ func classifiedLayers(err error) int {
 }
 
 // requireStateRefusal checks the one refusal shape for stored graph state: one classified layer,
-// fatal graph_state_reset_required, over a *StateContractError with reason and entityID.
+// fatal graph_state_reset_required, over a *StateContractError with reason and entityID. A refusal
+// that names its entity carries it alone in Detail["entity_ids"]; one with no entity carries none.
 func requireStateRefusal(t *testing.T, err error, reason StateResetReason, entityID string) {
 	t.Helper()
 	var classified *errs.ClassifiedError
 	if !errors.As(err, &classified) || classified.Class != errs.ErrorFatal ||
 		classified.Code != ErrorCodeGraphStateResetRequired {
 		t.Fatalf("error = %T %v, want fatal/%s", err, err, ErrorCodeGraphStateResetRequired)
+	}
+	ids, carried := classified.Detail["entity_ids"]
+	switch {
+	case entityID == "" && carried:
+		t.Errorf("refusal with no entity carries entity_ids %v, want none", ids)
+	case entityID != "" && !reflect.DeepEqual(ids, []string{entityID}):
+		t.Errorf("refusal Detail[\"entity_ids\"] = %#v, want []string{%q}", ids, entityID)
+	}
+	var want []string
+	if entityID != "" {
+		want = []string{entityID}
+	}
+	if got := StateRefusalEntityIDs(err); !slices.Equal(got, want) {
+		t.Errorf("StateRefusalEntityIDs = %v, want %v", got, want)
 	}
 	if n := classifiedLayers(err); n != 1 {
 		t.Errorf("error %v carries %d ClassifiedError layers, want 1", err, n)

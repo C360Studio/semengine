@@ -200,10 +200,12 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 		return nil, internalError(err)
 	}
 	entries := make([]graph.IncomingEntry, 0, len(keys))
+	skipped := 0
 	for _, key := range keys {
 		entry, ok := incomingEntryFromKey(key, prefix)
 		if !ok {
 			c.skipMalformedRow("incoming", key, "key is not target.source.hex(predicate)")
+			skipped++
 			continue
 		}
 		entries = append(entries, entry)
@@ -214,7 +216,7 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 		return cmp.Or(strings.Compare(a.FromEntityID, b.FromEntityID), strings.Compare(a.Predicate, b.Predicate))
 	})
 	entries = slices.Compact(entries)
-	return reply(at, graph.IncomingRelationshipsData{Relationships: entries})
+	return reply(at, graph.IncomingRelationshipsData{Relationships: entries, UnreadableRecords: skipped})
 }
 
 // incomingEntryFromKey reads an INCOMING_INDEX key, target.source6.hex(predicate), whose
@@ -284,10 +286,12 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 		return nil, internalError(err)
 	}
 	holders := make(map[string]struct{}, 1)
+	skipped := 0
 	for _, key := range keys {
 		entityID, _, ok := entityAndPredicate(strings.TrimPrefix(key, prefix))
 		if !ok {
 			c.skipMalformedRow("alias", key, "key is not hash.entity.hex(predicate)")
+			skipped++
 			continue
 		}
 		holders[entityID] = struct{}{}
@@ -297,9 +301,9 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 			fmt.Errorf("alias %q is held by %d entities", req.Alias, len(holders)))
 	}
 	for canonicalID := range holders {
-		return reply(at, graph.AliasData{CanonicalID: &canonicalID})
+		return reply(at, graph.AliasData{CanonicalID: &canonicalID, UnreadableRecords: skipped})
 	}
-	return reply(at, graph.AliasData{})
+	return reply(at, graph.AliasData{UnreadableRecords: skipped})
 }
 
 // handleQueryPredicate answers the entities carrying a predicate, sorted; with a value,
@@ -318,17 +322,20 @@ func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]by
 	if err != nil {
 		return nil, err
 	}
-	entities, err := c.predicateEntities(ctx, req.Predicate)
+	entities, skipped, err := c.predicateEntities(ctx, req.Predicate)
 	if err != nil {
 		return nil, internalError(err)
 	}
 	if req.Value != nil {
 		entities, err = c.entitiesWithValue(ctx, entities, req.Predicate, *req.Value, req.Limit)
+		if graph.IsStateContractError(err) {
+			return nil, err
+		}
 		if err != nil {
 			return nil, internalError(err)
 		}
 	}
-	return reply(at, graph.PredicateData{Entities: limited(entities, req.Limit)})
+	return reply(at, graph.PredicateData{Entities: limited(entities, req.Limit), UnreadableRecords: skipped})
 }
 
 // limited returns the first limit values; a limit of zero or less keeps them all.
@@ -340,33 +347,37 @@ func limited(values []string, limit int) []string {
 }
 
 // predicateEntities lists the entities with a PREDICATE_INDEX membership for predicate,
-// sorted and deduplicated.
-func (c *Component) predicateEntities(ctx context.Context, predicate string) ([]string, error) {
+// sorted and deduplicated, and the number of malformed rows it skipped.
+func (c *Component) predicateEntities(ctx context.Context, predicate string) ([]string, int, error) {
 	filter, err := predicateExactFilter(predicate)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	keys, err := c.predicateBucket.KeysByFilter(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	entities := make([]string, 0, len(keys))
+	skipped := 0
 	for _, key := range keys {
 		stored, entityID, ok := predicateMembershipFromKey(key)
 		if !ok || stored != predicate {
 			c.skipMalformedRow("predicate", key, "key is not predicate.entity")
+			skipped++
 			continue
 		}
 		entities = append(entities, entityID)
 	}
 	slices.Sort(entities)
-	return slices.Compact(entities), nil
+	return slices.Compact(entities), skipped, nil
 }
 
 // entitiesWithValue keeps, in order, the entities whose current ENTITY_STATES value holds
 // predicate with value, stopping once limit are found (zero or less: no limit). An entity
 // deleted since the membership was read is left out; any other read failure fails the
-// whole query rather than answer part of it.
+// whole query rather than answer part of it. A stored value that does not decode stops the
+// read at that entity with graph.UnmarshalEntityState's refusal, which names it: the request
+// cannot be answered until it is repaired, so reading on would only add names to the refusal.
 func (c *Component) entitiesWithValue(ctx context.Context, entityIDs []string, predicate, value string, limit int) ([]string, error) {
 	matched := []string{}
 	for _, entityID := range entityIDs {
@@ -451,7 +462,9 @@ func (c *Component) handleQueryPredicateList(ctx context.Context, data []byte) (
 	for _, key := range malformed {
 		c.skipMalformedRow("predicate", key, "key is not predicate.entity")
 	}
-	return reply(at, graph.PredicateListData{Predicates: predicates, Total: len(predicates)})
+	return reply(at, graph.PredicateListData{
+		Predicates: predicates, Total: len(predicates), UnreadableRecords: len(malformed),
+	})
 }
 
 // handleQueryPredicateStats answers a predicate's entity count and the first sample_limit
@@ -477,14 +490,15 @@ func (c *Component) handleQueryPredicateStats(ctx context.Context, data []byte) 
 	if err != nil {
 		return nil, err
 	}
-	entities, err := c.predicateEntities(ctx, req.Predicate)
+	entities, skipped, err := c.predicateEntities(ctx, req.Predicate)
 	if err != nil {
 		return nil, internalError(err)
 	}
 	return reply(at, graph.PredicateStatsData{
-		Predicate:      req.Predicate,
-		EntityCount:    len(entities),
-		SampleEntities: limited(entities, req.SampleLimit),
+		Predicate:         req.Predicate,
+		EntityCount:       len(entities),
+		SampleEntities:    limited(entities, req.SampleLimit),
+		UnreadableRecords: skipped,
 	})
 }
 
@@ -513,11 +527,13 @@ func (c *Component) handleQueryPredicateCompound(ctx context.Context, data []byt
 		return nil, err
 	}
 	counts := make(map[string]int)
+	skipped := 0
 	for _, predicate := range req.Predicates {
-		entities, err := c.predicateEntities(ctx, predicate)
+		entities, n, err := c.predicateEntities(ctx, predicate)
 		if err != nil {
 			return nil, internalError(err)
 		}
+		skipped += n
 		for _, entityID := range entities {
 			counts[entityID]++
 		}
@@ -532,9 +548,10 @@ func (c *Component) handleQueryPredicateCompound(ctx context.Context, data []byt
 	}
 	slices.Sort(entities)
 	return reply(at, graph.CompoundPredicateData{
-		Entities: limited(entities, req.Limit),
-		Operator: req.Operator,
-		Matched:  len(entities),
+		Entities:          limited(entities, req.Limit),
+		Operator:          req.Operator,
+		Matched:           len(entities),
+		UnreadableRecords: skipped,
 	})
 }
 
@@ -655,10 +672,12 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 			fmt.Errorf("name lookup exceeds read budget: %d memberships > %d", len(keys), nameQueryMaxHydration))
 	}
 	items := make([]graph.NameIndexItem, 0, len(keys))
+	skipped := 0
 	for _, key := range keys {
 		entityID, predicate, ok := entityAndPredicate(strings.TrimPrefix(key, prefix))
 		if !ok {
 			c.skipMalformedRow("name", key, "key is not hash.entity.hex(predicate)")
+			skipped++
 			continue
 		}
 		entry, err := c.nameBucket.Get(ctx, key)
@@ -671,11 +690,12 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 		var v nameCompositeValue
 		if err := json.Unmarshal(entry.Value, &v); err != nil {
 			c.skipMalformedRow("name", key, "value is not JSON: "+err.Error())
+			skipped++
 			continue
 		}
 		items = append(items, graph.NameIndexItem{EntityID: entityID, Name: v.Name, Predicate: predicate, Priority: v.Priority})
 	}
-	return reply(at, graph.NameData{Matches: rankNameMatches(items, req.Name, req.Limit)})
+	return reply(at, graph.NameData{Matches: rankNameMatches(items, req.Name, req.Limit), UnreadableRecords: skipped})
 }
 
 // nameRank pairs a match with its label-predicate priority for ordering.
@@ -729,8 +749,8 @@ func rankNameMatches(items []graph.NameIndexItem, query string, limit int) []gra
 // skipMalformedRow declares a stored index row a query leaves out of its answer because it is
 // not the index's layout. No graph-index writer stores such a row, so one means the bucket was
 // written by something else; the query still answers from the well-formed rows, which are
-// unaffected, rather than fail on a row it cannot read. A row deleted after the listing is not
-// malformed and is not declared. The key goes to the log only: the metric's one label is the
+// unaffected, rather than fail on a row it cannot read, and counts the row in its reply's
+// unreadable_records. A row deleted after the listing is not malformed and is not declared. The key goes to the log only: the metric's one label is the
 // index, a bounded set.
 func (c *Component) skipMalformedRow(indexType, key, reason string) {
 	c.metrics.queryRowsSkipped.WithLabelValues(indexType).Inc()

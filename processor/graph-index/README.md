@@ -63,6 +63,10 @@ literal. All eight are on `graph.index.query.` followed by the name.
 | `predicateCompound` | `{"predicates": [...], "operator": "AND" or "OR", "limit": ...}` | `graph.CompoundPredicateData` |
 | `byName` | `{"name": ..., "limit": ...}` | `graph.NameData` |
 
+Every verb but `outgoing` reads index rows a request lists and leaves out a stored row that is not its index's layout,
+answering from the well-formed rows. Its `data.unreadable_records` says how many rows that request left out, `0` when
+none; each one is also logged and counted in `query_rows_skipped_total`. A row deleted after the listing is not counted.
+
 A successful reply is a `graph.QueryResponse`:
 
 ```json
@@ -114,7 +118,7 @@ entity carries it, the reply holds no ID. If two or more entities do, the verb r
 `alias_ambiguous` (`graph.ErrorCodeAliasAmbiguous`), the message naming the alias; it answers again once all but one
 holder has dropped the alias or been deleted and graph-index has indexed that change. An alias that is empty after
 trimming is refused as `invalid_request`. A stored `ALIAS_INDEX` row that is not in the layout above is left out of the
-answer, logged, and counted in `query_rows_skipped_total` under `alias`.
+answer, logged, counted in `query_rows_skipped_total` under `alias`, and counted in the reply's `unreadable_records`.
 
 ## Configuration
 

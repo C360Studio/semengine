@@ -949,9 +949,10 @@ func startGraphIngest(t *testing.T, client *natsclient.Client) {
 
 // TestMalformedIndexRowsAreSkippedLoggedAndCounted: a stored index row that is not its index's
 // layout is left out of every query that lists it, and the skip is declared: a warning names the
-// index, and query_rows_skipped_total counts it by index, while the query still answers the
-// well-formed rows. No graph-index writer stores such a row, so the test writes each
-// one into its bucket directly.
+// index, query_rows_skipped_total counts it by index, and the reply's data.unreadable_records
+// counts the rows that request skipped, while the query still answers the well-formed rows.
+// A reply that skipped nothing says 0. No graph-index writer stores such a row, so the test
+// writes each one into its bucket directly.
 func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	src, target, stranger := entityID(1), entityID(2), entityID(3)
@@ -1034,4 +1035,57 @@ func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 	if !maps.Equal(got, want) {
 		t.Errorf("semengine_graph_index_query_rows_skipped_total by index_type = %v, want %v", got, want)
 	}
+
+	// Each reply counts only the rows its own request skipped: the bad predicate key once per
+	// listing, both bad name rows, and one key each for incoming and alias. predicateStats and
+	// predicateCompound list the bad predicate key too; they run after the counter check, which
+	// counts only the four reads above.
+	for _, tc := range []struct {
+		verb string
+		body any
+		want int
+	}{
+		{"incoming", map[string]string{"entity_id": target}, 1},
+		{"alias", map[string]string{"alias": "alpha-1"}, 1},
+		{"predicate", map[string]string{"predicate": linkTo}, 1},
+		{"predicateList", map[string]string{}, 1},
+		{"predicateStats", map[string]string{"predicate": linkTo}, 1},
+		{"predicateCompound", map[string]any{"predicates": []string{linkTo, title}, "operator": "OR"}, 1},
+		{"byName", map[string]string{"name": "Alpha"}, 2},
+		// The same seven verbs over rows that are all well formed.
+		{"incoming", map[string]string{"entity_id": src}, 0},
+		{"alias", map[string]string{"alias": "no-such-alias"}, 0},
+		{"predicate", map[string]string{"predicate": title}, 0},
+		{"predicateList", map[string]string{"namespace": "dc"}, 0},
+		{"predicateStats", map[string]string{"predicate": title}, 0},
+		{"predicateCompound", map[string]any{"predicates": []string{title, alias}, "operator": "AND"}, 0},
+		{"byName", map[string]string{"name": "Nobody"}, 0},
+	} {
+		if got, ok := unreadableRecords(t, h.client, tc.verb, tc.body); !ok || got != tc.want {
+			t.Errorf("%s %v: data.unreadable_records = %d (present %t), want %d", tc.verb, tc.body, got, ok, tc.want)
+		}
+	}
+}
+
+// unreadableRecords sends body on verb and returns the reply's data.unreadable_records, read by
+// the name the wire spells, and whether the reply carried it at all.
+func unreadableRecords(t *testing.T, client *natsclient.Client, verb string, body any) (int, bool) {
+	t.Helper()
+	raw, err := query(t, client, verb, body)
+	if err != nil {
+		t.Fatalf("%s %v: %v", verb, body, err)
+	}
+	var reply envelope[map[string]json.RawMessage]
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		t.Fatalf("%s reply %s: %v", verb, raw, err)
+	}
+	field, ok := reply.Data["unreadable_records"]
+	if !ok {
+		return 0, false
+	}
+	var n int
+	if err := json.Unmarshal(field, &n); err != nil {
+		t.Fatalf("%s reply unreadable_records %s: %v", verb, field, err)
+	}
+	return n, true
 }

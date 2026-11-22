@@ -757,23 +757,25 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 
 // aggregateEntityPoisonError builds the single typed failure for a
 // multi-entity read that encountered poisoned entities: fatal
-// graph_state_reset_required naming every poisoned entity (bounded list),
-// wrapping one typed cause so errors.As(*graph.StateContractError) is
-// preserved across the seam. Kills the one-repair-per-round-trip discovery
-// loop.
+// graph_state_reset_required naming every poisoned entity, all of them sorted
+// in Detail["entity_ids"] and a bounded sample in the message, wrapping one
+// typed cause so errors.As(*graph.StateContractError) is preserved across the
+// seam. One reply names every entity to repair, not one per round trip.
 func aggregateEntityPoisonError(poisoned []*graph.StateContractError) error {
 	ids := make([]string, 0, len(poisoned))
 	for _, p := range poisoned {
 		ids = append(ids, p.EntityID)
 	}
 	sort.Strings(ids)
+	ids = slices.Compact(ids)
 	sample := ids
 	suffix := ""
 	if len(sample) > entityPoisonSampleCap {
 		sample = sample[:entityPoisonSampleCap]
 		suffix = fmt.Sprintf(" (+%d more)", len(ids)-entityPoisonSampleCap)
 	}
-	return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+	return errs.ClassifiedCodeDetail(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+		map[string]any{"entity_ids": ids},
 		fmt.Errorf("read encountered %d poisoned entities: %s%s: %w",
 			len(ids), strings.Join(sample, ", "), suffix, poisoned[0]))
 }

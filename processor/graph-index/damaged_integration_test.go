@@ -13,6 +13,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/vocabulary"
@@ -72,7 +73,8 @@ func requireDamaged[T any](t *testing.T, verb string, reply counted[T], want int
 	}
 }
 
-// requireDamagedRefusal requires err to be the fatal graph_state_reset_required refusal naming id.
+// requireDamagedRefusal requires err to be the fatal graph_state_reset_required refusal naming id,
+// in its message and alone in its detail.
 func requireDamagedRefusal(t *testing.T, verb, id string, err error) {
 	t.Helper()
 	var classified *errs.ClassifiedError
@@ -83,6 +85,9 @@ func requireDamagedRefusal(t *testing.T, verb, id string, err error) {
 	}
 	if !strings.Contains(err.Error(), id) {
 		t.Errorf("%s of %s: refusal %v does not name the entity", verb, id, err)
+	}
+	if got := graph.StateRefusalEntityIDs(err); !slices.Equal(got, []string{id}) {
+		t.Errorf("%s of %s: StateRefusalEntityIDs = %v; want [%s]", verb, id, got, id)
 	}
 }
 
@@ -228,6 +233,36 @@ func TestRepairedEntityReturns(t *testing.T) {
 	if health := h.c.Health(); !health.Healthy {
 		t.Errorf("Health after the repair = %+v; want healthy", health)
 	}
+}
+
+// TestValueFilterRefusesDamagedEntityItReads: B is recorded damaged, so graph-index removed B's
+// membership rows; a membership row for B is then stored again by hand, as a stale row left from
+// before the damage would be. The value filter reads B's stored value, which does not decode, and
+// refuses the whole request as the damaged-entity refusal naming B, not as a passing internal
+// error: retrying cannot help until B is repaired.
+func TestValueFilterRefusesDamagedEntityItReads(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	b := entityID(2)
+	revB := h.put(t, b, damagedValue)
+	// This reply waits for revB, so B's damage is recorded before the row below is stored.
+	before := countedAnswer[graph.PredicateData](t, h, "predicate", map[string]any{"predicate": linkTo}, revB)
+	requireRelationship(t, "predicate "+linkTo+" before the row", before.Data.Entities, []string{})
+	requireDamaged(t, "predicate "+linkTo+" before the row", before, 1)
+
+	kv, err := kvcatalog.EnsureCatalogBucket(t.Context(), h.client, graph.BucketPredicateIndex)
+	if err != nil {
+		t.Fatalf("open %s: %v", graph.BucketPredicateIndex, err)
+	}
+	// Spelled from the layout predicate3.entity6, not built by the package.
+	if _, err := kv.Put(t.Context(), linkTo+"."+b, []byte("{}")); err != nil {
+		t.Fatalf("put membership row for %s: %v", b, err)
+	}
+
+	// A plain request, not settled: the refusal to check may be a transient one, which settled
+	// would retry.
+	_, err = query(t, h.client, "predicate",
+		map[string]any{"predicate": linkTo, "value": "anything", "min_revision": revB})
+	requireDamagedRefusal(t, "predicate "+linkTo+" with a value", b, err)
 }
 
 // TestRemovedNoncanonicalKeyIsNoLongerDamaged: a value is stored under a key KV accepts that is not

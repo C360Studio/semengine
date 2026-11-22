@@ -26,8 +26,10 @@ const damagedReason = "damaged_entity"
 // newly damaged entity, however often its repair reads the same damage.
 func (f *Follower) ReportDamaged(key string, revision uint64, refusal error) bool {
 	if refusal == nil {
-		// A report with no refusal still names damage; failing closed keeps it recorded and readable.
-		refusal = errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+		// A report with no refusal still names damage; failing closed keeps it recorded and readable,
+		// with the key in its detail as the decoder's refusal has it.
+		refusal = errs.ClassifiedCodeDetail(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+			map[string]any{"entity_ids": []string{key}},
 			&graph.StateContractError{Reason: graph.GraphStateReasonUnreadableEntity, EntityID: key,
 				Err: errors.New("reported damaged with no refusal")})
 	}

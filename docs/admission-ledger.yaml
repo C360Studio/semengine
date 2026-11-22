@@ -4080,10 +4080,10 @@
     package's product contract line. Not carried (unread, no contract line, inventory 4): AppliedRevision, CaughtUp,
     View.Poisoned, Snapshot.Sequence, EntryMeta.Revision; Hooks.OnTick (a test back door, #186);
     DefaultTickInterval is unexported (defaultTickInterval, 250 ms). (5) Added, new
-    (setup-04a-04-graph-roots-graph-query-text D8): ListCounted(prefix) returns what List(prefix, 0) returns and the
-    number of poisoned keys under prefix, under one hold of the view's lock, with List's readiness errors; its one
-    reader is processor/graph-query's text tier, which reads one level of COMMUNITY_INDEX through it and declares the
-    unreadable records it counts
+    (setup-04a-04-graph-roots-graph-query-text D8; key filter fix-657-damaged-read-reports): ListCounted(keep)
+    returns the entries whose keys keep accepts and the number of poisoned keys it accepts (nil keep: all), both
+    copied under one hold of the view's lock and filtered after it, with List's readiness errors; its one reader is
+    graph/embedding's VectorCache.FindSimilar, which passes a search's scope so unreadable_records covers that scope
   dependencies_and_side_effects: >-
     internal/kvwatch (in-set; no exported signature names it); nats.go/jetstream; standard library only otherwise. No
     natsclient, no message, no metric. Opens one WatchAll on the injected WatcherSource (jetstream.KeyValue and

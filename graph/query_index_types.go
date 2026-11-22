@@ -29,14 +29,19 @@ type OutgoingRelationshipsData struct {
 	Relationships []OutgoingEntry `json:"relationships"`
 }
 
-// IncomingRelationshipsData contains incoming relationships for an entity.
+// IncomingRelationshipsData contains incoming relationships for an entity. UnreadableRecords
+// is the number of stored index rows the read left out because they are not the index's
+// layout; 0 says none was.
 type IncomingRelationshipsData struct {
-	Relationships []IncomingEntry `json:"relationships"`
+	Relationships     []IncomingEntry `json:"relationships"`
+	UnreadableRecords int             `json:"unreadable_records"`
 }
 
-// AliasData contains the canonical entity ID for an alias lookup.
+// AliasData contains the canonical entity ID for an alias lookup. UnreadableRecords counts
+// what IncomingRelationshipsData's does.
 type AliasData struct {
-	CanonicalID *string `json:"canonical_id"` // nil if not found
+	CanonicalID       *string `json:"canonical_id"` // nil if not found
+	UnreadableRecords int     `json:"unreadable_records"`
 }
 
 // PredicateRequest is the request for graph.index.query.predicate, and for
@@ -51,7 +56,9 @@ type PredicateRequest struct {
 	MinRevisionField
 }
 
-// PredicateData contains entities that have a specific predicate.
+// PredicateData contains entities that have a specific predicate. UnreadableRecords counts
+// what IncomingRelationshipsData's does.
 type PredicateData struct {
-	Entities []string `json:"entities"`
+	Entities          []string `json:"entities"`
+	UnreadableRecords int      `json:"unreadable_records"`
 }

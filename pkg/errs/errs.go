@@ -300,10 +300,9 @@ func ClassifiedCode(class ErrorClass, code string, err error) *ClassifiedError {
 }
 
 // ClassifiedCodeDetail is ClassifiedCode plus structured Detail (entity
-// id, revisions, ...). graph-ingest mutation handlers attach
-// entity/revision context here; the detail rides the wire in the ADR-060
-// standard error body (landed with the breaking PR — until then Detail is
-// carried on the error value but not serialized). Returns nil when err is
+// ids, revisions, ...). A natsclient reply carries Detail in its error
+// body, and RequestClassified rebuilds it from that JSON, so a caller there
+// reads a list as []any and a number as float64. Returns nil when err is
 // nil.
 //
 // Detail is stored by reference, not copied — pass a map you do not mutate

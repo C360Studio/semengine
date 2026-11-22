@@ -23,10 +23,5 @@ entry in sorted order. A new entry SHALL invalidate that entity's query-cache en
 
 - **WHEN** reports and clears of distinct keys run concurrently and all have returned
 - **THEN** the gauge equals the number of keys left recorded: the record's count is exact after concurrent changes
-  (`internal/damage` `TestConcurrentReportsAndClears`) and the gauge reads that count (`TestPoisonGaugeReadsTheRecord`)
-
-#### Scenario: The gauge reads the record
-
-- **WHEN** entries are reported to and cleared from the record directly, with no gauge call
-- **THEN** after each change the scraped gauge equals the number of entries recorded: 1, 2, 1, 0
-  (`TestPoisonGaugeReadsTheRecord`)
+  (`internal/damage` `TestConcurrentReportsAndClears`), and the gauge reads the record's count, 1 after a poisoned
+  read and 0 after its repair (`TestPoisonRepairRecoveryWithoutRestart`)

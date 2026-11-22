@@ -4,18 +4,14 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal (`proposal.md`); `task spec:check` and `task docs:check` pass.
-  Hold: OPEN-Q proposal awaits owner approval (#707)
+- [x] 1.1 Proposal (`proposal.md`); `task spec:check` and `task docs:check` pass. Approved 2026-11-22 (#707).
 
 ## 2. Code
 
-- [ ] 2.1 Test first: `TestPoisonGaugeReadsTheRecord` asserts the scraped gauge reads 1, 2, 1, 0 after each
-  direct report and clear, with no gauge call. Shown failing against the current written gauge
-  (`notes/2.1.md`). The scraped metric is still typed
-  gauge, with the same name and help.
-- [ ] 2.2 The gauge becomes a `prometheus.GaugeFunc` over the record; `setEntityPoisonGauge`, `poisonGaugeMu` and
-  the test's gauge swap go; `TestGaugeFollowsConcurrentRecordAndClear` is removed; the `metrics.go` comment on a
-  shared registry is reworded.
+- [ ] 2.1 The gauge becomes a `prometheus.GaugeFunc` over the record, with the same name, help and type;
+  `setEntityPoisonGauge`, `poisonGaugeMu` and the test's gauge swap (`poison_scoping_test.go`) go;
+  `TestGaugeFollowsConcurrentRecordAndClear` is removed; the `metrics.go` comment on a shared registry is reworded.
+  Every existing test that reads the gauge passes unchanged in what it asserts.
 
 ## 3. Close-out
 

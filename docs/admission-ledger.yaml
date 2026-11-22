@@ -4419,10 +4419,10 @@
     in missing, and it sets truncated. mergedSearch (new, not in the pin) answers the word search's request with the
     ranked entity IDs of searchGraph's merge and reads no entity: a score and, for a result from the embedding
     list, a vector_rank; it waits for the embedding search at most min(query_timeout_ms, 4 s), and a failed
-    embedding search counts on the shared merge-failed counter. searchGraph's semantic fallback is carried, adapted: only with
-    embedding_enabled, when word search matches nothing or is not ready, labelled in a fallback hint entry with the
-    embedding answer in semantic, and a failed fallback named, never hidden; the pin's strategy and degraded_reason
-    reply fields are not carried. Not carried: max_communities,
+    embedding search counts on the shared merge-failed counter. searchGraph's use of the embedding search is adapted: only with
+    embedding_enabled, it merges the word and embedding lists by rank, or answers the embedding list alone when the
+    word index is not ready, labelled in a merge hint entry, and a failed merge named, never hidden; the pin's
+    strategy and degraded_reason reply fields are not carried. Not carried: max_communities,
     summarize_threshold, include_summaries, include_relationships, include_sources, auto-summary, entity digests,
     the strategies, and the reply's count, duration_ms, degraded and answer_model fields. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
@@ -4459,7 +4459,7 @@
     responders nothing reads a time range or an area, and those hints are never honoured. The scorecard's reference
     is a BM25 computed in the test, so it bounds how far below a plain BM25 a verb may fall, not how good the
     ranking is for a consumer's questions. An embedder slower than mergedSearch's 4 s wait gives the word list;
-    searchGraph's own wait for the embedding search is query_timeout_ms alone. searchGraph's fallback answer is as good as the embedding provider's
+    searchGraph's own wait for the embedding search is query_timeout_ms alone. searchGraph's embedding results are as good as the embedding provider's
     model; what happens when a semantic answer pushes the reply past the NATS payload limit is not specified or
     tested. Not
     carried: the pin's searchgraph.go strategy and degraded_reason reply fields

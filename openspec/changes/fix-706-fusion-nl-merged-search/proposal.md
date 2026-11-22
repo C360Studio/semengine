@@ -1,6 +1,6 @@
 # Proposal: fix-706-fusion-nl-merged-search
 
-Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/706#issuecomment-7078195431> sha256:e80de286e976
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/706#issuecomment-7078195431> sha256:f11e588f1bf4
 
 Track: `design`. Capabilities: `fusion` (modified, renamed, removed, added), `graph-query` (modified, added),
 `graph-transport-boundary` (modified).
@@ -22,8 +22,8 @@ where they came from." `v0.1.0-alpha.7` waits for this fix.
   (ADR-071). It waits at most 4 s for the embedding search. At tier 0 the list is the word list alone. The
   ask-both-and-merge step is shared with searchGraph.
 - `fusionnats` sends an `nl` resolve to `mergedSearch`. Seeds keep the reply's order and score.
-- `fusion.Resolution` gains `Provenance`: `embedding` when the reply's `merge` hint is honoured, else `lexical`. A
-  response carries the resolve's provenance when one was set, otherwise its mode's.
+- `fusion.Resolution` gains `Provenance`: `embedding` when a returned result came from the embedding list, else
+  `lexical`. A response carries the resolve's provenance when one was set, otherwise its mode's.
 
 ## Non-goals
 

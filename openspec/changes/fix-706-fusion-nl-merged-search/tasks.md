@@ -53,7 +53,7 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
   Accept: `task docs:check`.
 - [ ] 4.2 Independent code review records an approving head at a commit with a clean local `task verify`; reviewer
   findings resolved.
-- [ ] 4.3 Link #712 (searchGraph's embedding wait) from the PR body without a closing keyword.
+- [x] 4.3 Link #712 (searchGraph's embedding wait) from the PR body without a closing keyword.
 
 ## 5. Close-out
 

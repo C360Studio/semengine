@@ -4,7 +4,6 @@ package natsclient
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -63,101 +62,6 @@ func resolveRequestHandlerTimeoutFromEnv() time.Duration {
 		return DefaultRequestHandlerTimeout
 	}
 	return d
-}
-
-// Readiness-gated read defaults (the third bucket of the request doctrine). A
-// readiness-gated read tolerates a not-yet-subscribed responder at cold start /
-// after reconnect: it retries with a SHORT per-attempt timeout up to a bounded
-// TOTAL budget, returning the first reply. Because the per-attempt timeout is
-// short and the total is bounded, a genuinely hung responder fails within the
-// budget rather than a full-timeout×N storm — so it does NOT mask a hung
-// responder the way retrying a full-timeout query would. Distinct from
-// RequestClassified (steady-state query: timeout = real signal, no retry) and
-// RequestWithRetryClassified (an operation whose contract authorizes
-// redelivery: retry on no reply, at full timeout).
-const (
-	// DefaultReadinessProbeTimeout bounds each attempt. Short so a
-	// not-yet-subscribed responder fails fast and retries instead of consuming a
-	// full query timeout per attempt.
-	DefaultReadinessProbeTimeout = 2 * time.Second
-	// DefaultReadinessBudget bounds the TOTAL wall-clock spent waiting for the
-	// responder to come up before the error surfaces. Neither bounds a wait
-	// behind a write the server is not reading: such a write holds an attempt
-	// until it completes or nats.go's write timeout (one minute by default,
-	// WithWriteTimeout) ends it (measured at nats.go v1.55.0, ADR-112).
-	DefaultReadinessBudget = 30 * time.Second
-
-	readinessInitialBackoff = 100 * time.Millisecond
-	readinessMaxBackoff     = 1 * time.Second
-)
-
-// requestMsgReady is the readiness-retry loop behind RequestReadyClassified
-// (errors.go), which runs ClassifyReply on the raw *nats.Msg it returns. It
-// retries with probeTimeout per attempt up to a total budget; zero
-// probeTimeout/budget use the Default* values above.
-//
-// It retries only on TRANSPORT failure (no reply received: no-responders or
-// probe timeout). Any received reply — including a handler-error reply — stops
-// the loop, because a reply means the responder is UP; the readiness contract is
-// satisfied and the (possibly-error) reply is returned for classification. Only
-// a truly-silent (never-replies) responder is retried, and only until the budget
-// is spent.
-func (c *Client) requestMsgReady(
-	ctx context.Context, subject string, data []byte, probeTimeout, budget time.Duration,
-) (*nats.Msg, error) {
-	if ctx == nil {
-		return nil, nilContextError("RequestReadyClassified")
-	}
-	c.mu.RLock()
-	conn := c.conn
-	c.mu.RUnlock()
-
-	if conn == nil || !conn.IsConnected() {
-		return nil, ErrNotConnected
-	}
-
-	if probeTimeout <= 0 {
-		probeTimeout = DefaultReadinessProbeTimeout
-	}
-	if budget <= 0 {
-		budget = DefaultReadinessBudget
-	}
-
-	// Auto-generate trace once for all attempts.
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	overallCtx, cancel := context.WithTimeout(ctx, budget)
-	defer cancel()
-
-	backoff := readinessInitialBackoff
-	var lastErr error
-	for {
-		attemptCtx, attemptCancel := context.WithTimeout(overallCtx, probeTimeout)
-		msg := nats.NewMsg(subject)
-		msg.Data = data
-		InjectTrace(ctx, msg)
-		reply, err := conn.RequestMsgWithContext(attemptCtx, msg)
-		attemptCancel()
-
-		if err == nil {
-			return reply, nil
-		}
-		lastErr = err
-
-		// Wait before the next probe, bounded by the overall readiness budget.
-		select {
-		case <-overallCtx.Done():
-			// %w preserves errors.Is(…, nats.ErrNoResponders) for callers that
-			// want to distinguish a never-appeared responder from a hung one.
-			return nil, fmt.Errorf("readiness budget %s exhausted: %w", budget, lastErr)
-		case <-time.After(backoff):
-		}
-		if backoff *= 2; backoff > readinessMaxBackoff {
-			backoff = readinessMaxBackoff
-		}
-	}
 }
 
 // RequestWithHeaders performs a request/reply operation with custom headers,

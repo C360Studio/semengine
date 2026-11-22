@@ -164,7 +164,6 @@ belongs to the framework, and it connects to any broker URL in three calls:
 client, err := natsclient.NewClient(url,
     natsclient.WithTimeout(10*time.Second), // bound the connect
     natsclient.WithMaxReconnects(0),        // a test wants a failure, not a retry
-    natsclient.WithHealthInterval(0),       // no background monitor to drain
 )
 if err != nil {
     return nil, err

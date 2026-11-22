@@ -321,8 +321,7 @@
 // concurrency limits - scales with available system resources.
 //
 // Memory: Memory usage scales with number of active subscriptions and consumers. Each
-// subscription maintains its own message buffer. Health monitoring adds minimal overhead
-// (one goroutine with configurable interval).
+// subscription maintains its own message buffer.
 //
 // Throughput: Limited primarily by network latency and NATS server performance.
 //

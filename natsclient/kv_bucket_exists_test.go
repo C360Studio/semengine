@@ -52,7 +52,7 @@ func TestCreateKeyValueBucketGetsAgainWhenItsStreamExists(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	client, err := NewClient(url, WithHealthInterval(0))
+	client, err := NewClient(url)
 	require.NoError(t, err)
 	require.NoError(t, client.Connect(ctx))
 	closeInCleanup(t, client)

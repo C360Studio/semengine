@@ -163,7 +163,7 @@ func newReconnectDialClient(t *testing.T) *Client {
 	})
 	require.True(t, server.ReadyForConnections(lifecycleBound), "embedded server not ready")
 
-	client, err := NewClient(server.ClientURL(), WithHealthInterval(0), WithReconnectWait(10*time.Millisecond))
+	client, err := NewClient(server.ClientURL(), WithReconnectWait(10*time.Millisecond))
 	require.NoError(t, err)
 	entered := make(chan struct{}, 1)
 	testEnded := make(chan struct{})
@@ -205,8 +205,8 @@ const heldSubject = "natsclient.held"
 const heldPayload = 16 << 20
 
 // newHeldClient starts an embedded server whose max_payload admits
-// heldPayload, and a client connected to it through a heldProxy, with opts
-// after WithHealthInterval(0). The proxy's cleanup runs before the client's
+// heldPayload, and a client connected to it through a heldProxy, built with
+// opts. The proxy's cleanup runs before the client's
 // Close: it closes both of its sockets, which ends a held write at once, so a
 // test that finds Close held does not wait a minute for the write timeout.
 func newHeldClient(t *testing.T, opts ...ClientOption) (*Client, *heldProxy) {
@@ -223,7 +223,7 @@ func newHeldClient(t *testing.T, opts ...ClientOption) (*Client, *heldProxy) {
 	require.True(t, server.ReadyForConnections(lifecycleBound), "embedded server not ready")
 
 	proxy := startHeldProxy(t, server.Addr().String())
-	client, err := NewClient(proxy.url, append([]ClientOption{WithHealthInterval(0)}, opts...)...)
+	client, err := NewClient(proxy.url, opts...)
 	require.NoError(t, err)
 	closeInCleanup(t, client)
 	t.Cleanup(proxy.close) // registered after the client's Close, so it runs first

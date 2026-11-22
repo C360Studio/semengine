@@ -108,7 +108,6 @@ func TestGraphIngestLifecycleSuite(t *testing.T) {
 	mustFail := func() lifecycletest.Owner {
 		client, err := natsclient.NewClient(refused,
 			natsclient.WithMaxReconnects(0),
-			natsclient.WithHealthInterval(0),
 		)
 		if err != nil {
 			t.Fatalf("NewClient: %v", err)
@@ -446,7 +445,6 @@ const statusBound = 10 * time.Second
 func openReconnectingClient(ctx context.Context, url string) (*natsclient.Client, func(context.Context) error, error) {
 	client, err := natsclient.NewClient(url,
 		natsclient.WithReconnectWait(reconnectWait),
-		natsclient.WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err

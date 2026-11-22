@@ -65,7 +65,7 @@ type fixtureClient struct {
 }
 
 // newFixtureClient resets the shared broker via shared.Reset(t) and returns a Client built by
-// openFixtureClient (no reconnects, no health monitor) and connected under fixtureClientTimeout.
+// openFixtureClient (no reconnects) and connected under fixtureClientTimeout.
 // Its Close is registered on t.Cleanup after shared.Reset's post-test check, so it runs first.
 func newFixtureClient(t *testing.T) *fixtureClient {
 	t.Helper()
@@ -79,14 +79,13 @@ func newFixtureClientAt(t *testing.T, url string) *fixtureClient {
 	return &fixtureClient{Client: natsfixture.Open(t, url, openFixtureClient), URL: url}
 }
 
-// openFixtureClient opens a Client with no reconnects and no health monitor, so nothing but the
+// openFixtureClient opens a Client with no reconnects, so nothing but the
 // test acts on the connection. It is the open function this package gives natsfixture.Open; a
 // failed connect closes the client before returning.
 func openFixtureClient(ctx context.Context, url string) (*Client, func(context.Context) error, error) {
 	client, err := NewClient(url,
 		WithTimeout(fixtureClientTimeout),
 		WithMaxReconnects(0),
-		WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err

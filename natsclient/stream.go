@@ -271,10 +271,8 @@ func (c *Client) reportBindDivergence(declared jetstream.StreamConfig, stream je
 }
 
 // Bounds on how long a consumer setup tolerates a stream that the node serving
-// the request has not applied yet. Fixed package constants in the style of the
-// readiness bounds in request.go (DefaultReadinessProbeTimeout /
-// DefaultReadinessBudget): sized once by the framework, never configured, never
-// predicted by a caller.
+// the request has not applied yet. Fixed package constants: sized once by the
+// framework, never configured, never predicted by a caller.
 //
 // A clustered JetStream answers stream creation from the meta leader while every
 // other node applies that assignment from the meta Raft log asynchronously. A

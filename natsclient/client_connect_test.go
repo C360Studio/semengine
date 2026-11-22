@@ -23,7 +23,6 @@ import (
 func TestConnectRejectsCandidateWhenCloseWinsAdmission(t *testing.T) {
 	client, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
-	client.healthInterval = 0
 
 	dialEntered := make(chan struct{})
 	releaseDial := make(chan struct{})
@@ -213,7 +212,7 @@ func TestReconnectAfterConnectContextEnded(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, responder.Flush())
 
-	client, err := NewClient(server.ClientURL(), WithHealthInterval(0), WithReconnectWait(10*time.Millisecond))
+	client, err := NewClient(server.ClientURL(), WithReconnectWait(10*time.Millisecond))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
 	require.NoError(t, client.Connect(ctx))

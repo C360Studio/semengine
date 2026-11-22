@@ -27,14 +27,6 @@ func WithReconnectWait(d time.Duration) ClientOption {
 	}
 }
 
-// WithHealthInterval sets the interval for health monitoring
-func WithHealthInterval(d time.Duration) ClientOption {
-	return func(c *Client) error {
-		c.healthInterval = d
-		return nil
-	}
-}
-
 // WithLogger sets a structured logger for the client.
 // If nil, defaults to slog.Default().
 func WithLogger(logger *slog.Logger) ClientOption {

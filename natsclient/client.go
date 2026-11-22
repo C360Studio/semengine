@@ -62,7 +62,7 @@ type Status struct {
 type Client struct {
 	urls string // comma-separated NATS server URLs for clustering support
 	// status holds a ConnectionStatus. It is an atomic so Status() reads it with
-	// or without mu held: the health monitor reads it under mu.
+	// or without mu held.
 	status atomic.Int32
 	logger *slog.Logger
 
@@ -132,11 +132,6 @@ type Client struct {
 	// timersMu guards lossTimer. Lock order: timersMu, then mu.
 	timersMu sync.Mutex
 
-	// Health monitoring
-	healthTicker   *time.Ticker
-	healthInterval time.Duration
-	healthDone     chan struct{} // Signal to stop health monitoring goroutine
-
 	// Synchronization. Every status write holds mu, so a writer's ownership
 	// check and its write are one step against Close and against a Connect
 	// installing its connection.
@@ -195,7 +190,6 @@ type Client struct {
 // Kinds of background work. Each starts through
 // startBackground; the name is what its drop log and the lifecycle adapter report.
 const (
-	workHealthMonitor  = "health monitor"
 	workMetricsPoller  = "metrics poller"
 	workClaimRelease   = "claim release"
 	workConnectionLost = "connection-loss timer"
@@ -318,7 +312,6 @@ func NewClient(urls string, opts ...ClientOption) (*Client, error) {
 		reconnectWait:   2 * time.Second,
 		pingInterval:    30 * time.Second,
 		writeTimeout:    nats.DefaultFlusherTimeout,
-		healthInterval:  10 * time.Second,
 		timeout:         5 * time.Second,
 		drainTimeout:    30 * time.Second,
 		netDial:         (*net.Dialer).Dial,
@@ -571,19 +564,20 @@ func (m *Client) Connect(ctx context.Context) error {
 
 	m.logger.Info("Successfully connected to NATS", slog.String("urls", m.urls))
 
-	// The monitor and the poller start through startBackground, so a Close that
-	// has begun since admission refuses them.
+	// The poller starts through startBackground, so a Close that has begun
+	// since admission refuses it.
 	refused := false
-	if m.healthInterval > 0 {
-		m.logger.Debug("Starting health monitoring", slog.Duration("interval", m.healthInterval))
-		refused = !m.startHealthMonitoring()
-	}
-
 	if m.jsMetrics != nil && m.metricsInterval > 0 {
 		m.logger.Debug("Starting JetStream metrics polling", slog.Duration("interval", m.metricsInterval))
-		refused = !m.startMetricsPoller() || refused
+		refused = !m.startMetricsPoller()
 	}
 
+	// A Close that began after admission has already cleared the connection,
+	// so Connect reports the close whether or not any optional work was
+	// configured to start.
+	m.mu.RLock()
+	refused = refused || m.closing
+	m.mu.RUnlock()
 	if refused {
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "closed while starting")
 	}
@@ -723,8 +717,7 @@ func (m *Client) Close(ctx context.Context) error {
 	}
 }
 
-// cleanup is the first Close's work: stop the monitor, the timers and the
-// poller; drain and close the connection; clear it; write Disconnected; and
+// cleanup is the first Close's work: stop the timers and the poller; drain and close the connection; clear it; write Disconnected; and
 // start the joiner that closes joined. socket is conn's dialer, nil when conn
 // is.
 func (m *Client) cleanup(
@@ -744,7 +737,6 @@ func (m *Client) cleanup(
 		stopCut := socket.cutWhenDone(ctx)
 		defer stopCut()
 	}
-	m.stopHealthMonitoring()
 	m.stopTimers()
 	if cancelPoller != nil {
 		cancelPoller()
@@ -1924,75 +1916,4 @@ func (m *Client) handleError(nc *nats.Conn, sub *nats.Subscription, err error) {
 	// Log error for debugging
 	m.logger.Error("NATS error", attrs...)
 	// Don't record failure here as it may be called for non-connection errors
-}
-
-// startHealthMonitoring starts periodic health checks. It reports false when
-// Close has begun, in which case nothing is left running.
-func (m *Client) startHealthMonitoring() bool {
-	// Stop any existing health monitoring
-	m.stopHealthMonitoring()
-
-	// The ticker and done channel are published before the goroutine is
-	// admitted, so a Close that begins after admission finds done to close.
-	m.mu.Lock()
-	m.healthTicker = time.NewTicker(m.healthInterval)
-	m.healthDone = make(chan struct{})
-	ticker := m.healthTicker
-	done := m.healthDone
-	m.mu.Unlock()
-
-	started := m.startBackground(workHealthMonitor, func() {
-		defer ticker.Stop() // Ensure ticker is stopped when goroutine exits
-
-		for {
-			select {
-			case <-done:
-				// Exit goroutine cleanly
-				return
-			case <-ticker.C:
-				m.mu.RLock()
-				conn := m.conn
-				m.mu.RUnlock()
-
-				if conn == nil {
-					continue
-				}
-
-				healthy := conn.IsConnected()
-				if _, err := conn.RTT(); err != nil {
-					healthy = false
-				}
-				// Update status based on health, only while conn is still the
-				// installed connection and Close has not begun.
-				m.mu.Lock()
-				if m.ownsStatusLocked(conn) {
-					if healthy && m.Status() != StatusConnected {
-						m.setStatus(StatusConnected)
-					} else if !healthy && m.Status() == StatusConnected {
-						m.setStatus(StatusReconnecting)
-					}
-				}
-				m.mu.Unlock()
-			}
-		}
-	})
-	if !started {
-		m.stopHealthMonitoring()
-	}
-	return started
-}
-
-// stopHealthMonitoring stops health monitoring goroutine
-func (m *Client) stopHealthMonitoring() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.healthTicker != nil {
-		m.healthTicker.Stop()
-		m.healthTicker = nil
-	}
-	if m.healthDone != nil {
-		close(m.healthDone)
-		m.healthDone = nil
-	}
 }

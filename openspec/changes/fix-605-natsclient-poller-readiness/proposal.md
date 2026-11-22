@@ -1,6 +1,6 @@
 # Proposal: fix-605-natsclient-poller-readiness
 
-Approved-by:
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/605#issuecomment-7085526705> sha256:18e0fef01330
 
 Track: `quick`. Capability modified: `transport-client` (three requirements reworded, none added or removed). One
 package, `natsclient`; two exported names removed, plus two exported constants. Parts 1 and 2 of #605; part 3, the

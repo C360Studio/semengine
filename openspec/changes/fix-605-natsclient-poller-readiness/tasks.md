@@ -4,8 +4,8 @@ Each code task ends at a clean-tree local `task verify`. Single PR, `Addresses #
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal (`proposal.md`) and spec delta; `task spec:check` and `task docs:check` pass. Hold: OPEN-Q owner
-  approval (`Approved-by:` in `proposal.md`).
+- [x] 1.1 Proposal (`proposal.md`) and spec delta; `task spec:check` and `task docs:check` pass. Approved 2026-11-22
+  (#605).
 
 ## 2. Code
 

@@ -8,7 +8,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 2. Code
 
-- [ ] 2.1 A test in `internal/dispatch` that `Shutdown` under an already-ended context, then `Wait`, logs no
+- [x] 2.1 A test in `internal/dispatch` that `Shutdown` under an already-ended context, then `Wait`, logs no
   warning, and that a context ending while `Shutdown` waits on a busy lane logs it; then `Shutdown` warns only in the
   second case, and its comment says so. Every existing `internal/dispatch` test passes unchanged.
 

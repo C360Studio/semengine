@@ -16,7 +16,7 @@ SHALL be healthy with the message `Connected (RTT: <rtt>)` while connected, and 
 - **THEN** it answers 503, and its `nats` sub-status is unhealthy with a message beginning `Disconnected:`
 - **AND** the test that verifies this is `TestSystemHealthReportsNATSDisconnected`
 
-#### Scenario: A config watch lost
+#### Scenario: The config sub-status
 
-- **WHEN** `/health` is requested from a manager whose config manager reports a lost watch
-- **THEN** it answers 503, and its `config` sub-status is unhealthy with a message containing `restart the process`
+- **WHEN** `/health` is requested from a manager with a started config manager
+- **THEN** its sub-statuses include a healthy `config` one, which is the config manager's `Health()`

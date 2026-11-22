@@ -1,6 +1,6 @@
 # Proposal: fix-571-config-watch-lost
 
-Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/571#issuecomment-7080972423> sha256:fe7305622c68
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/571#issuecomment-7081641424> sha256:5cc4e35ed779
 
 Track: `quick`. Capabilities modified: `config-manager` (one requirement added) and `operator-surface` ("Health and
 service listings are served as at the pin": a `config` sub-status joins the `nats` one). Two packages, `config` and
@@ -25,8 +25,10 @@ the fix does not depend on when it happens, only on saying so when it does.
   the `nats` one, so a lost watch answers 503.
 - `/readyz` is unchanged: a process with a lost config watch still serves its traffic on the configuration it has.
 - Tests: in `config`, a watch loop fed a watcher whose channel closes logs the error and turns `Health` unhealthy, and
-  a loop ended by `Stop` does neither (this half shows the test can fail); in `service`, `/health` answers 503 with
-  an unhealthy `config` sub-status for a manager whose watch is lost.
+  a loop ended by `Stop` does neither (this half shows the test can fail); in `service`, `/health` carries a healthy
+  `config` sub-status for a manager with a started config manager. The 503 for a lost watch rests on `Health()`'s
+  tests and `health.Aggregate`, which already answers unhealthy for any unhealthy sub-status: a `service` test cannot
+  lose a real watch without relying on unpromised nats.go behaviour or a test hook.
 
 ## Non-goals
 

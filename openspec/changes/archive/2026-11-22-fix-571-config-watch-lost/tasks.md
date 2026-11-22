@@ -17,5 +17,5 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-571-config-watch-lost --yes`, which syncs `config-manager` and
+- [x] 3.1 Archive: `openspec archive fix-571-config-watch-lost --yes`, which syncs `config-manager` and
   `operator-surface`; `task spec:check` and `task docs:check` pass.

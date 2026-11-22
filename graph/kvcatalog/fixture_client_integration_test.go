@@ -46,7 +46,6 @@ func openClient(ctx context.Context, url string) (*natsclient.Client, func(conte
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(clientTimeout),
 		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err

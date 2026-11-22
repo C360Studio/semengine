@@ -227,7 +227,7 @@ func compose(ctx context.Context, opts options, tb *programTB) (stack, error) {
 		return stack{}, fmt.Errorf("start NATS: %w", err)
 	}
 	client, err := natsclient.NewClient(fixture.URL(),
-		natsclient.WithTimeout(15*time.Second), natsclient.WithMaxReconnects(0), natsclient.WithHealthInterval(0))
+		natsclient.WithTimeout(15*time.Second), natsclient.WithMaxReconnects(0))
 	if err != nil {
 		return stack{}, err
 	}

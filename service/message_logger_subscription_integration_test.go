@@ -315,7 +315,6 @@ func TestMessageLoggerRetriesSubscribeUntilConnected(t *testing.T) {
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(clientTimeout),
 		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
 	)
 	require.NoError(t, err)
 	// Registered after the reset, so it runs before the reset's check that no connection is left.

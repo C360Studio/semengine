@@ -59,7 +59,7 @@ func openReconnectingClient(ctx context.Context, url string) (*natsclient.Client
 }
 
 func openTestClient(ctx context.Context, url string, opt natsclient.ClientOption) (*natsclient.Client, func(context.Context) error, error) {
-	client, err := natsclient.NewClient(url, natsclient.WithTimeout(15*time.Second), natsclient.WithHealthInterval(0), opt)
+	client, err := natsclient.NewClient(url, natsclient.WithTimeout(15*time.Second), opt)
 	if err != nil {
 		return nil, nil, err
 	}

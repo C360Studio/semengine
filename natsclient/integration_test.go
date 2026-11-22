@@ -58,7 +58,6 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	lost := make(chan error, 1)
 	manager, err := NewClient(f.URL(),
 		WithMaxReconnects(0),
-		WithHealthInterval(0),
 		WithConnectionLossTimeout(100*time.Millisecond),
 		WithConnectionLostCallback(func(err error) {
 			select {
@@ -97,7 +96,7 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	require.ErrorIs(t, err, errs.ErrAlreadyStarted, "Connect on a client whose connection nats.go closed")
 	require.ErrorContains(t, err, "connection already installed; a Client connects once")
 
-	redialled, err := NewClient(f.URL(), WithMaxReconnects(0), WithHealthInterval(0))
+	redialled, err := NewClient(f.URL(), WithMaxReconnects(0))
 	require.NoError(t, err)
 	require.NoError(t, redialled.Connect(ctx))
 	defer closeClient(t, redialled)
@@ -125,7 +124,7 @@ func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
 	_, err = natsfixture.CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, mem, mem+".>")
 	require.NoError(t, err)
 
-	publisher, err := NewClient(f.URL(), WithMaxReconnects(0), WithHealthInterval(0))
+	publisher, err := NewClient(f.URL(), WithMaxReconnects(0))
 	require.NoError(t, err)
 	require.NoError(t, publisher.Connect(ctx))
 	defer closeClient(t, publisher)
@@ -150,7 +149,7 @@ func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
 	defer cancel()
 	require.NoError(t, f.Restart(restartCtx))
 
-	reader, err := NewClient(f.URL(), WithMaxReconnects(0), WithHealthInterval(0))
+	reader, err := NewClient(f.URL(), WithMaxReconnects(0))
 	require.NoError(t, err)
 	require.NoError(t, reader.Connect(ctx))
 	defer closeClient(t, reader)

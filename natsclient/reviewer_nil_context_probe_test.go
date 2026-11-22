@@ -9,7 +9,7 @@ import (
 )
 
 func TestReviewerExportedNATSNilContextRefuses(t *testing.T) {
-	c, err := NewClient(embeddedJetStreamURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedJetStreamURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)

@@ -12,8 +12,8 @@ import (
 // TestIntegration_FailedCallsRefuseNoOtherCall proves that a call's failure is its own: twenty
 // publishes no stream captures each return the no-stream error, and a publish a stream captures
 // then succeeds with the status still Connected (transport-client, "A failed call refuses no other
-// call"). The fixture client's health monitor is off (WithHealthInterval(0)), so nothing but the
-// calls themselves can move the status.
+// call"). The client runs no periodic check of its own, so nothing but the calls themselves and
+// the connection's events can move the status.
 func TestIntegration_FailedCallsRefuseNoOtherCall(t *testing.T) {
 	tc := newFixtureClient(t)
 	tc.stream(t, "FAILEDCALLS", "failedcalls.captured")

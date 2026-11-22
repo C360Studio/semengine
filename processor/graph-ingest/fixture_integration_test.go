@@ -51,7 +51,6 @@ func openFixtureClient(ctx context.Context, url string) (*natsclient.Client, fun
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(fixtureClientTimeout),
 		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err

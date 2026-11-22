@@ -9,7 +9,7 @@ Each code task ends at a clean-tree local `task verify`. Single PR, `Addresses #
 
 ## 2. Code
 
-- [ ] 2.1 `natsclient`: remove the health poller and `WithHealthInterval`, so only `Connect`, the connection handlers
+- [x] 2.1 `natsclient`: remove the health poller and `WithHealthInterval`, so only `Connect`, the connection handlers
   and `Close` set `Status()`; delete every `WithHealthInterval` call in the repository (tests, the scorecard harness,
   `docs/test-infrastructure.md`) and the poller's test.
 - [ ] 2.2 `natsclient`: remove `RequestReadyClassified`, `requestMsgReady` and the readiness constants, their tests

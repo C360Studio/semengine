@@ -84,6 +84,9 @@ order, whenever searchGraph left no hit missing or damaged and its reply fit. Th
   `merge`. `matched` and ranks are left out because nothing reads them under D2(a). It carries the word search's
   revision and the larger `damaged_entities`. At most 100 results, so no payload fit.
 
+**D5. One pull request.** Graph types and verb row, graph-query handler, fusion, docs. The verb's caller lands with
+it.
+
 **D6. How long mergedSearch waits for the embedding search.** The default caller budget is 5 s; an embedder taking
 5–15 s would turn questions that answer today into failures.
 
@@ -92,10 +95,7 @@ order, whenever searchGraph left no hit missing or damaged and its reply fit. Th
 - (b) **A config key.** A fact every product must learn.
 - (c) **Raise fusionnats' default above 15 s.** fusionnats would be predicting graph-query's config.
 
-The same hazard in searchGraph is a defect this change does not fix; task 4.1 files it.
-
-**D5. One pull request.** Graph types and verb row, graph-query handler, fusion, docs. The verb's caller lands with
-it.
+The same hazard in searchGraph is a defect this change does not fix; it is #712.
 
 ## Risks / Trade-offs
 

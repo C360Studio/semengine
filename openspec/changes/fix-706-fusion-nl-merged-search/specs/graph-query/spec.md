@@ -63,7 +63,7 @@ revision SHALL be the word search's, and its `damaged_entities` the larger of th
 For the same query and limit, `mergedSearch`'s result IDs SHALL be searchGraph's match IDs in the same order whenever
 searchGraph left no hit missing or damaged and its reply fit `max_payload`. With `embedding_enabled` false it SHALL
 answer the word list alone, with no `merge`; with it true, the merged list with `merge` honoured. It SHALL fall back
-as the scenarios below state, a failed merge sharing searchGraph's merge-failed counter.
+as the scenarios below state, and return any other word refusal as it arrived.
 
 #### Scenario: Same order as searchGraph
 
@@ -78,8 +78,8 @@ as the scenarios below state, a failed merge sharing searchGraph's merge-failed 
 #### Scenario: A failed merge
 
 - **WHEN** the embedding search is refused or broken
-- **THEN** the reply is the word list with `merge` not honoured, carrying the refusal's code, with one Warn and one
-  count on the merge-failed counter (`TestMergedSearchFailedMergeKeepsWords`)
+- **THEN** the reply is the word list with `merge` not honoured, carrying the refusal's code, with one Warn naming the
+  verb and one count on the merge-failed counter it shares with searchGraph (`TestMergedSearchFailedMergeKeepsWords`)
 
 #### Scenario: A broken embedding hit ID
 
@@ -90,7 +90,8 @@ as the scenarios below state, a failed merge sharing searchGraph's merge-failed 
 #### Scenario: A broken word hit ID
 
 - **WHEN** a word hit's ID is not a literal entity ID
-- **THEN** `mergedSearch` is refused as searchGraph refuses that reply (`TestMergedSearchBrokenWordIDRefused`)
+- **THEN** `mergedSearch` is refused transient `internal` naming the word search's subject, as searchGraph refuses
+  that reply (`TestMergedSearchBrokenWordIDRefused`)
 
 #### Scenario: Another word refusal
 

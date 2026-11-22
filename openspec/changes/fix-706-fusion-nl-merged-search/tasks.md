@@ -41,9 +41,9 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
   `engine_lens.go:131`, fusionnats' `mergedSearch` row and decode; `Seed.Similarity` and `Node.Similarity` doc
   comments. Accept: 3.1 passes, `task verify`.
 
-## 4. Docs, ledger, follow-up, review
+## 4. Docs, ledger, review
 
-- [ ] 4.1 Update the docs and ledger rows, and file the follow-up:
+- [ ] 4.1 Update the docs and ledger rows:
   - `pkg/fusion/README.md` (`:60,108-151`), `pkg/fusion/MIGRATION.md` (`:77-85,151`, plus the design's Migration
     Plan), `pkg/fusion/fusionnats/doc.go`;
   - `processor/graph-query/README.md`, `doc.go:50-80`, `MIGRATION.md`;
@@ -51,9 +51,8 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
   - the ADR-062 (`:28-33`) and ADR-071 (`:16-19`) port notes;
   - `docs/admission-ledger.yaml` rows for `pkg/fusion/fusionnats` (`:4817-4893`), `pkg/fusion` (`:4695`), ADR-062
     (`:4794`), ADR-071 (`:4512-4524`) and `processor/graph-query` (`:4419-4421,:4436-4437`);
-  - file an issue (`status:blocked`, linked from the PR without a closing keyword): searchGraph waits up to
-    `query_timeout_ms` for the embedding search, longer than a caller's default 5 s timeout.
-  Accept: `task docs:check`; the issue number is in the PR body.
+  - link #712 (searchGraph's embedding wait) from the PR body without a closing keyword.
+  Accept: `task docs:check`.
 - [ ] 4.2 Independent code review records an approving head at a commit with a clean local `task verify`; reviewer
   findings resolved.
 

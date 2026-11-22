@@ -28,7 +28,7 @@ where they came from." `v0.1.0-alpha.7` waits for this fix.
 ## Non-goals
 
 Per-seed provenance (owner question 2). A new provenance value (owner question 3). Scope on `searchGraph` or
-`globalSearch`. searchGraph's own embedding wait (filed as an issue). #659, #682, #657.
+`globalSearch`. searchGraph's own embedding wait (#712). #659, #682, #657.
 
 ## Impact
 

@@ -26,5 +26,5 @@ Single PR, `Closes #657`.
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-657-damaged-read-reports --yes`, which syncs the six capabilities;
+- [x] 3.1 Archive: `openspec archive fix-657-damaged-read-reports --yes`, which syncs the six capabilities;
   `task spec:check` and `task docs:check` pass.

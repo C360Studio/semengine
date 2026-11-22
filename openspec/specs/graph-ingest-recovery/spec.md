@@ -417,4 +417,6 @@ entry in sorted order. A new entry SHALL invalidate that entity's query-cache en
 #### Scenario: Concurrent records and clears
 
 - **WHEN** reports and clears of distinct keys run concurrently and all have returned
-- **THEN** the gauge equals the number of keys left recorded (`TestGaugeFollowsConcurrentRecordAndClear`)
+- **THEN** the gauge equals the number of keys left recorded: the record's count is exact after concurrent changes
+  (`internal/damage` `TestConcurrentReportsAndClears`), and the gauge reads the record's count, 1 after a poisoned
+  read and 0 after its repair (`TestPoisonRepairRecoveryWithoutRestart`)

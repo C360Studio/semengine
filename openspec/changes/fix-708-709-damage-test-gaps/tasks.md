@@ -4,8 +4,7 @@ Each code task ends at a clean-tree local `task verify`. Single PR, closing #708
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal (`proposal.md`); `task spec:check` and `task docs:check` pass.
-  Hold: OPEN-Q proposal awaits owner approval (#708)
+- [x] 1.1 Proposal (`proposal.md`); `task spec:check` and `task docs:check` pass. Approved 2026-11-21 (#708).
 
 ## 2. Tests
 

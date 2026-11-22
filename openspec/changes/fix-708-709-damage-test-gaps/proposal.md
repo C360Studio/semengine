@@ -1,6 +1,6 @@
 # Proposal: fix-708-709-damage-test-gaps
 
-Approved-by:
+Approved-by: cglusky (2026-11-21) <https://github.com/C360Studio/semengine/issues/708#issuecomment-7072568152> sha256:b22723bc9c79
 
 Track: `quick`. No capability changes: test-only, and no spec requirement is added or changed.
 

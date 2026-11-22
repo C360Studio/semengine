@@ -389,7 +389,7 @@ print(num)
   fi
 
   python3 - "$PROJECT_NUM" "$proj_view_json" "$fields_json" "$prs_json" "$issues_json" <<'PY'
-import datetime, json, re, subprocess, sys
+import datetime, json, subprocess, sys
 
 def die_unavail(msg):
     print(f"port-status: unavailable: {msg}", file=sys.stderr)
@@ -628,12 +628,7 @@ stage_dates = {
     5: (iso(18), iso(32)),
     6: (iso(32), iso(46)),
 }
-ch4_7_re = re.compile(
-    r"(rule|fusion|buffer|websocket|embedding|clustering|spatial|temporal|geojson|acme|maxdelivery|cli|datalog|inference|IndexEntry|hierarchy|sibling|query\.entity|path\s+search|PathSearch)",
-    re.I,
-)
-
-claimed_issues = {7, 9}
+claimed_issues = set()
 for pr in prs:
     for ref in ((pr.get("closingIssuesReferences") or {}).get("nodes") or []):
         if ref and ref.get("number"):
@@ -666,17 +661,18 @@ def ensure_item(node, is_pr, want_in_prog):
             die_unavail(f"addProjectV2ItemById for {node['id']} returned no item id")
         added += 1
     ms = ((node.get("milestone") or {}).get("title") or "").lower()
-    title = node.get("title") or ""
     if is_pr or want_in_prog:
         st_idx = 1
-    elif ms == "setup":
+    elif ms == "v0.1.0-alpha.7":
         st_idx = 2
-    elif ms == "slice-04b":
+    elif ms == "v0.1.0-alpha.8":
+        st_idx = 3
+    elif ms == "v0.1.0-alpha.9":
+        st_idx = 4
+    elif ms == "v0.1.0-alpha.10":
         st_idx = 5
-    elif ms == "slice-04c":
-        st_idx = 6
     else:
-        st_idx = 4 if ch4_7_re.search(title) else 3
+        st_idx = 6
     if status_field_id and item_id:
         want_opt = in_prog_opt if want_in_prog else todo_opt
         if want_opt and (cur_status is None or (want_in_prog and cur_status != "In Progress")):
@@ -684,7 +680,7 @@ def ensure_item(node, is_pr, want_in_prog):
             status_mutations.append(
                 f'm{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{status_field_id}", value: {{singleSelectOptionId: "{want_opt}"}}}}) {{ projectV2Item {{ id }} }}'
             )
-    if stage_field_id and st_idx in stage_opts and (cur_stage is None or (st_idx == 1 and not cur_stage.startswith("1."))):
+    if stage_field_id and st_idx in stage_opts and not (cur_stage or "").startswith(f"{st_idx}."):
         mut_idx += 1
         status_mutations.append(
             f's{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{stage_field_id}", value: {{singleSelectOptionId: "{stage_opts[st_idx]}"}}}}) {{ projectV2Item {{ id }} }}'
@@ -706,8 +702,10 @@ for pr in prs:
 for iss in issues:
     ensure_item(iss, False, iss.get("number") in claimed_issues)
 
-for i in range(0, len(status_mutations), 25):
-    chunk = status_mutations[i:i+25]
+# Keep batches small: 25 serialized ProjectV2 field updates in one GraphQL
+# request can exceed GitHub's gateway deadline and fail with HTTP 502.
+for i in range(0, len(status_mutations), 8):
+    chunk = status_mutations[i:i+8]
     q = "mutation {\n  " + "\n  ".join(chunk) + "\n}"
     run_gql(q)
 

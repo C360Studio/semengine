@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -49,6 +50,9 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 			`"bodies_not_indexed":0,"truncated":false,"unreadable_groups":0,"answer":"Found 0 matching entities in 0 groups."},"hints":[]}`,
 	}
 	namedKey := map[string]string{"SemSource's summarize_threshold": "summarize_threshold"}
+	// A time range's window is read from the clock when each call runs, so two calls a second apart
+	// differ in it; the replies are compared without it, and each window is checked on its own.
+	window := map[string]time.Duration{"a time range": 2 * time.Hour}
 	globalSubject := verbRow(t, graph.ResponderGraphQuery, "globalSearch").Subject
 	searchSubject := verbRow(t, graph.ResponderGraphQuery, "searchGraph").Subject
 	for _, tc := range []struct {
@@ -102,6 +106,10 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 			if literal, ok := literalData[tc.name]; ok && string(want.Data) != literal {
 				t.Errorf("globalSearch data =\n  %s\nwant\n  %s", want.Data, literal)
 			}
+			if span, ok := window[tc.name]; ok {
+				want.Data = withoutWindow(t, want.Data, span)
+				got.Data = withoutWindow(t, got.Data, span)
+			}
 			if string(got.Data) != string(want.Data) {
 				t.Errorf("searchGraph data =\n  %s\nglobalSearch data =\n  %s", got.Data, want.Data)
 			}
@@ -115,4 +123,36 @@ func TestSearchGraphAnswersAsGlobalSearch(t *testing.T) {
 	if got := semantic.Load(); got != 0 {
 		t.Errorf("the embedding verbs received %d requests, want none", got)
 	}
+}
+
+// withoutWindow returns data with its one time_range hint's window removed, after checking the window
+// is span long.
+func withoutWindow(t *testing.T, data []byte, span time.Duration) []byte {
+	t.Helper()
+	var answer graph.GlobalSearchData
+	if err := json.Unmarshal(data, &answer); err != nil {
+		t.Fatalf("decode data %s: %v", data, err)
+	}
+	found := 0
+	for i, hint := range answer.Hints {
+		if hint.Hint != hintTimeRange {
+			continue
+		}
+		found++
+		from, to, ok := strings.Cut(hint.Detail, " to ")
+		start, startErr := time.Parse(time.RFC3339, from)
+		end, endErr := time.Parse(time.RFC3339, to)
+		if !ok || startErr != nil || endErr != nil || end.Sub(start) != span {
+			t.Errorf("time_range detail = %q, want a %v window", hint.Detail, span)
+		}
+		answer.Hints[i].Detail = ""
+	}
+	if found != 1 {
+		t.Fatalf("data = %s, want one time_range hint", data)
+	}
+	rest, err := json.Marshal(answer)
+	if err != nil {
+		t.Fatalf("encode data: %v", err)
+	}
+	return rest
 }

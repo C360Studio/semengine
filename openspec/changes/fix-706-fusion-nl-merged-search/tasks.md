@@ -1,0 +1,59 @@
+# Tasks: fix-706-fusion-nl-merged-search
+
+Tests come first. Each code task ends at a clean-tree local `task verify`. "Shown to fail" is failing-first output
+in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Closes #706`.
+
+## 1. Design
+
+- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`): INVENTORY PASS at 48c2e10d, then pre-owner
+  design review passes; the owner fills `Approved-by:` and rules on design questions 1 to 3.
+  Hold: OPEN-Q proposal awaits owner approval
+
+## 2. graph-query: mergedSearch
+
+- [ ] 2.1 Tests first, shown failing on main (`notes/2.1.md`):
+  - graph-query (D4): `TestMergedSearchMatchesSearchGraphOrder` (tier 0 and tier 1, searchGraph as the oracle),
+    `TestMergedSearchScopesBothSearches`, `TestMergedSearchDecodesStrictly`, `TestMergedSearchReplyShape`,
+    `TestMergedSearchTierZeroAsksOnlyWords`,
+    `TestMergedSearchFailedMergeKeepsWords`, `TestMergedSearchWordIndexNotReady`;
+  - `TestSearchWithoutWordIndex` extended to `mergedSearch`;
+  - `TestQueryVerbsDeclareEachRespondersVerbs` and `TestGraphQueryServesExactlyTheDeclaredVerbs` with the new row.
+  Premises: `processor/graph-query/textsearch.go:76-125`, `merge.go:32,124-131`, `globalsearch.go:187-201`,
+  `graph/query_verbs.go:133`.
+- [ ] 2.2 `graph.MergedSearchData` and its hit type with doc comments; the `mergedSearch` row; the handler, sharing
+  searchGraph's ask-and-merge step (D4); `processor/graph-query/query.go:59-74` wiring. Accept: 2.1 passes,
+  `task verify`.
+
+## 3. fusion: ask the merged search, say where seeds came from
+
+- [ ] 3.1 Tests first, shown failing (`notes/3.1.md`):
+  - fusionnats unit tests: `TestNLResolveAsksTheMergedSearch` (replaces `TestNLResolveAsksTheWordIndex`),
+    `TestMergedResolveProvenance`, plus `TestSubjectsComeFromVerbTable` and `TestVerbLookupNamesMissingRow` for the
+    `mergedSearch` row;
+  - engine: `TestResolutionProvenanceWins`;
+  - integration-tagged: `TestNLMergedOverRealResponders` and the updated `TestNLResolveWithoutWordIndex`.
+  `TestProvenanceForMode`, `TestDeferralProvenanceFollowsMode` and the smoke's lexical check stay as they are.
+  Premises: `pkg/fusion/fusionnats/client.go:23-58,100-101,148-186`, `pkg/fusion/engine_lens.go:131`,
+  `pkg/fusion/retrieval.go:75-80`.
+- [ ] 3.2 Implement D1 (B), D2 (a) and D3: `fusion.Resolution.Provenance`, the engine's choice at
+  `engine_lens.go:131`, fusionnats' `mergedSearch` row and decode; `Seed.Similarity` and `Node.Similarity` doc
+  comments. Accept: 3.1 passes, `task verify`.
+
+## 4. Docs, ledger, review
+
+- [ ] 4.1 Update the docs and ledger rows:
+  - `pkg/fusion/README.md` (`:60,108-151`), `pkg/fusion/MIGRATION.md` (`:77-85,151`, plus the design's Migration
+    Plan, timeout note included), `pkg/fusion/fusionnats/doc.go`;
+  - `processor/graph-query/README.md`, `doc.go:50-80`, `MIGRATION.md`;
+  - the ADR-062 (`:28-33`) and ADR-071 (`:16-19`) port notes;
+  - `docs/admission-ledger.yaml` rows for `pkg/fusion/fusionnats` (`:4817-4893`), `pkg/fusion` (`:4695`), ADR-062
+    (`:4794`), ADR-071 (`:4512-4524`) and `processor/graph-query` (`:4419-4421,:4436-4437`);
+  - `.agents/skills/query-pattern/SKILL.md` if it lists graph-query's search verbs.
+  Accept: `task docs:check`.
+- [ ] 4.2 Independent code review records an approving head at a commit with a clean local `task verify`; reviewer
+  findings resolved.
+
+## 5. Close-out
+
+- [ ] 5.1 Archive the change and sync `openspec/specs/{fusion,graph-query,graph-transport-boundary}` as the last
+  content commit; `task spec:check`.

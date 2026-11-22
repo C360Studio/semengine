@@ -26,8 +26,8 @@ with its subject and its responder; the function's doc comment names each verb's
 component serves exactly its own verbs. graph-index's are `outgoing`, `incoming`, `alias`, `predicate`,
 `predicateList`, `predicateStats`, `predicateCompound` and `byName`, on `graph.index.query.*`. graph-query's, on
 `graph.query.*`, are `entity`, `batch`, `prefix`, `byName`, `predicate`, `entityByAlias`, `relationships`,
-`pathSearch`, `hierarchyStats`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial`
-and `temporal`; the first five forward to
+`pathSearch`, `hierarchyStats`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `mergedSearch`, `semantic`, `similar`,
+`spatial` and `temporal`; the first five forward to
 the verb of the same name behind them, and `semantic`, `similar`, `spatial` and `temporal` forward to the embedding,
 spatial and
 temporal verbs. `spatial` and `temporal` have no responder in the tree yet and are refused transient `internal` until
@@ -84,6 +84,11 @@ serves now), so a verb not in the table has no responder yet.
   takes a free-text `query`, `level` and `limit`, searches every entity and lists the groups holding the matches.
   `searchGraph` is the same handler under a second name, with the same request; with `embedding_enabled` true it also asks
   the embedding search and answers one merged list, each match with `word_rank` and `vector_rank`.
+  - **`mergedSearch`** takes the word search's request (`query`, `limit`, `scope`, `min_revision`) and answers only the
+    ranked entity IDs of that merge, each with `score` and, when it came from the embedding list, `vector_rank`; it
+    reads no entity. Use it when you need the IDs and will read the entities yourself (fusion's `nl` resolve does);
+    it waits at most 4 seconds, or `query_timeout_ms` when shorter, for the embedding search, and a slower one gives
+    the word list with `merge` not honoured.
   - Word search helps only entities that have text. Metric-heavy entities, such as sensor or drone telemetry, have no
     words to match and gain nothing from it; reach them by prefix, predicate, name, alias or relationship.
   - A group's `COMMUNITY_INDEX` record is attached when there is one, and never decides the answer: `record_state` is
@@ -119,8 +124,9 @@ Every enveloped verb takes an optional `min_revision`, the `kv_revision` of your
 the index has not reached it, the verb refuses with transient `revision_not_reached`, the revision reached in the
 detail, and never waits; retry it. A bare verb (`entity`, `batch`, `prefix`, and `hierarchyStats` on `graph.query.*`)
 ignores the field: graph-ingest, which answers it, is the authority. On `graph.query.*`, `byName`, `predicate`,
-`entityByAlias`, `relationships`, `pathSearch`, `localSearch`, `globalSearch`, `searchGraph` and `summary` (unless it
-excludes predicates) honour it. The search verbs pass it to the word index, which holds them to a write it has applied.
+`entityByAlias`, `relationships`, `pathSearch`, `localSearch`, `globalSearch`, `searchGraph`, `mergedSearch` and
+`summary` (unless it excludes predicates) honour it. The search verbs pass it to the word index, which holds them to a
+write it has applied.
 
 ## Points that hold
 

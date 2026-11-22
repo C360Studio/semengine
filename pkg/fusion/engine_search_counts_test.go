@@ -145,3 +145,49 @@ func TestDeferralProvenanceFollowsMode(t *testing.T) {
 		})
 	}
 }
+
+// TestResolutionProvenanceWins: a response carries the provenance its resolve
+// reported, whatever the mode would say, on an answer, a miss and a deferral
+// from a read after the resolve; a resolve that reports none leaves the mode's.
+func TestResolutionProvenanceWins(t *testing.T) {
+	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
+	found := func(query string, prov fusion.Provenance) *fakeGraph {
+		return &fakeGraph{
+			seeds: map[string][]string{query: {seed.ID}}, entities: map[string]*fusion.Entity{seed.ID: seed},
+			provenance: prov,
+		}
+	}
+	notReady := found(nlQuery, fusion.ProvenanceEmbedding)
+	notReady.neighborsErr = indexNotReady()
+	for name, tc := range map[string]struct {
+		query string
+		g     *fakeGraph
+		want  []fusion.Want
+		shape string
+		prov  fusion.Provenance
+	}{
+		"nl answer reports embedding":   {nlQuery, found(nlQuery, fusion.ProvenanceEmbedding), nil, "nodes", fusion.ProvenanceEmbedding},
+		"nl miss reports embedding":     {nlQuery, &fakeGraph{provenance: fusion.ProvenanceEmbedding}, nil, "miss", fusion.ProvenanceEmbedding},
+		"nl deferral reports embedding": {nlQuery, notReady, []fusion.Want{fusion.WantRelations}, "deferred", fusion.ProvenanceEmbedding},
+		"symbol answer reports lexical": {"OnEvent", found("OnEvent", fusion.ProvenanceLexical), nil, "nodes", fusion.ProvenanceLexical},
+		"nl answer reports none":        {nlQuery, found(nlQuery, ""), nil, "nodes", fusion.ProvenanceLexical},
+		"symbol answer reports none":    {"OnEvent", found("OnEvent", ""), nil, "nodes", fusion.ProvenanceDeterministic},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, err := mustEngine(t, tc.g, nil).Fuse(t.Context(), fusion.Request{Query: tc.query, Want: tc.want}, refLens{})
+			if err != nil {
+				t.Fatalf("Fuse: %v", err)
+			}
+			shape := "nodes"
+			switch {
+			case resp.Deferred:
+				shape = "deferred"
+			case len(resp.Misses) > 0:
+				shape = "miss"
+			}
+			if shape != tc.shape || resp.Provenance != tc.prov {
+				t.Errorf("a %s with provenance %q, want a %s with %q", shape, resp.Provenance, tc.shape, tc.prov)
+			}
+		})
+	}
+}

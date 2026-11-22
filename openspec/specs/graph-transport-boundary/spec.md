@@ -35,9 +35,10 @@ does not declare SHALL not be reserved.
 - **WHEN** `graph.QueryVerbs()` is read
 - **THEN** it holds `entity`, `batch`, `prefix`, `prefixIDs`, `entityByAlias`, `relationships`, `byName`,
   `predicate`, `pathSearch`, `hierarchyStats`, `summary`, `semantic`, `similar`, `spatial`, `temporal`,
-  `localSearch`, `globalSearch` and `searchGraph` on `graph.query.*`, each with responder `graph-query`, `prefixIDs`
-  bare with a `graph.PrefixIDsResponse`, `predicate` enveloped with a `graph.PredicateData`, `localSearch` enveloped
-  with a `graph.LocalSearchData`, and `globalSearch` and `searchGraph` with a `graph.GlobalSearchData`
+  `localSearch`, `globalSearch`, `searchGraph` and `mergedSearch` on `graph.query.*`, each with responder
+  `graph-query`, `prefixIDs` bare with a `graph.PrefixIDsResponse`, `predicate` enveloped with a `graph.PredicateData`,
+  `localSearch` enveloped with a `graph.LocalSearchData`, `globalSearch` and `searchGraph` with a
+  `graph.GlobalSearchData`, and `mergedSearch` enveloped with a `graph.MergedSearchData`
 
 #### Scenario: The forwarded derived-index verbs are in the table
 

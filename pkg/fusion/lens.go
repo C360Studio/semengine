@@ -72,13 +72,15 @@ func objectString(o any) string {
 // The Lens classifies the query; the engine maps the mode to a resolve strategy
 // (symbol → graph.query.byName exact lookup, prefix → graph.query.prefixIDs, nl →
 // the word index's search). Provenance follows from the mode: symbol/prefix are
-// deterministic, nl is lexical.
+// deterministic, nl is lexical, unless the resolve reports its own
+// (Resolution.Provenance), as an nl search that used meaning does.
 type ResolveMode string
 
 const (
 	// ResolveModeNL routes the query to the word index's search. Seeds are
-	// ranked by a word match, so the response provenance is "lexical", not
-	// "deterministic".
+	// ranked by a word match, so the mode's provenance is "lexical", not
+	// "deterministic"; a resolve that merged meaning results in reports
+	// "embedding" instead.
 	ResolveModeNL ResolveMode = "nl"
 
 	// ResolveModeSymbol routes to deterministic exact name/title lookup
@@ -186,7 +188,8 @@ type Lens interface {
 // ProvenanceForMode maps a ResolveMode to the honesty-envelope provenance tier:
 // symbol/prefix seeds are deterministic exact lookups; nl seeds come from the
 // word index, a ranked word match that is neither an exact lookup nor an
-// embedding search, so it is lexical. (The research_graph LLM sibling is the
+// embedding search, so it is lexical. A resolve that knows better reports its
+// own (Resolution.Provenance), which the engine uses instead. (The research_graph LLM sibling is the
 // only "llm" source — the deterministic engine never sets it.) Exported so the engine's assemble
 // step and any lens-driven caller stamp provenance consistently.
 //

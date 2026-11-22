@@ -351,7 +351,7 @@ func TestSearchDeclaresWhatItLeftOut(t *testing.T) {
 	}
 }
 
-// TestSearchWithoutWordIndex: with nothing serving the word search, both verbs are refused transient
+// TestSearchWithoutWordIndex: with nothing serving the word search, each search verb is refused transient
 // internal naming its subject, each one error (spec, "No word index").
 func TestSearchWithoutWordIndex(t *testing.T) {
 	client := fixtureClient(t)
@@ -360,6 +360,7 @@ func TestSearchWithoutWordIndex(t *testing.T) {
 	for i, ask := range []struct{ verb, request string }{
 		{localSearchSubject, `{"entity_id":"` + drone1 + `","query":"pump"}`},
 		{globalSearchSubject, `{"query":"pump station"}`},
+		{verbRow(t, graph.ResponderGraphQuery, "mergedSearch").Subject, `{"query":"pump station"}`},
 	} {
 		raw, err := client.RequestClassified(t.Context(), ask.verb, []byte(ask.request), requestTimeout)
 		requireRefusal(t, raw, err, errs.ErrorTransient, graph.ErrorCodeInternal)

@@ -20,3 +20,4 @@ SHALL be healthy with the message `Connected (RTT: <rtt>)` while connected, and 
 
 - **WHEN** `/health` is requested from a manager with a started config manager
 - **THEN** its sub-statuses include a healthy `config` one, which is the config manager's `Health()`
+- **AND** the test that verifies this is `TestSystemHealthCarriesTheConfigManagersHealth`

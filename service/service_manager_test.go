@@ -74,8 +74,8 @@ func createTestServiceDependencies() *Dependencies {
 
 // createTestServiceManager returns a Manager whose configuration the test sets: port 0 binds a
 // kernel-picked main port, which no configuration path offers. The Manager is not a Service, so it
-// embeds no BaseService; logger and natsClient are set from deps as ConfigureFromServices sets
-// them.
+// embeds no BaseService; logger, natsClient and configManager are set from deps as
+// ConfigureFromServices sets them.
 func createTestServiceManager(config ManagerConfig, deps *Dependencies) *Manager {
 	m := NewServiceManager(NewServiceRegistry())
 	m.config = config
@@ -83,6 +83,7 @@ func createTestServiceManager(config ManagerConfig, deps *Dependencies) *Manager
 	if deps != nil {
 		m.logger = deps.Logger
 		m.natsClient = deps.NATSClient
+		m.configManager = deps.Manager
 	}
 	return m
 }

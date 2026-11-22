@@ -572,6 +572,12 @@ func (m *Client) Connect(ctx context.Context) error {
 		refused = !m.startMetricsPoller()
 	}
 
+	// A Close that began after admission has already cleared the connection,
+	// so Connect reports the close whether or not any optional work was
+	// configured to start.
+	m.mu.RLock()
+	refused = refused || m.closing
+	m.mu.RUnlock()
 	if refused {
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "closed while starting")
 	}

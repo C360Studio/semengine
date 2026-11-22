@@ -675,30 +675,41 @@ func TestClientCloseFromInsideCallbackReportsContext(t *testing.T) {
 
 // TestClientCloseDuringConnectStartsNothing is natsclient-close-joins-its-goroutines (e): Connect
 // is held, through its logger, on the "Successfully connected to NATS" record, after it has
-// admitted the connection and before it starts the metrics poller. Close runs and returns while
-// Connect is held; once Connect is released and both have returned, the poller does not run and
-// the client holds nothing.
+// admitted the connection and before it starts its optional work. Close runs and returns while
+// Connect is held; once Connect is released and both have returned, Connect reports the close,
+// nothing runs and the client holds nothing. The refusal must not depend on optional work being
+// configured, so it runs both with the default client, which starts nothing after admission, and
+// with metrics on, which starts the metrics poller.
 func TestClientCloseDuringConnectStartsNothing(t *testing.T) {
-	url := embeddedServerURL(t)
-	h := newRecordingHandler("Successfully connected to NATS")
-	t.Cleanup(h.releaseHold)
-	c, err := NewClient(url, WithLogger(slog.New(h)), WithMetrics(metric.NewMetricsRegistry()))
-	require.NoError(t, err)
-	owner := newClientOwner(c)
+	for _, tc := range []struct {
+		name string
+		opts []ClientOption
+	}{
+		{name: "default", opts: nil},
+		{name: "metrics", opts: []ClientOption{WithMetrics(metric.NewMetricsRegistry())}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := embeddedServerURL(t)
+			h := newRecordingHandler("Successfully connected to NATS")
+			t.Cleanup(h.releaseHold)
+			c, err := NewClient(url, append([]ClientOption{WithLogger(slog.New(h))}, tc.opts...)...)
+			require.NoError(t, err)
+			owner := newClientOwner(c)
 
-	connected := make(chan error, 1)
-	go func() { connected <- c.Connect(t.Context()) }()
-	<-h.entered
+			connected := make(chan error, 1)
+			go func() { connected <- c.Connect(t.Context()) }()
+			<-h.entered
 
-	closeCtx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
-	defer cancel()
-	require.NoError(t, c.Close(closeCtx), "Close while Connect is held")
+			closeCtx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
+			defer cancel()
+			require.NoError(t, c.Close(closeCtx), "Close while Connect is held")
 
-	h.releaseHold()
-	var connectErr error
-	connectErr = <-connected
-	assert.Empty(t, owner.Observe().Unresolved, "after Close overtook Connect")
-	assert.ErrorIs(t, connectErr, nats.ErrConnectionClosed, "Connect that Close overtook reports the close")
+			h.releaseHold()
+			connectErr := <-connected
+			assert.Empty(t, owner.Observe().Unresolved, "after Close overtook Connect")
+			assert.ErrorIs(t, connectErr, nats.ErrConnectionClosed, "Connect that Close overtook reports the close")
+		})
+	}
 }
 
 // TestClientCloseJoinsClaimRelease: a port consumer's claim release waits for the consumer's Closed

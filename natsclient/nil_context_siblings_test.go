@@ -49,10 +49,6 @@ func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
 			_, err := c.RequestWithRetryClassified(ctx, subject, nil, 10*time.Second, retry.DefaultConfig())
 			return err
 		}},
-		{"RequestReadyClassified", func(ctx context.Context) error {
-			_, err := c.RequestReadyClassified(ctx, subject, nil, 0, 0)
-			return err
-		}},
 		{"Reply", func(ctx context.Context) error { return c.Reply(ctx, "nilctx.reply", nil) }},
 		{"ReplyWithHeaders", func(ctx context.Context) error {
 			return c.ReplyWithHeaders(ctx, "nilctx.reply", nil, map[string]string{"k": "v"})

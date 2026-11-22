@@ -113,9 +113,10 @@ func TestGaugeFollowsConcurrentRecordAndClear(t *testing.T) {
 // sample taken from two reads disagree when a report or repair lands between them. The anchor
 // key keeps a poison message in every Health, so the assertion runs on each read.
 //
-// The disagreement needs the writer and the reader running at the same moment, which one
-// processor never gives, so the test raises GOMAXPROCS to at least 2 for its own run: the
-// gates run at -cpu 1. It must not call t.Parallel, because GOMAXPROCS is process-wide.
+// On one processor the writer lands between the two reads only when the scheduler happens to
+// switch there, which is rare. The gates run at -cpu 1, so the test raises GOMAXPROCS to at
+// least 2 for its own run: writer and reader then run in parallel and the clash shows on most
+// runs. It must not call t.Parallel, because GOMAXPROCS is process-wide.
 //
 // spec: graph-ingest-recovery / graph-ingest reports its poisoned entities
 func TestHealthCountMatchesNamedIDsWhileChanging(t *testing.T) {

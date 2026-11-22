@@ -188,9 +188,9 @@ func TestConcurrentReportsAndClears(t *testing.T) {
 // drops an entry at its bound has a clear after the report at B to drop it, and a Report that
 // lets a lower revision replace a higher one has a clear after the last lower report.
 //
-// The calls overlap only when goroutines run at the same moment, which one processor never
-// gives, so the test raises GOMAXPROCS to at least 2 for its own run: the gates run at -cpu 1.
-// It must not call t.Parallel, because GOMAXPROCS is process-wide.
+// On one processor the calls interleave only where the scheduler switches goroutines. The gates
+// run at -cpu 1, so the test raises GOMAXPROCS to at least 2 for its own run to make the calls
+// run in parallel as well. It must not call t.Parallel, because GOMAXPROCS is process-wide.
 func TestConcurrentReportAndClearOfOneKey(t *testing.T) {
 	prev := runtime.GOMAXPROCS(max(2, runtime.GOMAXPROCS(0)))
 	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })

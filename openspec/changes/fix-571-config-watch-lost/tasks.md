@@ -9,7 +9,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 2. Code
 
-- [ ] 2.1 `config`: tests that a watch loop whose updates close while the run context is live logs an error naming
+- [x] 2.1 `config`: tests that a watch loop whose updates close while the run context is live logs an error naming
   the watch and turns `Health()` unhealthy, and that `Stop` does neither; then both watch loops mark the watch lost,
   and `(*Manager).Health()` reports it.
 - [ ] 2.2 `service`: a test that `/health` answers 503 with an unhealthy `config` sub-status for a manager whose

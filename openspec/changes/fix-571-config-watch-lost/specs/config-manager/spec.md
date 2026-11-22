@@ -13,8 +13,12 @@ to restart the process, until the process restarts. A watch ended by `Stop` SHAL
 - **WHEN** a started manager's config watch's updates channel closes and `Stop` has not been called
 - **THEN** an error is logged naming the watch, and `Health()` is unhealthy with a message containing
   `restart the process`
+- **AND** the tests that verify this are `TestWatchWhoseUpdatesEndIsReportedLost` and
+  `TestHealthNamesEveryLostWatchOnce`
 
 #### Scenario: Stop ends the watches
 
 - **WHEN** a started manager is stopped
 - **THEN** no watch-lost error is logged, and `Health()` is healthy
+- **AND** the tests that verify this are `TestStoppedManagerReportsNoLostWatch`, `TestWatchEndedByStopIsNotReportedLost`
+  and `TestHealthIsHealthyAfterStop`

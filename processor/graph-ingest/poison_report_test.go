@@ -2,13 +2,13 @@ package graphingest
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // TestHealthNamesTenPoisonedEntities records 11 poisoned entities through the query path,
@@ -69,51 +69,21 @@ func TestHealthNamesTenPoisonedEntities(t *testing.T) {
 	}
 }
 
-// TestGaugeFollowsConcurrentRecordAndClear reports and clears distinct keys from many
-// goroutines at once. Once every goroutine has returned, the gauge must equal the number of
-// keys left recorded, counted here from what each goroutine did: a count written late from
-// an older size would leave the gauge wrong. Run it under -race.
-//
-// spec: graph-ingest-recovery / graph-ingest reports its poisoned entities
-func TestGaugeFollowsConcurrentRecordAndClear(t *testing.T) {
-	c, _ := poisonScopingTestComponent(t)
-	const workers, perWorker = 16, 200
-	var wg sync.WaitGroup
-	for w := range workers {
-		wg.Go(func() {
-			for i := range perWorker {
-				id := fmt.Sprintf("acme.ops.test.system.widget.w%02d%04d", w, i)
-				c.recordEntityPoison(&graph.StateContractError{
-					Reason: graph.GraphStateReasonUnreadableEntity, EntityID: id,
-				}, 5)
-				if i%3 != 0 {
-					c.dropEntityPoisonRecord(id, 5)
-				}
-			}
-		})
-	}
-	wg.Wait() // every record and clear has returned
-	left := 0
-	for range workers {
-		for i := range perWorker {
-			if i%3 == 0 {
-				left++
-			}
-		}
-	}
-	if got := testutil.ToFloat64(c.poisonedEntities); got != float64(left) {
-		t.Fatalf("gauge = %v after the join, want %d keys left recorded", got, left)
-	}
-}
-
 // TestHealthCountMatchesNamedIDsWhileChanging reads Health while one key is reported and
 // repaired over and over, with a second key recorded throughout. With fewer than 10 recorded,
 // every message must name exactly as many IDs as its count and claim none more: a count and a
 // sample taken from two reads disagree when a report or repair lands between them. The anchor
 // key keeps a poison message in every Health, so the assertion runs on each read.
 //
+// On one processor the writer lands between the two reads only when the scheduler happens to
+// switch there, which is rare. The gates run at -cpu 1, so the test raises GOMAXPROCS to at
+// least 2 for its own run: writer and reader then run in parallel and the clash shows on most
+// runs. It must not call t.Parallel, because GOMAXPROCS is process-wide.
+//
 // spec: graph-ingest-recovery / graph-ingest reports its poisoned entities
 func TestHealthCountMatchesNamedIDsWhileChanging(t *testing.T) {
+	prev := runtime.GOMAXPROCS(max(2, runtime.GOMAXPROCS(0)))
+	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
 	c, _ := poisonScopingTestComponent(t)
 	const (
 		anchor = "acme.ops.test.system.widget.anchor"

@@ -54,28 +54,19 @@ type entityPoisonRecord struct {
 	revision    uint64
 }
 
-// newPoisonedEntitiesMetric builds the poison-inventory gauge.
-// One gauge, never per-entity labels (cardinality discipline):
+// newPoisonedEntitiesMetric builds the poison-inventory gauge over size, the
+// record's size. One gauge, never per-entity labels (cardinality discipline):
 // enumeration belongs to DebugStatus, alerting belongs to this gauge plus the
-// Health message.
-func newPoisonedEntitiesMetric() prometheus.Gauge {
-	poisonedEntitiesGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+// Health message. The gauge reads the size when it is scraped, so it always
+// shows the record as it is then; nothing writes it, so no write can land out
+// of order.
+func newPoisonedEntitiesMetric(size func() int) prometheus.GaugeFunc {
+	return prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "poisoned_entities",
 		Help:      "Current per-entity poison inventory size (ENTITY_STATES values failing the canonical decode). Alert on this gauge + the Health message; enumerate via the component debug surface.",
-	})
-	return poisonedEntitiesGauge
-}
-
-// setEntityPoisonGauge publishes the inventory size to the gauge after a report
-// or clear changed it. Reading the size and setting the gauge under one lock
-// makes the last write read the latest size, so concurrent reports and clears
-// never leave an older count on the gauge.
-func (c *Component) setEntityPoisonGauge() {
-	c.poisonGaugeMu.Lock()
-	defer c.poisonGaugeMu.Unlock()
-	c.poisonedEntities.Set(float64(c.entityPoison.Len()))
+	}, func() float64 { return float64(size()) })
 }
 
 // recordEntityPoison inserts or refreshes an inventory record keyed by the
@@ -93,7 +84,6 @@ func (c *Component) recordEntityPoison(contractErr *graph.StateContractError, re
 	if !c.entityPoison.Report(id, revision, contractErr) {
 		return false
 	}
-	c.setEntityPoisonGauge()
 	c.invalidateEntityCacheEntry(id)
 	return true
 }
@@ -162,9 +152,7 @@ func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID strin
 // revision is repaired and the entry is stale. Every clear goes through this
 // guard. The record clears below its bound, so the bound is proofRev+1.
 func (c *Component) dropEntityPoisonRecord(entityID string, proofRev uint64) {
-	if c.entityPoison.Clear(entityID, proofRev+1) {
-		c.setEntityPoisonGauge()
-	}
+	c.entityPoison.Clear(entityID, proofRev+1)
 }
 
 // clearEntityPoisonOnDelete is clear path (a): a successful delete at

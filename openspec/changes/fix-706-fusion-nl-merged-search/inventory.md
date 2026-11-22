@@ -229,3 +229,56 @@ Not triggered. No boundary, tier or capability moves; both search halves are alr
   scoped?
 - Is a merged list's provenance `embedding` under ADR-062 `:188` ("seeds came from semantic search"), given that some
   seeds came from words alone?
+
+## Additions from the inventory review
+
+Owner's words on #706 (2026-11-21): "Fusion's natural-language resolve uses the merged search when the composition runs
+embeddings, and the seeds say where they came from." Whether that means one provenance per response or one per seed is
+left to the design and the owner.
+
+Score readers (a wire field changes meaning):
+
+- `Seed.Similarity` (`pkg/fusion/retrieval.go:57-59`) and the wire field `Node.Similarity`
+  (`pkg/fusion/contract.go:120-122`) are documented as the word index's score for an nl resolve. A merged searchGraph
+  match carries the RRF score instead (`graph/query_global_search_types.go:105-106`).
+- The engine ranks by resolve order, not by score (`pkg/fusion/engine_lens.go:35-47, 258`), so ranking is unaffected;
+  consumers that set `IncludeScores` read a different number.
+- SemSource keeps `Similarity` only in its symbol-mode wrapper `exactSeedClient` (`processor/code-context/exact_seed.go:28-33`).
+
+Ledger rows also touched:
+
+- `pkg/fusion` row (`docs/admission-ledger.yaml:4695`; text at `:4712`, `:4732`, `:4762`) and the ADR-062 row
+  (`:4794`) say an nl answer's provenance is `lexical`.
+- `processor/graph-query` row (`:4369`) still describes searchGraph as fallback-only, "when word search matches nothing"
+  (`:4419-4421`, `:4436-4437`), stale since the merge landed. The design fixes it or files it.
+
+SemSource code on the nl path (read-only, local checkout):
+
+- `nlDisabledClient` (`processor/code-context/nl_disabled.go:31-45`) refuses nl itself at tier 0, which composes graph-query
+  without graph-lexical (`configs/tiers/README.md:39-40`). Its comment names `graph.lexical.query.search`.
+- `http_error.go:69-90` maps any transient classified error to 503, so a graph-query hop does not break it; it maps an
+  invalid `not_enabled` to 501 "semantic search is not enabled", which matters if an option routes through graph-query's
+  `semantic` verb at tier 0.
+- SemSource always sends a scope (`component.go:326-327`), so a scope-less searchGraph cannot serve its nl resolves.
+
+graph-query spec requirements the fallback leans on:
+
+- `openspec/specs/graph-query/spec.md:752-788` (every question gets a word search; the word search comes before any hint;
+  a refused word search cancels the embedding search), `:813-821` (the reply's revision is the word index's), `:854-866`
+  (losing the embedding provider keeps word search).
+- fusion `:405-415`, every read passes on the damaged count.
+
+Line corrections: `globalsearch.go:199` is `:198`; the SemSource fake builds `Resolution` at `memgraph.go:86`.
+
+Answers to the open evidence questions:
+
+- Scope reaches both inner searches. ADR-071 picks filtering at the candidate source (`:80-96`) and rejects a post-filter
+  because it "cannot recover a domain that falls *entirely* below the over-fetch window" (`:130-140`); resolved
+  decision (c) rules out a second filter path (`:204-207`). Scoping the merge's output is the rejected option.
+  Both responders already scope: graph-lexical via `Options.Scope` (`processor/graph-lexical/query.go:95-100`),
+  graph-embedding via its `keep` filter (`processor/graph-embedding/query.go:91-92`).
+- Provenance of a merged answer is not decided by the tree. Response-level leans conservative: `contract.go:57` orders the
+  values by increasing uncertainty; `lens.go:196-199` gives a seed that "has not earned the stronger claim" the more
+  conservative value; ADR-062's note (`:28-33`) defines `lexical` as neither exact lookup nor semantic search. That reading
+  gives `embedding` when the `merge` hint is honoured, `lexical` otherwise. Per-seed provenance is measurable from each
+  match's `word_rank`/`vector_rank` (`graph/query_global_search_types.go:114-115`).

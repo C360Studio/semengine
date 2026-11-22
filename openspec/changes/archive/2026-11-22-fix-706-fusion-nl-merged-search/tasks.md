@@ -51,11 +51,11 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
   - `docs/admission-ledger.yaml` rows for `pkg/fusion/fusionnats` (`:4817-4893`), `pkg/fusion` (`:4695`), ADR-062
     (`:4794`), ADR-071 (`:4512-4524`) and `processor/graph-query` (`:4419-4421,:4436-4437`);
   Accept: `task docs:check`.
-- [ ] 4.2 Independent code review records an approving head at a commit with a clean local `task verify`; reviewer
+- [x] 4.2 Independent code review records an approving head at a commit with a clean local `task verify`; reviewer
   findings resolved.
 - [x] 4.3 Link #712 (searchGraph's embedding wait) from the PR body without a closing keyword.
 
 ## 5. Close-out
 
-- [ ] 5.1 Archive the change and sync `openspec/specs/{fusion,graph-query,graph-transport-boundary}` as the last
+- [x] 5.1 Archive the change and sync `openspec/specs/{fusion,graph-query,graph-transport-boundary}` as the last
   content commit; `task spec:check`.

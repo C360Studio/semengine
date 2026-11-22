@@ -8,7 +8,7 @@ Each code task ends at a clean-tree local `task verify`. Single PR, closing #708
 
 ## 2. Tests
 
-- [ ] 2.1 #708: `TestHealthCountMatchesNamedIDsWhileChanging` runs its writer and reader in parallel under `-cpu 1`.
+- [x] 2.1 #708: `TestHealthCountMatchesNamedIDsWhileChanging` runs its writer and reader in parallel under `-cpu 1`.
   Shown failing at `-cpu 1` against the two-read Health code (`notes/2.1.md`).
 - [ ] 2.2 #709: a same-key concurrent report/clear test in `internal/damage/record_test.go`, under `-race`. Shown
   failing against the two mutants named in the proposal (`notes/2.2.md`).

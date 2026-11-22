@@ -454,7 +454,7 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 | Name | Type | Meaning |
 | --- | --- | --- |
 | `semengine_graph_query_search_truncated_total` | counter vec | `localSearch`, `globalSearch` and `searchGraph` answers cut short, by `verb` (`localSearch`, `globalSearch`, `searchGraph`) |
-| `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` and `mergedSearch` answers given as the word list alone because the embedding search was refused, broken, or silent past `query_timeout_ms` |
+| `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` and `mergedSearch` answers given as the word list alone because the embedding search was refused, broken, or silent past its deadline (`query_timeout_ms` for `searchGraph`; that or 4 s, whichever is less, for `mergedSearch`) |
 
 A search answer is cut short when more entities matched than the `limit` returned, a hit was deleted or damaged
 before it was read, a reply it was built from carried `damaged_entities` above 0, or matches were left out to fit

@@ -4437,8 +4437,7 @@
     pathSearch, at most 1 plus max_nodes, doubled for direction both, summary, two (predicateList, then one prefix
     page), localSearch, one word search and one batch read, mergedSearch, one word search and, with embedding_enabled,
     one embedding search, and globalSearch and searchGraph, the same two and, for
-    searchGraph with embedding_enabled, one embedding search when the words match nothing or the index is not
-    ready, and, for an entity or path hint, an alias request and an entity read, plus the walk of pathSearch for a path; one goroutine
+    searchGraph with embedding_enabled, one embedding search, and, for an entity or path hint, an alias request and an entity read, plus the walk of pathSearch for a path; one goroutine
     (the community supervisor, joined by Stop) watching COMMUNITY_INDEX read-only, and counters on the injected
     registry; no write to any bucket
   known_risks: >-

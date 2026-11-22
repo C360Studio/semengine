@@ -1,6 +1,6 @@
 # Proposal: fix-564-embedding-clean-stop-warning
 
-Approved-by:
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/564#issuecomment-7079557621> sha256:df5dcefc1719
 
 Track: `quick`. No capability changes: the `keyed-dispatch` spec says nothing about the warning, and no requirement is
 added or changed. One package (`internal/dispatch`).

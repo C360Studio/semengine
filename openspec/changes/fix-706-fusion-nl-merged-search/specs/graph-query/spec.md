@@ -49,8 +49,9 @@ alone.
 ### Requirement: mergedSearch answers the ranked list without reading it back
 
 `mergedSearch` SHALL answer enveloped `graph.MergedSearchData` and read no entity: `results`, each `entity_id`,
-`score`, and `vector_rank` when the entity is in the embedding list; the word search's `excluded` and `bodies_not_indexed`; and `merge` when `embedding_enabled` is true. Its
-revision SHALL be the word search's, and its `damaged_entities` the larger of the replies it read.
+`score`, and `vector_rank` when the entity is in the embedding list; the word search's `excluded` and
+`bodies_not_indexed`; and `merge` when `embedding_enabled` is true. Its revision SHALL be the word search's, and its
+`damaged_entities` the larger of the replies it read.
 
 #### Scenario: Results and counts in the reply
 

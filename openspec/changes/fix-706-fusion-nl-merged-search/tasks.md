@@ -5,9 +5,8 @@ in `notes/<task>.md` or `task mutate:check`. One pull request (design D5), `Clos
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`): INVENTORY PASS at 48c2e10d, then pre-owner
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`): INVENTORY PASS at 48c2e10d, then pre-owner
   design review passes; the owner fills `Approved-by:` and rules on design questions 1 to 3.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. graph-query: mergedSearch
 

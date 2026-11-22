@@ -121,7 +121,6 @@ Consumers migrate. SemSource:
 ## Open Questions
 
 1. **Owner (2026-11-22):** B, a new small search that returns only the ranked IDs and filters by ID prefix.
-2. **Owner:** one label for the whole answer (recommended; consumers read one `provenance` field, as today), or a
-   label on every result (each node gains a field saying words, meaning or both)?
-3. **Owner:** label a mixed answer `embedding` (recommended; no new value, so consumers' code keeps working), or a
-   new `hybrid` (more exact, but every consumer that switches on provenance must add it)?
+2. **Owner (2026-11-22):** one label for the whole answer.
+3. **Owner (2026-11-22):** `embedding` only when meaning results are in the answer (merged, or meaning alone while the
+   word index builds); `lexical` whenever the answer came from words alone, at any tier.

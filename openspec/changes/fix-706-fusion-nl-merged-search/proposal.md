@@ -1,6 +1,6 @@
 # Proposal: fix-706-fusion-nl-merged-search
 
-Approved-by:
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/706#issuecomment-7078195431> sha256:8055edd4e55f
 
 Track: `design`. Capabilities: `fusion` (modified, renamed, removed, added), `graph-query` (modified, added),
 `graph-transport-boundary` (modified).

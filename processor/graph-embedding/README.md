@@ -159,7 +159,8 @@ revision of the entity or a restart.
 
 Both verbs answer a `graph.QueryResponse` with producer `graph-embedding`, from `Start` until `Stop` returns. Each
 reply's `data` holds `results` (a JSON array, `[]` when empty; each hit is an `entity_id` and a `similarity`),
-`unreadable_records` (records in `EMBEDDING_INDEX` that could not be decoded) and `failed_records` (entities whose
+`unreadable_records` (records in `EMBEDDING_INDEX` that could not be decoded; on a `search` with a `scope`, only those
+whose keys the scope accepts) and `failed_records` (entities whose
 latest embedding failed, so they cannot be hits). `search` also sends `embedder_type`, the name the embedder was
 registered under, and embeds its query with the embedder's `GenerateQuery`. A 0 in both
 counts does not prove every entity is searchable: an entity whose embedding is still pending is left out and counted

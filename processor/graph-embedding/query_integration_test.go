@@ -337,6 +337,11 @@ func TestSimilarEdges(t *testing.T) {
 	if search := answerNow[graph.SemanticData](t, h, "search", `{"query":"widget"}`); search.reply.Data.UnreadableRecords != 1 {
 		t.Errorf("search with one undecodable record = %s, want unreadable_records 1", search.raw)
 	}
+	// A scope that does not accept the undecodable record's key does not count it.
+	scoped := answerNow[graph.SemanticData](t, h, "search", fmt.Sprintf(`{"query":"widget","scope":[%q]}`, a))
+	if scoped.reply.Data.UnreadableRecords != 0 {
+		t.Errorf("search scoped away from the undecodable record = %s, want unreadable_records 0", scoped.raw)
+	}
 
 	for _, tc := range []struct {
 		id    string

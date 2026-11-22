@@ -227,8 +227,8 @@ func TestVectorCacheNotAuthoritative(t *testing.T) {
 }
 
 // TestVectorCachePoisonCountedAndHeals: a record that does not decode is not scored and is
-// counted, the other vectors still answer, and the count includes keys keep refuses (it is every
-// unreadable record, not only those in scope). A later valid write of the key scores it again and
+// counted, the other vectors still answer, and a keep that refuses the unreadable keys counts
+// none of them. A later valid write of the key scores it again and
 // stops counting it; a delete of an unreadable key stops counting it too.
 func TestVectorCachePoisonCountedAndHeals(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestVectorCachePoisonCountedAndHeals(t *testing.T) {
 			}
 		}
 		check("two unreadable", nil, []string{"o.p.s.d.t.b"}, 2)
-		check("two unreadable, scoped to b", func(id string) bool { return id == "o.p.s.d.t.b" }, []string{"o.p.s.d.t.b"}, 2)
+		check("two unreadable, scoped to b", func(id string) bool { return id == "o.p.s.d.t.b" }, []string{"o.p.s.d.t.b"}, 0)
 
 		kv.send(generatedEntry(t, "o.p.s.d.t.a", 1, 0))
 		synctest.Wait()
@@ -263,6 +263,43 @@ func TestVectorCachePoisonCountedAndHeals(t *testing.T) {
 		synctest.Wait()
 		check("c deleted", nil, []string{"o.p.s.d.t.a", "o.p.s.d.t.b"}, 0)
 
+		if err := stop(); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v; want context.Canceled", err)
+		}
+	})
+}
+
+// TestFindSimilarCountFollowsKeep: the unreadable count covers only the records whose keys keep
+// accepts, so a scoped search reports what it could not read in its own scope; a nil keep counts
+// every unreadable record.
+func TestFindSimilarCountFollowsKeep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		kv := newFeedKV()
+		cache, stop, _ := runCache(t, kv)
+		kv.send(generatedEntry(t, "acme.web.docs.site.doc.guide", 1, 0))
+		kv.send(undecodableEntry("acme.web.docs.site.doc.readme"))
+		kv.send(undecodableEntry("acme.web.python.svc.fn.parse"))
+		kv.send(nil)
+		synctest.Wait()
+
+		inDocs := func(id string) bool { return strings.HasPrefix(id, "acme.web.docs.") }
+		for _, tc := range []struct {
+			name           string
+			keep           func(string) bool
+			wantUnreadable int
+		}{
+			{"scoped to docs", inDocs, 1},
+			{"no scope", nil, 2},
+		} {
+			got, unreadable, err := cache.FindSimilar("", []float32{1, 0}, tc.keep, 10)
+			if err != nil {
+				t.Fatalf("%s: FindSimilar = %v; want an answer", tc.name, err)
+			}
+			if !slices.Equal(ids(got), []string{"acme.web.docs.site.doc.guide"}) || unreadable != tc.wantUnreadable {
+				t.Fatalf("%s: FindSimilar = %v, %d unreadable; want [acme.web.docs.site.doc.guide], %d",
+					tc.name, ids(got), unreadable, tc.wantUnreadable)
+			}
+		}
 		if err := stop(); !errors.Is(err, context.Canceled) {
 			t.Fatalf("Run returned %v; want context.Canceled", err)
 		}

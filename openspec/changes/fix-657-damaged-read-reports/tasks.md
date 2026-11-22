@@ -21,10 +21,10 @@ Single PR, `Closes #657`.
   transient `internal`); then the value filter refuses fatal with the IDs it read.
 - [x] 2.3 Skipped rows: extend `TestMalformedIndexRowsAreSkippedLoggedAndCounted` to assert each reply's
   `data.unreadable_records` (absent on `main`); then add the field to the seven reply types and count per request.
-- [ ] 2.4 Embedding scope: a `FindSimilar` test with two unreadable records, one in scope (on `main` the scoped call
+- [x] 2.4 Embedding scope: a `FindSimilar` test with two unreadable records, one in scope (on `main` the scoped call
   counts 2); then `graphview.View.ListCounted` takes a key filter and `FindSimilar` passes `keep`.
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-657-damaged-read-reports --yes`, which syncs the five capabilities;
+- [ ] 3.1 Archive: `openspec archive fix-657-damaged-read-reports --yes`, which syncs the six capabilities;
   `task spec:check` and `task docs:check` pass.

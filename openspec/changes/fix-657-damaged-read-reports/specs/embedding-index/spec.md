@@ -40,3 +40,4 @@ of that key SHALL be scored and no longer counted.
 
 - **WHEN** two records fail to decode, one under a key `keep` accepts and one outside it
 - **THEN** `FindSimilar` with that `keep` counts 1, and with a nil `keep` counts 2
+- **AND** the test that verifies this is `TestFindSimilarCountFollowsKeep`

@@ -14,5 +14,5 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-564-embedding-clean-stop-warning --yes`; `task spec:check` and
+- [x] 3.1 Archive: `openspec archive fix-564-embedding-clean-stop-warning --yes`; `task spec:check` and
   `task docs:check` pass.

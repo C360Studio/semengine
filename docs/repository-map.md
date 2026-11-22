@@ -8,7 +8,7 @@ not a task tracker and not a description of the tree.
 
 - **No qualified consumer.** SemSource's mainline builds on SemEngine, but no consumer qualification lane exists
   yet. The contract is written down in `docs/contract.md`.
-- **No runtime binary.** Pre-release tags `v0.1.0-alpha.1` to `v0.1.0-alpha.4` exist; no stable release.
+- **No runtime binary.** Pre-release tags `v0.1.0-alpha.1` to `v0.1.0-alpha.6` exist; no stable release.
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
 - **The rule core and some graph packages.** Not yet present: the rule core, the spatial and temporal responders,
   `internal/maxdelivery`, `composition/cli` and `graph/geo/geojson`. Everything else the tier-0 plan names is in the
@@ -117,7 +117,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 | Question | Home |
 | --- | --- |
 | What is wanted, is it decided | GitHub issues; rulings are issue comments |
-| What gates a release | A GitHub milestone: `setup` (foundation through contract), then `slice-04a`, `slice-04b`, `slice-04c` |
+| What gates a release | A GitHub milestone: serial `v0.1.0-alpha.<N>` pins, plus `tier-2` and `backlog` |
 | Who has claimed it | A draft PR: `Closes #n` for a leaf issue, `Addresses #n` for an epic |
 | Target state, tasks, holds | The OpenSpec change inside that PR; `task spec:queue` reads the holds |
 | What is true now | `openspec/specs/`, verified against code |
@@ -125,6 +125,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 
 ## Releases and milestones
 
-Milestones gate releases: `setup` (foundation through contract), then `slice-04a` (tier-0 graph foundation),
-`slice-04b` (tier-0 lexical; BM25 completes tier 0) and `slice-04c` (tier-1 neural; embedding provider). GitHub is
-authoritative; re-read it before acting.
+Milestones gate serial releases: `v0.1.0-alpha.7` (in-flight fusion merged search), `v0.1.0-alpha.8` (hardening,
+consumer boot contract, and Tier-1 qualification), `v0.1.0-alpha.9` (rule core and deadline timers), `v0.1.0-alpha.10`
+(remaining spatial, temporal, maxdelivery and CLI substrate), plus `tier-2` and `backlog`. GitHub is authoritative;
+re-read it before acting.

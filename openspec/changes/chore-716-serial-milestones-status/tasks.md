@@ -9,9 +9,10 @@ Each code task ends at a clean-tree local `task verify`. Single PR, closing #716
 
 ## 2. Implementation
 
-- [ ] 2.1 Update `scripts/port-status.sh` Project v2 `Stage` mapping for serial `v0.1.0-alpha.<N>` milestones and add
-  regression checks in `internal/harness/toolcheck/portstatus_test.go` (shown able to fail via mutant check).
-- [ ] 2.2 Update `docs/repository-map.md`, `.agents/skills/semengine-status/SKILL.md`, and
+- [x] 2.1 Update `scripts/port-status.sh` Project v2 `Stage` mapping for serial `v0.1.0-alpha.<N>` milestones and add
+  regression checks in `internal/harness/toolcheck/portstatus_test.go` (shown able to fail via mutant check,
+  `notes/2.1.md`).
+- [x] 2.2 Update `docs/repository-map.md`, `.agents/skills/semengine-status/SKILL.md`, and
   `.claude/skills/semengine-status/SKILL.md` for the serial milestone model and current alpha tags.
 
 ## 3. Close-out

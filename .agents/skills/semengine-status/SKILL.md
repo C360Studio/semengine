@@ -1,7 +1,7 @@
 ---
 name: semengine-status
 description: >-
-  Report SemEngine Slice 04A package port progress, active PR claims, known flakes, and GitHub
+  Report SemEngine package port progress, active PR claims, known flakes, and GitHub
   milestone/issue queue hygiene, and sync the GitHub Project v2 tracker. Use when asked for port
   status, auditing the issue queue, or updating the project board.
 ---
@@ -9,8 +9,8 @@ description: >-
 # Check and sync SemEngine port status
 
 Read [the shared protocol](../../protocol.md) first. `docs/admission-ledger.yaml` is the source of truth for package
-admission against the SemStreams pin (`8b99efe9`), and GitHub milestones (`setup`, `slice-04a`, `slice-04b`,
-`slice-04c`), issues, and draft PRs hold live project state.
+admission against the SemStreams pin (`8b99efe9`), and GitHub milestones (`v0.1.0-alpha.7`, `v0.1.0-alpha.8`,
+`v0.1.0-alpha.9`, `v0.1.0-alpha.10`, `tier-2`, `backlog`), issues, and draft PRs hold live project state.
 
 ## Run the status scoreboard and hygiene check
 
@@ -18,7 +18,7 @@ From the repository or worktree root, run:
 
 ```bash
 task status                 # full local ledger scoreboard + live GitHub milestones, PRs, flakes, and issue hygiene
-task status -- --offline    # local 65-package Slice 04A + service 7-PR scoreboard only (no network)
+task status -- --offline    # local 65-package Tier-0 + service 7-PR scoreboard only (no network)
 task status -- --check      # fail if any milestone title has whitespace or any open issue lacks a milestone/label
 ```
 
@@ -26,12 +26,14 @@ task status -- --check      # fail if any milestone title has whitespace or any 
 
 Every open issue MUST carry:
 
-1. **A slug milestone** (no spaces, colons, or dashes that break unquoted GitHub search):
-   - `setup` — SETUP 01–03B foundation, isolated test harness, OpenSpec/tooling scripts, and baseline qualification.
-   - `slice-04a` — Tier-0 graph foundation (the 65-package extraction across Changes 1–7, `service` PRs 1–7, and
-     Tier-0 defects or `class:port-refactor` items).
-   - `slice-04b` — Tier-0 lexical retrieval (BM25 completes Tier 0).
-   - `slice-04c` — Tier-1 neural retrieval (embedding provider).
+1. **A slug milestone** (no spaces, colons, or characters that break unquoted GitHub search):
+   - `v0.1.0-alpha.7` — in-flight pre-release pin (`pkg/fusion` merged NL search).
+   - `v0.1.0-alpha.8` — hardening, consumer boot contract, and Tier-1 qualification.
+   - `v0.1.0-alpha.9` — rule core (`processor/rule`, `processor/rule/expression`) and deadline timers.
+   - `v0.1.0-alpha.10` — remaining Tier-0 substrate tail (`spatial`, `temporal`, `geojson`, `maxdelivery`,
+     `composition/cli`).
+   - `tier-2` — separately admitted LLM-backed features (empty slot at MVP).
+   - `backlog` — unscheduled `class:port-refactor` cleanups, adoption sweeps, and blocked decision epics.
 2. **At least one classification label:**
    - `bug` for defects in carried, ported, or harness code;
    - `class:port-refactor` for structural adaptations away from the pin shape;
@@ -42,7 +44,7 @@ Every open issue MUST carry:
 When `task status -- --check` reports a violation, inspect the issue body and assign the milestone and label with:
 
 ```bash
-gh issue edit <n> --milestone "<setup|slice-04a|slice-04b|slice-04c>" --add-label "<label>"
+gh issue edit <n> --milestone "<v0.1.0-alpha.7|v0.1.0-alpha.8|v0.1.0-alpha.9|v0.1.0-alpha.10|tier-2|backlog>" --add-label "<label>"
 ```
 
 ## Sync the GitHub Project v2 board

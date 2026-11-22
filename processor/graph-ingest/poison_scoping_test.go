@@ -23,22 +23,20 @@ import (
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // poisonScopingTestComponent builds a full factory-created component on the
-// mock bucket, marked running so Health() reports live state, with a fresh
-// unregistered gauge so gauge assertions cannot interfere across tests.
+// mock bucket, marked running so Health() reports live state. It has no metrics
+// registry, so its gauge reads only its own record.
 func poisonScopingTestComponent(t *testing.T) (*Component, *mockKVBucket) {
 	t.Helper()
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	nothing := func(context.Context) error { return nil }
 	require.NoError(t, c.lifecycle.Initialize())
 	require.NoError(t, c.lifecycle.Start(t.Context(), nothing, nothing))
-	c.poisonedEntities = prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_poison_scoping_gauge"})
 	return c, bucket
 }
 

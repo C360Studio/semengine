@@ -8,7 +8,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 2. Code
 
-- [ ] 2.1 The gauge becomes a `prometheus.GaugeFunc` over the record, with the same name, help and type;
+- [x] 2.1 The gauge becomes a `prometheus.GaugeFunc` over the record, with the same name, help and type;
   `setEntityPoisonGauge`, `poisonGaugeMu` and the test's gauge swap (`poison_scoping_test.go`) go;
   `TestGaugeFollowsConcurrentRecordAndClear` is removed; the `metrics.go` comment on a shared registry is reworded.
   Every existing test that reads the gauge passes unchanged in what it asserts.

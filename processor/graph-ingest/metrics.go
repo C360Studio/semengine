@@ -248,9 +248,10 @@ const metricService = "graph-ingest"
 // construction, so the series exist before the first message and the first status tick.
 //
 // A registry holds one graph-ingest instance's series. A second instance on the same
-// registry shares each collector, so the gauges each sets from its own state (the poison
-// inventory, the readiness gauges) overwrite each other, and which instance's value a
-// scrape shows is not promised. No configuration we know of runs two on one registry.
+// registry shares each collector: the poison-inventory gauge reads the first instance's
+// record, and the readiness gauges, which each instance sets from its own state,
+// overwrite each other, so which instance's value a scrape shows is not promised. No
+// configuration we know of runs two on one registry.
 func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.entitiesUpdated = newEntitiesUpdatedMetric()
 	c.indexingProfileDefault = newIndexingProfileDefaultMetric()
@@ -268,7 +269,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.casRetries = newCasRetriesMetric()
 	c.staleSets = newStaleSetsMetric()
 	c.duplicateTriplesSuppressed = newDuplicateTriplesSuppressedMetric()
-	c.poisonedEntities = newPoisonedEntitiesMetric()
+	c.poisonedEntities = newPoisonedEntitiesMetric(c.entityPoison.Len)
 	// Readiness gauges: the scrapeable half of the ADR-066 envelope. NO revision
 	// gauges: graph-ingest is a BACKLOG producer, and the spec states such a
 	// producer SHALL NOT expose indexed_revision / target_revision and SHALL NOT

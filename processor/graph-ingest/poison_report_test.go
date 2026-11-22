@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // TestHealthNamesTenPoisonedEntities records 11 poisoned entities through the query path,
@@ -67,43 +66,6 @@ func TestHealthNamesTenPoisonedEntities(t *testing.T) {
 	}
 	if e := status.PoisonedEntities[0]; e.Revision != 4 {
 		t.Fatalf("debug entry for %s at revision %d, want 4", e.EntityID, e.Revision)
-	}
-}
-
-// TestGaugeFollowsConcurrentRecordAndClear reports and clears distinct keys from many
-// goroutines at once. Once every goroutine has returned, the gauge must equal the number of
-// keys left recorded, counted here from what each goroutine did: a count written late from
-// an older size would leave the gauge wrong. Run it under -race.
-//
-// spec: graph-ingest-recovery / graph-ingest reports its poisoned entities
-func TestGaugeFollowsConcurrentRecordAndClear(t *testing.T) {
-	c, _ := poisonScopingTestComponent(t)
-	const workers, perWorker = 16, 200
-	var wg sync.WaitGroup
-	for w := range workers {
-		wg.Go(func() {
-			for i := range perWorker {
-				id := fmt.Sprintf("acme.ops.test.system.widget.w%02d%04d", w, i)
-				c.recordEntityPoison(&graph.StateContractError{
-					Reason: graph.GraphStateReasonUnreadableEntity, EntityID: id,
-				}, 5)
-				if i%3 != 0 {
-					c.dropEntityPoisonRecord(id, 5)
-				}
-			}
-		})
-	}
-	wg.Wait() // every record and clear has returned
-	left := 0
-	for range workers {
-		for i := range perWorker {
-			if i%3 == 0 {
-				left++
-			}
-		}
-	}
-	if got := testutil.ToFloat64(c.poisonedEntities); got != float64(left) {
-		t.Fatalf("gauge = %v after the join, want %d keys left recorded", got, left)
 	}
 }
 

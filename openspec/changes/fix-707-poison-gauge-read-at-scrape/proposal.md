@@ -2,7 +2,8 @@
 
 Approved-by:
 
-Track: `quick`. No capability changes: one package, and no spec requirement is added or changed.
+Track: `quick`. Capability modified: `graph-ingest-recovery` ("graph-ingest reports its poisoned entities": one scenario
+added, one scenario's proving tests changed; the requirement text is unchanged). One package.
 
 ## Why
 
@@ -10,8 +11,9 @@ No test catches (#707) graph-ingest's `poisoned_entities` gauge being written ou
 orders reading the record's size and setting the gauge, and only that code guards the order. No test can: the test
 would have to see a second writer waiting on that mutex, and Go offers no way to see that without a hook in the
 code or a timing guess. A test gauge that parks the first `Set` either hangs on the correct code or races on the
-broken one. `testing/synctest` does not count a mutex wait as blocked, so `synctest.Wait` never returns there
-(probe on go1.26.11: the test timed out). Alerting reads this gauge, so a regression would go unnoticed.
+broken one. `testing/synctest` does not count a mutex wait as durably blocked (its package doc, "Operations not in
+the above list are not durably blocking"), so `synctest.Wait` never returns there. Alerting reads this gauge, so a
+regression would go unnoticed.
 
 ## What Changes
 
@@ -21,15 +23,18 @@ broken one. `testing/synctest` does not count a mutex wait as blocked, so `synct
   built today, operators see no change.
 - With two graph-ingest instances on one registry, which nothing runs and nothing promises, the gauge now reads
   the first instance's record instead of whichever instance wrote last. The comment in `metrics.go` says so.
-- A new test changes the record directly, with no gauge call, and asserts the gauge equals the record's size after
-  each change. It is shown to fail at `-cpu 1` against the current code, where the gauge is written.
-  `TestGaugeFollowsConcurrentRecordAndClear`, which can no longer fail, is removed.
+- A new test, `TestPoisonGaugeReadsTheRecord`, changes the record directly, with no gauge call, and asserts the
+  scraped gauge reads 1, 2, 1, 0 after each change. It fails against the current code, where callers write the
+  gauge; that is what rules an out-of-order write out. `TestGaugeFollowsConcurrentRecordAndClear`, which can no
+  longer fail, is removed, and the spec scenario naming it cites the record's
+  concurrency test and the new one instead.
 
 ## Non-goals
 
-No change to `internal/damage`, the follower, or the `-cpu 1` setting of the gates. No other component's gauges.
+No change to `internal/damage`, the follower, or the `-cpu 1` setting of the gates. No other component's gauges:
+graph-lexical sets its gauges in the same locked step as the change, so it has no such order to get wrong.
 
 ## Impact
 
 `processor/graph-ingest/{metrics.go,poison_inventory.go,component.go}`, `poison_report_test.go`,
-`poison_scoping_test.go`. One PR (#713), `Closes #707`.
+`poison_scoping_test.go`; the `graph-ingest-recovery` spec. One PR (#713), `Closes #707`.

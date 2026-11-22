@@ -9,8 +9,9 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 2. Code
 
-- [ ] 2.1 Test first: the gauge equals the record's size after each direct report and clear, with no gauge call.
-  Shown failing at `-cpu 1` against the current written gauge (`notes/2.1.md`). The scraped metric is still typed
+- [ ] 2.1 Test first: `TestPoisonGaugeReadsTheRecord` asserts the scraped gauge reads 1, 2, 1, 0 after each
+  direct report and clear, with no gauge call. Shown failing against the current written gauge
+  (`notes/2.1.md`). The scraped metric is still typed
   gauge, with the same name and help.
 - [ ] 2.2 The gauge becomes a `prometheus.GaugeFunc` over the record; `setEntityPoisonGauge`, `poisonGaugeMu` and
   the test's gauge swap go; `TestGaugeFollowsConcurrentRecordAndClear` is removed; the `metrics.go` comment on a
@@ -18,5 +19,6 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-707-poison-gauge-read-at-scrape --yes`; `task spec:check` and
+- [ ] 3.1 Archive: `openspec archive fix-707-poison-gauge-read-at-scrape --yes`, which syncs
+  `graph-ingest-recovery`; `task spec:check` and
   `task docs:check` pass.

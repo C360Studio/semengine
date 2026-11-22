@@ -187,6 +187,21 @@ func TestDamagedCountAndRefusal(t *testing.T) {
 	}
 }
 
+// TestReportWithNoRefusalNamesTheEntity: a report that comes with no refusal is still recorded as
+// the fatal refusal, and that refusal names the key in its detail, as one the decoder built would.
+func TestReportWithNoRefusalNamesTheEntity(t *testing.T) {
+	b := damagedID(2)
+	f := damagedFollower()
+	f.ReportDamaged(b, 5, nil)
+	err := f.DamagedRefusal(b)
+	if !graph.IsStateContractError(err) {
+		t.Fatalf("DamagedRefusal(B) = %v; want the state contract refusal", err)
+	}
+	if got := graph.StateRefusalEntityIDs(err); !slices.Equal(got, []string{b}) {
+		t.Errorf("StateRefusalEntityIDs(DamagedRefusal(B)) = %v; want [%s]", got, b)
+	}
+}
+
 // TestStuckNamesDamagedEntities: Stuck holds one sentence with the count, the first 10 IDs in
 // sorted order each with its reason, the number not named, and the repair (spec, "Eleven damaged
 // entities"). The IDs are reported out of order, so the sorting is the follower's.

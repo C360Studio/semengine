@@ -11,7 +11,7 @@ Single PR, `Closes #657`.
 
 ## 2. Code
 
-- [ ] 2.1 Refusal detail: tests that `UnmarshalEntityState`'s refusal carries `Detail["entity_ids"]` [key]; that
+- [x] 2.1 Refusal detail: tests that `UnmarshalEntityState`'s refusal carries `Detail["entity_ids"]` [key]; that
   `graph.StateRefusalEntityIDs` returns [B] and [B, C] from graph-ingest's entity verb on damaged B and prefix verb
   over damaged B and C, read through `RequestClassified`, and nil for other errors; and that graph-index `outgoing` on
   damaged B does. Then add the helper; `stateRefusal`, `noncanonicalRefusal`, the follower's fallback refusal and

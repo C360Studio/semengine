@@ -19,3 +19,5 @@ cause beneath it its own classification, if it has one (an invalid entity ID kee
 
 - **WHEN** the bytes under key K do not decode
 - **THEN** the refusal's `Detail["entity_ids"]` is [K], and `graph.StateRefusalEntityIDs` returns [K]
+- **AND** the test that verifies this is `TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses`, with
+  `TestStateRefusalEntityIDs` for the helper

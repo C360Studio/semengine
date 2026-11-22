@@ -254,9 +254,10 @@ func (c *Component) reconcileNoncanonical(ctx context.Context, entityID string, 
 }
 
 // noncanonicalRefusal is the refusal recorded for entityID, a key that is not a literal entity ID;
-// invalid is why.
+// invalid is why. Like the decoder's refusal, it names the key in its detail.
 func noncanonicalRefusal(entityID string, invalid error) error {
-	return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+	return errs.ClassifiedCodeDetail(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+		map[string]any{"entity_ids": []string{entityID}},
 		&graph.StateContractError{Reason: graph.GraphStateReasonNoncanonicalEntityID, EntityID: entityID, Err: invalid})
 }
 

@@ -72,7 +72,8 @@ func requireDamaged[T any](t *testing.T, verb string, reply counted[T], want int
 	}
 }
 
-// requireDamagedRefusal requires err to be the fatal graph_state_reset_required refusal naming id.
+// requireDamagedRefusal requires err to be the fatal graph_state_reset_required refusal naming id,
+// in its message and alone in its detail.
 func requireDamagedRefusal(t *testing.T, verb, id string, err error) {
 	t.Helper()
 	var classified *errs.ClassifiedError
@@ -83,6 +84,9 @@ func requireDamagedRefusal(t *testing.T, verb, id string, err error) {
 	}
 	if !strings.Contains(err.Error(), id) {
 		t.Errorf("%s of %s: refusal %v does not name the entity", verb, id, err)
+	}
+	if got := graph.StateRefusalEntityIDs(err); !slices.Equal(got, []string{id}) {
+		t.Errorf("%s of %s: StateRefusalEntityIDs = %v; want [%s]", verb, id, got, id)
 	}
 }
 

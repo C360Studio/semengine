@@ -13,8 +13,10 @@ error `RequestClassified` returns, and nil for an error that is not such a refus
 
 - **WHEN** B's stored value does not decode and the entity verb is asked for B through `RequestClassified`
 - **THEN** the error's code is `graph_state_reset_required` and `graph.StateRefusalEntityIDs` returns [B]
+- **AND** the test that verifies this is `TestIntegration_DamagedRefusalNamesEntitiesInDetail`
 
 #### Scenario: A prefix page with two damaged entities
 
 - **WHEN** a prefix holds A, B and C and B and C do not decode
 - **THEN** the prefix verb is refused and `graph.StateRefusalEntityIDs` returns [B, C]
+- **AND** the test that verifies this is `TestIntegration_DamagedRefusalNamesEntitiesInDetail`

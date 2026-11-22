@@ -3,6 +3,7 @@ package graph
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -27,12 +28,49 @@ func IsStateContractError(err error) bool {
 	return errors.As(err, &classified) && classified.Code == ErrorCodeGraphStateResetRequired
 }
 
+// detailEntityIDs is the Detail key of a graph_state_reset_required refusal
+// that lists the damaged entities it refuses for.
+const detailEntityIDs = "entity_ids"
+
 // stateRefusal is the one shape of a refused authoritative entity: a single
 // fatal graph_state_reset_required classification over a *StateContractError
 // with reason and entityID, which is the key when the refusing site has one.
+// A refusal with a key names it in Detail["entity_ids"], so a caller reads it
+// as data; one with no key carries no detail.
 func stateRefusal(entityID string, reason StateResetReason, err error) error {
-	return errs.ClassifiedCode(errs.ErrorFatal, ErrorCodeGraphStateResetRequired,
-		&StateContractError{Reason: reason, EntityID: entityID, Err: err})
+	cause := &StateContractError{Reason: reason, EntityID: entityID, Err: err}
+	if entityID == "" {
+		return errs.ClassifiedCode(errs.ErrorFatal, ErrorCodeGraphStateResetRequired, cause)
+	}
+	return errs.ClassifiedCodeDetail(errs.ErrorFatal, ErrorCodeGraphStateResetRequired,
+		map[string]any{detailEntityIDs: []string{entityID}}, cause)
+}
+
+// StateRefusalEntityIDs returns the damaged entities a graph_state_reset_required
+// refusal names in its detail, sorted, each once. It reads a refusal built in
+// this process and one RequestClassified rebuilt from a reply, where JSON has
+// turned the list into []any. It returns nil for any other error and for a
+// refusal that names no entity. The list is the caller's own copy.
+func StateRefusalEntityIDs(err error) []string {
+	var classified *errs.ClassifiedError
+	if !errors.As(err, &classified) || classified.Code != ErrorCodeGraphStateResetRequired {
+		return nil
+	}
+	switch ids := classified.Detail[detailEntityIDs].(type) {
+	case []string:
+		return slices.Clone(ids)
+	case []any:
+		out := make([]string, 0, len(ids))
+		for _, id := range ids {
+			s, ok := id.(string)
+			if !ok {
+				return nil
+			}
+			out = append(out, s)
+		}
+		return out
+	}
+	return nil
 }
 
 // StateResetReason is a bounded machine-readable reset cause.
@@ -61,12 +99,13 @@ const (
 // it with follower.ReportDamaged, remove what they built from it, keep
 // serving the other entities, and count the entity in their replies.
 //
-// EntityID names the poisoned entity when the classification site knows it
+// EntityID names the damaged entity when the classification site knows it
 // (snapshot sweep entry key, queried entity ID, RMW target, mutation read
-// seam). It is additive and in-process only: the wire carries just the error
-// class and code, so consumers reconstructing the classification from headers
-// never see it. Err is excluded from JSON on purpose (error values do not
-// marshal usefully); the rendered Error() string is the transport for detail.
+// seam). The struct itself stays in process: across request/reply the
+// refusal's message carries its text, and the classified error's
+// Detail["entity_ids"] carries the entities it names, which
+// StateRefusalEntityIDs reads on either side. Err is excluded from JSON on
+// purpose (error values do not marshal usefully).
 type StateContractError struct {
 	Reason   StateResetReason `json:"reason"`
 	EntityID string           `json:"entity_id,omitempty"`

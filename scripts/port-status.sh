@@ -702,8 +702,10 @@ for pr in prs:
 for iss in issues:
     ensure_item(iss, False, iss.get("number") in claimed_issues)
 
-for i in range(0, len(status_mutations), 25):
-    chunk = status_mutations[i:i+25]
+# Keep batches small: 25 serialized ProjectV2 field updates in one GraphQL
+# request can exceed GitHub's gateway deadline and fail with HTTP 502.
+for i in range(0, len(status_mutations), 8):
+    chunk = status_mutations[i:i+8]
     q = "mutation {\n  " + "\n  ".join(chunk) + "\n}"
     run_gql(q)
 

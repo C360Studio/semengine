@@ -14,11 +14,10 @@ Each code task ends at a clean-tree local `task verify`. Single PR, closing #716
 - [x] 2.2 Update `docs/repository-map.md`, `.agents/skills/semengine-status/SKILL.md`, and
   `.claude/skills/semengine-status/SKILL.md` for the serial milestone model, current alpha tags, and Project v2 `Stage`
   slots.
-- [ ] 2.3 Rename the six live `SemEngine Port Tracker` (#1) `Stage` options to match slots 1–6 and verify
+- [x] 2.3 Rename the six live `SemEngine Port Tracker` (#1) `Stage` options to match slots 1–6 and verify
   `task status -- --sync-project` reconciles open items onto their milestone slots.
-  Hold: awaits owner confirmation on renaming org Project #1 Stage options
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive chore-716-serial-milestones-status --yes`; `task spec:check` and `task docs:check`
+- [x] 3.1 Archive: `openspec archive chore-716-serial-milestones-status --yes`; `task spec:check` and `task docs:check`
   pass.

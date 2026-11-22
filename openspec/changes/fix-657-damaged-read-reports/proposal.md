@@ -1,6 +1,6 @@
 # Proposal: fix-657-damaged-read-reports
 
-Approved-by:
+Approved-by: cglusky (2026-11-22) <https://github.com/C360Studio/semengine/issues/657#issuecomment-7083061964> sha256:b928adcec38f
 
 Track: `quick` (owner, 2026-11-22). Capabilities: `graph-entity-writes`, `graph-transport-boundary`, `graph-index`,
 `embedding-index`, `graph-embedding`. Packages: `graph`, `graph/follower`, `graph/embedding`, `pkg/graphview`,

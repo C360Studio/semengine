@@ -6,8 +6,8 @@ Single PR, `Closes #657`.
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal (`proposal.md`) and spec deltas; `task spec:check` and `task docs:check` pass.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Proposal (`proposal.md`) and spec deltas; `task spec:check` and `task docs:check` pass. Approved 2026-11-22
+  (#657).
 
 ## 2. Code
 

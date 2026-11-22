@@ -381,10 +381,10 @@ A birth SHALL leave an existing container entity unchanged.
 ### Requirement: A decode refusal carries one classified error
 
 Each refusal `graph.UnmarshalEntityState(key, …)` returns SHALL carry exactly one classified error above its
-`*graph.StateContractError`, with class fatal and code `graph_state_reset_required`; `errors.As` yields that
-`*graph.StateContractError`, whose `Reason` is the refusal's reason and whose `EntityID` is `key`. The classified
-error's `Detail` SHALL hold `entity_ids`, a list holding `key` alone, which `graph.StateRefusalEntityIDs` returns. The
-cause beneath it its own classification, if it has one (an invalid entity ID keeps `entity_id_invalid`).
+`*graph.StateContractError`, with class fatal and code `graph_state_reset_required` and `Detail["entity_ids"]` [`key`];
+`errors.As` yields that `*graph.StateContractError`, whose `Reason` is the refusal's reason and whose `EntityID` is
+`key`. The cause beneath it keeps its own classification, if it has one (an invalid entity ID keeps
+`entity_id_invalid`).
 
 #### Scenario: One classification
 

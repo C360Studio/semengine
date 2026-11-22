@@ -94,9 +94,9 @@ after `Run` returns.
 
 `VectorCache.FindSimilar` SHALL score only the generated vectors whose entity IDs `keep` accepts, sort by
 `ScoredEntityLess` before applying the limit, and return no entities for a limit of 0 or less. It SHALL return, read at
-the same moment as the vectors it scored, the number of records it could not decode whose keys `keep` accepts (every
-such record when `keep` is nil). Such a record SHALL NOT be scored and SHALL NOT withdraw the cache; a later valid write
-of that key SHALL be scored and no longer counted.
+the moment it scored, the number of records it could not decode whose keys `keep` accepts (all of them when `keep` is
+nil). Such a record SHALL NOT be scored and SHALL NOT withdraw the cache; a later valid write of that key SHALL be
+scored and no longer counted.
 
 #### Scenario: An unreadable record heals
 

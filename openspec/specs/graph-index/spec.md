@@ -140,12 +140,11 @@ deleting the entity SHALL leave each read answering nothing for it (ADR-114).
 
 ### Requirement: Malformed index rows are skipped and declared
 
-A query that lists a stored incoming, alias, predicate or name index row that is not its index's layout SHALL leave
-that row out, answer from the well-formed rows, log a warning naming the index, count the row in
+A query that lists a stored incoming, alias, predicate or name index row that is not its index's layout SHALL leave that
+row out, answer from the well-formed rows, log a warning naming the index, count the row in
 `semengine_graph_index_query_rows_skipped_total` under that index's `index_type` label, and count it in the reply's
-`data.unreadable_records`. Every reply of incoming, alias, predicate, predicateList, predicateStats, predicateCompound
-and byName SHALL carry `data.unreadable_records`, 0 when none was skipped. A row deleted after the listing SHALL NOT be
-counted.
+`data.unreadable_records`, which every row-listing verb's reply carries, 0 when none was skipped. A row deleted after
+the listing SHALL NOT be counted.
 
 #### Scenario: Malformed rows in three index buckets
 
@@ -161,6 +160,13 @@ counted.
 - **WHEN** a key under an alias's hash prefix in `ALIAS_INDEX` is not `hash.entity6.hex(predicate)`
 - **THEN** the `alias` read answers from the well-formed rows with `data.unreadable_records` 1, a warning names the
   alias index, and the counter reads alias 1
+- **AND** the test that verifies this is `TestMalformedIndexRowsAreSkippedLoggedAndCounted`
+
+#### Scenario: Every row-listing verb carries the count
+
+- **WHEN** incoming, alias, predicate, predicateList, predicateStats, predicateCompound and byName each answer a request
+  that skipped no row
+- **THEN** each reply's `data.unreadable_records` is 0
 - **AND** the test that verifies this is `TestMalformedIndexRowsAreSkippedLoggedAndCounted`
 
 ### Requirement: Queries are refused while the feed is lost

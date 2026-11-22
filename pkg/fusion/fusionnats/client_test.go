@@ -474,24 +474,43 @@ func mergedThenBatch(t *testing.T, reply graph.MergedSearchData) *fakeRequester 
 }
 
 // TestMergedResolveProvenance holds that an NL resolve reports embedding when
-// the reply's merge is there and honoured, whether merged or the embedding list
-// alone, and lexical when there is no merge or it was not honoured, in the
-// Resolution and in the response Fuse builds from it.
+// at least one result came from the embedding list (it carries a vector_rank),
+// and lexical otherwise: no merge, a merge not honoured, or an honoured merge
+// whose embedding list was empty or whose hits all fell below the limit. Both
+// in the Resolution and in the response Fuse builds from it.
 func TestMergedResolveProvenance(t *testing.T) {
+	const word, meaning = "a.b.c.d.e.1", "a.b.c.d.e.2"
+	merged := &graph.GlobalSearchHint{Hint: "semantic", Detail: "merged", Honoured: true}
 	for name, tc := range map[string]struct {
-		merge *graph.GlobalSearchHint
-		want  fusion.Provenance
+		results []graph.MergedSearchHit
+		merge   *graph.GlobalSearchHint
+		want    fusion.Provenance
 	}{
-		"merged":                {&graph.GlobalSearchHint{Hint: "semantic", Detail: "merged", Honoured: true}, fusion.ProvenanceEmbedding},
-		"meaning alone":         {&graph.GlobalSearchHint{Hint: "semantic", Detail: graph.ErrorCodeIndexNotReady, Honoured: true}, fusion.ProvenanceEmbedding},
-		"merge not honoured":    {&graph.GlobalSearchHint{Hint: "semantic", Reason: "the embedding search failed", Code: graph.ErrorCodeInternal}, fusion.ProvenanceLexical},
-		"no merge (word index)": {nil, fusion.ProvenanceLexical},
+		"merged, a vector hit returned": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 1.0 / 61}, {EntityID: meaning, Score: 1.0 / 62, VectorRank: 2}},
+			merged, fusion.ProvenanceEmbedding,
+		},
+		"meaning alone": {
+			[]graph.MergedSearchHit{{EntityID: meaning, Score: 1.0 / 61, VectorRank: 1}},
+			&graph.GlobalSearchHint{Hint: "semantic", Detail: graph.ErrorCodeIndexNotReady, Honoured: true},
+			fusion.ProvenanceEmbedding,
+		},
+		"merged, the embedding list empty": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 1.0 / 61}}, merged, fusion.ProvenanceLexical,
+		},
+		"merged, every vector hit below the limit": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 1.0 / 61}, {EntityID: meaning, Score: 1.0 / 62}},
+			merged, fusion.ProvenanceLexical,
+		},
+		"merge not honoured": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 4.5}},
+			&graph.GlobalSearchHint{Hint: "semantic", Reason: "the embedding search failed", Code: graph.ErrorCodeInternal},
+			fusion.ProvenanceLexical,
+		},
+		"no merge (word index)": {[]graph.MergedSearchHit{{EntityID: word, Score: 4.5}}, nil, fusion.ProvenanceLexical},
 	} {
 		t.Run(name, func(t *testing.T) {
-			reply := graph.MergedSearchData{
-				Results: []graph.MergedSearchHit{{EntityID: "a.b.c.d.e.1", Score: 0.5}},
-				Merge:   tc.merge,
-			}
+			reply := graph.MergedSearchData{Results: tc.results, Merge: tc.merge}
 			res, err := newClient(t, mergedThenBatch(t, reply)).Resolve(t.Context(),
 				fusion.ResolveQuery{Query: "widget", Mode: fusion.ResolveModeNL, Limit: 10})
 			require.NoError(t, err)
@@ -499,7 +518,7 @@ func TestMergedResolveProvenance(t *testing.T) {
 
 			resp, err := newNLEngine(t, mergedThenBatch(t, reply)).Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})
 			require.NoError(t, err)
-			require.Len(t, resp.Nodes, 1, "the reply's result is answered")
+			require.Len(t, resp.Nodes, len(tc.results), "the reply's results are answered")
 			assert.Equal(t, tc.want, resp.Provenance, "the response")
 		})
 	}
@@ -511,8 +530,10 @@ func TestMergedResolveProvenance(t *testing.T) {
 // index's counts, since the word index answered nothing.
 func TestNLMeaningAloneWhileWordIndexBuilds(t *testing.T) {
 	fake := mergedThenBatch(t, graph.MergedSearchData{
-		Results: []graph.MergedSearchHit{{EntityID: "a.b.c.d.e.7", Score: 1.0 / 61}, {EntityID: "a.b.c.d.e.3", Score: 1.0 / 62}},
-		Merge:   &graph.GlobalSearchHint{Hint: "semantic", Detail: graph.ErrorCodeIndexNotReady, Honoured: true},
+		Results: []graph.MergedSearchHit{
+			{EntityID: "a.b.c.d.e.7", Score: 1.0 / 61, VectorRank: 1}, {EntityID: "a.b.c.d.e.3", Score: 1.0 / 62, VectorRank: 2},
+		},
+		Merge: &graph.GlobalSearchHint{Hint: "semantic", Detail: graph.ErrorCodeIndexNotReady, Honoured: true},
 	})
 
 	resp, err := newNLEngine(t, fake).Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})

@@ -119,11 +119,12 @@ func (c *Component) mergedIDs(ctx context.Context, lexicalSubject, semanticSubje
 	return encoded, nil
 }
 
-// mergedResults is list as mergedSearch answers it: each entity's ID and score, in list's order.
+// mergedResults is list as mergedSearch answers it: each entity's ID, score and place in the
+// embedding list, in list's order.
 func mergedResults(list []mergedHit) []graph.MergedSearchHit {
 	results := make([]graph.MergedSearchHit, 0, len(list))
 	for _, hit := range list {
-		results = append(results, graph.MergedSearchHit{EntityID: hit.entityID, Score: hit.score})
+		results = append(results, graph.MergedSearchHit{EntityID: hit.entityID, Score: hit.score, VectorRank: hit.vectorRank})
 	}
 	return results
 }

@@ -4,9 +4,15 @@ package graph
 // Merge is honoured: the sum, over the word list and the embedding list holding the entity, of
 // 1 / (60 + its place there). Otherwise it is the word index's score. Either way a higher score is
 // a better match, comparable only within one reply.
+//
+// VectorRank is the entity's 1-based place in the embedding list, omitted when the entity came
+// from the word list alone or nothing was merged. A reply with no result carrying one holds no
+// meaning result, even when its Merge is honoured: the embedding list may have been empty, or all
+// its hits may have fallen below the limit.
 type MergedSearchHit struct {
-	EntityID string  `json:"entity_id"`
-	Score    float64 `json:"score"`
+	EntityID   string  `json:"entity_id"`
+	Score      float64 `json:"score"`
+	VectorRank int     `json:"vector_rank,omitempty"`
 }
 
 // MergedSearchData is the reply to graph-query's mergedSearch, which takes a LexicalSearchRequest:

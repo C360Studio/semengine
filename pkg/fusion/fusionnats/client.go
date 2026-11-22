@@ -181,12 +181,15 @@ func (c *Client) resolveMerged(ctx context.Context, query string, scope []string
 	if err := graph.ValidateDecodedEntityIDs(ids); err != nil {
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate merged search: %w", err)
 	}
-	// An honoured merge means meaning results are in the answer, merged with
-	// the words or alone while the word index builds; otherwise the answer
-	// came from words alone.
+	// The answer used meaning only when a result it returns came from the
+	// embedding list. An honoured merge alone does not say so: the embedding
+	// list may have been empty, or all its hits may have fallen below the limit.
 	provenance := fusion.ProvenanceLexical
-	if resp.Merge != nil && resp.Merge.Honoured {
-		provenance = fusion.ProvenanceEmbedding
+	for _, hit := range resp.Results {
+		if hit.VectorRank > 0 {
+			provenance = fusion.ProvenanceEmbedding
+			break
+		}
 	}
 	return fusion.Resolution{
 		Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded, DamagedEntities: damaged,

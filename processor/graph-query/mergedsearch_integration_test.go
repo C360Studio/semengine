@@ -27,8 +27,9 @@ import (
 // type, with every key kept so a key the reply leaves out is told from one it sends empty.
 type mergedSearchReply struct {
 	Results []struct {
-		EntityID string  `json:"entity_id"`
-		Score    float64 `json:"score"`
+		EntityID   string  `json:"entity_id"`
+		Score      float64 `json:"score"`
+		VectorRank int     `json:"vector_rank"`
 	} `json:"results"`
 	Excluded         []string                `json:"excluded"`
 	BodiesNotIndexed int                     `json:"bodies_not_indexed"`
@@ -43,6 +44,15 @@ func (r mergedSearchReply) ids() []string {
 		ids = append(ids, result.EntityID)
 	}
 	return ids
+}
+
+// vectorRanks is each result's vector_rank, 0 when it has none, in the reply's order.
+func (r mergedSearchReply) vectorRanks() []int {
+	ranks := make([]int, 0, len(r.Results))
+	for _, result := range r.Results {
+		ranks = append(ranks, result.VectorRank)
+	}
+	return ranks
 }
 
 // scores is each result's score, in the reply's order.
@@ -213,7 +223,8 @@ func TestMergedSearchDecodesStrictly(t *testing.T) {
 }
 
 // TestMergedSearchReplyShape: at tier 1, with the word list [A] and the embedding list [B, A], the
-// reply lists A then B with their merged scores, worked out by hand from 1 / (60 + place); carries
+// reply lists A then B with their merged scores, worked out by hand from 1 / (60 + place), and their
+// places in the embedding list as vector_rank, 2 and 1; carries
 // the word search's excluded words, bodies_not_indexed and revision, and the larger damaged count;
 // holds merge honoured and nothing else; and reads no entity.
 func TestMergedSearchReplyShape(t *testing.T) {
@@ -248,6 +259,9 @@ func TestMergedSearchReplyShape(t *testing.T) {
 		t.Errorf("results = %q, want %q", got, want)
 	}
 	requireMergedScores(t, reply, 1.0/61+1.0/62, 1.0/61)
+	if got, want := reply.vectorRanks(), []int{2, 1}; !slices.Equal(got, want) {
+		t.Errorf("vector ranks = %v, want %v", got, want)
+	}
 	if !slices.Equal(reply.Excluded, []string{"valve"}) || reply.BodiesNotIndexed != 2 {
 		t.Errorf("excluded %q, bodies_not_indexed %d; want the word search's [valve], 2", reply.Excluded, reply.BodiesNotIndexed)
 	}
@@ -519,7 +533,8 @@ func TestMergedSearchOtherRefusalIsReturned(t *testing.T) {
 }
 
 // TestMergedSearchWordIndexNotReady: when the word search refuses index_not_ready and the embedding
-// search answers, the results are the embedding list in its order, merge honoured with detail
+// search answers, the results are the embedding list in its order, each with its place there as
+// vector_rank, merge honoured with detail
 // index_not_ready, under revision 0, since no word index was read. When the embedding search refuses
 // too, the index_not_ready refusal is returned as it arrived.
 func TestMergedSearchWordIndexNotReady(t *testing.T) {
@@ -545,6 +560,9 @@ func TestMergedSearchWordIndexNotReady(t *testing.T) {
 			t.Errorf("results = %q, want %q", got, want)
 		}
 		requireMergedScores(t, reply, 1.0/61, 1.0/62)
+		if got, want := reply.vectorRanks(), []int{1, 2}; !slices.Equal(got, want) {
+			t.Errorf("vector ranks = %v, want %v", got, want)
+		}
 		if want := (graph.GlobalSearchHint{Hint: "semantic", Detail: "index_not_ready", Honoured: true}); reply.Merge == nil || *reply.Merge != want {
 			t.Errorf("merge = %+v, want %+v", reply.Merge, want)
 		}

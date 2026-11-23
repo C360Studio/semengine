@@ -609,3 +609,49 @@ func TestBuildCompletingCallAnswersPastUnwithheldFailure(t *testing.T) {
 		t.Error("QueryReady's envelope did not latch the build")
 	}
 }
+
+// outageReader passes Status through to the follower's real reader unless down is set, when it
+// fails as a read does while NATS is unreachable.
+type outageReader struct {
+	kvcatalog.CatalogReader
+	down bool
+}
+
+func (r *outageReader) Status(ctx context.Context) (jetstream.KeyValueStatus, error) {
+	if r.down {
+		return nil, errors.New("nats: connection closed")
+	}
+	return r.CatalogReader.Status(ctx)
+}
+
+// statusReadFailed is the sentence Stuck holds while the latest ENTITY_STATES status read failed.
+const statusReadFailed = "ENTITY_STATES status read failed"
+
+// TestStuckNamesFailedStatusRead: while the follower's latest read of ENTITY_STATES' status has
+// failed, Stuck names it, so the components that report Stuck as health read unhealthy during a
+// NATS outage; the next successful read clears it, and the failure never marks the feed lost.
+// compute runs on this goroutine, so each Stuck call reads after the read it follows.
+func TestStuckNamesFailedStatusRead(t *testing.T) {
+	client := fixtureClient(t)
+	entityStates(t, client)
+	f := open(t, client, func(context.Context, Entry) {}, noFailures)
+	reader := &outageReader{CatalogReader: f.status}
+	f.status = reader
+
+	f.compute(t.Context())
+	if stuck := f.Stuck(); len(stuck) != 0 {
+		t.Fatalf("Stuck after a successful read: %q; want empty", stuck)
+	}
+
+	reader.down = true
+	f.compute(t.Context())
+	if stuck := f.Stuck(); !slices.Equal(stuck, []string{statusReadFailed}) {
+		t.Fatalf("Stuck after a failed read: %q; want [%q]", stuck, statusReadFailed)
+	}
+
+	reader.down = false
+	f.compute(t.Context())
+	if stuck := f.Stuck(); len(stuck) != 0 {
+		t.Fatalf("Stuck after the read succeeded again: %q; want empty, the feed not lost", stuck)
+	}
+}

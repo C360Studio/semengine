@@ -18,7 +18,7 @@ import (
 // connectedRequestClient returns a client connected to an embedded server, closed on cleanup.
 func connectedRequestClient(t *testing.T) *Client {
 	t.Helper()
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)

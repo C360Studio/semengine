@@ -658,20 +658,12 @@ func (o observer) statusRevision(t *testing.T, key string) uint64 {
 	return entry.Revision()
 }
 
-// latched reports a state an envelope holds until the process restarts, or "" for none.
-func latched(status graph.IndexStatusResponse) string {
-	if status.State == graph.IndexStateResetRequired || status.Code != "" {
-		return fmt.Sprintf("state %s, code %q: %s", status.State, status.Code, status.Reason)
-	}
-	return ""
-}
-
 // awaitIndexed is the rest of the wait order, after the acknowledgement or a mutation's reply: the
 // ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one, not
 // degraded; then the envelope of each index the composition runs (graph-index,
 // graph-clustering and graph-lexical) at or above that revision; then,
 // where the websocket output is configured, a client it accepts streamed through that revision
-// (awaitStreamed). It returns the revision. A latched state fails at once, naming it.
+// (awaitStreamed). It returns the revision.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	t.Helper()
 	revision := o.entityRevision(t)
@@ -695,18 +687,13 @@ func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 			var status graph.IndexStatusResponse
 			return status, json.Unmarshal(entry.Value(), &status)
 		}, func(graph.IndexStatusResponse) bool { return true })
-	if ingest.State == graph.IndexStateDegraded || latched(ingest) != "" {
+	if ingest.State == graph.IndexStateDegraded {
 		t.Fatalf("%s/%s reads %+v, want not degraded", graph.BucketGraphStatus, readiness.KeyGraphIngest, ingest)
 	}
 	for _, key := range s.composition.indexKeys {
-		status := await(t, s, fmt.Sprintf("%s/%s at revision %d", graph.BucketGraphStatus, key, revision),
+		await(t, s, fmt.Sprintf("%s/%s at revision %d", graph.BucketGraphStatus, key, revision),
 			func(ctx context.Context) (graph.IndexStatusResponse, error) { return o.readStatus(ctx, key) },
-			func(status graph.IndexStatusResponse) bool {
-				return latched(status) != "" || status.IndexedRevision >= revision
-			})
-		if reason := latched(status); reason != "" {
-			t.Fatalf("%s/%s latched: %s", graph.BucketGraphStatus, key, reason)
-		}
+			func(status graph.IndexStatusResponse) bool { return status.IndexedRevision >= revision })
 	}
 	if slices.Contains(s.composition.components, websocketComponent) {
 		awaitStreamed(t, s, revision)

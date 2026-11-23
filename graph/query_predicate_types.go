@@ -8,10 +8,12 @@ type PredicateSummary struct {
 	EntityCount int    `json:"entity_count"`
 }
 
-// PredicateListData contains all predicates with their entity counts.
+// PredicateListData contains all predicates with their entity counts. UnreadableRecords
+// counts what IncomingRelationshipsData's does.
 type PredicateListData struct {
-	Predicates []PredicateSummary `json:"predicates"`
-	Total      int                `json:"total"`
+	Predicates        []PredicateSummary `json:"predicates"`
+	Total             int                `json:"total"`
+	UnreadableRecords int                `json:"unreadable_records"`
 }
 
 // PredicateListQuery is the request for graph.index.query.predicateList.
@@ -24,11 +26,13 @@ type PredicateListQuery struct {
 	MinRevisionField
 }
 
-// PredicateStatsData contains detailed statistics for a single predicate.
+// PredicateStatsData contains detailed statistics for a single predicate. UnreadableRecords
+// counts what IncomingRelationshipsData's does.
 type PredicateStatsData struct {
-	Predicate      string   `json:"predicate"`
-	EntityCount    int      `json:"entity_count"`
-	SampleEntities []string `json:"sample_entities"`
+	Predicate         string   `json:"predicate"`
+	EntityCount       int      `json:"entity_count"`
+	SampleEntities    []string `json:"sample_entities"`
+	UnreadableRecords int      `json:"unreadable_records"`
 }
 
 // CompoundPredicateQuery represents a query combining multiple predicates.
@@ -40,8 +44,10 @@ type CompoundPredicateQuery struct {
 }
 
 // CompoundPredicateData contains entities matching a compound predicate query.
+// UnreadableRecords counts what IncomingRelationshipsData's does, over every listed predicate.
 type CompoundPredicateData struct {
-	Entities []string `json:"entities"`
-	Operator string   `json:"operator"`
-	Matched  int      `json:"matched"`
+	Entities          []string `json:"entities"`
+	Operator          string   `json:"operator"`
+	Matched           int      `json:"matched"`
+	UnreadableRecords int      `json:"unreadable_records"`
 }

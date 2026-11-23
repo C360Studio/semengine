@@ -31,11 +31,15 @@ transport"; `TestGraphImportsNoTransport`).
 - **The wire types.** The query request and reply types, the mutation requests and responses
   (`ReconcilePredicatesRequest` names the one source it reconciles), `ExactEntity` and `ExactEntityReader` for the
   authority read, and `IndexStatusResponse`, the readiness envelope a producer writes to `GRAPH_STATUS`. Its state
-  field is an `IndexState`, one of the four `IndexState*` constants that `IndexStates()` lists. The computation that
+  field is an `IndexState`, one of the three `IndexState*` constants that `IndexStates()` lists. The computation that
   fills the envelope is in `graph/readiness`.
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
-  and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. On `graph.query.*` the shape
+  and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. `damaged_entities`, left
+  out at 0, counts the damaged entities (stored values `UnmarshalEntityState` refuses) the producer held and left out
+  of its answer: above 0, `data` may lack rows those entities would have given, while the answer about every other
+  entity stands. A verb that takes a scope counts damage within it. Which entities are damaged is in the producer's
+  health, not in the reply. On `graph.query.*` the shape
   depends on the verb: `entity`, `batch`, `prefix`, `prefixIDs` and `hierarchyStats` are bare, and `byName`, `predicate`,
   `entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`,
   `similar`, `spatial` and `temporal` are enveloped. A caller

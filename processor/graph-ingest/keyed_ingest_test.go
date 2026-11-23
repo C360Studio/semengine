@@ -385,7 +385,7 @@ func TestProcessIngest_GenericFatalApplyErrorTerminatesWithoutPoison(t *testing.
 	assert.True(t, msg.term.Load(), "generic fatal apply failure must Term")
 	assert.False(t, msg.nak.Load(), "generic fatal apply failure must not redeliver")
 	assert.False(t, msg.ack.Load())
-	assert.Equal(t, int64(0), component.entityPoisonSize.Load(), "generic fatal failure must not masquerade as graph-state poison")
+	assert.Equal(t, 0, component.entityPoison.Len(), "generic fatal failure must not masquerade as graph-state poison")
 	assert.Contains(t, logs.String(), "fatal ingest failure; terminating")
 	assert.NotContains(t, logs.String(), "code=graph_state_reset_required")
 }

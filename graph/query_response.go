@@ -16,9 +16,17 @@ import (
 // and similar) report it too: they read a view of EMBEDDING_INDEX, whose position is
 // no ENTITY_STATES revision. Producer names the component that answered, so a
 // reply relayed through another component can still be attributed.
+//
+// DamagedEntities is how many damaged entities (stored values UnmarshalEntityState
+// refuses) the producer held and left out when it answered; it is omitted at 0. A
+// count above 0 means Data may lack rows those entities would have given: the answer
+// about every other entity stands, and the gap is said here rather than hidden. A
+// verb that takes a scope counts damage within it; others count every damaged entity
+// the producer holds. Which entities are damaged is in the producer's health, not here.
 type QueryResponse[T any] struct {
 	Data            T         `json:"data"`
 	IndexedRevision uint64    `json:"indexed_revision"`
+	DamagedEntities int       `json:"damaged_entities,omitempty"`
 	Producer        string    `json:"producer"`
 	Timestamp       time.Time `json:"timestamp"`
 }

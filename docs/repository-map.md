@@ -8,7 +8,7 @@ not a task tracker and not a description of the tree.
 
 - **No qualified consumer.** SemSource's mainline builds on SemEngine, but no consumer qualification lane exists
   yet. The contract is written down in `docs/contract.md`.
-- **No runtime binary.** Pre-release tags `v0.1.0-alpha.1` to `v0.1.0-alpha.4` exist; no stable release.
+- **No runtime binary.** Pre-release tags `v0.1.0-alpha.1` to `v0.1.0-alpha.6` exist; no stable release.
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
 - **The rule core and some graph packages.** Not yet present: the rule core, the spatial and temporal responders,
   `internal/maxdelivery`, `composition/cli` and `graph/geo/geojson`. Everything else the tier-0 plan names is in the
@@ -96,6 +96,7 @@ not a task tracker and not a description of the tree.
 | `output/websocket/` | A WebSocket server on its own port that streams one input to every connected client (ADR-115). Its default input is applied state: a watch of every `ENTITY_STATES` key through one shared `pkg/graphview` view, so a client gets each current entity, a `synced` marker, then changes that converge to each entity's latest value (not every revision). Its other input is one core NATS subject, delivered at most once with the payload unchanged. A slow client loses or merges its own frames and never slows the others; each drop is counted and logged. File-based TLS through `internal/tlsutil`; no ACME, no authentication. The README covers the wire format, configuration, metrics and what semsource and semboids change |
 | `processor/graph-ingest/` | The graph-ingest component: reads entity messages from JetStream, serves graph mutations over NATS request/reply, and writes every entity to the `ENTITY_STATES` bucket it owns. Its README covers configuration and metrics |
 | `internal/lifecycleguard/` | The start-and-stop state a component composes: one `Start` admitted, a `Stop` safe at any time, and a cleanup that failed kept for the next `Stop`. Components reach it through `component.Lifecycle`. `config.Manager` and `service`'s `BaseService`, `Manager`, `Metrics`, `ComponentManager`, `MessageLogger` and `StorageObservabilityService` use it directly |
+| `internal/damage/` | `Record`, the list of keys whose stored value could not be read, one entry per key at the highest revision reported, cleared only by a repair above that revision; `Len` is one atomic load so a hot path can skip it while nothing is recorded |
 | `internal/keycase/` | The one check that refuses a configuration key written in another letter case, used by `config` for its document and by `service` for each strictly decoded service payload |
 | `internal/httpadmission/` | Counts the requests an HTTP server has admitted, refuses new ones once its stop begins, and lets the stop wait for them after a forced close; used by `metric`'s server and `service`'s listeners |
 | `internal/logforwarderpolicy/` | The log-forwarder service's configuration policy (`Resolve` decodes `min_level` and `exclude_sources`, defaults and validates them; the excluded sources are exactly the configured ones). Its one importer is `service`'s log forwarder, which reports the resolved values and applies none |
@@ -116,7 +117,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 | Question | Home |
 | --- | --- |
 | What is wanted, is it decided | GitHub issues; rulings are issue comments |
-| What gates a release | A GitHub milestone: `setup` (foundation through contract), then `slice-04a`, `slice-04b`, `slice-04c` |
+| What gates a release | A GitHub milestone: serial `v0.1.0-alpha.<N>` pins, plus `tier-2` and `backlog` |
 | Who has claimed it | A draft PR: `Closes #n` for a leaf issue, `Addresses #n` for an epic |
 | Target state, tasks, holds | The OpenSpec change inside that PR; `task spec:queue` reads the holds |
 | What is true now | `openspec/specs/`, verified against code |
@@ -124,6 +125,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 
 ## Releases and milestones
 
-Milestones gate releases: `setup` (foundation through contract), then `slice-04a` (tier-0 graph foundation),
-`slice-04b` (tier-0 lexical; BM25 completes tier 0) and `slice-04c` (tier-1 neural; embedding provider). GitHub is
-authoritative; re-read it before acting.
+Milestones gate serial releases: `v0.1.0-alpha.7` (in-flight fusion merged search), `v0.1.0-alpha.8` (hardening,
+consumer boot contract, and Tier-1 qualification), `v0.1.0-alpha.9` (rule core and deadline timers), `v0.1.0-alpha.10`
+(remaining spatial, temporal, maxdelivery and CLI substrate), plus `tier-2` and `backlog`. GitHub is authoritative;
+re-read it before acting.

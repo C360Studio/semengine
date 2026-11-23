@@ -54,24 +54,19 @@ type entityPoisonRecord struct {
 	revision    uint64
 }
 
-// newPoisonedEntitiesMetric builds the poison-inventory gauge.
-// One gauge, never per-entity labels (cardinality discipline):
+// newPoisonedEntitiesMetric builds the poison-inventory gauge over size, the
+// record's size. One gauge, never per-entity labels (cardinality discipline):
 // enumeration belongs to DebugStatus, alerting belongs to this gauge plus the
-// Health message.
-func newPoisonedEntitiesMetric() prometheus.Gauge {
-	poisonedEntitiesGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+// Health message. The gauge reads the size when it is scraped, so it always
+// shows the record as it is then; nothing writes it, so no write can land out
+// of order.
+func newPoisonedEntitiesMetric(size func() int) prometheus.GaugeFunc {
+	return prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "poisoned_entities",
 		Help:      "Current per-entity poison inventory size (ENTITY_STATES values failing the canonical decode). Alert on this gauge + the Health message; enumerate via the component debug surface.",
-	})
-	return poisonedEntitiesGauge
-}
-
-// setEntityPoisonGauge publishes the inventory size to the gauge. Callers hold
-// entityPoisonMu (len is read under the lock).
-func (c *Component) setEntityPoisonGauge() {
-	c.poisonedEntities.Set(float64(len(c.entityPoison)))
+	}, func() float64 { return float64(size()) })
 }
 
 // recordEntityPoison inserts or refreshes an inventory record keyed by the
@@ -86,24 +81,9 @@ func (c *Component) recordEntityPoison(contractErr *graph.StateContractError, re
 		return false // unstampable — enforcement still holds at every per-read decode
 	}
 	id := contractErr.EntityID
-
-	c.entityPoisonMu.Lock()
-	if c.entityPoison == nil {
-		c.entityPoison = make(map[string]entityPoisonRecord)
-	}
-	existing, present := c.entityPoison[id]
-	if present {
-		if revision >= existing.revision {
-			c.entityPoison[id] = entityPoisonRecord{contractErr: contractErr, revision: revision}
-		}
-		c.entityPoisonMu.Unlock()
+	if !c.entityPoison.Report(id, revision, contractErr) {
 		return false
 	}
-	c.entityPoison[id] = entityPoisonRecord{contractErr: contractErr, revision: revision}
-	c.entityPoisonSize.Store(int64(len(c.entityPoison)))
-	c.setEntityPoisonGauge()
-	c.entityPoisonMu.Unlock()
-
 	c.invalidateEntityCacheEntry(id)
 	return true
 }
@@ -147,16 +127,14 @@ func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID strin
 	if c.entityBucket == nil {
 		return
 	}
-	c.entityPoisonMu.Lock()
-	recorded, ok := c.entityPoison[entityID]
-	c.entityPoisonMu.Unlock()
+	recorded, ok := c.entityPoison.Get(entityID)
 	if !ok {
 		return // already cleared; a later record verifies itself
 	}
 	entry, err := c.entityBucket.Get(ctx, entityID)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
-			c.dropEntityPoisonRecord(entityID, recorded.revision) // bytes are gone — repaired by delete
+			c.dropEntityPoisonRecord(entityID, recorded.Revision) // bytes are gone — repaired by delete
 		}
 		return // transient read error: keep the record; next touch resolves it
 	}
@@ -172,20 +150,9 @@ func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID strin
 // newer than the proof — a re-poison after the proof must not be erased. A
 // revision's bytes are immutable, so proofRev == recorded means the recorded
 // revision is repaired and the entry is stale. Every clear goes through this
-// guard.
+// guard. The record clears below its bound, so the bound is proofRev+1.
 func (c *Component) dropEntityPoisonRecord(entityID string, proofRev uint64) {
-	c.entityPoisonMu.Lock()
-	defer c.entityPoisonMu.Unlock()
-	rec, ok := c.entityPoison[entityID]
-	if !ok {
-		return
-	}
-	if rec.revision > proofRev {
-		return
-	}
-	delete(c.entityPoison, entityID)
-	c.entityPoisonSize.Store(int64(len(c.entityPoison)))
-	c.setEntityPoisonGauge()
+	c.entityPoison.Clear(entityID, proofRev+1)
 }
 
 // clearEntityPoisonOnDelete is clear path (a): a successful delete at
@@ -193,7 +160,7 @@ func (c *Component) dropEntityPoisonRecord(entityID string, proofRev uint64) {
 // than deletedRev is a re-poison after the delete and stays. Steady-state cost
 // is the single atomic load.
 func (c *Component) clearEntityPoisonOnDelete(entityID string, deletedRev uint64) {
-	if c.entityPoisonSize.Load() == 0 {
+	if c.entityPoison.Len() == 0 {
 		return
 	}
 	c.dropEntityPoisonRecord(entityID, deletedRev)
@@ -204,7 +171,7 @@ func (c *Component) clearEntityPoisonOnDelete(entityID string, deletedRev uint64
 // committedRev is the revision that commit produced, as the write returned it.
 // The healthy hot path exits on the first atomic load.
 func (c *Component) clearEntityPoisonOnCommit(_ context.Context, entityID string, committedRev uint64) {
-	if c.entityPoisonSize.Load() == 0 {
+	if c.entityPoison.Len() == 0 {
 		return // steady-state: one atomic load, mutex untouched
 	}
 	c.dropEntityPoisonRecord(entityID, committedRev)
@@ -215,7 +182,7 @@ func (c *Component) clearEntityPoisonOnCommit(_ context.Context, entityID string
 // that revision is stale. The out-of-band repair (bytes replaced outside the
 // mutation API) recovers Health through this path without a restart.
 func (c *Component) clearEntityPoisonOnValidRead(entityID string, readRev uint64) {
-	if c.entityPoisonSize.Load() == 0 {
+	if c.entityPoison.Len() == 0 {
 		return // steady-state: one atomic load, mutex untouched
 	}
 	c.dropEntityPoisonRecord(entityID, readRev)
@@ -225,22 +192,15 @@ func (c *Component) clearEntityPoisonOnValidRead(entityID string, readRev uint64
 // count + first-N sorted entity IDs with their bounded reasons. Full
 // enumeration lives in DebugStatus.
 func (c *Component) entityPoisonHealthMessage() string {
-	c.entityPoisonMu.Lock()
-	total := len(c.entityPoison)
-	ids := make([]string, 0, total)
-	for id := range c.entityPoison {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	sample := ids
-	if len(sample) > entityPoisonSampleCap {
-		sample = sample[:entityPoisonSampleCap]
-	}
+	// One read gives the count and the sample, so the two agree when a report or
+	// repair lands meanwhile.
+	entries := c.entityPoison.Sorted(0)
+	total := len(entries)
+	sample := entries[:min(total, entityPoisonSampleCap)]
 	parts := make([]string, 0, len(sample))
-	for _, id := range sample {
-		parts = append(parts, fmt.Sprintf("%s (%s)", id, c.entityPoison[id].contractErr.Reason))
+	for _, e := range sample {
+		parts = append(parts, fmt.Sprintf("%s (%s)", e.Key, poisonContractError(e.Refusal).Reason))
 	}
-	c.entityPoisonMu.Unlock()
 
 	noun := "entities"
 	if total == 1 {
@@ -252,6 +212,14 @@ func (c *Component) entityPoisonHealthMessage() string {
 		msg += fmt.Sprintf(" (+%d more; enumerate via debug status)", total-len(sample))
 	}
 	return msg
+}
+
+// poisonContractError is the state error a record entry carries: every entry is
+// reported by recordEntityPoison with a stamped *graph.StateContractError.
+func poisonContractError(refusal error) *graph.StateContractError {
+	var contractErr *graph.StateContractError
+	errors.As(refusal, &contractErr)
+	return contractErr
 }
 
 // entityPoisonDebugEntry is one enumerated inventory record for the component
@@ -273,19 +241,16 @@ type entityPoisonDebugStatus struct {
 // inventory, sorted by entity ID, so a mass-poison event is enumerable in-band
 // (the Health message and gauge are bounded; this is not).
 func (c *Component) DebugStatus() any {
-	c.entityPoisonMu.Lock()
-	defer c.entityPoisonMu.Unlock()
-
-	entries := make([]entityPoisonDebugEntry, 0, len(c.entityPoison))
-	for id, rec := range c.entityPoison {
+	recorded := c.entityPoison.Sorted(0)
+	entries := make([]entityPoisonDebugEntry, 0, len(recorded))
+	for _, e := range recorded {
 		entries = append(entries, entityPoisonDebugEntry{
-			EntityID: id,
-			Reason:   string(rec.contractErr.Reason),
-			Revision: rec.revision,
-			Error:    rec.contractErr.Error(),
+			EntityID: e.Key,
+			Reason:   string(poisonContractError(e.Refusal).Reason),
+			Revision: e.Revision,
+			Error:    e.Refusal.Error(),
 		})
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].EntityID < entries[j].EntityID })
 	return entityPoisonDebugStatus{
 		PoisonedEntityCount: len(entries),
 		PoisonedEntities:    entries,

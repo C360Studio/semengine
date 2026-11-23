@@ -35,9 +35,10 @@ does not declare SHALL not be reserved.
 - **WHEN** `graph.QueryVerbs()` is read
 - **THEN** it holds `entity`, `batch`, `prefix`, `prefixIDs`, `entityByAlias`, `relationships`, `byName`,
   `predicate`, `pathSearch`, `hierarchyStats`, `summary`, `semantic`, `similar`, `spatial`, `temporal`,
-  `localSearch`, `globalSearch` and `searchGraph` on `graph.query.*`, each with responder `graph-query`, `prefixIDs`
-  bare with a `graph.PrefixIDsResponse`, `predicate` enveloped with a `graph.PredicateData`, `localSearch` enveloped
-  with a `graph.LocalSearchData`, and `globalSearch` and `searchGraph` with a `graph.GlobalSearchData`
+  `localSearch`, `globalSearch`, `searchGraph` and `mergedSearch` on `graph.query.*`, each with responder
+  `graph-query`, `prefixIDs` bare with a `graph.PrefixIDsResponse`, `predicate` enveloped with a `graph.PredicateData`,
+  `localSearch` enveloped with a `graph.LocalSearchData`, `globalSearch` and `searchGraph` with a
+  `graph.GlobalSearchData`, and `mergedSearch` enveloped with a `graph.MergedSearchData`
 
 #### Scenario: The forwarded derived-index verbs are in the table
 
@@ -549,3 +550,41 @@ recorded as the entity verb records it. Any other read fault SHALL fail the whol
 
 - **WHEN** one requested entity is damaged and another's read fails for any other reason
 - **THEN** the batch is refused with class transient and code `internal` (`TestBatchDamageBesideFaultIsTransient`)
+
+### Requirement: An enveloped reply counts the damaged entities it left out
+
+`graph.QueryResponse` SHALL carry `damaged_entities`, omitted at 0: the number of damaged entities (stored values
+`graph.UnmarshalEntityState` refuses) the producer held and left out when it answered. graph-index, graph-embedding
+and graph-lexical SHALL set it on every reply. graph-query SHALL set its own enveloped replies to the largest
+`damaged_entities` among the enveloped replies the answer was built from, 0 when built from none, and SHALL forward the
+replies it forwards unchanged.
+
+#### Scenario: A producer with damage
+
+- **WHEN** graph-index answers while one damaged entity is recorded
+- **THEN** the reply carries `damaged_entities` 1, and a reply with none recorded carries no such key
+  (`TestQueryResponseDamagedEntitiesOmittedAtZero`, `TestDamagedEntityLeftOutAndNamed`)
+
+#### Scenario: Several index replies
+
+- **WHEN** `pathSearch` is built from graph-index replies carrying `damaged_entities` 2 and 3
+- **THEN** its reply carries 3 (`TestComposedReplyCarriesLargestDamagedCount`)
+
+### Requirement: A damaged-entity refusal names the entities in detail
+
+Every fatal `graph_state_reset_required` refusal graph-ingest's query verbs answer SHALL carry `detail.entity_ids`, the
+IDs of the damaged entities it refuses for, sorted, each once and uncapped: the one entity an entity read names, and
+every damaged entity of the page a prefix read fetched. `graph.StateRefusalEntityIDs` SHALL return those IDs from the
+error `RequestClassified` returns, and nil for an error that is not such a refusal.
+
+#### Scenario: A damaged entity read over the wire
+
+- **WHEN** B's stored value does not decode and the entity verb is asked for B through `RequestClassified`
+- **THEN** the error's code is `graph_state_reset_required` and `graph.StateRefusalEntityIDs` returns [B]
+- **AND** the test that verifies this is `TestIntegration_DamagedRefusalNamesEntitiesInDetail`
+
+#### Scenario: A prefix page with two damaged entities
+
+- **WHEN** a prefix holds A, B and C and B and C do not decode
+- **THEN** the prefix verb is refused and `graph.StateRefusalEntityIDs` returns [B, C]
+- **AND** the test that verifies this is `TestIntegration_DamagedRefusalNamesEntitiesInDetail`

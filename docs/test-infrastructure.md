@@ -84,7 +84,8 @@ previous test wrote is left.
 
 Use `natsfixture.New(t)` instead of the reset only when the test:
 
-- restarts or stops the server (`Restart`, `Stop`);
+- restarts or stops the server (`Restart`, `Stop`), or holds it down until the code under test notices (`RestartAfter`,
+  which runs a function of yours between the stop and the start);
 - needs a server setting the shared one does not have, such as `natsfixture.WithMaxPayload`;
 - reads a running total the reset cannot clear, such as the account's count of API calls since the server started.
 
@@ -164,7 +165,6 @@ belongs to the framework, and it connects to any broker URL in three calls:
 client, err := natsclient.NewClient(url,
     natsclient.WithTimeout(10*time.Second), // bound the connect
     natsclient.WithMaxReconnects(0),        // a test wants a failure, not a retry
-    natsclient.WithHealthInterval(0),       // no background monitor to drain
 )
 if err != nil {
     return nil, err

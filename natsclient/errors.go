@@ -303,29 +303,9 @@ func (c *Client) RequestWithRetryClassified(
 	return ClassifyReply(reply)
 }
 
-// RequestReadyClassified is the readiness-gated read (the third bucket of the
-// request doctrine). It runs the
-// short-timeout, budget-bounded readiness loop, then runs the final reply
-// through ClassifyReply so transport failures (no-responders / probe timeout,
-// retried until the budget) and handler failures (X-Error-Class/Code headers)
-// arrive uniformly.
-//
-// Use for the FIRST read on boot / initial reconcile / after a reconnect, where
-// a not-yet-subscribed responder must not degrade to a full-query-timeout hang.
-// For steady-state reads use RequestClassified (timeout = real signal).
-func (c *Client) RequestReadyClassified(
-	ctx context.Context, subject string, data []byte, probeTimeout, budget time.Duration,
-) ([]byte, error) {
-	msg, err := c.requestMsgReady(ctx, subject, data, probeTimeout, budget)
-	if err != nil {
-		return nil, err
-	}
-	return ClassifyReply(msg)
-}
-
 // IsNoResponders reports whether err is (or wraps) the NATS "no responders"
 // transport error — the responder is not subscribed. The condition is temporary
-// at startup / after a reconnect (retry via a readiness-gated read); its errs
+// at startup / after a reconnect, until the responder subscribes; its errs
 // class is not promised (ADR-112). It is distinct from a timeout of an EXISTING
 // responder (which signals it is hung — surface, don't retry). On nats-server's
 // default configuration a request with no subscriber gets no responders at once

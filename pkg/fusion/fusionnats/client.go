@@ -20,10 +20,9 @@ type requester interface {
 	RequestClassified(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error)
 }
 
-// verbs are the rows of graph.QueryVerbs() the client uses: graph-query's, and
-// graph-lexical's search for an NL resolve.
+// verbs are the rows of graph.QueryVerbs() the client uses, all graph-query's.
 type verbs struct {
-	entity, batch, prefixIDs, byName, relationships, wordSearch graph.QueryVerb
+	entity, batch, prefixIDs, byName, relationships, mergedSearch graph.QueryVerb
 }
 
 // lookupVerbs reads the client's rows from table, refusing one that is missing
@@ -40,7 +39,7 @@ func lookupVerbs(table []graph.QueryVerb) (verbs, error) {
 		{graph.ResponderGraphQuery, "prefixIDs", &v.prefixIDs},
 		{graph.ResponderGraphQuery, "byName", &v.byName},
 		{graph.ResponderGraphQuery, "relationships", &v.relationships},
-		{graph.ResponderGraphLexical, "search", &v.wordSearch},
+		{graph.ResponderGraphQuery, "mergedSearch", &v.mergedSearch},
 	} {
 		found := false
 		for _, verb := range table {
@@ -98,16 +97,16 @@ func (c *Client) Resolve(ctx context.Context, q fusion.ResolveQuery) (fusion.Res
 	case fusion.ResolveModePrefix:
 		return c.resolvePrefix(ctx, q.Query, q.Limit)
 	case fusion.ResolveModeNL:
-		return c.resolveWords(ctx, q.Query, q.Scope, q.Limit)
+		return c.resolveMerged(ctx, q.Query, q.Scope, q.Limit)
 	default:
 		return fusion.Resolution{}, fmt.Errorf("fusionnats: unsupported resolve mode %q", q.Mode)
 	}
 }
 
 // resolveByName resolves a symbol through byName. That reply ranks by order and
-// carries no score, so the seeds carry none.
+// carries no score, so the seeds carry none. Its damaged_entities rides along.
 func (c *Client) resolveByName(ctx context.Context, query string, limit int) (fusion.Resolution, error) {
-	matches, err := c.byNameMatches(ctx, query, limit)
+	matches, damaged, err := c.byNameMatches(ctx, query, limit)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
@@ -115,7 +114,7 @@ func (c *Client) resolveByName(ctx context.Context, query string, limit int) (fu
 	for _, m := range matches {
 		seeds = append(seeds, fusion.Seed{ID: m.EntityID})
 	}
-	return fusion.Resolution{Seeds: seeds}, nil
+	return fusion.Resolution{Seeds: seeds, DamagedEntities: damaged}, nil
 }
 
 // resolvePrefix resolves an ID prefix through prefixIDs, taking only the first
@@ -131,7 +130,7 @@ func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fu
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
-	resp, err := decodeReply[graph.PrefixIDsResponse](c.verbs.prefixIDs, raw)
+	resp, _, err := decodeReply[graph.PrefixIDsResponse](c.verbs.prefixIDs, raw)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
@@ -145,19 +144,21 @@ func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fu
 	return fusion.Resolution{Seeds: seeds}, nil
 }
 
-// resolveWords resolves a natural-language query through graph-lexical's word
-// search. The query passes unchanged, so the word index's query rules apply and
-// its refusals are returned as it sent them. A non-empty scope keeps only
-// entities under its ID prefixes (ADR-071); an empty one is left out of the
-// request. Seeds keep the reply's order and carry each hit's score as the
-// mode's own score; the reply's bodies_not_indexed and excluded ride along in
-// the Resolution. A request nothing answers, graph-lexical not composed
-// included, is a transient internal error naming the subject.
-func (c *Client) resolveWords(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
+// resolveMerged resolves a natural-language query through graph-query's
+// merged search: the word index's search, merged with the embedding search
+// when graph-query runs one. The query passes unchanged, so the word index's
+// query rules apply and its refusals are returned as it sent them. A non-empty
+// scope keeps only entities under its ID prefixes (ADR-071); an empty one is
+// left out of the request. Seeds keep the reply's order and carry each
+// result's score as the mode's own score; the reply's bodies_not_indexed,
+// excluded and damaged_entities ride along in the Resolution. A request nothing
+// answers, graph-query not composed included, is a transient internal error
+// naming the subject.
+func (c *Client) resolveMerged(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
 	if err := validateScope(scope); err != nil {
 		return fusion.Resolution{}, err
 	}
-	verb := c.verbs.wordSearch
+	verb := c.verbs.mergedSearch
 	raw, err := c.request(ctx, verb, graph.LexicalSearchRequest{Query: query, Limit: limit, Scope: scope})
 	if err != nil {
 		var refusal *errs.ClassifiedError
@@ -167,7 +168,7 @@ func (c *Client) resolveWords(ctx context.Context, query string, scope []string,
 		return fusion.Resolution{}, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
 			fmt.Errorf("fusionnats: request to %s: %w", verb.Subject, err))
 	}
-	resp, err := decodeReply[graph.LexicalSearchData](verb, raw)
+	resp, damaged, err := decodeReply[graph.MergedSearchData](verb, raw)
 	if err != nil {
 		return fusion.Resolution{}, err
 	}
@@ -178,9 +179,22 @@ func (c *Client) resolveWords(ctx context.Context, query string, scope []string,
 		ids = append(ids, hit.EntityID)
 	}
 	if err := graph.ValidateDecodedEntityIDs(ids); err != nil {
-		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate word search: %w", err)
+		return fusion.Resolution{}, fmt.Errorf("fusionnats: validate merged search: %w", err)
 	}
-	return fusion.Resolution{Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded}, nil
+	// The answer used meaning only when a result it returns came from the
+	// embedding list. An honoured merge alone does not say so: the embedding
+	// list may have been empty, or all its hits may have fallen below the limit.
+	provenance := fusion.ProvenanceLexical
+	for _, hit := range resp.Results {
+		if hit.VectorRank > 0 {
+			provenance = fusion.ProvenanceEmbedding
+			break
+		}
+	}
+	return fusion.Resolution{
+		Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded, DamagedEntities: damaged,
+		Provenance: provenance,
+	}, nil
 }
 
 func validatePrefix(prefix string) error {
@@ -230,7 +244,7 @@ func (c *Client) Entity(ctx context.Context, id string) (*fusion.Entity, error) 
 // decodeEntity decodes and checks an entity reply for id. Its refusals are the
 // client's own, so a caller never reads them as the responder's.
 func (c *Client) decodeEntity(id string, raw []byte) (*fusion.Entity, error) {
-	reply, err := decodeReply[entityReply](c.verbs.entity, raw)
+	reply, _, err := decodeReply[entityReply](c.verbs.entity, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +288,7 @@ func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, 
 	if err != nil {
 		return fusion.Hydration{}, err
 	}
-	resp, err := decodeReply[graph.EntityBatchResponse](c.verbs.batch, raw)
+	resp, _, err := decodeReply[graph.EntityBatchResponse](c.verbs.batch, raw)
 	if err != nil {
 		return fusion.Hydration{}, err
 	}
@@ -346,22 +360,23 @@ type relationshipsRequest struct {
 
 // Neighbors returns the edges of id in dir along predicates through
 // relationships. The verb answers every edge in the direction, so this keeps
-// only the requested predicates; no predicates means every edge.
-func (c *Client) Neighbors(ctx context.Context, id string, predicates []string, dir fusion.Direction) ([]fusion.Edge, error) {
+// only the requested predicates; no predicates means every edge. The reply's
+// damaged_entities rides along, since an edge of a damaged entity may be missing.
+func (c *Client) Neighbors(ctx context.Context, id string, predicates []string, dir fusion.Direction) (fusion.Neighbors, error) {
 	raw, err := c.request(ctx, c.verbs.relationships, relationshipsRequest{EntityID: id, Direction: directionString(dir)})
 	if err != nil {
-		return nil, err
+		return fusion.Neighbors{}, err
 	}
-	rels, err := decodeReply[[]graph.RelationshipEdge](c.verbs.relationships, raw)
+	rels, damaged, err := decodeReply[[]graph.RelationshipEdge](c.verbs.relationships, raw)
 	if err != nil {
-		return nil, err
+		return fusion.Neighbors{}, err
 	}
 	endpointIDs := make([]string, 0, len(rels)*2)
 	for _, r := range rels {
 		endpointIDs = append(endpointIDs, r.FromEntityID, r.ToEntityID)
 	}
 	if err := graph.ValidateDecodedEntityIDs(endpointIDs); err != nil {
-		return nil, fmt.Errorf("fusionnats: validate relationships: %w", err)
+		return fusion.Neighbors{}, fmt.Errorf("fusionnats: validate relationships: %w", err)
 	}
 	want := predicateSet(predicates)
 	edges := make([]fusion.Edge, 0, len(rels))
@@ -377,16 +392,17 @@ func (c *Client) Neighbors(ctx context.Context, id string, predicates []string, 
 		}
 		edges = append(edges, fusion.Edge{Predicate: r.Predicate, Target: target})
 	}
-	return edges, nil
+	return fusion.Neighbors{Edges: edges, DamagedEntities: damaged}, nil
 }
 
 // Names suggests display names near query for a miss's did_you_mean, through
 // byName. Entities may share a name, so names are deduplicated in rank order and
 // capped at limit.
-func (c *Client) Names(ctx context.Context, query string, limit int) ([]string, error) {
-	matches, err := c.byNameMatches(ctx, query, limit)
+// The reply's damaged_entities rides along.
+func (c *Client) Names(ctx context.Context, query string, limit int) (fusion.Names, error) {
+	matches, damaged, err := c.byNameMatches(ctx, query, limit)
 	if err != nil {
-		return nil, err
+		return fusion.Names{}, err
 	}
 	seen := make(map[string]bool, len(matches))
 	names := make([]string, 0, len(matches))
@@ -400,7 +416,7 @@ func (c *Client) Names(ctx context.Context, query string, limit int) ([]string, 
 			break
 		}
 	}
-	return names, nil
+	return fusion.Names{Names: names, DamagedEntities: damaged}, nil
 }
 
 // byNameRequest is the byName verb's request; graph declares no type for it.
@@ -409,25 +425,26 @@ type byNameRequest struct {
 	Limit int    `json:"limit"`
 }
 
-// byNameMatches asks byName and returns the ranked matches, for Resolve
-// (symbol), which reads the IDs, and Names, which reads the names.
-func (c *Client) byNameMatches(ctx context.Context, query string, limit int) ([]graph.NameMatch, error) {
+// byNameMatches asks byName and returns the ranked matches and the reply's
+// damaged-entity count, for Resolve (symbol), which reads the IDs, and Names,
+// which reads the names.
+func (c *Client) byNameMatches(ctx context.Context, query string, limit int) ([]graph.NameMatch, int, error) {
 	raw, err := c.request(ctx, c.verbs.byName, byNameRequest{Name: query, Limit: limit})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	resp, err := decodeReply[graph.NameData](c.verbs.byName, raw)
+	resp, damaged, err := decodeReply[graph.NameData](c.verbs.byName, raw)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	entityIDs := make([]string, 0, len(resp.Matches))
 	for _, match := range resp.Matches {
 		entityIDs = append(entityIDs, match.EntityID)
 	}
 	if err := graph.ValidateDecodedEntityIDs(entityIDs); err != nil {
-		return nil, fmt.Errorf("fusionnats: validate byName: %w", err)
+		return nil, 0, fmt.Errorf("fusionnats: validate byName: %w", err)
 	}
-	return resp.Matches, nil
+	return resp.Matches, damaged, nil
 }
 
 // request marshals req and sends it as a classified request on verb's subject.
@@ -442,24 +459,26 @@ func (c *Client) request(ctx context.Context, verb graph.QueryVerb, req any) ([]
 // decodeReply decodes raw as verb's row declares: an enveloped row's reply is a
 // graph.QueryResponse whose Data is T, refused when it names no producer (which
 // graph.NewQueryResponse never builds, so a bare body or "{}" is refused); a
-// bare row's reply is T, unknown keys ignored.
-func decodeReply[T any](verb graph.QueryVerb, raw []byte) (T, error) {
+// bare row's reply is T, unknown keys ignored. It also returns the envelope's
+// damaged_entities, the count of damaged entities the producer left out, so a
+// read can pass it on; a bare reply carries none and returns 0.
+func decodeReply[T any](verb graph.QueryVerb, raw []byte) (T, int, error) {
 	var zero T
 	if !verb.Enveloped {
 		var body T
 		if err := json.Unmarshal(raw, &body); err != nil {
-			return zero, fmt.Errorf("fusionnats: decode %s reply: %w", verb.Name, err)
+			return zero, 0, fmt.Errorf("fusionnats: decode %s reply: %w", verb.Name, err)
 		}
-		return body, nil
+		return body, 0, nil
 	}
 	var reply graph.QueryResponse[T]
 	if err := json.Unmarshal(raw, &reply); err != nil {
-		return zero, fmt.Errorf("fusionnats: decode %s reply: %w", verb.Name, err)
+		return zero, 0, fmt.Errorf("fusionnats: decode %s reply: %w", verb.Name, err)
 	}
 	if reply.Producer == "" {
-		return zero, fmt.Errorf("fusionnats: %s reply names no producer", verb.Name)
+		return zero, 0, fmt.Errorf("fusionnats: %s reply names no producer", verb.Name)
 	}
-	return reply.Data, nil
+	return reply.Data, reply.DamagedEntities, nil
 }
 
 // directionString maps a fusion.Direction to the relationships verb's value.

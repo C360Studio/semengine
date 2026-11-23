@@ -75,12 +75,26 @@ var testEntityType = message.Type{Domain: "test", Category: "fusion", Version: "
 
 // stack is real graph-ingest, graph-index and graph-query on one connection to the shared server,
 // each built with its factory; startWordIndex adds graph-lexical.
+// graph-query runs at tier 0, with no embedding search; startTierOneStack runs it with one.
 type stack struct {
 	client    *natsclient.Client
 	mutations *graphmutation.Client
 }
 
 func startStack(t *testing.T) stack {
+	t.Helper()
+	return startStackWith(t, `{}`)
+}
+
+// startTierOneStack is the stack with graph-query's embedding_enabled true, as a composition
+// running graph-embedding configures it; the test answers the embedding search itself.
+func startTierOneStack(t *testing.T) stack {
+	t.Helper()
+	return startStackWith(t, `{"embedding_enabled": true}`)
+}
+
+// startStackWith is the stack with graph-query built from queryConfig.
+func startStackWith(t *testing.T, queryConfig string) stack {
 	t.Helper()
 	client := natsfixture.Open(t, shared.Reset(t), openClient)
 	js, err := client.JetStream()
@@ -114,7 +128,7 @@ func startStack(t *testing.T) stack {
 		t.Fatalf("CreateGraphIndex: %v", err)
 	}
 	startLifecycle(t, "graph-index", index)
-	query, err := graphquery.CreateGraphQuery(json.RawMessage(`{}`), component.Dependencies{
+	query, err := graphquery.CreateGraphQuery(json.RawMessage(queryConfig), component.Dependencies{
 		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
 	})
 	if err != nil {
@@ -129,8 +143,8 @@ func startStack(t *testing.T) stack {
 	return stack{client: client, mutations: mutations}
 }
 
-// startWordIndex starts graph-lexical, the word index an NL resolve asks, on the stack's
-// connection.
+// startWordIndex starts graph-lexical, the word index graph-query's merged search asks, on the
+// stack's connection.
 func (s stack) startWordIndex(t *testing.T) {
 	t.Helper()
 	lexical, err := graphlexical.CreateGraphLexical(json.RawMessage(`{}`), component.Dependencies{
@@ -146,7 +160,6 @@ func openClient(ctx context.Context, url string) (*natsclient.Client, func(conte
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(15*time.Second),
 		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -326,6 +339,10 @@ func TestRealRespondersAnswer(t *testing.T) {
 	if len(nl.Seeds) == 1 && (!nl.Seeds[0].HasSimilarity || nl.Seeds[0].Similarity <= 0) {
 		t.Errorf("Resolve NL seed = %+v, want a positive score", nl.Seeds[0])
 	}
+	// graph-query runs at tier 0 here, so the seeds came from words alone.
+	if nl.Provenance != fusion.ProvenanceLexical {
+		t.Errorf("Resolve NL provenance = %q, want %q", nl.Provenance, fusion.ProvenanceLexical)
+	}
 	// The question reaches the word index unchanged, so its query rules apply: name: is reserved.
 	_, err = c.Resolve(ctx, fusion.ResolveQuery{Mode: fusion.ResolveModeNL, Query: "name:widget", Limit: 10})
 	var refusal *errs.ClassifiedError
@@ -362,14 +379,14 @@ func TestRealRespondersAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Neighbors outgoing: %v", err)
 	}
-	if want := []fusion.Edge{{Predicate: linkPredicate, Target: beta}}; !reflect.DeepEqual(out, want) {
+	if want := (fusion.Neighbors{Edges: []fusion.Edge{{Predicate: linkPredicate, Target: beta}}}); !reflect.DeepEqual(out, want) {
 		t.Errorf("Neighbors(%s, outgoing) = %+v, want %+v", alpha, out, want)
 	}
 	in, err := c.Neighbors(ctx, beta, []string{linkPredicate}, fusion.Incoming)
 	if err != nil {
 		t.Fatalf("Neighbors incoming: %v", err)
 	}
-	if want := []fusion.Edge{{Predicate: linkPredicate, Target: alpha}, {Predicate: linkPredicate, Target: omega}}; !reflect.DeepEqual(in, want) {
+	if want := (fusion.Neighbors{Edges: []fusion.Edge{{Predicate: linkPredicate, Target: alpha}, {Predicate: linkPredicate, Target: omega}}}); !reflect.DeepEqual(in, want) {
 		t.Errorf("Neighbors(%s, incoming) = %+v, want %+v", beta, in, want)
 	}
 
@@ -377,13 +394,15 @@ func TestRealRespondersAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Names: %v", err)
 	}
-	if !reflect.DeepEqual(names, []string{"Widget Omega"}) {
+	if !reflect.DeepEqual(names, fusion.Names{Names: []string{"Widget Omega"}}) {
 		t.Errorf("Names = %v, want [Widget Omega]", names)
 	}
 }
 
-// TestNLResolveWithoutWordIndex: with no graph-lexical composed nothing answers the word search,
-// and an NL Fuse fails transient internal naming the subject, never an empty answer.
+// TestNLResolveWithoutWordIndex: graph-query runs but no graph-lexical is composed, so nothing
+// answers the word search graph-query's merged search asks, and an NL Fuse fails transient internal
+// naming the word search's subject, never an empty answer. The refusal is graph-query's reply, so
+// the no-responders cause stays on graph-query's side of the wire.
 func TestNLResolveWithoutWordIndex(t *testing.T) {
 	s := startStack(t)
 	s.seed(t, false)
@@ -403,11 +422,51 @@ func TestNLResolveWithoutWordIndex(t *testing.T) {
 		t.Fatalf("NL widget refused %v (class %v, code %q), want transient %q naming %s",
 			refusal, refusal.Class, refusal.Code, graph.ErrorCodeInternal, search)
 	}
-	if !natsclient.IsNoResponders(err) {
-		t.Errorf("NL widget error %v does not keep the no-responders cause", err)
-	}
 	if !reflect.DeepEqual(resp, fusion.Response{}) {
 		t.Errorf("NL widget returned %+v beside its error, want no response", resp)
+	}
+}
+
+// TestNLMergedOverRealResponders: graph-query runs with embedding_enabled true beside real
+// graph-lexical, and the embedding search, answered by the test, finds beta, which no word of
+// "widget" matches. Fuse answers beta among its nodes beside the word hits, with provenance
+// embedding.
+func TestNLMergedOverRealResponders(t *testing.T) {
+	s := startTierOneStack(t)
+	s.startWordIndex(t)
+	s.seed(t, true)
+	semantic, err := graph.NewQueryResponse(graph.ResponderGraphEmbedding, 0, graph.SemanticData{
+		Results: []graph.SimilarityHit{{EntityID: beta, Similarity: 0.9}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := json.Marshal(semantic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := verbRow(t, graph.ResponderGraphEmbedding, "search").Subject
+	if _, err := s.client.SubscribeForRequests(t.Context(), subject, func(context.Context, []byte) ([]byte, error) {
+		return reply, nil
+	}); err != nil {
+		t.Fatalf("subscribe %s: %v", subject, err)
+	}
+	eng, err := fusion.NewEngine(newClient(t, s), fusion.NewBodyResolver(fusion.MapStoreResolver{}), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})
+	if err != nil {
+		t.Fatalf("Fuse widget: %v", err)
+	}
+	var names []string
+	for _, node := range resp.Nodes {
+		names = append(names, node.Name)
+	}
+	slices.Sort(names)
+	if want := []string{alpha, beta, omega}; !slices.Equal(names, want) || resp.Provenance != fusion.ProvenanceEmbedding {
+		t.Errorf("Fuse widget = nodes %v, provenance %q; want %v, %q", names, resp.Provenance, want, fusion.ProvenanceEmbedding)
 	}
 }
 

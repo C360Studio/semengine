@@ -56,9 +56,9 @@ port (#424).
 ### Requirement: Startup-replay queries get a retryable refusal
 
 Each of graph-index's eight verbs SHALL answer class transient, code `index_not_ready`, while its initial build is not
-applied or while index writes it requires are unresolved, and SHALL answer class fatal, code
-`graph_state_reset_required`, once reset is latched. Once the build is applied and no write is unresolved, the same
-request SHALL succeed, whatever the lag.
+applied or while index writes it requires are unresolved. A stored damaged entity SHALL NOT refuse a verb, except
+`outgoing` for that entity. Once the build is applied and no write is unresolved, the same request SHALL succeed,
+whatever the lag.
 
 #### Scenario: A request during the replay
 
@@ -68,8 +68,8 @@ request SHALL succeed, whatever the lag.
 
 ### Requirement: Health reads named stuck states only
 
-graph-index's `Healthy` SHALL be false exactly while it is not running or a stuck state holds: reset latched, a
-required index write unresolved, or the feed lost. `ErrorCount` SHALL never lower it.
+graph-index's `Healthy` SHALL be false exactly while it is not running or a stuck state holds: a damaged entity
+stored, a required index write unresolved, or the feed lost. `ErrorCount` SHALL never lower it.
 
 #### Scenario: A failed write and its repair
 
@@ -140,24 +140,33 @@ deleting the entity SHALL leave each read answering nothing for it (ADR-114).
 
 ### Requirement: Malformed index rows are skipped and declared
 
-A query that lists a stored incoming, alias, predicate or name index row that is not its index's layout SHALL leave
-that row out, answer from the well-formed rows, log a warning naming the index, and count the row in
-`semengine_graph_index_query_rows_skipped_total` under that index's `index_type` label. A row deleted after the
-listing SHALL NOT be counted.
+A query that lists a stored incoming, alias, predicate or name index row that is not its index's layout SHALL leave that
+row out, answer from the well-formed rows, log a warning naming the index, count the row in
+`semengine_graph_index_query_rows_skipped_total` under that index's `index_type` label, and count it in the reply's
+`data.unreadable_records`, which every row-listing verb's reply carries, 0 when none was skipped. A row deleted after
+the listing SHALL NOT be counted.
 
 #### Scenario: Malformed rows in three index buckets
 
 - **WHEN** a malformed key is stored in `INCOMING_INDEX`, `PREDICATE_INDEX` and `NAME_INDEX`, and a name row holds a
   value that is not JSON
 - **THEN** incoming, predicate, predicateList and byName answer only the well-formed rows, a warning names each index,
-  and the counter reads incoming 1, predicate 2 (listed by predicate and by predicateList) and name 2
+  the counter reads incoming 1, predicate 2 (listed by predicate and by predicateList) and name 2, and the replies'
+  `data.unreadable_records` are incoming 1, predicate 1, predicateList 1 and byName 2
 - **AND** the test that verifies this is `TestMalformedIndexRowsAreSkippedLoggedAndCounted`
 
 #### Scenario: A malformed alias row
 
 - **WHEN** a key under an alias's hash prefix in `ALIAS_INDEX` is not `hash.entity6.hex(predicate)`
-- **THEN** the `alias` read answers from the well-formed rows, a warning names the alias index, and the counter reads
-  alias 1
+- **THEN** the `alias` read answers from the well-formed rows with `data.unreadable_records` 1, a warning names the
+  alias index, and the counter reads alias 1
+- **AND** the test that verifies this is `TestMalformedIndexRowsAreSkippedLoggedAndCounted`
+
+#### Scenario: Every row-listing verb carries the count
+
+- **WHEN** incoming, alias, predicate, predicateList, predicateStats, predicateCompound and byName each answer a request
+  that skipped no row
+- **THEN** each reply's `data.unreadable_records` is 0
 - **AND** the test that verifies this is `TestMalformedIndexRowsAreSkippedLoggedAndCounted`
 
 ### Requirement: Queries are refused while the feed is lost
@@ -260,3 +269,53 @@ not a pending revision, withholds readiness. Every value `graph.UnmarshalEntityS
   `graph.UnmarshalEntityState`
 - **THEN** each builds an index plan, with the seed and the completed checks recorded
   (`TestContractValidStateAlwaysPlans`)
+
+### Requirement: A damaged entity is left out and counted
+
+When the stored value graph-index reads for an entity is refused by `graph.UnmarshalEntityState`, or its key is not a
+literal entity ID, graph-index SHALL report it to the follower, remove every row it built from the entity's earlier
+value, and complete the revision. Every reply SHALL carry `damaged_entities`, the number of damaged entities recorded
+when it answered. A valid value or a delete for the key SHALL be applied as for any entity, with no restart.
+
+#### Scenario: Damage stored at start
+
+- **WHEN** A is valid with a name, an alias and a relationship, and B is stored damaged before graph-index starts
+- **THEN** after the first build `byName`, `alias` and `outgoing` answer A with `damaged_entities` 1, and `Health`
+  names B (`TestDamagedEntityLeftOutAndNamed`)
+
+#### Scenario: A valid entity overwritten with damage
+
+- **WHEN** B is indexed and then overwritten with bytes that do not decode
+- **THEN** B's name, alias and relationship rows are gone, the replies count 1, and the revision completes
+  (`TestDamagedEntityLeftOutAndNamed`)
+
+#### Scenario: Repair without restart
+
+- **WHEN** B is then written with a valid value
+- **THEN** B's rows answer, replies carry no `damaged_entities`, and `Healthy` is true (`TestRepairedEntityReturns`)
+
+### Requirement: A relationship read of a damaged entity is refused
+
+`outgoing` for a damaged entity SHALL be refused fatal `graph_state_reset_required` with the refusal the follower
+recorded, as graph-ingest's entity read refuses it, with `detail.entity_ids` holding that entity. `incoming` for it
+SHALL answer, since its rows are the other entities' facts.
+
+#### Scenario: Outgoing and incoming of B
+
+- **WHEN** B is damaged and A holds a relationship to B
+- **THEN** `outgoing` on B is refused fatal `graph_state_reset_required` with `entity_ids` [B], and `incoming` on B
+  answers A's edge (`TestDamagedEntityLeftOutAndNamed`)
+
+### Requirement: The value filter refuses a damaged entity it reads
+
+When `predicate` with a `value` reads a stored entity value `graph.UnmarshalEntityState` refuses, graph-index SHALL
+refuse the request fatal `graph_state_reset_required` with `detail.entity_ids` naming each damaged entity it read,
+sorted. Any other read failure SHALL stay class transient, code `internal`. An entity graph-index has already recorded
+damaged has no membership row, so the filter does not read it, and the reply counts it in `damaged_entities`.
+
+#### Scenario: A membership row for a damaged entity
+
+- **WHEN** B is recorded damaged (a reply counts `damaged_entities` 1) and a `PREDICATE_INDEX` membership row for B
+  under predicate P is then stored
+- **THEN** `predicate` P with a value is refused fatal `graph_state_reset_required` with `entity_ids` [B]
+- **AND** the test that verifies this is `TestValueFilterRefusesDamagedEntityItReads`

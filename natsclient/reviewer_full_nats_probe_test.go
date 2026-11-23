@@ -11,7 +11,7 @@ import (
 
 // Run with -race. Public status polling should be safe during public Close.
 func TestReviewerGetStatusConcurrentClose(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)

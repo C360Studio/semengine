@@ -410,15 +410,16 @@ func (m *Manager) composedServices() []Service {
 	return services
 }
 
-// handleSystemHealth answers the health of every service and of the NATS
-// connection, aggregated: 503 when unhealthy, 200 otherwise.
+// handleSystemHealth answers the health of every service, of the NATS
+// connection and of the config manager, aggregated: 503 when unhealthy, 200
+// otherwise.
 func (m *Manager) handleSystemHealth(w http.ResponseWriter, _ *http.Request) {
 	services := m.composedServices()
 	m.mu.RLock()
-	natsClient, logger := m.natsClient, m.logger
+	natsClient, configManager, logger := m.natsClient, m.configManager, m.logger
 	m.mu.RUnlock()
 
-	subStatuses := make([]health.Status, 0, len(services)+1)
+	subStatuses := make([]health.Status, 0, len(services)+2)
 	for _, svc := range services {
 		subStatuses = append(subStatuses, svc.Health())
 	}
@@ -431,6 +432,11 @@ func (m *Manager) handleSystemHealth(w http.ResponseWriter, _ *http.Request) {
 			subStatuses = append(subStatuses, health.NewUnhealthy("nats",
 				fmt.Sprintf("Disconnected: %s", natsStatus.Status.String())))
 		}
+	}
+	if configManager != nil {
+		// Unhealthy once a config watch is lost: configuration changes no longer
+		// reach the process until it restarts.
+		subStatuses = append(subStatuses, configManager.Health())
 	}
 	systemHealth := health.Aggregate("system", subStatuses)
 

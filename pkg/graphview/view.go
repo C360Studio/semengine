@@ -435,25 +435,43 @@ func (v *View[T]) List(prefix string, limit int) ([]KeyedEntry[T], error) {
 	return out, nil
 }
 
-// ListCounted returns what List(prefix, 0) returns and the number of poisoned keys with
-// the prefix, both read under one hold of the projection, so the count describes exactly
-// the listing beside it: every key the view holds under the prefix is either listed or
-// counted, never both; a key the decode skips is held as neither. It honors the same
-// readiness gate as Get. The entries' values are the stored ones, which an
-// apply replaces whole and never edits; callers read them only.
-func (v *View[T]) ListCounted(prefix string) ([]KeyedEntry[T], int, error) {
+// ListCounted returns every entry whose key keep accepts, sorted by key, and the number of
+// poisoned keys keep accepts (a nil keep accepts every key). Both are copied under one hold of
+// the projection, so the count describes exactly the listing beside it: every key the view held
+// at that moment that keep accepts is either listed or counted, never both; a key the decode
+// skips is held as neither. keep runs after the hold is released, so it may block or take as
+// long as it needs without stalling the view; it sees each copied key once. It honors the same
+// readiness gate as Get. The entries' values are the stored ones, which an apply replaces whole
+// and never edits; callers read them only.
+func (v *View[T]) ListCounted(keep func(key string) bool) ([]KeyedEntry[T], int, error) {
 	v.mu.Lock()
-	defer v.mu.Unlock()
 	if err := v.usableLocked(); err != nil {
+		v.mu.Unlock()
 		return nil, 0, err
 	}
-	poisoned := 0
+	entries := v.listLocked("")
+	poisoned := make([]string, 0, len(v.poisoned))
 	for k := range v.poisoned {
-		if strings.HasPrefix(k, prefix) {
-			poisoned++
+		poisoned = append(poisoned, k)
+	}
+	v.mu.Unlock()
+
+	if keep == nil {
+		return entries, len(poisoned), nil
+	}
+	kept := entries[:0]
+	for _, e := range entries {
+		if keep(e.Key) {
+			kept = append(kept, e)
 		}
 	}
-	return v.listLocked(prefix), poisoned, nil
+	counted := 0
+	for _, k := range poisoned {
+		if keep(k) {
+			counted++
+		}
+	}
+	return kept, counted, nil
 }
 
 // listLocked returns every entry whose key has prefix (empty matches all), sorted by key.

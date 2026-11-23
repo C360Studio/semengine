@@ -198,7 +198,7 @@ func claimCount(c *Client) int {
 func TestClientCloseJoinsSubscribeHandlerAfterForcedClose(t *testing.T) {
 	for _, api := range []string{"Subscribe", "SubscribeForRequests"} {
 		t.Run(api, func(t *testing.T) {
-			c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+			c, err := NewClient(embeddedServerURL(t))
 			require.NoError(t, err)
 			require.NoError(t, c.Connect(t.Context()))
 			closeInCleanup(t, c)
@@ -374,7 +374,7 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 // While the first Close drains a connection whose native callback is held, a second Close with
 // an ended context returns at once.
 func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	// No option sets the drain timeout; at its 30 s default the held drain would end on its own and
 	// release a second Close that waits on it, so the test would pass against that bug.
@@ -417,7 +417,7 @@ func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 	for _, mode := range []string{"dial-error", "canceled-dial"} {
 		t.Run(mode, func(t *testing.T) {
-			c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+			c, err := NewClient(embeddedServerURL(t))
 			require.NoError(t, err)
 			defer func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -501,7 +501,7 @@ func fakeConsumerClient(t *testing.T, native jetstream.Consumer, opts ...ClientO
 // returns. Real JetStream on an embedded server, and a twin whose fake Closed() closes early.
 func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 	t.Run("jetstream", func(t *testing.T) {
-		c, err := NewClient(embeddedJetStreamURL(t), WithHealthInterval(0))
+		c, err := NewClient(embeddedJetStreamURL(t))
 		require.NoError(t, err)
 		require.NoError(t, c.Connect(t.Context()))
 		closeInCleanup(t, c)
@@ -563,7 +563,7 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 // A Connect after Close refuses before it dials and writes no status.
 func TestClientConnectAfterCloseRefusesBeforeDial(t *testing.T) {
 	url, accepted := silentListener(t)
-	c, err := NewClient(url, WithHealthInterval(0))
+	c, err := NewClient(url)
 	require.NoError(t, err)
 	requireLiveCloseNil(t, c, "Close on a new client")
 
@@ -584,7 +584,7 @@ func TestClientConnectAfterCloseRefusesBeforeDial(t *testing.T) {
 func TestClientCloseJoinsConnectionEventHandlers(t *testing.T) {
 	h := newRecordingHandler("NATS error")
 	t.Cleanup(h.releaseHold)
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0), WithLogger(slog.New(h)))
+	c, err := NewClient(embeddedServerURL(t), WithLogger(slog.New(h)))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)
@@ -704,7 +704,7 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 
 func buildTableClient(t *testing.T, url, state string) *tableClient {
 	t.Helper()
-	c, err := NewClient(url, WithHealthInterval(0))
+	c, err := NewClient(url)
 	require.NoError(t, err)
 	tc := &tableClient{c: c}
 	closeInCleanup(t, c)
@@ -790,7 +790,7 @@ func runTableOp(t *testing.T, tc *tableClient, op string, id int) error {
 // The lifecycle adapter lists a running message handler after Close has cleared the
 // connection, and lists nothing once a nil Close has returned.
 func TestClientLifecycleAdapterListsHeldHandler(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	owner := newClientOwner(c)
 	require.NoError(t, c.Connect(t.Context()))
@@ -979,7 +979,7 @@ func TestClientCloseReportsDrainTimeout(t *testing.T) {
 		{"client-first", long, short},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+			c, err := NewClient(embeddedServerURL(t))
 			require.NoError(t, err)
 			c.drainTimeout = tc.nativeTimer // the connection's options capture it at Connect
 			require.NoError(t, c.Connect(t.Context()))

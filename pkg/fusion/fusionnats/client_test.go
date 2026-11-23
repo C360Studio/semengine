@@ -18,8 +18,7 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-// The subjects of the rows the client uses, graph-query's and graph-lexical's
-// search, spelled here as an oracle independent of the verb table the client
+// The subjects of the rows the client uses, all graph-query's, spelled here as an oracle independent of the verb table the client
 // reads them from.
 const (
 	subjectEntity        = "graph.query.entity"
@@ -27,7 +26,7 @@ const (
 	subjectPrefixIDs     = "graph.query.prefixIDs"
 	subjectByName        = "graph.query.byName"
 	subjectRelationships = "graph.query.relationships"
-	subjectWordSearch    = "graph.lexical.query.search"
+	subjectMergedSearch  = "graph.query.mergedSearch"
 )
 
 // fakeRequester records the last request and returns a canned reply, or routes
@@ -118,8 +117,8 @@ func TestNewZeroTimeoutUsesDefault(t *testing.T) {
 }
 
 // TestSubjectsComeFromVerbTable drives every RetrievalClient method and checks
-// each request went to its row's subject: graph-lexical's search for an NL
-// resolve, graph-query's rows for the rest.
+// each request went to its row's subject: graph-query's mergedSearch for an NL
+// resolve, graph-query's other rows for the rest.
 func TestSubjectsComeFromVerbTable(t *testing.T) {
 	id := "acme.ops.robotics.gcs.drone.001"
 	replies := map[string][]byte{
@@ -128,7 +127,7 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 		subjectPrefixIDs:     mustJSON(t, graph.PrefixIDsResponse{IDs: []string{}}),
 		subjectByName:        enveloped(t, graph.NameData{}),
 		subjectRelationships: enveloped(t, []graph.RelationshipEdge{}),
-		subjectWordSearch:    enveloped(t, graph.LexicalSearchData{}),
+		subjectMergedSearch:  enveloped(t, graph.MergedSearchData{}),
 	}
 	fake := &fakeRequester{responder: func(subject string, _ []byte) ([]byte, error) {
 		reply, ok := replies[subject]
@@ -152,7 +151,7 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 			_, err := c.Resolve(ctx, fusion.ResolveQuery{Query: "acme.ops", Mode: fusion.ResolveModePrefix})
 			return err
 		}},
-		{"Resolve nl", subjectWordSearch, func() error {
+		{"Resolve nl", subjectMergedSearch, func() error {
 			_, err := c.Resolve(ctx, fusion.ResolveQuery{Query: "scout", Mode: fusion.ResolveModeNL})
 			return err
 		}},
@@ -173,8 +172,7 @@ func TestSubjectsComeFromVerbTable(t *testing.T) {
 }
 
 // TestVerbLookupNamesMissingRow holds that a table without a row the client
-// uses is refused, naming the verb. graph-embedding also has a search row, so
-// the lexical case shows the row is matched by its responder too.
+// uses is refused, naming the verb.
 func TestVerbLookupNamesMissingRow(t *testing.T) {
 	without := func(responder, name string) []graph.QueryVerb {
 		var table []graph.QueryVerb
@@ -188,7 +186,7 @@ func TestVerbLookupNamesMissingRow(t *testing.T) {
 	}
 	for _, missing := range []struct{ responder, name string }{
 		{graph.ResponderGraphQuery, "batch"},
-		{graph.ResponderGraphLexical, "search"},
+		{graph.ResponderGraphQuery, "mergedSearch"},
 	} {
 		_, err := lookupVerbs(without(missing.responder, missing.name))
 		require.Error(t, err, "a table without %s's %s", missing.responder, missing.name)
@@ -215,7 +213,7 @@ func TestEnvelopedRowNeedsProducer(t *testing.T) {
 			func(c *Client) error { _, err := c.Names(t.Context(), "Sco", 5); return err }},
 		{"relationships", mustJSON(t, []graph.RelationshipEdge{{FromEntityID: id, ToEntityID: neighbor, Predicate: "robotics.sensor.reads"}}),
 			func(c *Client) error { _, err := c.Neighbors(t.Context(), id, nil, fusion.Outgoing); return err }},
-		{"search", mustJSON(t, graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: id, Score: 0.9}}}),
+		{"mergedSearch", mustJSON(t, graph.MergedSearchData{Results: []graph.MergedSearchHit{{EntityID: id, Score: 0.9}}}),
 			func(c *Client) error {
 				_, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "scout", Mode: fusion.ResolveModeNL})
 				return err
@@ -290,16 +288,17 @@ func TestResolve_EmptyPrefixRemainsMatchAll(t *testing.T) {
 	assert.Equal(t, subjectPrefixIDs, fake.lastSubject)
 }
 
-// TestNLResolveAsksTheWordIndex holds that an NL resolve sends one word search
-// request holding the query, limit and scope to graph-lexical's search row, and
-// returns the hits as seeds in the reply's order, each with its score. The hits
-// are in neither ID nor score order, so a resolve that sorted them would fail.
-func TestNLResolveAsksTheWordIndex(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{Results: []graph.LexicalHit{
+// TestNLResolveAsksTheMergedSearch holds that an NL resolve sends one request
+// holding the query, limit and scope to graph-query's mergedSearch row, and
+// returns the results as seeds in the reply's order, each with its score. The
+// results are in neither ID nor score order, so a resolve that sorted them
+// would fail.
+func TestNLResolveAsksTheMergedSearch(t *testing.T) {
+	fake := &fakeRequester{resp: enveloped(t, graph.MergedSearchData{Results: []graph.MergedSearchHit{
 		{EntityID: "a.b.c.d.e.2", Score: 1.5},
 		{EntityID: "a.b.c.d.e.3", Score: 4.25},
 		{EntityID: "a.b.c.d.e.1", Score: 0.75},
-	}, Matched: 3})}
+	}})}
 	c := newClient(t, fake)
 
 	res, err := c.Resolve(t.Context(), fusion.ResolveQuery{
@@ -307,7 +306,7 @@ func TestNLResolveAsksTheWordIndex(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, fake.calls)
-	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	assert.Equal(t, subjectMergedSearch, fake.lastSubject)
 	assert.JSONEq(t, `{"query":"retry -race","limit":10,"scope":["a.b.c"]}`, string(fake.lastData))
 	assert.Equal(t, []fusion.Seed{
 		{ID: "a.b.c.d.e.2", Similarity: 1.5, HasSimilarity: true},
@@ -319,7 +318,7 @@ func TestNLResolveAsksTheWordIndex(t *testing.T) {
 // TestResolve_NL_UnscopedByteParity holds ADR-071's rule that an unscoped
 // request carries no scope key.
 func TestResolve_NL_UnscopedByteParity(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{})}
+	fake := &fakeRequester{resp: enveloped(t, graph.MergedSearchData{})}
 	c := newClient(t, fake)
 	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{Query: "find a widget", Mode: fusion.ResolveModeNL, Limit: 10})
 	require.NoError(t, err)
@@ -340,25 +339,24 @@ func TestResolve_NLInvalidScopeFailsBeforeNATS(t *testing.T) {
 }
 
 func TestResolve_NLEmptyScopeEntryRemainsMatchAll(t *testing.T) {
-	fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{})}
+	fake := &fakeRequester{resp: enveloped(t, graph.MergedSearchData{})}
 	c := newClient(t, fake)
 	_, err := c.Resolve(t.Context(), fusion.ResolveQuery{
 		Query: "find a widget", Mode: fusion.ResolveModeNL, Scope: []string{""}, Limit: 10,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	assert.Equal(t, subjectMergedSearch, fake.lastSubject)
 	assert.JSONEq(t, `{"query":"find a widget","limit":10,"scope":[""]}`, string(fake.lastData))
 }
 
-// TestWordIndexCountsReachResolution holds that an NL resolve copies the word
-// index reply's bodies_not_indexed and excluded into the Resolution, and that a
+// TestWordIndexCountsReachResolution holds that an NL resolve copies the merged
+// search reply's bodies_not_indexed and excluded into the Resolution, and that a
 // symbol or prefix resolve leaves both empty even when its reply carries keys of
 // those names.
 func TestWordIndexCountsReachResolution(t *testing.T) {
 	t.Run("nl", func(t *testing.T) {
-		fake := &fakeRequester{resp: enveloped(t, graph.LexicalSearchData{
-			Results:  []graph.LexicalHit{{EntityID: "a.b.c.d.e.1", Score: 1}},
-			Matched:  1,
+		fake := &fakeRequester{resp: enveloped(t, graph.MergedSearchData{
+			Results:  []graph.MergedSearchHit{{EntityID: "a.b.c.d.e.1", Score: 1}},
 			Excluded: []string{"race"}, BodiesNotIndexed: 2,
 		})}
 		res, err := newClient(t, fake).Resolve(t.Context(), fusion.ResolveQuery{Query: "retry -race", Mode: fusion.ResolveModeNL, Limit: 10})
@@ -390,7 +388,7 @@ func TestWordIndexCountsReachResolution(t *testing.T) {
 }
 
 // nlLens resolves every query as natural language and walks no edges, so a
-// Fuse call reads only the word search and the seeds.
+// Fuse call reads only the merged search and the seeds.
 type nlLens struct{}
 
 func (nlLens) Name() string                          { return "nl" }
@@ -423,7 +421,7 @@ func TestNLWordIndexRefusalReturned(t *testing.T) {
 
 	resp, err := newNLEngine(t, fake).Fuse(t.Context(), fusion.Request{Query: "name:retry"}, nlLens{})
 	require.Error(t, err)
-	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	assert.Equal(t, subjectMergedSearch, fake.lastSubject)
 	var refusal *errs.ClassifiedError
 	require.ErrorAs(t, err, &refusal)
 	assert.Equal(t, errs.ErrorInvalid, refusal.Class)
@@ -433,20 +431,122 @@ func TestNLWordIndexRefusalReturned(t *testing.T) {
 	assert.Equal(t, fusion.Response{}, resp, "a refused question has no answer")
 }
 
-// TestNLIndexNotReadyDefers holds that a word index not yet ready defers the
-// answer, as for every other read, rather than failing it or answering a miss.
+// TestNLIndexNotReadyDefers holds that the merged search's index_not_ready
+// refusal defers the answer, as for every other read, rather than failing it or
+// answering a miss.
 func TestNLIndexNotReadyDefers(t *testing.T) {
 	fake := &fakeRequester{err: errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
 		errors.New("index not ready"))}
 
 	resp, err := newNLEngine(t, fake).Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})
 	require.NoError(t, err)
-	assert.Equal(t, subjectWordSearch, fake.lastSubject)
+	assert.Equal(t, subjectMergedSearch, fake.lastSubject)
 	assert.True(t, resp.Deferred)
 	assert.Equal(t, fusion.ProvenanceLexical, resp.Provenance)
 	assert.Equal(t, graph.ErrorCodeIndexNotReady, resp.DeferReason)
 	assert.Empty(t, resp.Nodes)
 	assert.Empty(t, resp.Misses)
+}
+
+// mergedThenBatch answers the merged search with reply and the batch with
+// every entity it is asked for, so a Fuse over it answers the reply's results.
+func mergedThenBatch(t *testing.T, reply graph.MergedSearchData) *fakeRequester {
+	t.Helper()
+	merged := enveloped(t, reply)
+	return &fakeRequester{responder: func(subject string, data []byte) ([]byte, error) {
+		switch subject {
+		case subjectMergedSearch:
+			return merged, nil
+		case subjectBatch:
+			var req graph.EntityBatchRequest
+			if err := json.Unmarshal(data, &req); err != nil {
+				return nil, err
+			}
+			var resp graph.EntityBatchResponse
+			for _, id := range req.IDs {
+				resp.Entities = append(resp.Entities, graph.EntityState{ID: id})
+			}
+			return json.Marshal(resp)
+		default:
+			return nil, errors.New("no reply for " + subject)
+		}
+	}}
+}
+
+// TestMergedResolveProvenance holds that an NL resolve reports embedding when
+// at least one result came from the embedding list (it carries a vector_rank),
+// and lexical otherwise: no merge, a merge not honoured, or an honoured merge
+// whose embedding list was empty or whose hits all fell below the limit. Both
+// in the Resolution and in the response Fuse builds from it.
+func TestMergedResolveProvenance(t *testing.T) {
+	const word, meaning = "a.b.c.d.e.1", "a.b.c.d.e.2"
+	merged := &graph.GlobalSearchHint{Hint: "semantic", Detail: "merged", Honoured: true}
+	for name, tc := range map[string]struct {
+		results []graph.MergedSearchHit
+		merge   *graph.GlobalSearchHint
+		want    fusion.Provenance
+	}{
+		"merged, a vector hit returned": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 1.0 / 61}, {EntityID: meaning, Score: 1.0 / 62, VectorRank: 2}},
+			merged, fusion.ProvenanceEmbedding,
+		},
+		"meaning alone": {
+			[]graph.MergedSearchHit{{EntityID: meaning, Score: 1.0 / 61, VectorRank: 1}},
+			&graph.GlobalSearchHint{Hint: "semantic", Detail: graph.ErrorCodeIndexNotReady, Honoured: true},
+			fusion.ProvenanceEmbedding,
+		},
+		"merged, the embedding list empty": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 1.0 / 61}}, merged, fusion.ProvenanceLexical,
+		},
+		"merged, every vector hit below the limit": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 1.0 / 61}, {EntityID: meaning, Score: 1.0 / 62}},
+			merged, fusion.ProvenanceLexical,
+		},
+		"merge not honoured": {
+			[]graph.MergedSearchHit{{EntityID: word, Score: 4.5}},
+			&graph.GlobalSearchHint{Hint: "semantic", Reason: "the embedding search failed", Code: graph.ErrorCodeInternal},
+			fusion.ProvenanceLexical,
+		},
+		"no merge (word index)": {[]graph.MergedSearchHit{{EntityID: word, Score: 4.5}}, nil, fusion.ProvenanceLexical},
+	} {
+		t.Run(name, func(t *testing.T) {
+			reply := graph.MergedSearchData{Results: tc.results, Merge: tc.merge}
+			res, err := newClient(t, mergedThenBatch(t, reply)).Resolve(t.Context(),
+				fusion.ResolveQuery{Query: "widget", Mode: fusion.ResolveModeNL, Limit: 10})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, res.Provenance, "the Resolution")
+
+			resp, err := newNLEngine(t, mergedThenBatch(t, reply)).Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})
+			require.NoError(t, err)
+			require.Len(t, resp.Nodes, len(tc.results), "the reply's results are answered")
+			assert.Equal(t, tc.want, resp.Provenance, "the response")
+		})
+	}
+}
+
+// TestNLMeaningAloneWhileWordIndexBuilds holds that a reply holding the
+// embedding list alone, merge honoured with detail index_not_ready, is an
+// answer: its entities as nodes, provenance embedding, and none of the word
+// index's counts, since the word index answered nothing.
+func TestNLMeaningAloneWhileWordIndexBuilds(t *testing.T) {
+	fake := mergedThenBatch(t, graph.MergedSearchData{
+		Results: []graph.MergedSearchHit{
+			{EntityID: "a.b.c.d.e.7", Score: 1.0 / 61, VectorRank: 1}, {EntityID: "a.b.c.d.e.3", Score: 1.0 / 62, VectorRank: 2},
+		},
+		Merge: &graph.GlobalSearchHint{Hint: "semantic", Detail: graph.ErrorCodeIndexNotReady, Honoured: true},
+	})
+
+	resp, err := newNLEngine(t, fake).Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})
+	require.NoError(t, err)
+	assert.False(t, resp.Deferred)
+	ids := make([]string, 0, len(resp.Nodes))
+	for _, node := range resp.Nodes {
+		ids = append(ids, node.Name)
+	}
+	assert.ElementsMatch(t, []string{"a.b.c.d.e.7", "a.b.c.d.e.3"}, ids)
+	assert.Equal(t, fusion.ProvenanceEmbedding, resp.Provenance)
+	assert.Zero(t, resp.BodiesNotIndexed)
+	assert.Empty(t, resp.Excluded)
 }
 
 func TestResolve_Symbol_CarriesNoScope(t *testing.T) {
@@ -563,8 +663,8 @@ func TestAuthoritativeRepliesRejectPoisonBeforeProjection(t *testing.T) {
 			call: func(c *Client) (any, error) { return c.Entities(t.Context(), []string{validID}) },
 		},
 		{
-			name: "word search malformed entity id",
-			resp: enveloped(t, graph.LexicalSearchData{Results: []graph.LexicalHit{{EntityID: validID}, {EntityID: invalidEntityID}}}),
+			name: "merged search malformed entity id",
+			resp: enveloped(t, graph.MergedSearchData{Results: []graph.MergedSearchHit{{EntityID: validID}, {EntityID: invalidEntityID}}}),
 			call: func(c *Client) (any, error) {
 				return c.Resolve(t.Context(), fusion.ResolveQuery{Query: "widget", Mode: fusion.ResolveModeNL, Limit: 10})
 			},
@@ -596,8 +696,8 @@ func TestAuthoritativeRepliesRejectPoisonBeforeProjection(t *testing.T) {
 }
 
 // assertNoProjection checks that a refused reply yielded nothing usable. A
-// Hydration or Resolution is a struct whose zero value is the empty result, so
-// those are checked for empty lists rather than nil.
+// Hydration, Resolution, Neighbors or Names is a struct whose zero value is the
+// empty result, so those are checked for empty lists rather than nil.
 func assertNoProjection(t *testing.T, got any) {
 	t.Helper()
 	switch v := got.(type) {
@@ -606,6 +706,10 @@ func assertNoProjection(t *testing.T, got any) {
 		assert.Empty(t, v.Unhydrated, "a refused reply asserts nothing about what it could not hydrate")
 	case fusion.Resolution:
 		assert.Equal(t, fusion.Resolution{}, v, "no partial projection may escape")
+	case fusion.Neighbors:
+		assert.Equal(t, fusion.Neighbors{}, v, "no partial projection may escape")
+	case fusion.Names:
+		assert.Equal(t, fusion.Names{}, v, "no partial projection may escape")
 	default:
 		assert.Nil(t, got, "no partial projection may escape")
 	}
@@ -626,7 +730,7 @@ func TestNeighbors_OutgoingFiltersPredicates(t *testing.T) {
 	assert.Equal(t, []fusion.Edge{
 		{Predicate: "code.calls.fn", Target: "a.b.c.d.e.callee1"},
 		{Predicate: "code.calls.fn", Target: "a.b.c.d.e.callee2"},
-	}, edges, "code.imports.pkg is filtered out; the outgoing target is to_entity_id")
+	}, edges.Edges, "code.imports.pkg is filtered out; the outgoing target is to_entity_id")
 }
 
 func TestNeighbors_IncomingTargetsFromEnd(t *testing.T) {
@@ -638,7 +742,7 @@ func TestNeighbors_IncomingTargetsFromEnd(t *testing.T) {
 	edges, err := c.Neighbors(t.Context(), "a.b.c.d.e.seed", []string{"code.calls.fn"}, fusion.Incoming)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"entity_id":"a.b.c.d.e.seed","direction":"incoming"}`, string(fake.lastData))
-	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.caller1"}}, edges,
+	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.caller1"}}, edges.Edges,
 		"the incoming target is from_entity_id")
 }
 
@@ -649,7 +753,7 @@ func TestNeighbors_NoPredicatesMeansNoFilter(t *testing.T) {
 	})}
 	edges, err := newClient(t, fake).Neighbors(t.Context(), "a.b.c.d.e.seed", nil, fusion.Outgoing)
 	require.NoError(t, err)
-	assert.Len(t, edges, 2)
+	assert.Len(t, edges.Edges, 2)
 }
 
 // TestNeighborsReadsPredicate holds that an edge's predicate is read from the
@@ -661,14 +765,14 @@ func TestNeighborsReadsPredicate(t *testing.T) {
 	}})
 	edges, err := newClient(t, &fakeRequester{resp: reply}).Neighbors(t.Context(), "a.b.c.d.e.seed", nil, fusion.Outgoing)
 	require.NoError(t, err)
-	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.x"}}, edges)
+	assert.Equal(t, []fusion.Edge{{Predicate: "code.calls.fn", Target: "a.b.c.d.e.x"}}, edges.Edges)
 
 	pinWire := enveloped(t, []map[string]string{{
 		"from_entity_id": "a.b.c.d.e.seed", "to_entity_id": "a.b.c.d.e.x", "edge_type": "code.calls.fn",
 	}})
 	edges, err = newClient(t, &fakeRequester{resp: pinWire}).Neighbors(t.Context(), "a.b.c.d.e.seed", []string{"code.calls.fn"}, fusion.Outgoing)
 	require.NoError(t, err)
-	assert.Empty(t, edges, "edge_type is not the tree's key")
+	assert.Empty(t, edges.Edges, "edge_type is not the tree's key")
 }
 
 func TestNames_DedupesAndCaps(t *testing.T) {
@@ -683,7 +787,7 @@ func TestNames_DedupesAndCaps(t *testing.T) {
 	names, err := c.Names(t.Context(), "Wid", 2)
 	require.NoError(t, err)
 	assert.Equal(t, subjectByName, fake.lastSubject)
-	assert.Equal(t, []string{"Widget", "Gadget"}, names, "deduplicated in rank order, capped at 2")
+	assert.Equal(t, []string{"Widget", "Gadget"}, names.Names, "deduplicated in rank order, capped at 2")
 }
 
 // TestEntitiesRefusesNilContext holds that a nil context is refused before the
@@ -695,4 +799,59 @@ func TestEntitiesRefusesNilContext(t *testing.T) {
 	_, err := newClient(t, fake).Entities(nil, nil)
 	require.Error(t, err)
 	assert.Zero(t, fake.calls)
+}
+
+// damagedEnvelope is data as an enveloped row's reply whose producer left
+// damaged entities out.
+func damagedEnvelope[T any](t *testing.T, data T, damaged int) []byte {
+	t.Helper()
+	reply, err := graph.NewQueryResponse("graph-index", 1, data)
+	require.NoError(t, err)
+	reply.DamagedEntities = damaged
+	return mustJSON(t, reply)
+}
+
+// TestReadsPassOnDamagedCount holds that every read whose reply is enveloped
+// returns the reply's damaged_entities beside what it found, and 0 when the
+// reply carries none.
+func TestReadsPassOnDamagedCount(t *testing.T) {
+	const seed, callee = "a.b.c.d.e.seed", "a.b.c.d.e.callee"
+	relationships := []graph.RelationshipEdge{{FromEntityID: seed, ToEntityID: callee, Predicate: "code.calls.fn"}}
+	names := graph.NameData{Matches: []graph.NameMatch{{EntityID: callee, MatchedName: "Callee"}}}
+	words := graph.MergedSearchData{Results: []graph.MergedSearchHit{{EntityID: callee, Score: 1}}}
+
+	t.Run("relationships", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, relationships, 2)}).
+			Neighbors(t.Context(), seed, nil, fusion.Outgoing)
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Neighbors{
+			Edges: []fusion.Edge{{Predicate: "code.calls.fn", Target: callee}}, DamagedEntities: 2,
+		}, got)
+	})
+	t.Run("names", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, names, 3)}).Names(t.Context(), "Cal", 5)
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Names{Names: []string{"Callee"}, DamagedEntities: 3}, got)
+	})
+	t.Run("symbol resolve", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, names, 4)}).
+			Resolve(t.Context(), fusion.ResolveQuery{Query: "Callee", Mode: fusion.ResolveModeSymbol, Limit: 5})
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Resolution{Seeds: []fusion.Seed{{ID: callee}}, DamagedEntities: 4}, got)
+	})
+	t.Run("natural-language resolve", func(t *testing.T) {
+		got, err := newClient(t, &fakeRequester{resp: damagedEnvelope(t, words, 5)}).
+			Resolve(t.Context(), fusion.ResolveQuery{Query: "the callee", Mode: fusion.ResolveModeNL, Limit: 5})
+		require.NoError(t, err)
+		assert.Equal(t, fusion.Resolution{
+			Seeds: []fusion.Seed{{ID: callee, Similarity: 1, HasSimilarity: true}}, DamagedEntities: 5,
+			Provenance: fusion.ProvenanceLexical,
+		}, got)
+	})
+	t.Run("no count", func(t *testing.T) {
+		c := newClient(t, &fakeRequester{resp: enveloped(t, relationships)})
+		got, err := c.Neighbors(t.Context(), seed, nil, fusion.Outgoing)
+		require.NoError(t, err)
+		assert.Zero(t, got.DamagedEntities)
+	})
 }

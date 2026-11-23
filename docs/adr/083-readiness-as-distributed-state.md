@@ -10,6 +10,9 @@
 >   OpenSpec change it names, `readiness-distribution-and-staleness-contract`, is SemStreams'.
 > - Of the records named here, ADR-066, ADR-084 and ADR-085 are ported with this one. ADR-081 is ported with
 >   `pkg/graphview`. ADR-055 and ADR-082 are not yet ported.
+> - `reset_required` is not a state in this repository: the readiness gate's hard stop is `degraded` alone, and a
+>   stored entity that does not decode no longer stops a component (ADR-108 and ADR-109, amended 2026-11-19, #657
+>   ruling 3 and #658 comment 6962917422). Where the text below names `reset_required`, read `degraded`.
 > - Of the code named here, the `graph` package and the graph-ingest processor were ported in change 2 (PR #93), the
 >   graph-index processor in change 4 (PR #414), and `pkg/graphview` in change 4 (PR #476, ADR-081). `graph/follower`,
 >   ported with graph-index, creates the `GRAPH_STATUS` bucket and publishes the producer's readiness to it. The

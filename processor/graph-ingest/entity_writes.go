@@ -495,7 +495,7 @@ func (c *Component) committed(ctx context.Context, entityID string, revision uin
 // re-check reads the bucket only for a key already recorded. With the inventory empty
 // the re-check costs one atomic load.
 func (c *Component) writeFailed(ctx context.Context, entityID string) {
-	if c.entityPoisonSize.Load() != 0 {
+	if c.entityPoison.Len() != 0 {
 		c.verifyEntityPoisonRecord(ctx, entityID)
 	}
 	c.invalidateEntityCacheEntry(entityID)

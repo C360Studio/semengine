@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"slices"
+	"time"
 
 	"github.com/c360studio/semengine/graph"
 )
@@ -14,10 +16,10 @@ import (
 // tier 1 scorecard was measured with. A larger one weighs a list's lower places closer to its first.
 const mergeK = 60
 
-// detailMerged is the merge hint's Detail when searchGraph asked both searches for a merged list.
+// detailMerged is the merge hint's Detail when a search asked both searches for a merged list.
 const detailMerged = "merged"
 
-// mergedHit is one entity of a list searchGraph reads back: its ID, the score its match carries, and
+// mergedHit is one entity of a list a search answers: its ID, the score its match carries, and
 // its 1-based place in the word list and in the embedding list, 0 when it is not in that list.
 type mergedHit struct {
 	entityID             string
@@ -119,24 +121,96 @@ type semanticOutcome struct {
 	err error
 }
 
-// semanticSearch asks the embedding search for question, graph.MaxSimilarityLimit deep, and no
-// min_revision, which the embedding verbs refuse above 0.
-func (c *Component) semanticSearch(ctx context.Context, subject, question string) semanticOutcome {
-	body, err := json.Marshal(graph.SemanticRequest{Query: question, Limit: graph.MaxSimilarityLimit})
+// semanticSearch asks the embedding search for question within scope, graph.MaxSimilarityLimit
+// deep, waiting up to timeout for the reply, and no min_revision, which the embedding verbs refuse
+// above 0.
+func (c *Component) semanticSearch(ctx context.Context, subject, question string, scope []string, timeout time.Duration) semanticOutcome {
+	body, err := json.Marshal(graph.SemanticRequest{Query: question, Limit: graph.MaxSimilarityLimit, Scope: scope})
 	if err != nil {
 		return semanticOutcome{err: internalError(err)}
 	}
-	raw, err := c.natsClient.RequestClassified(ctx, subject, body, c.queryTimeout())
+	raw, err := c.natsClient.RequestClassified(ctx, subject, body, timeout)
 	return semanticOutcome{raw: raw, err: err}
 }
 
-// semanticRead is what searchGraph read of the embedding search: the hint naming the step, honoured
-// with the reply's data as its bytes came and its hits, or not honoured naming the refusal, the
-// timeout (an internal refusal, after query_timeout_ms) or the broken reply.
+// bothSearches is what the word search and the embedding search answered when asked together: the
+// word search's reply, or notReady, its index_not_ready refusal, when the answer is the embedding
+// list alone; and what was read of the embedding search.
+type bothSearches struct {
+	words    graph.QueryResponse[graph.LexicalSearchData]
+	notReady error
+	semantic semanticRead
+}
+
+// askBoth sends the word search for request and the embedding search for its query and scope, each
+// graph.MaxSimilarityLimit deep whatever the request's limit, so a shorter limit is a prefix of a
+// longer one. Both are sent before either is awaited, so the embedding wait is not added to the
+// word wait. min_revision goes to the word search alone, since the embedding verbs refuse one above
+// 0. The embedding search's reply is awaited up to embeddingWait.
+//
+// checkWords runs on the word hits before the embedding reply is awaited, so a broken word reply is
+// refused without that wait. A word search refused index_not_ready answers from the embedding search
+// alone, notReady set, when its reply was read, and otherwise returns that refusal, the first one.
+// Any other word refusal, or checkWords' refusal, is returned as it arrived; the embedding request is
+// then cancelled and the call waits for it to end, never for its reply, so nothing it started
+// outlives it, and its end counts no error.
+func (c *Component) askBoth(ctx context.Context, lexicalSubject, semanticSubject string, request graph.LexicalSearchRequest, embeddingWait time.Duration, checkWords func([]graph.LexicalHit) error) (bothSearches, error) {
+	await, stop := goSearch(ctx, func(ctx context.Context) semanticOutcome {
+		return c.semanticSearch(ctx, semanticSubject, request.Query, request.Scope, embeddingWait)
+	})
+	defer stop()
+	request.Limit = graph.MaxSimilarityLimit
+	words, err := c.wordSearch(ctx, lexicalSubject, request)
+	if err != nil {
+		if !isIndexNotReady(err) {
+			return bothSearches{}, err
+		}
+		semantic := c.readSemantic(semanticSubject, await(), graph.ErrorCodeIndexNotReady)
+		if !semantic.hint.Honoured {
+			return bothSearches{}, err
+		}
+		return bothSearches{notReady: err, semantic: semantic}, nil
+	}
+	if err := checkWords(words.Data.Results); err != nil {
+		return bothSearches{}, err
+	}
+	return bothSearches{words: words, semantic: c.readSemantic(semanticSubject, await(), detailMerged)}, nil
+}
+
+// merge is the list both searches answer, best first, before any limit: the merge of the word list
+// and the embedding list (mergeRanks) when the embedding list was read and checkVectors accepts its
+// hits; otherwise the word list in its own order, with the merge hint not honoured, naming why. A
+// refusal from checkVectors is the embedding index's broken reply.
+func (b *bothSearches) merge(checkVectors func([]graph.SimilarityHit) error) []mergedHit {
+	words := b.words.Data.Results
+	if !b.semantic.hint.Honoured {
+		return wordList(words)
+	}
+	if err := checkVectors(b.semantic.hits); err != nil {
+		b.semantic = semanticRead{hint: notHonouredBy(b.semantic.hint, err)}
+		return wordList(words)
+	}
+	return mergeRanks(words, b.semantic.hits)
+}
+
+// declareMergeFailed declares an answer of verb given as the word list alone because the embedding
+// search failed, as hint names: one Warn naming the verb, the failure and why answering is safe, and
+// one count on the merge-failed counter the search verbs share.
+func (c *Component) declareMergeFailed(verb string, hint graph.GlobalSearchHint) {
+	c.metrics.searchMergeFailed.Inc()
+	c.logger.Warn(verb+" answered the word list alone: the embedding search failed",
+		slog.String("verb", verb), slog.String("code", hint.Code), slog.String("error", hint.Reason),
+		slog.String("reason", "the reply names the failed merge, and the word list is the answer "+verb+" gives with no embedding search"))
+}
+
+// semanticRead is what a search read of the embedding search: the hint naming the step, honoured
+// with the reply's data as its bytes came, its hits and its damaged count, or not honoured naming the
+// refusal, the timeout (an internal refusal, once the wait has passed) or the broken reply.
 type semanticRead struct {
-	hint graph.GlobalSearchHint
-	data json.RawMessage
-	hits []graph.SimilarityHit
+	hint    graph.GlobalSearchHint
+	data    json.RawMessage
+	hits    []graph.SimilarityHit
+	damaged int
 }
 
 // readSemantic reads outcome, the embedding search's reply on subject, for a hint with detail. It
@@ -162,5 +236,5 @@ func (c *Component) readSemantic(subject string, outcome semanticOutcome, detail
 		return failed(c.brokenReply(subject, errors.New("holds no results")))
 	}
 	hint.Honoured = true
-	return semanticRead{hint: hint, data: reply.Data, hits: data.Results}
+	return semanticRead{hint: hint, data: reply.Data, hits: data.Results, damaged: reply.DamagedEntities}
 }

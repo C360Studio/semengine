@@ -26,6 +26,9 @@
 >   stored value with that code (a *poisoned* seed), the client lists that seed in `unhydrated` with reason `error` and
 >   the answer goes on (ADR-109 D1). D3 (no absence claim from readiness) and D6 (an omission is reported) are kept:
 >   `misses` and `unhydrated` are separate, and every cap or skipped read is declared on the response.
+> - `reset_required` is not a state in this repository: the readiness gate's hard stop is `degraded` alone, and a
+>   stored entity that does not decode no longer stops a component (ADR-108 and ADR-109, amended 2026-11-19, #657
+>   ruling 3 and #658 comment 6962917422). Where the text below names `reset_required`, read `degraded`.
 
 ## Status
 

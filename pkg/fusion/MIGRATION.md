@@ -40,6 +40,13 @@ Each of these is a compile error. Fix them first.
   copies the reply's `bodies_not_indexed` and `excluded` into the two fields; any other resolve leaves them empty. A
   wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a rebuilt one, or the two
   are lost.
+- **`Neighbors` and `Names` return structs.** `Neighbors` returns `fusion.Neighbors{Edges, DamagedEntities}` where it
+  returned `[]Edge`, and `Names` returns `fusion.Names{Names, DamagedEntities}` where it returned `[]string`;
+  `Resolution` gains `DamagedEntities` too. `DamagedEntities` is the read's count of damaged entities (stored values
+  the graph refuses to read) the index left out. *Do:* in `fusiontest.MemGraph` (`source/fusion/fusiontest/memgraph.go`)
+  wrap the results, `return fusion.Neighbors{Edges: edges}, nil` and `return fusion.Names{Names: names}, nil`; an
+  in-memory graph has no damaged entities, so it leaves the count 0. A wrapper such as `exact_seed.go` returns the
+  inner client's values unchanged.
 - **`fusionnats.New` returns an error, and the client has no `Status` and no `Close`.** It was
   `fusionnats.New(nats, timeout) *Client`, which accepted a nil client and bound a readiness watch on its first
   `Status` call. It is now `New(requester, timeout) (*Client, error)`: a nil requester and a negative timeout are
@@ -67,17 +74,30 @@ Each of these is a compile error. Fix them first.
 Read these. Nothing fails to compile, and a consumer that reads the JSON can be wrong without an error.
 
 - **The wire is `contract_version` `"2"`.** Check it before you rely on anything below.
-- **A word question asks graph-lexical, not an embedder.** SemStreams sent an `nl` resolve to the graph's semantic
-  (embedding) search; `fusionnats` now sends it to graph-lexical's word search, `graph.lexical.query.search`, with the
-  question unchanged. The word index's query rules apply: a question of more than 32 distinct words or of stopwords
-  only, or one holding `name:`, `body:` or a final `*`, is refused class invalid, code `invalid_request`, and `Fuse`
-  returns that refusal; `-word` excludes a word and double quotes make a phrase. A stack with no graph-lexical fails
-  every `nl` question with a transient `internal` error naming the subject. Seeds carry the word index's score, which
-  has no fixed scale.
-  *Do:* compose graph-lexical, and gate word questions on its `graph-lexical` readiness key.
-- **An `nl` answer's `provenance` is `lexical`.** It was `embedding`. `symbol` and `prefix` stay `deterministic`, and
-  a mode the engine does not know stays `embedding`. *Do:* update UI fixtures and any code or docs that expect
-  `embedding` on a word question.
+- **A word question asks graph-query's merged search, not an embedder alone.** SemStreams sent an `nl` resolve to the
+  graph's semantic (embedding) search; `fusionnats` now sends it to graph-query's `mergedSearch` verb with the
+  question unchanged. `mergedSearch` asks graph-lexical's word search, and, at tier 1, graph-embedding too, then merges
+  the lists as `searchGraph` does. The word index's query rules apply: a question of more than 32 distinct words or of
+  stopwords only, or one holding `name:`, `body:` or a final `*`, is refused class invalid, code `invalid_request`,
+  and `Fuse` returns that refusal; `-word` excludes a word and double quotes make a phrase. A stack with no
+  graph-query or no graph-lexical fails every `nl` question with a transient `internal` error naming the subject
+  nothing answered. Seeds carry the reply's score: the word index's score (no fixed scale) from a word-only answer,
+  or, at tier 1, the merged score, the sum of 1 / (60 + place) over the lists holding the entity. With
+  `include_scores` that score is the node's `similarity`.
+  *Do:* compose graph-query and graph-lexical, and gate word questions on the `graph-lexical` readiness key.
+  `mergedSearch` waits at most 4 seconds (or `query_timeout_ms` when shorter) for the embedding search; a slower one
+  gives the word answer.
+- **At tier 1, while the word index is building after a start, an `nl` answer comes from meaning alone.** It used to
+  defer `index_not_ready`. Such an answer has `provenance` `embedding` and no `excluded`. It still defers when the
+  embedding search fails too. *Do:* do not treat a missing `excluded` as proof that no term was excluded on a tier 1
+  stack that has just started.
+- **An `nl` answer's `provenance` is `embedding` or `lexical`, by what the answer holds.** It is `embedding` when at
+  least one returned seed came from the embedding list, and `lexical` otherwise: tier 0, a failed or late embedding
+  search, or an embedding list that added no returned seed. `symbol` and `prefix` stay `deterministic`, and a mode
+  the engine does not know stays `embedding`. A caller that builds its own `Resolution` (such as a test double) may
+  leave `Provenance` empty, and the response then carries its mode's value. *Do:* update UI fixtures and any code or
+  docs that expect `lexical` on every word question or `embedding` on every `nl` answer. SemSource's
+  `nlDisabledClient` comment still names the word search's subject and should name `mergedSearch`.
 - **`index` is gone from the response.** The pin sent the graph index's readiness record there. Read `deferred`
   (and `defer_reason`) to learn whether you got an answer. The engine asks for no status; a read that replies
   `index_not_ready` is what defers. A reader of `index.ready` now sees a missing key.
@@ -118,6 +138,12 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **`impact.truncated` and `graph.truncated` are set in more cases:** a skipped read for an affected node's file
   (impact), and an incoming counterpart whose read failed (graph). A counterpart that reads as absent keeps its edge
   without evidence and does not set `graph.truncated`.
+- **`damaged_entities` on the response** (absent at 0): the largest count of damaged entities any graph read the answer
+  used reported leaving out, in every resolve mode, on a miss and an `all_seeds_unhydrated` deferral too, never on an
+  `index_not_ready` deferral. It is not `truncated`, which still means only that the budget cut nodes off. The graph's
+  indexes set the count, so it appears while a stored value is damaged and disappears once a valid value is written or
+  the key is deleted. *Do:* read it beside `bodies_not_indexed` to tell a user an answer may lack entities that could
+  not be read.
 - **Two counters, on the injected registry only.**
   `semengine_fusion_skipped_reads_total{facet}` (`relations`, `paths`, `impact`, `graph`) is new, and each `Fuse` call
   logs one Warn line per facet that skipped a read (count and first error). The body counter is now
@@ -135,8 +161,9 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   fields named above.
 - `WithSignals` and the predicate-weight half of `fusionvocab` (read from `vocabulary`'s registry).
 
-A deployment with no graph-embedding still answers word questions (`nl` lens) when it composes graph-lexical: fusion
-reads no embedding. Symbol and prefix lenses need neither.
+A deployment with no graph-embedding still answers word questions (`nl` lens) when it composes graph-query and
+graph-lexical: `mergedSearch` then answers the word list alone, and fusion reads no embedding.
+Symbol and prefix lenses need neither.
 
 ## Still open
 

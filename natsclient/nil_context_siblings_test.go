@@ -19,7 +19,7 @@ import (
 // exported, context-taking method on the request/reply path and the KV bucket acquisition path
 // refuses a nil context with an invalid-data error, on a connected client, without panicking.
 func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
-	c, err := NewClient(embeddedJetStreamURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedJetStreamURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)
@@ -47,10 +47,6 @@ func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
 		}},
 		{"RequestWithRetryClassified", func(ctx context.Context) error {
 			_, err := c.RequestWithRetryClassified(ctx, subject, nil, 10*time.Second, retry.DefaultConfig())
-			return err
-		}},
-		{"RequestReadyClassified", func(ctx context.Context) error {
-			_, err := c.RequestReadyClassified(ctx, subject, nil, 0, 0)
 			return err
 		}},
 		{"Reply", func(ctx context.Context) error { return c.Reply(ctx, "nilctx.reply", nil) }},
@@ -110,7 +106,7 @@ func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
 // the first included, checks the context first, and the refusal is a transient
 // classified error that still matches context.Canceled.
 func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)
@@ -139,7 +135,7 @@ func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
 // A retry count below one makes one attempt, as retry.Do does: the handler runs once and its
 // reply comes back, never a success with no reply.
 func TestRetryRequestNegativeCountMakesOneAttempt(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)
@@ -164,7 +160,7 @@ func TestRetryRequestNegativeCountMakesOneAttempt(t *testing.T) {
 // A config retry.Do refuses is returned before anything is sent: the handler never runs. The
 // error's class is not promised.
 func TestRetryRequestRefusedConfigNeverDispatches(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)
@@ -191,7 +187,7 @@ func TestRetryRequestRefusedConfigNeverDispatches(t *testing.T) {
 // without panicking and before touching any state, with the same invalid-data error as the
 // rest, KVStore.KeysByFilter, ValidateHeartbeatDeliveryPolicy and Subscription.Drain included.
 func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
-	c, err := NewClient(embeddedJetStreamURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedJetStreamURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)

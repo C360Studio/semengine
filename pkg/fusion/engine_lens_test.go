@@ -45,6 +45,13 @@ type fakeGraph struct {
 	// bodiesNotIndexed and excluded are the word index counts Resolve reports.
 	bodiesNotIndexed int
 	excluded         []string
+	// resolveDamaged, neighborsDamaged (by the ID read) and namesDamaged are the
+	// damaged-entity counts Resolve, Neighbors and Names report.
+	resolveDamaged   int
+	neighborsDamaged map[string]int
+	namesDamaged     int
+	// provenance is the Provenance Resolve reports; empty reports none.
+	provenance fusion.Provenance
 	// unhydrated, when set, is reported alongside whatever entitiesFn returns.
 	unhydrated []fusion.Unhydrated
 	// seedsFn, when set, overrides seed resolution so a test can attach similarity
@@ -55,7 +62,10 @@ type fakeGraph struct {
 func (g *fakeGraph) Resolve(_ context.Context, q fusion.ResolveQuery) (fusion.Resolution, error) {
 	g.lastResolve = q
 	counted := func(seeds []fusion.Seed) fusion.Resolution {
-		return fusion.Resolution{Seeds: seeds, BodiesNotIndexed: g.bodiesNotIndexed, Excluded: g.excluded}
+		return fusion.Resolution{
+			Seeds: seeds, BodiesNotIndexed: g.bodiesNotIndexed, Excluded: g.excluded, DamagedEntities: g.resolveDamaged,
+			Provenance: g.provenance,
+		}
 	}
 	if g.seedsFn != nil {
 		return counted(g.seedsFn(q)), g.resolveErr
@@ -171,9 +181,9 @@ func hasUnhydrated(list []fusion.Unhydrated, id string) bool {
 	}
 	return false
 }
-func (g *fakeGraph) Neighbors(_ context.Context, id string, preds []string, dir fusion.Direction) ([]fusion.Edge, error) {
+func (g *fakeGraph) Neighbors(_ context.Context, id string, preds []string, dir fusion.Direction) (fusion.Neighbors, error) {
 	if g.neighborsErr != nil {
-		return nil, g.neighborsErr
+		return fusion.Neighbors{}, g.neighborsErr
 	}
 	edges := g.in[id]
 	if dir == fusion.Outgoing {
@@ -183,8 +193,9 @@ func (g *fakeGraph) Neighbors(_ context.Context, id string, preds []string, dir 
 	// predicate set (nil/empty = no filter). computeImpact/computePaths rely on
 	// this filtering — they do not re-check predicates on the returned edges —
 	// so a fake that ignored preds would silently mask per-facet edge selection.
+	damaged := g.neighborsDamaged[id]
 	if len(preds) == 0 {
-		return edges, nil
+		return fusion.Neighbors{Edges: edges, DamagedEntities: damaged}, nil
 	}
 	var filtered []fusion.Edge
 	for _, ed := range edges {
@@ -192,10 +203,10 @@ func (g *fakeGraph) Neighbors(_ context.Context, id string, preds []string, dir 
 			filtered = append(filtered, ed)
 		}
 	}
-	return filtered, nil
+	return fusion.Neighbors{Edges: filtered, DamagedEntities: damaged}, nil
 }
-func (g *fakeGraph) Names(_ context.Context, _ string, _ int) ([]string, error) {
-	return g.names, nil
+func (g *fakeGraph) Names(_ context.Context, _ string, _ int) (fusion.Names, error) {
+	return fusion.Names{Names: g.names, DamagedEntities: g.namesDamaged}, nil
 }
 
 func entity(id, title, path string, extra ...message.Triple) *fusion.Entity {

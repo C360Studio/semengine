@@ -109,10 +109,11 @@ func decodeVector(_ string, value []byte, _ graphview.EntryMeta) (cachedVector, 
 // ties by entity ID (ScoredEntityLess), sorted before the limit applies, and the number of
 // records in EMBEDDING_INDEX that could not be decoded, which are not scored. The vectors and the
 // count are read at one moment (graphview.View.ListCounted); scoring runs after the read, so a
-// write applied meanwhile shows in the next call. The count is every unreadable record, whether
-// or not keep accepts its key. excludeID is never scored ("" excludes nothing). keep, when
-// non-nil, is applied before scoring and before the limit: only the entity IDs it accepts are
-// scored, so a scoped search (ADR-071) returns the best in-scope entities. A limit of 0 or less returns no entities.
+// write applied meanwhile shows in the next call. excludeID is never scored ("" excludes
+// nothing). keep, when non-nil, is applied before scoring and before the limit: only the entity
+// IDs it accepts are scored, so a scoped search (ADR-071) returns the best in-scope entities, and
+// only the unreadable records whose keys it accepts are counted, so the count describes the same
+// scope; a nil keep scores and counts every key. A limit of 0 or less returns no entities.
 // Only vectors made under the running embedder's identity, read once at the call, are scored
 // (Record.GeneratedBy); another identity's vectors are left out as pending records are.
 //
@@ -123,7 +124,7 @@ func (c *VectorCache) FindSimilar(excludeID string, query []float32, keep func(s
 	if view == nil {
 		return nil, 0, fmt.Errorf("%w: %w", graphview.ErrNotReady, errNoView)
 	}
-	records, unreadable, err := view.ListCounted("")
+	records, unreadable, err := view.ListCounted(keep)
 	if err != nil {
 		if errors.Is(err, graphview.ErrViewStopped) { // a stopped view does not say not-ready itself
 			return nil, 0, fmt.Errorf("%w: %w", graphview.ErrNotReady, err)
@@ -136,7 +137,7 @@ func (c *VectorCache) FindSimilar(excludeID string, query []float32, keep func(s
 	id := c.identity()
 	results := make([]ScoredEntity, 0, len(records))
 	for _, record := range records {
-		if record.Key == excludeID || (keep != nil && !keep(record.Key)) {
+		if record.Key == excludeID {
 			continue
 		}
 		if !sameSpace(record.Value.id, id) {

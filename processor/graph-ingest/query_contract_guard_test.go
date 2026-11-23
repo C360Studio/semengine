@@ -315,7 +315,7 @@ func TestEntityStateGuardFailureIsReturned(t *testing.T) {
 			if tc.want != refused && !watcher.stopped() {
 				t.Fatal("the sweep's watcher was not stopped")
 			}
-			if c.entityPoisonSize.Load() != 0 {
+			if c.entityPoison.Len() != 0 {
 				t.Fatal("a failed sweep must not record poison")
 			}
 		})
@@ -350,7 +350,7 @@ func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *
 	if !watcher.stopped() {
 		t.Fatal("watcher was not stopped after the snapshot marker")
 	}
-	if c.entityPoisonSize.Load() != 0 {
+	if c.entityPoison.Len() != 0 {
 		t.Fatal("post-marker discarded entries must not be inventoried")
 	}
 	health := c.Health()
@@ -429,7 +429,7 @@ func TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses(t *testing.T) {
 				default:
 					t.Fatal("the sweep's watcher was not stopped")
 				}
-				if c.entityPoisonSize.Load() != 0 {
+				if c.entityPoison.Len() != 0 {
 					t.Fatal("a sweep whose watch did not close must not record poison")
 				}
 			})

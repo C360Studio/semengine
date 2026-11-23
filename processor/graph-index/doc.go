@@ -6,8 +6,10 @@
 // (indexed_revision) and the producer that gave it.
 //
 // Until the index has rebuilt from ENTITY_STATES after a start, and for as long as it has lost
-// its feed, every verb refuses with the transient error code index_not_ready; after a stored
-// entity that cannot be decoded, it refuses with the fatal graph_state_reset_required.
+// its feed, every verb refuses with the transient error code index_not_ready. A stored entity
+// that cannot be decoded is damaged: its rows are removed, every reply counts it in
+// damaged_entities, Health names it, and outgoing of that entity refuses with the fatal
+// graph_state_reset_required. A valid write or a delete of the key clears it with no restart.
 //
 // An alias lookup answers the one live entity carrying the alias (trimmed and case-folded, as
 // names are), answers no ID when none does, and refuses with class invalid and code

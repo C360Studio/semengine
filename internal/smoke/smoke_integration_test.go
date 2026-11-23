@@ -570,13 +570,11 @@ func requireLexicalKept(t *testing.T, o observer, s stack, revision uint64, befo
 	}
 }
 
-// communityAnswer is one localSearch reply, or the refusal, with graph-clustering's envelope read
-// beside it.
+// communityAnswer is one localSearch reply, or the refusal.
 type communityAnswer struct {
-	reply      graph.QueryResponse[graph.LocalSearchData]
-	raw        []byte
-	err        error
-	clustering graph.IndexStatusResponse
+	reply graph.QueryResponse[graph.LocalSearchData]
+	raw   []byte
+	err   error
 }
 
 // matchIDs is the entity IDs of matches, in the order the reply gave them.
@@ -596,8 +594,7 @@ func matchIDs(matches []graph.TextSearchMatch) []string {
 // localSearch attaches the group's record when graph-query's own view of COMMUNITY_INDEX holds it.
 // Neither GRAPH_STATUS nor a bucket read orders a read of that view, so localSearch on the lead at
 // min_revision revision is asked until it answers with the record of all w's members; a refusal
-// that the word index is not ready or below revision is asked again, and a latched
-// graph-clustering envelope, which no later tick clears, fails at once. Then each word of wordHits
+// that the word index is not ready or below revision is asked again. Then each word of wordHits
 // is searched both ways (checkWordSearches).
 func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted []string) {
 	t.Helper()
@@ -606,30 +603,20 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 	word := w[lead].words()[0]
 	request := graph.LocalSearchRequest{EntityID: lead, Query: word, MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
 	what := fmt.Sprintf("localSearch %q on %s at min_revision %d", word, lead, revision)
-	got := await(t, s, what+" to answer", func(ctx context.Context) (communityAnswer, error) {
-		status, err := o.readStatus(ctx, readiness.KeyGraphClustering)
-		if err != nil {
-			return communityAnswer{}, err
-		}
-		answer := communityAnswer{clustering: status}
+	got := await(t, s, what+" to answer", func(context.Context) (communityAnswer, error) {
+		var answer communityAnswer
 		answer.raw, answer.err = o.ask(t, "localSearch", request)
 		if answer.err == nil {
 			answer.err = json.Unmarshal(answer.raw, &answer.reply)
 		}
 		return answer, nil
 	}, func(a communityAnswer) bool {
-		if latched(a.clustering) != "" {
-			return true
-		}
 		if wordIndexCatchingUp(a.err) {
 			return false
 		}
 		record := a.reply.Data.Record
 		return a.err != nil || (record != nil && record.MemberCount == len(w))
 	})
-	if reason := latched(got.clustering); reason != "" {
-		t.Fatalf("%s/%s latched: %s", graph.BucketGraphStatus, readiness.KeyGraphClustering, reason)
-	}
 	if got.err != nil {
 		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
 	}
@@ -1103,7 +1090,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 // running stack": the NATS server restarts on the same URL with its file storage while the stack
 // keeps running, and the same process, never restarted, applies a new entity, an edit and a delete
 // published after it, answers what it did before plus those writes, and lists its seven components
-// healthy, with no envelope reporting a lost feed or reset_required.
+// healthy, with no envelope reporting a lost feed.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -1148,8 +1135,7 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	s.ingestStatusBefore = o.statusRevision(t, readiness.KeyGraphIngest)
 
 	// The waits in checkWritesAfterRestart read the ENTITY_STATES revision after the two writes, so
-	// the envelopes the stack wrote before the restart cannot pass them; a latched envelope fails
-	// at once, naming it.
+	// the envelopes the stack wrote before the restart cannot pass them.
 	after := checkWritesAfterRestart(t, o, s, f, before)
 	t.Logf("the writes published after the restart were indexed and answered %v after Restart returned (recorded, not asserted)",
 		time.Since(restarted).Round(time.Millisecond))
@@ -1162,6 +1148,106 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	requireComponentsHealthy(t, s)
 	delete(after, deleted)
 	checkAnswers(t, o, s, f, after, revision, deleted)
+	stopStack(t, s)
+}
+
+// notDegraded returns the index keys whose follower does not read degraded on the stack's metrics
+// server, which answers over HTTP while NATS is down: each follower sets its readiness_state gauge
+// from the same envelope it writes to GRAPH_STATUS.
+func notDegraded(t *testing.T, s stack) []string {
+	t.Helper()
+	url, code, body := get(t, s, s.metricsPort, "/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET %s: HTTP %d: %s", url, code, body)
+	}
+	lines := strings.Split(string(body), "\n")
+	var keys []string
+	for _, key := range s.composition.indexKeys {
+		degraded := "semengine_" + strings.ReplaceAll(key, "-", "_") + `_readiness_state{state="degraded"} 1`
+		if !slices.Contains(lines, degraded) {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+// TestSmoke_BrokerOutageUnderRunningStack holds composed-stack, "Restart the broker under the
+// running stack", for an outage the stack notices: the NATS server stays down until every index
+// the composition runs reports itself degraded, so each has failed to read ENTITY_STATES at least
+// once, and each reads unhealthy naming that read; only then does it start again on the same URL
+// with its file storage. The stack, never restarted, still holds every revision it stored, answers
+// what it did before plus the writes published after, and lists its components healthy, with no
+// envelope reporting a lost feed.
+func TestSmoke_BrokerOutageUnderRunningStack(t *testing.T) {
+	// Own server: holds the NATS server down under the running stack, which the shared one must not.
+	broker := natsfixture.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer cancel()
+	if err := broker.Start(ctx); err != nil {
+		t.Fatalf("start the NATS server: %v", err)
+	}
+	url := broker.URL()
+
+	o := newObserver(t, url)
+	s := startStack(t, o, url)
+	f := fixture{platform: s.platform}
+	requireComponentsListed(t, s)
+
+	inputs := f.fixedEntities()
+	var last uint64
+	for _, e := range inputs {
+		last = o.publish(t, e)
+	}
+	o.awaitAcknowledged(t, s, last)
+	revision := o.awaitIndexed(t, s)
+	requireComponentsHealthy(t, s)
+	before := wantOf(inputs...)
+	checkAnswers(t, o, s, f, before, revision)
+
+	reconnects := o.client.GetConnection().Stats().Reconnects
+	held := func(context.Context) error {
+		down := time.Now()
+		await(t, s, "every index to report degraded while NATS is down", func(context.Context) ([]string, error) {
+			return notDegraded(t, s), nil
+		}, func(keys []string) bool { return len(keys) == 0 })
+		t.Logf("every index read degraded %v into the outage (recorded, not asserted)", time.Since(down).Round(time.Millisecond))
+		// Each index read degraded because its ENTITY_STATES status read failed, so its health names
+		// that read: a stuck state while it lasts, cleared once NATS is back.
+		for _, c := range readHealth(t, s).Components {
+			if slices.Contains(s.composition.indexKeys, c.Component) &&
+				(c.Healthy || !strings.Contains(c.Message, "ENTITY_STATES status read failed")) {
+				t.Errorf("during the outage %s reads healthy=%v %q; want unhealthy, naming the failed status read",
+					c.Component, c.Healthy, c.Message)
+			}
+		}
+		if t.Failed() {
+			t.FailNow()
+		}
+		return nil
+	}
+	rctx, rcancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer rcancel()
+	if err := broker.RestartAfter(rctx, held); err != nil {
+		t.Fatalf("restart the NATS server after the held outage: %v", err)
+	}
+	if broker.URL() != url {
+		t.Fatalf("the NATS server's URL changed across the outage, %s to %s: a fixture failure, not the stack's", url, broker.URL())
+	}
+	await(t, s, "the observer's connection to reconnect", func(context.Context) (uint64, error) {
+		return o.client.GetConnection().Stats().Reconnects, nil
+	}, func(n uint64) bool { return n > reconnects && o.client.IsHealthy() })
+	if !s.process.Alive() {
+		t.Fatal("the stack exited across the NATS outage")
+	}
+	// Before any new write: a bucket that lost what it stored fails here, naming it, rather than in a
+	// wait for writes that never land.
+	if got := o.entityRevision(t); got != revision {
+		t.Fatalf("%s revision %d after the outage, want %d: the bucket did not keep what it stored",
+			graph.BucketEntityStates, got, revision)
+	}
+	s.ingestStatusBefore = o.statusRevision(t, readiness.KeyGraphIngest)
+
+	checkWritesAfterRestart(t, o, s, f, before)
 	stopStack(t, s)
 }
 

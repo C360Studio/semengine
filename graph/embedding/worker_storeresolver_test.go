@@ -56,11 +56,15 @@ type countingMetrics struct {
 	dedup, failed, unresolved, resolveErr, resolved, truncated, dedupSkipped int
 	identityIncluded, identityAbsent                                         int
 	failedReasons                                                            []string
+	truncatedBy                                                              []string
 }
 
-func (m *countingMetrics) IncDedupHits()            { m.dedup++ }
-func (m *countingMetrics) IncDedupSkipped(string)   { m.dedupSkipped++ }
-func (m *countingMetrics) IncTruncated()            { m.truncated++ }
+func (m *countingMetrics) IncDedupHits()          { m.dedup++ }
+func (m *countingMetrics) IncDedupSkipped(string) { m.dedupSkipped++ }
+func (m *countingMetrics) IncTruncated(by string) {
+	m.truncated++
+	m.truncatedBy = append(m.truncatedBy, by)
+}
 func (m *countingMetrics) IncFailed()               { m.failed++ }
 func (m *countingMetrics) IncFailedReason(r string) { m.failedReasons = append(m.failedReasons, r) }
 func (m *countingMetrics) IncContentResolveError()  { m.resolveErr++ }
@@ -114,7 +118,7 @@ func TestGetSourceText_UnregisteredInstanceExcludesBodyAndContinuesIdentity(t *t
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
-	got, err := w.getSourceText(t.Context(), &Record{
+	got, _, err := w.getSourceText(t.Context(), &Record{
 		IdentityText: "inline identity",
 		StorageRef:   &StorageRef{StorageInstance: "missing", Key: "k"},
 	})

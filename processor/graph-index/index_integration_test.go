@@ -58,7 +58,6 @@ func openClient(ctx context.Context, url string) (*natsclient.Client, func(conte
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(15*time.Second),
 		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -478,34 +477,28 @@ func TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt(t *testing.
 	}
 }
 
-// TestNoncanonicalValueLatchesResetAndHoldsItsRevision writes, after the replay, a value naming
-// another entity than its key. The lane latches reset, counts the entity unresolved, and does not
-// complete the revision, so the watermark never reports it applied.
-func TestNoncanonicalValueLatchesResetAndHoldsItsRevision(t *testing.T) {
-	h := startIndex(t, fixtureClient(t), `{}`) // one lane: work applies in submit order
-	bad, good := entityID(1), entityID(2)
+// TestNoncanonicalValueIsRecordedAndCompletes writes, after the replay, a value naming another
+// entity than its key. The lane records the key damaged, completes the revision, and holds no
+// unresolved write; Stuck names the key with the refusal's reason.
+func TestNoncanonicalValueIsRecordedAndCompletes(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	bad := entityID(1)
 	badRev := h.put(t, bad, entityValue(t, entityID(3), stmt{armed, true}))
-	h.put(t, good, entityValue(t, good, stmt{linkTo, bad}))
-	// One lane applies good after bad's work has returned, completion included: good's row is the
-	// event that orders the reads below after bad's apply.
-	await(t, "the later entity indexed",
-		func(ctx context.Context) ([]string, error) { return h.keys(t, graph.BucketOutgoingIndex), nil },
-		func(keys []string) bool { return slices.Contains(keys, good) })
-	if got := h.f.Indexed(); got >= badRev {
-		t.Errorf("Indexed() = %d, want below the noncanonical revision %d", got, badRev)
+	// The floor reaching badRev is the completion; the lane reported before it completed.
+	h.awaitIndexed(t, badRev)
+	if n := h.c.failedTotal(); n != 0 {
+		t.Errorf("failed entities = %d, want 0: damage is not a failed write", n)
 	}
-	if n := h.c.failedTotal(); n != 1 {
-		t.Errorf("failed entities = %d, want 1", n)
-	}
-	want := "graph state reset required: " + string(graph.GraphStateReasonNoncanonicalEntityID)
-	if stuck := h.f.Stuck(); !slices.Contains(stuck, want) {
-		t.Errorf("Stuck() = %q, want %q", stuck, want)
+	want := bad + " (" + string(graph.GraphStateReasonNoncanonicalEntityID) + ")"
+	if stuck := h.f.Stuck(); !slices.ContainsFunc(stuck, func(s string) bool { return strings.Contains(s, want) }) {
+		t.Errorf("Stuck() = %q, want it to name %s", stuck, want)
 	}
 }
 
 // TestErrorCountCountsOutcomesNotOperations: ErrorCount counts each entity whose required writes
-// ultimately failed and each reset, once each. Failed KV operations, retries
-// included, are the reconciliation metrics' to count, not ErrorCount's.
+// ultimately failed and each newly damaged entity, once each. Failed KV operations, retries
+// included, are the reconciliation metrics' to count, not ErrorCount's, and damage read again is
+// not counted again.
 func TestErrorCountCountsOutcomesNotOperations(t *testing.T) {
 	t.Run("one entity whose writes fail on every attempt", func(t *testing.T) {
 		h := startIndex(t, fixtureClient(t), `{}`)
@@ -525,26 +518,24 @@ func TestErrorCountCountsOutcomesNotOperations(t *testing.T) {
 				got, indexWriteMaxAttempts)
 		}
 	})
-	t.Run("one reset that holds the entity", func(t *testing.T) {
-		h := startIndex(t, fixtureClient(t), `{}`) // one lane: work applies in submit order
-		good := entityID(2)
-		h.put(t, entityID(1), entityValue(t, entityID(3), stmt{armed, true}))
-		h.put(t, good, entityValue(t, good))
-		// The noncanonical revision never completes; good's row, applied on the same lane after it,
-		// is the event that orders the read below after the reset.
-		await(t, "the later entity indexed",
-			func(context.Context) ([]string, error) { return h.keys(t, graph.BucketOutgoingIndex), nil },
-			func(keys []string) bool { return slices.Contains(keys, good) })
+	t.Run("one damaged entity read twice", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`)
+		id := entityID(1)
+		h.awaitIndexed(t, h.put(t, id, entityValue(t, entityID(3), stmt{armed, true})))
 		if got := h.c.Health().ErrorCount; got != 1 {
-			t.Fatalf("ErrorCount = %d after one noncanonical value latched reset, want 1", got)
+			t.Fatalf("ErrorCount = %d after one noncanonical value, want 1", got)
+		}
+		h.awaitIndexed(t, h.put(t, id, []byte("not an entity state")))
+		if got := h.c.Health().ErrorCount; got != 1 {
+			t.Fatalf("ErrorCount = %d after the same entity was damaged again, want 1", got)
 		}
 	})
-	t.Run("one reset that completes", func(t *testing.T) {
+	t.Run("two damaged entities", func(t *testing.T) {
 		h := startIndex(t, fixtureClient(t), `{}`)
-		rev := h.put(t, entityID(1), []byte("not an entity state"))
-		h.awaitIndexed(t, rev)
-		if got := h.c.Health().ErrorCount; got != 1 {
-			t.Fatalf("ErrorCount = %d after one unreadable value latched reset, want 1", got)
+		h.put(t, entityID(1), []byte("not an entity state"))
+		h.awaitIndexed(t, h.put(t, entityID(2), []byte("not an entity state")))
+		if got := h.c.Health().ErrorCount; got != 2 {
+			t.Fatalf("ErrorCount = %d after two damaged entities, want 2", got)
 		}
 	})
 }

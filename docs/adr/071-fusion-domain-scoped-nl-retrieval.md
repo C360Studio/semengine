@@ -17,6 +17,10 @@
 >   word search (`graph.lexical.query.search`) instead of `semantic`, with the `scope` list in
 >   `graph.LexicalSearchRequest`, left out when empty. The decision holds unchanged: scope filters where the seeds are
 >   found, now in the word index, which applies it before the limit. The answer's provenance is `lexical`.
+>   Amended since: `fusionnats` sends an `nl` resolve to graph-query's `mergedSearch` verb, with the same `scope`
+>   list. graph-query passes it to both the word search and, at tier 1, the embedding search, so each applies it
+>   before its own limit. The decision holds unchanged. The answer's provenance is `embedding` when a returned seed
+>   came from the embedding list, and `lexical` otherwise.
 > - The compatibility note below ("an un-migrated server silently ignores `scope`") no longer holds here: the
 >   responder decodes strictly, so a request with a key it does not define is refused `invalid_request`, and a
 >   malformed `scope` prefix is refused the same way (`processor/graph-embedding/MIGRATION.md`).

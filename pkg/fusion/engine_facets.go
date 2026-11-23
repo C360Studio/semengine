@@ -252,7 +252,7 @@ func (ps *pathSet) cut(path []string) {
 // so a partial result is never reported as exact. err is the context's error,
 // and only when the context ended.
 func (e *Engine) neighbors(ctx context.Context, id string, preds []string, dir Direction, facet string, skips *skipLog) ([]Edge, bool, error) {
-	edges, err := e.graph.Neighbors(ctx, id, preds, dir)
+	read, err := e.graph.Neighbors(ctx, id, preds, dir)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
 			return nil, false, cerr
@@ -260,7 +260,8 @@ func (e *Engine) neighbors(ctx context.Context, id string, preds []string, dir D
 		skips.add(facet, err)
 		return nil, false, nil
 	}
-	return orderedEdges(edges), true, nil
+	skips.sawDamaged(read.DamagedEntities)
+	return orderedEdges(read.Edges), true, nil
 }
 
 // nameOf resolves an entity ID to its human name via the lens. ok is false when

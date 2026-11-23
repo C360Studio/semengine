@@ -190,7 +190,7 @@ func (c *Component) OutputPorts() []component.Port {
 }
 
 // Health reports the shell's verdict (component.Lifecycle.Health) over the follower's stuck
-// states: a latched reset, unresolved index writes, a lost feed. ErrorCount is reported and
+// states: damaged entities stored, unresolved index writes, a lost feed. ErrorCount is reported and
 // never lowers Healthy (ADR-109 Decision 2), so a write failure lowers it only until its repair.
 func (c *Component) Health() component.HealthStatus {
 	var stuck []string

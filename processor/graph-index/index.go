@@ -78,7 +78,7 @@ func (c *Component) openIndexBuckets(ctx context.Context) error {
 }
 
 // startIndexPool builds the keyed pool, and the coalescer when coalesce_ms is above zero,
-// after openIndexBuckets. f is the follower whose watermark and reset latch the lanes
+// after openIndexBuckets. f is the follower whose watermark and damage record the lanes
 // report to. poolCtx is handed to every lane's apply; it must stay live until the pool's
 // Shutdown has returned, so accepted work is written. The coalescer's run is the caller's
 // to start and join.
@@ -116,26 +116,48 @@ func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower
 }
 
 // deliver is the follower's Deliver: it counts the entry, before any coalescing, and
-// routes its key. A delete drops the key's pending coalesced revision and goes to the
-// lane at once; the delete's revision is greater, so completing it completes the dropped
-// one (revlag).
+// routes its key. A key the shared KV key validator refuses is settled here and never
+// routed (settleUnreadable). A delete drops the key's pending coalesced revision and goes
+// to the lane at once; the delete's revision is greater, so completing it completes the
+// dropped one (revlag).
 func (c *Component) deliver(ctx context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
+	event := "update"
+	if e.Deleted {
+		event = "delete"
+	}
+	c.metrics.watchEvents.WithLabelValues(event).Inc()
+	if natsclient.ValidateKVLiteralKey(e.Key) != nil {
+		c.settleUnreadable(e)
+		return
+	}
 	work := indexWork{entityID: e.Key, revision: e.Revision}
 	if e.Deleted {
-		c.metrics.watchEvents.WithLabelValues("delete").Inc()
 		if c.coalescer != nil {
 			c.coalescer.Remove(e.Key)
 		}
 		c.submit(ctx, work)
 		return
 	}
-	c.metrics.watchEvents.WithLabelValues("update").Inc()
 	if c.coalescer != nil {
 		c.coalescer.Add(e.Key, e.Revision)
 		return
 	}
 	c.submit(ctx, work)
+}
+
+// settleUnreadable handles a key the shared KV key validator refuses, one longer than it allows
+// or with more tokens. Such a key cannot be read back, and no row was ever built under it, so its
+// delivered events decide, in the order they arrive: a write records it damaged at the write's
+// revision, and a delete or purge, whose delivery has already cleared the record, records
+// nothing. Each revision completes here. Were such a write queued in the coalescer or a lane, it
+// could be applied after the key's delete and record a key that no longer exists, with no later
+// event to clear it.
+func (c *Component) settleUnreadable(e follower.Entry) {
+	if !e.Deleted {
+		c.reportDamaged(e.Key, e.Revision, noncanonicalRefusal(e.Key, validateEntityLiteralKey(e.Key)))
+	}
+	c.follower.Load().Complete(e.Key, e.Revision)
 }
 
 // submitBatch is the coalescer's callback: each key goes to its lane as reconciliation
@@ -167,7 +189,7 @@ func (c *Component) submit(ctx context.Context, work indexWork) {
 // state, not the event it came from, so a repair that read R2 before the follower
 // submitted R1 cannot be undone by R1.
 func (c *Component) processWork(ctx context.Context, work indexWork) {
-	if c.reconcileEntity(ctx, work.entityID) && work.revision > 0 {
+	if c.reconcileEntity(ctx, work) && work.revision > 0 {
 		c.follower.Load().Complete(work.entityID, work.revision)
 	}
 }
@@ -179,16 +201,12 @@ func (c *Component) failedTotal() int64 {
 }
 
 // reconcileEntity applies entityID's current authoritative state and reports whether the
-// revision that led here may complete.
-func (c *Component) reconcileEntity(ctx context.Context, entityID string) bool {
+// revision that led here may complete. work's revision is the delivered one, 0 for a repair pass.
+func (c *Component) reconcileEntity(ctx context.Context, work indexWork) bool {
+	entityID := work.entityID
 	if err := validateEntityLiteralKey(entityID); err != nil {
-		c.follower.Load().Reset(graph.GraphStateReasonNoncanonicalEntityID)
-		c.markEntityFailed(entityID)
-		c.logger.Error("authoritative entity key is noncanonical; graph reset required",
-			slog.String("entity", entityID), slog.Any("error", err))
-		// No owner filter is safe for this key, so it can never be applied: keep the
-		// revision pending, so the watermark never says it was processed.
-		return false
+		c.reconcileNoncanonical(ctx, entityID, err)
+		return true
 	}
 	entry, err := c.entities.Get(ctx, entityID)
 	if err != nil {
@@ -204,14 +222,53 @@ func (c *Component) reconcileEntity(ctx context.Context, entityID string) bool {
 			slog.String("entity", entityID), slog.Any("error", err))
 		return true
 	}
-	if err := c.indexEntity(ctx, entityID, entry.Value()); err != nil {
+	if err := c.indexEntity(ctx, entityID, entry.Revision(), entry.Value()); err != nil {
 		// A refused plan or a failed write still completes: readiness is gated on the failed
 		// set, and a revision left pending would pin the watermark for ever (ADR-066 §1).
 		c.logger.Warn("entity index failed; readiness withheld until re-index",
 			slog.String("entity", entityID), slog.Any("error", err))
-		return !errors.Is(err, errAuthoritativeIdentityMismatch)
 	}
 	return true
+}
+
+// reconcileNoncanonical handles a key that is not a literal entity ID. No row was ever built under
+// such a key, so there is nothing to remove and no owner filter is built from it. The key is
+// damaged while a value is stored under it, and current state decides that, as for every other
+// key: once the key is deleted or purged, its delete, and an older write handled after it, record
+// nothing, so the delete clears the record with no restart. Every key here passes the shared KV
+// key validator, which gates the read: deliver settles the keys it refuses (settleUnreadable).
+func (c *Component) reconcileNoncanonical(ctx context.Context, entityID string, invalid error) {
+	entry, err := c.entities.Get(ctx, entityID)
+	switch {
+	case natsclient.IsKVNotFoundError(err):
+		c.clearEntityFailed(entityID)
+		return
+	case err != nil:
+		c.markEntityFailed(entityID)
+		c.logger.Warn("reconcile: authoritative entity read failed; readiness withheld",
+			slog.String("entity", entityID), slog.Any("error", err))
+		return
+	}
+	c.clearEntityFailed(entityID)
+	c.reportDamaged(entityID, entry.Revision(), noncanonicalRefusal(entityID, invalid))
+}
+
+// noncanonicalRefusal is the refusal recorded for entityID, a key that is not a literal entity ID;
+// invalid is why. Like the decoder's refusal, it names the key in its detail.
+func noncanonicalRefusal(entityID string, invalid error) error {
+	return errs.ClassifiedCodeDetail(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+		map[string]any{"entity_ids": []string{entityID}},
+		&graph.StateContractError{Reason: graph.GraphStateReasonNoncanonicalEntityID, EntityID: entityID, Err: invalid})
+}
+
+// reportDamaged records entityID damaged at revision with refusal, counting one error the first
+// time the entity is recorded; the follower's record names it in Health and replies count it.
+func (c *Component) reportDamaged(entityID string, revision uint64, refusal error) {
+	if c.follower.Load().ReportDamaged(entityID, revision, refusal) {
+		c.lifecycle.CountError()
+		c.logger.Error("authoritative entity is damaged; left out of the indexes until a valid write or a delete",
+			slog.String("entity", entityID), slog.Uint64("revision", revision), slog.Any("error", refusal))
+	}
 }
 
 // retryIndexWrites runs writeAll up to indexWriteMaxAttempts times, returning nil on the
@@ -239,8 +296,7 @@ func retryIndexWrites(ctx context.Context, writeAll func() error) error {
 // markEntityFailed records that entityID's required index writes did not all succeed.
 // failedCount moves only on the first mark, so it is the set's size. ErrorCount moves with
 // it, once per entity entering the set: retries within one apply, and repair
-// passes that fail again, count nothing more. A reset that holds its entity here, a
-// noncanonical key or value, is counted by this mark and not again.
+// passes that fail again, count nothing more.
 func (c *Component) markEntityFailed(entityID string) {
 	if _, loaded := c.failedEntities.LoadOrStore(entityID, struct{}{}); !loaded {
 		c.failedCount.Add(1)
@@ -405,26 +461,20 @@ func (c *Component) applyEntityIndexPlan(ctx context.Context, plan entityIndexPl
 	return errors.Join(errList...)
 }
 
-// indexEntity indexes entityID from its stored value data. It returns an error for
-// incompatible authoritative state, which latches reset. It also returns one for a
-// refused index plan and for required writes that still fail after retry; both mark the
-// entity failed and withhold readiness until it re-indexes.
-func (c *Component) indexEntity(ctx context.Context, entityID string, data []byte) error {
+// indexEntity indexes entityID from its stored value data, read at revision. A value
+// graph.UnmarshalEntityState refuses is damaged: it is reported first and then every row the
+// entity's earlier value built is removed, so a reply that lacks those rows already counts it; a
+// failed removal is a failed write, marked by the delete. It returns an error for a refused index plan and for required
+// writes that still fail after retry; both mark the entity failed and withhold readiness until it
+// re-indexes.
+func (c *Component) indexEntity(ctx context.Context, entityID string, revision uint64, data []byte) error {
 	var state graph.EntityState
 	if err := graph.UnmarshalEntityState(entityID, data, &state); err != nil {
-		reason := graph.GraphStateReasonUnreadableEntity
-		var stateErr *graph.StateContractError
-		if errors.As(err, &stateErr) {
-			reason = stateErr.Reason
+		c.reportDamaged(entityID, revision, err)
+		if delErr := c.deleteFromIndexes(ctx, entityID); delErr != nil {
+			return fmt.Errorf("remove the rows of damaged entity %q: %w", entityID, delErr)
 		}
-		c.follower.Load().Reset(reason)
-		if reason == graph.GraphStateReasonNoncanonicalEntityID {
-			c.markEntityFailed(entityID) // counts the reset
-			return fmt.Errorf("%w: %w", errAuthoritativeIdentityMismatch, err)
-		}
-		c.lifecycle.CountError() // the reset; the entity is not held, so no mark counts it
-		return fmt.Errorf("ENTITY_STATES %q is incompatible; graph reset and canonical reingest required: %w",
-			entityID, err)
+		return nil
 	}
 	plan, err := c.buildEntityIndexPlan(state, entityID)
 	if err != nil {

@@ -244,6 +244,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"localSearch":    {fmt.Sprintf(`{"entity_id":%q,"query":"alpha"}`, drone1)},
 		"globalSearch":   {`{"query":"held-1"}`, `{"query":"what is connected to held-1"}`},
 		"searchGraph":    {`{"query":"held-1"}`, `{"query":"what is connected to held-1"}`},
+		"mergedSearch":   {`{"query":"alpha"}`},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

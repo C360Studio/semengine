@@ -15,6 +15,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/health"
 	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/internal/lifecycleguard"
 	"github.com/c360studio/semengine/model"
@@ -73,6 +74,10 @@ type Manager struct {
 	// cancel ends the run context Start creates for the watches and their processors
 	// (ADR-113). Only the cancel is kept, never the context.
 	cancel context.CancelFunc
+	// lost names each watch whose updates ended while the run context was live:
+	// "config" for the Manager's own watches, the prefix for a key family's.
+	// Nothing reopens a lost watch, so a name stays until Stop.
+	lost []string
 
 	// revMu guards appliedRev and serializes applying a revisioned entry with
 	// recording it. DeleteComponentFromKV holds it across its bucket delete and
@@ -552,6 +557,8 @@ func (cm *Manager) release(ctx context.Context) error {
 	cm.mu.Lock()
 	watchers, cancel := cm.watchers, cm.cancel
 	cm.watchers, cm.cancel = nil, nil
+	// Nothing is watched after Stop, so nothing is lost either.
+	cm.lost = nil
 	if !cm.closed {
 		// Closed under mu, which every send holds for reading, and replaced by an
 		// empty map, so no send reaches a closed channel.
@@ -622,6 +629,22 @@ func (cm *Manager) stopWatches(ctx context.Context, watchers []jetstream.KeyWatc
 	}
 }
 
+// Health reports whether configuration changes still reach the process. It is
+// unhealthy once any watch's updates ended while the Manager was running, naming
+// each such watch: nothing reopens it, so the remedy is a restart. Before Start
+// and after Stop it is healthy, since no watch is expected to run.
+func (cm *Manager) Health() health.Status {
+	cm.mu.RLock()
+	lost := slices.Clone(cm.lost)
+	cm.mu.RUnlock()
+	if len(lost) == 0 {
+		return health.NewHealthy("config", "No config watch lost")
+	}
+	sort.Strings(lost)
+	return health.NewUnhealthy("config",
+		fmt.Sprintf("config watch lost (%s); restart the process", strings.Join(lost, ", ")))
+}
+
 // processWatcher handles incoming KV updates from a specific watcher
 func (cm *Manager) processWatcher(ctx context.Context, watcher jetstream.KeyWatcher) {
 	for {
@@ -632,6 +655,7 @@ func (cm *Manager) processWatcher(ctx context.Context, watcher jetstream.KeyWatc
 
 		case entry, ok := <-watcher.Updates():
 			if !ok {
+				cm.watchEnded(ctx, "config")
 				return
 			}
 			// With UpdatesOnly, we shouldn't get nil entries
@@ -641,6 +665,26 @@ func (cm *Manager) processWatcher(ctx context.Context, watcher jetstream.KeyWatc
 			}
 		}
 	}
+}
+
+// watchEnded is called by a watch loop whose updates ended. Ended by Stop, which
+// stops each watch while the run context is still live, it is shutdown and says
+// nothing. Otherwise the watch is lost: configuration changes under it no longer
+// reach the process, so it is logged and recorded for Health.
+func (cm *Manager) watchEnded(ctx context.Context, name string) {
+	cm.mu.Lock()
+	// Stop sets closed under mu before it stops any watch, so a watch ended by
+	// Stop always sees it here.
+	if cm.closed || ctx.Err() != nil {
+		cm.mu.Unlock()
+		return
+	}
+	if !slices.Contains(cm.lost, name) {
+		cm.lost = append(cm.lost, name)
+	}
+	cm.mu.Unlock()
+	cm.logger.Error("Config watch lost; configuration changes no longer reach this process; restart the process",
+		"watch", name, "bucket", cm.bucketName)
 }
 
 // handleUpdate processes a single configuration update.

@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// TestIndexStatesReturnsACopy: IndexStates lists the four wire
+// TestIndexStatesReturnsACopy: IndexStates lists the three wire
 // states of the readiness envelope, and a caller that changes the slice it got
 // back cannot change what the next caller gets. The readiness gate's allow-list
 // and the one-hot state gauge both read this list.
 func TestIndexStatesReturnsACopy(t *testing.T) {
-	want := []IndexState{"building", "ready", "degraded", "reset_required"}
+	want := []IndexState{"building", "ready", "degraded"}
 
 	first := IndexStates()
 	if !slices.Equal(first, want) {

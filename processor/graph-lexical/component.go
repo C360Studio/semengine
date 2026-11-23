@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/component"
-	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/graph/readiness"
@@ -233,21 +232,19 @@ func (c *Component) failed() (int64, map[string]uint64) {
 
 // deliver is the follower's Deliver, on its Run goroutine. It does no I/O: the applier puts the
 // entry's inline text and completes its revision, or names the offloaded body, which goes to the
-// body path to read. A value that is not a canonical entity state latches the follower's reset,
-// and its revision stays pending.
+// body path to read. A value that is not a canonical entity state is damaged: it is reported to
+// the follower first, so a search that misses the entity's text already counts it, and then its
+// text is deleted and its revision completed. A valid write or a delete of the key clears it.
 func (c *Component) deliver(_ context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
 	read, ok, err := c.apply.deliver(e)
 	if err != nil {
-		reason := graph.GraphStateReasonUnreadableEntity
-		var stateErr *graph.StateContractError
-		if errors.As(err, &stateErr) {
-			reason = stateErr.Reason
+		if c.follower.Load().ReportDamaged(e.Key, e.Revision, err) {
+			c.lifecycle.CountError()
+			c.logger.Error("entity state refused; left out of the index until a valid write or a delete",
+				slog.String("entity", e.Key), slog.Uint64("revision", e.Revision), slog.Any("error", err))
 		}
-		c.logger.Error("entity state refused; graph reset required",
-			slog.String("entity", e.Key), slog.Any("error", err))
-		c.lifecycle.CountError()
-		c.follower.Load().Reset(reason)
+		c.apply.removeDamaged(e.Key, e.Revision)
 		return
 	}
 	if ok {

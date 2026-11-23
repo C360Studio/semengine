@@ -123,11 +123,24 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 		resp.Provenance = ProvenanceForMode(mode)
 		return resp, nil
 	}
+	skips.sawDamaged(resolution.DamagedEntities)
 	resp, err := e.fuseSeeds(ctx, req, lens, mode, resolution.Seeds, skips)
 	if err != nil {
 		return Response{}, err
 	}
-	resp.Provenance = ProvenanceForMode(mode)
+	// The resolve knows where its seeds came from when it says so; a client
+	// that does not say leaves the mode's provenance.
+	resp.Provenance = resolution.Provenance
+	if resp.Provenance == "" {
+		resp.Provenance = ProvenanceForMode(mode)
+	}
+	// A response carries the largest damaged count the reads its answer used
+	// reported, in every mode. An all-seeds-unhydrated deferral lists seeds the
+	// resolve found, so it keeps the count; an index_not_ready deferral answers
+	// nothing, so the reads it set aside add nothing.
+	if !resp.Deferred || resp.DeferReason != graph.ErrorCodeIndexNotReady {
+		resp.DamagedEntities = skips.damaged
+	}
 	// Every response built after a natural-language search answered carries what
 	// the word index left out; symbol and prefix resolves leave nothing out, so
 	// their responses carry neither.
@@ -164,7 +177,7 @@ func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode Res
 			resp.Unhydrated = hydration.Unhydrated
 			return resp, nil
 		}
-		return e.miss(ctx, mode, req.Query)
+		return e.miss(ctx, mode, req.Query, skips)
 	}
 
 	names := make([]string, len(entities))
@@ -294,17 +307,18 @@ func deferredResponse(reason string) Response {
 // miss builds a found-nothing response with near-matches. A failed Names read
 // leaves the suggestions empty, which claims nothing; only an ended context fails
 // the call.
-func (e *Engine) miss(ctx context.Context, mode ResolveMode, query string) (Response, error) {
-	names, err := e.graph.Names(ctx, query, 5)
+func (e *Engine) miss(ctx context.Context, mode ResolveMode, query string, skips *skipLog) (Response, error) {
+	suggested, err := e.graph.Names(ctx, query, 5)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
 			return Response{}, cerr
 		}
-		names = nil
+		suggested = Names{}
 	}
+	skips.sawDamaged(suggested.DamagedEntities)
 	return Response{
 		Provenance:      ProvenanceForMode(mode),
-		Misses:          []Miss{{Query: query, DidYouMean: names}},
+		Misses:          []Miss{{Query: query, DidYouMean: suggested.Names}},
 		ContractVersion: ContractVersion,
 	}, nil
 }
@@ -448,7 +462,7 @@ func (e *Engine) relations(ctx context.Context, ent *Entity, lens Lens, skips *s
 // OTHER Neighbors fault, fatal included, skips this direction and is reported as
 // a left-out ref.
 func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, dir Direction, roleByPred map[string]string, lens Lens, rels map[string][]Ref, skips *skipLog) (bool, error) {
-	edges, err := e.graph.Neighbors(ctx, id, preds, dir)
+	read, err := e.graph.Neighbors(ctx, id, preds, dir)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
 			return false, cerr
@@ -459,8 +473,9 @@ func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, di
 		skips.add(string(WantRelations), err)
 		return true, nil
 	}
+	skips.sawDamaged(read.DamagedEntities)
 	truncated := false
-	for _, ed := range orderedEdges(edges) {
+	for _, ed := range orderedEdges(read.Edges) {
 		role := roleByPred[ed.Predicate]
 		if role == "" {
 			continue

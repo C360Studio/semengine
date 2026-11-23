@@ -241,7 +241,8 @@ func (f *KeyFamily) Names(ctx context.Context) ([]string, error) {
 }
 
 // processFamily delivers one family's watch to its handler until Stop ends the
-// run context or stops the watch. Entries before the watch's nil marker are the
+// run context or stops the watch; a watch that ends otherwise is lost
+// (watchEnded). Entries before the watch's nil marker are the
 // snapshot present when it opened.
 func (cm *Manager) processFamily(ctx context.Context, family *KeyFamily, watcher jetstream.KeyWatcher) {
 	prefix := family.prefix + "."
@@ -252,6 +253,7 @@ func (cm *Manager) processFamily(ctx context.Context, family *KeyFamily, watcher
 			return
 		case entry, ok := <-watcher.Updates():
 			if !ok {
+				cm.watchEnded(ctx, family.prefix)
 				return
 			}
 			if entry == nil {

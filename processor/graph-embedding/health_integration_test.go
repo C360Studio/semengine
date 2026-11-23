@@ -3,19 +3,17 @@
 package graphembedding
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/natsclient"
 )
 
 // TestHealthIgnoresErrorCount: ErrorCount counts once per entity entering the failed set and once
-// per latched reset, as graph-index counts (processor/graph-index/index.go markEntityFailed), and
+// per newly damaged entity, as graph-index counts (processor/graph-index/index.go markEntityFailed), and
 // never lowers Healthy (ADR-109 Decision 2). Here a failed entity read lowers Healthy, naming the
 // unresolved write, and counts once however often the repair lane fails it again; once the repair
 // lane converges the entity Health reads running and healthy with the failure still counted. A
@@ -73,16 +71,17 @@ func TestHealthIgnoresErrorCount(t *testing.T) {
 		}
 	}
 
-	// A latched reset counts once: authoritative state the reader refuses. The count comes before
-	// the latch, so Health naming the reset orders the read after it.
-	h.put(t, entityID(3), []byte("not an entity state"))
-	reset := await(t, "the reset latched", func(context.Context) (component.HealthStatus, error) {
-		return h.c.Health(), nil
-	}, func(health component.HealthStatus) bool {
-		return strings.Contains(health.LastError, "graph state reset required")
-	})
-	if reset.ErrorCount != 4 {
-		t.Errorf("ErrorCount after the latched reset = %d, want 4", reset.ErrorCount)
+	// A damaged entity counts once: authoritative state the reader refuses, however often it is
+	// read damaged again. Hop 1 counts it before it completes the revision, so the floor passing
+	// the revision orders each Health read after the count.
+	damaged := entityID(3)
+	h.awaitPast(t, "hop 1 passed the damaged revision", h.put(t, damaged, []byte("not an entity state")))
+	if health := h.c.Health(); health.Healthy || health.ErrorCount != 4 || !strings.Contains(health.LastError, damaged) {
+		t.Errorf("Health with a damaged entity = %+v, want not healthy naming %s, ErrorCount 4", health, damaged)
+	}
+	h.awaitPast(t, "hop 1 passed the second damaged revision", h.put(t, damaged, []byte("still not an entity state")))
+	if health := h.c.Health(); health.ErrorCount != 4 {
+		t.Errorf("ErrorCount after the entity is read damaged again = %d, want 4", health.ErrorCount)
 	}
 }
 

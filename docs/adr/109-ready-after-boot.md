@@ -2,6 +2,14 @@
 
 ## Status
 
+**Amendment, 2026-11-19 (#657 ruling 3; #658 comment 6962917422).** `reset_required` is no longer a state. One damaged
+stored value no longer stops a component: the follower records each damaged entity per key, the record clears on a
+valid write or a delete with no restart, a reply counts the entities it left out (`damaged_entities`), and the envelope
+reads `degraded` with `failed_reasons["damaged_entity"]` while any is held. Decision 1's `reset_required` answer
+(fatal `graph_state_reset_required` for every query) and Decision 2's "never clears in process" are replaced as the
+text below marks. A query that names a damaged entity is still refused fatal `graph_state_reset_required`; other
+queries are answered.
+
 **Accepted (2026-10-11).** Ruled on #9, comment 6111608867, as written at `039e13c`, with Q1 ruled as recommended.
 Drafted on draft PR #178 (`Addresses #110`), ruled on #9 with the other records change 3's design cites (#9 comment
 6085243841). Scope: the owner's direction on #110 (comment 6109914179), "Rescope it to
@@ -29,7 +37,8 @@ record, not taken from the inventory or the read; none of them is a pin probe (a
   *generation*, the watcher set it recreates when its configuration changes (ADR-088 :77-79).
 - The *envelope* is the JSON status record (`graph.IndexStatusResponse`) each worker writes under its own *key* in the
   `GRAPH_STATUS` bucket of the NATS key-value store. Its field `bootstrap_complete` is the *flag*. A *hard stop* is an
-  envelope state that says the worker is broken, `degraded` or `reset_required` (ADR-085 :89-90).
+  envelope state that says the worker is broken: `degraded` (ADR-085 :89-90; `reset_required` was a second one until
+  the amendment below).
 - A *classified* error carries a class (transient, fatal) and a code, so the caller can tell retry from stop. On a
   NATS request the class reaches the caller through `RequestClassified` (`AGENTS.md`, "Rules and what enforces them").
 - *Health* is a component's own report that it is running and not stuck: `Health()` returns `Healthy`, and the
@@ -72,7 +81,8 @@ calls and the test.
 *A caller observes:* a request during the startup replay, or while graph-index's unresolved write failures hold
 (`query.go:213-216`, re-read), fails with class transient and code `index_not_ready`, and the same request succeeds
 once the replay is done or the failures are repaired, with the state as of the reply. The other stuck states Decision 2
-names answer differently: `reset_required` is fatal `graph_state_reset_required` (`query.go:209-211`; pin ADR-074
+names answer differently: a damaged entity no longer withholds queries (amended; at the pin `reset_required` was fatal
+`graph_state_reset_required` for every query, `query.go:209-211`; pin ADR-074
 `docs/adr/074-canonical-predicate-contract.md:70-71`; `pin:processor/graph-index/predicate_contract_test.go:38-45`, all
 re-read), poison refuses only the poisoned entities (pin ADR-079 D3 `:38-40`, re-read), and a failed backlog
 observation refuses nothing. *Proof:* at the pin, over NATS,
@@ -87,13 +97,14 @@ first-build window, and each later worker's port proves its own withheld calls.
 ### Decision 2. Ready means boot committed and every component healthy
 
 Healthy means running and not stuck. There is one readiness endpoint, `/readyz`, and a component determines its own
-health from its own stuck states, which are named: `reset_required` (pin ADR-074 `:69-71`, re-read); graph-index's
-unresolved write failures (`query.go:213-216`); graph-ingest's poison inventory (pin ADR-079 D3,
-`docs/adr/079-per-entity-poison-response-authoritative-surface.md:38-46`;
+health from its own stuck states, which are named: a damaged stored entity (amended; the pin's `reset_required`, pin
+ADR-074 `:69-71`, re-read, is gone); graph-index's unresolved write failures (`query.go:213-216`); graph-ingest's
+poison inventory (pin ADR-079 D3, `docs/adr/079-per-entity-poison-response-authoritative-surface.md:38-46`;
 `#93:processor/graph-ingest/component.go:831`); a failed backlog observation while it persists
-(`#93:processor/graph-ingest/readiness.go:137-146`). A stuck state that clears (a repair, an observation that
-succeeds) raises `Healthy` again; `reset_required` never clears in process (ADR-084 D4 :130-131). The rule binds every
-component's `Health()`, worker or not.
+(`#93:processor/graph-ingest/readiness.go:137-146`). A stuck state that clears (a repair, an observation that succeeds)
+raises `Healthy` again; a damaged entity clears when a valid value is written or the key is deleted, with no restart
+(amended; `reset_required` never cleared in process, ADR-084 D4 :130-131). The rule binds every component's `Health()`,
+worker or not.
 
 A count of past errors is a metric: `ErrorCount` stays on `HealthStatus` (`#93:component/discovery.go:74-81`) and
 never lowers `Healthy`. This changes the pin. Six components carry `Healthy: c.running && errorCount == 0 && ...`
@@ -192,7 +203,7 @@ revision comparison. Both return with graph-index in change 4.
 | ADR-066 :85, ADR-083 :142 (`allow_ungated_reads`) | Dropped: no consumer reads a sign before it asks, so there is no unknown case to escape | D1, D3 |
 | ADR-066 :338-339 (fusion's copy of the envelope) | Not decided here; fusion's port (#135 (g)) | — |
 | ADR-066 :408-409 (superseded revisions never delivered) against ADR-110 :192 | Not decided here; #103 | D4 |
-| pin ADR-074 :69-71 (readiness false under a reset, for the life of the process); :78-80 (a transport failure degrades without latching) | Kept through health: a sticky reset is a named stuck state and lowers `Healthy`, and the responder answers it fatal; the envelope's `Ready` under it is information; a transport failure that persists is stuck while it lasts and still latches nothing | D1, D2, D3 |
+| pin ADR-074 :69-71 (readiness false under a reset, for the life of the process); :78-80 (a transport failure degrades without latching) | Kept through health, amended: a damaged entity is a named stuck state and lowers `Healthy` while it is stored, but it is not sticky (a valid write or a delete clears it) and withholds no query; a transport failure that persists is stuck while it lasts and still latches nothing | D1, D2, D3 |
 | pin ADR-079 D3 :38-46 (poison lowers `Health()` only; the read surface refuses only poisoned entities) | Kept: the poison inventory is a named stuck state, and the refusal stays per entity | D1, D2 |
 | ADR-083 D1 :70-75 (published as state, not answered as a query; a key per producer) | Changed: the state stays published, as information, one key per producer; what a consumer acts on is the reply, whose classified-transient retry contract ADR-083 left untouched (:80-82) | D1, D3 |
 | ADR-088 D1 :46-54, D3 :64-67 (no aggregate, no mandatory list) | Kept as #93 built it, as information; nothing waits on a key | D3 |

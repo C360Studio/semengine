@@ -1,8 +1,10 @@
 package dispatch
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -287,5 +289,66 @@ func TestKeyedPoolWaitJoinsAfterShutdown(t *testing.T) {
 		<-waited
 		require.Equal(t, []string{"held", "queued"}, processed, "Wait returned after every accepted item was processed")
 		p.Wait() // after the join it returns at once; a block here is a bubble deadlock
+	})
+}
+
+// heldPool starts a one-lane pool that logs at WARN and above into logs, and holds its one item in
+// Process until release is closed. It returns once Process holds the item, so Shutdown has
+// accepted work it must wait for. Call inside a synctest bubble.
+func heldPool(t *testing.T, logs *bytes.Buffer, release <-chan struct{}) *KeyedPool[string] {
+	t.Helper()
+	entered := make(chan struct{})
+	p, err := NewKeyedPool(context.Background(), KeyedConfig[string]{
+		Lanes: 1, QueueDepth: 1, Name: "held",
+		Process: func(context.Context, int, string) {
+			close(entered)
+			<-release
+		},
+		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	})
+	require.NoError(t, err)
+	require.NoError(t, p.SubmitBlocking(context.Background(), "key", "work"))
+	<-entered
+	return p
+}
+
+// TestShutdownUnderEndedContextThenWaitLogsNoWarning: a caller with no live context left begins
+// the drain with Shutdown under its ended context and joins with Wait. Nothing failed, so the
+// pool logs no warning, even though accepted work was still running when Shutdown returned.
+func TestShutdownUnderEndedContextThenWaitLogsNoWarning(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var logs bytes.Buffer // written only by the pool's logger; read after Wait's join
+		release := make(chan struct{})
+		p := heldPool(t, &logs, release)
+
+		ended, cancel := context.WithCancel(context.Background())
+		cancel() // the already-ended context is the input under test
+		require.ErrorIs(t, p.Shutdown(ended), context.Canceled, "Shutdown returns ctx.Err() while Process holds the item")
+
+		close(release)
+		p.Wait()
+		require.Empty(t, logs.String(), "a drain begun under an ended context and joined with Wait logs no warning")
+	})
+}
+
+// TestShutdownContextEndingWhileWaitingLogsWarning: a context that ends while Shutdown is waiting
+// for accepted work is a real drain failure, and the pool warns about it.
+func TestShutdownContextEndingWhileWaitingLogsWarning(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var logs bytes.Buffer // written by the Shutdown goroutine; read after its result is received
+		release := make(chan struct{})
+		p := heldPool(t, &logs, release)
+
+		live, cancel := context.WithCancel(context.Background())
+		returned := make(chan error, 1)
+		go func() { returned <- p.Shutdown(live) }()
+		synctest.Wait() // Shutdown is blocked waiting for the held item, with its context still live
+		cancel()
+		require.ErrorIs(t, <-returned, context.Canceled)
+		require.Contains(t, logs.String(), "level=WARN")
+		require.Contains(t, logs.String(), "Shutdown's context ended before accepted work drained")
+
+		close(release)
+		p.Wait()
 	})
 }

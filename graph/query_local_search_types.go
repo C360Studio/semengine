@@ -54,7 +54,8 @@ type LocalSearchRecord struct {
 // whose offloaded body it did not hold. Damaged names the hits whose stored value could not be read
 // back, in hit order, left out of Matches and not counted in Missing, omitted when there are none.
 // Truncated is true exactly when Matched is above the hits returned, a hit was missing or damaged,
-// or matches were left out for the reply to fit the connection's max_payload.
+// the word index's reply carried DamagedEntities above 0 (it may have left a match out), or matches
+// were left out for the reply to fit the connection's max_payload.
 type LocalSearchData struct {
 	CommunityID      string             `json:"community_id"`
 	Level            int                `json:"level"`

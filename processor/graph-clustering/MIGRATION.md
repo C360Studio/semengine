@@ -72,14 +72,15 @@ Read these. Nothing errors.
   group's published state reads the record's `entity_revision`. *Do:* do not gate a read on `indexed_revision` for
   freshness; send `min_revision` to graph-query, which compares it with `entity_revision`.
 - **Nothing is published before the replay is applied, and a lost feed stops publication.** The pin ran a timer that
-  rescanned the bucket. Here a tick starts only while the follower says the graph state is ready; after a lost feed or
-  a latched reset no tick starts, and `Health` says so until the process restarts.
+  rescanned the bucket. Here a tick starts only while the follower says the graph state is ready; after a lost feed
+  no tick starts, and `Health` says so until the process restarts.
 - **No dependency on graph-index or graph-embedding.** The pin deferred a tick until graph-index was ready; it
   watched graph-embedding's key only when semantic edges were on, and a cold embedding index only narrowed the cycle.
   Here the component follows `ENTITY_STATES` alone, so communities wait for neither index.
 - **One bad stored value no longer blocks everything.** The pin latched its reset on any bad value it read and
-  stopped until restart. Here only a bad value in the startup replay latches the reset. A bad value written live is
-  counted as `refused_entity`, left out of its groups, and the other groups keep publishing.
+  stopped until restart. Here a value that does not decode, in the startup replay or written live, is a damaged entity:
+  it is left out of its groups, `Health` names it and the readiness record counts it as `damaged_entity`, and the other
+  groups keep publishing. A valid write or a delete of its key clears it with no restart.
 - **Failures are visible.** A tick that fails to write reads `degraded` on the readiness record and unhealthy in
   `Health` (reason `publication_failed`) until a tick succeeds, and counts on
   `semengine_graph_clustering_publication_failures_total`. A stored entity the Maintainer refuses is left out of its

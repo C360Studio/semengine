@@ -63,10 +63,10 @@ other subject, from `Start` until `Stop` returns.
 
 ### Requirement: The embedding verbs answer in the envelope
 
-Each answer SHALL be a `graph.QueryResponse` with producer `graph-embedding` and `indexed_revision` 0, whose `data` is
-a `graph.SemanticData` (with `embedder_type` the name the embedder was registered under) or a `graph.SimilarData`. Its
-`results` SHALL be a JSON array, its `unreadable_records` SHALL be the number of `EMBEDDING_INDEX` records the cache
-could not decode, and its `failed_records` the number of entities whose latest embedding failed in the Worker.
+Each answer SHALL be a `graph.QueryResponse` with producer `graph-embedding` and `indexed_revision` 0, whose `data` is a
+`graph.SemanticData` (`embedder_type` naming the registered embedder) or a `graph.SimilarData`. Its `results` SHALL be a
+JSON array, its `unreadable_records` the count of undecodable `EMBEDDING_INDEX` records in the request's `scope` (all of
+them with no `scope`, and on `similar`), and its `failed_records` the number of entities whose latest embedding failed.
 
 #### Scenario: An empty index
 
@@ -150,11 +150,10 @@ source record that cannot be decoded SHALL be refused class invalid with no code
 
 ### Requirement: The embedding verbs are withheld until they can answer
 
-Before answering, each verb SHALL ask the follower's `QueryReady`: a latched reset SHALL be refused fatal
-`graph_state_reset_required`, and a lost feed, an incomplete first build or a held hop-1 failure (`delete_failed`,
-`pending_write_failed`, `entity_read_failed`) SHALL be refused transient `index_not_ready`. A Worker failure SHALL NOT
-withhold an answer. A vector cache that has not applied its initial snapshot, or whose watch is lost, SHALL
-be refused transient `index_not_ready`.
+Before answering, each verb SHALL ask the follower's `QueryReady`: a lost feed, an incomplete first build or a held
+hop-1 failure (`delete_failed`, `pending_write_failed`, `entity_read_failed`) SHALL be refused transient
+`index_not_ready`. A Worker failure SHALL NOT withhold an answer, nor SHALL a damaged entity. A vector cache that has
+not applied its initial snapshot, or whose watch is lost, SHALL be refused transient `index_not_ready`.
 
 #### Scenario: Before the first build
 
@@ -250,3 +249,32 @@ its next record.
 
 - **WHEN** the embedder returns a plain error once its call's deadline has passed
 - **THEN** the record is failed `timeout`, not `embedder_error` (`TestHungEmbedderFreesWorkerLane`)
+
+### Requirement: A damaged entity is left out and counted
+
+When hop 1 reads a stored value `graph.UnmarshalEntityState` refuses, graph-embedding SHALL report it to the follower,
+remove the entity's `EMBEDDING_INDEX` record, and complete the revision. Both verbs SHALL carry `damaged_entities`:
+`search` the damaged entities within its `scope`, all when it has none; `similar` all of them. A valid value or a
+delete for the key SHALL be applied as for any entity, with no restart.
+
+#### Scenario: Damage stored at start and repaired
+
+- **WHEN** A is embedded, B is stored damaged before the component starts, and later B is written with a valid value
+- **THEN** after the first build `search` answers A with `damaged_entities` 1; after the repair B is a hit and the
+  count is gone (`TestDamagedEntityLeftOutOfSearch`)
+
+#### Scenario: A valid entity overwritten with damage
+
+- **WHEN** B is embedded and then overwritten with bytes that do not decode
+- **THEN** B is no longer a hit and `search` counts 1 (`TestDamagedEntityLeftOutOfSearch`)
+
+### Requirement: Similar to a damaged entity is refused
+
+`similar` whose `entity_id` is damaged SHALL be refused fatal `graph_state_reset_required` with the refusal the
+follower recorded, as graph-ingest's entity read refuses it.
+
+#### Scenario: Similar to B
+
+- **WHEN** B is damaged
+- **THEN** `similar` with `entity_id` B is refused fatal `graph_state_reset_required`
+  (`TestDamagedEntityLeftOutOfSearch`)

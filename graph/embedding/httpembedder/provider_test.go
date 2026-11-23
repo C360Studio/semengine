@@ -16,10 +16,13 @@ type embedRequest struct {
 	Input []string `json:"input"`
 }
 
+// embedObject's Truncated is semembed's mark on a text it cut to fit the model's input window;
+// semembed leaves it out for a text it read whole.
 type embedObject struct {
 	Object    string    `json:"object"`
 	Embedding []float32 `json:"embedding"`
 	Index     int       `json:"index"`
+	Truncated bool      `json:"truncated,omitempty"`
 }
 
 type embedUsage struct {

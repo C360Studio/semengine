@@ -178,14 +178,14 @@ func (d *pipeDialer) Dial(*net.Dialer, string, string) (net.Conn, error) {
 
 // connectScripted returns a client connected, through netDial, to a scripted server that
 // withholds every PING after the handshake. The pipe is the socket of the client's own dialer,
-// so Connect's and Close's cuts close it, as they close a TCP socket. Health monitoring is off,
-// so the only PINGs are the ones the test causes. opts apply after the defaults, so a test may
-// replace the discarding logger. Cleanup answers every PING and closes the client.
+// so Connect's and Close's cuts close it, as they close a TCP socket. natsclient sends no PING of
+// its own, so the only PINGs are the ones the test causes. opts apply after the defaults, so a
+// test may replace the discarding logger. Cleanup answers every PING and closes the client.
 func connectScripted(t *testing.T, opts ...ClientOption) (*Client, *scriptedServer) {
 	t.Helper()
 	cli, srv := net.Pipe()
 	server := serveScripted(srv)
-	opts = append([]ClientOption{WithHealthInterval(0), WithLogger(slog.New(slog.DiscardHandler))}, opts...)
+	opts = append([]ClientOption{WithLogger(slog.New(slog.DiscardHandler))}, opts...)
 	c, err := NewClient("nats://scripted", opts...)
 	require.NoError(t, err)
 	c.netDial = (&pipeDialer{conn: cli}).Dial

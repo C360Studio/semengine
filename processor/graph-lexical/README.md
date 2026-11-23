@@ -55,6 +55,13 @@ An unknown request key is refused, naming it. The reply is a `graph.QueryRespons
 While the first build is unfinished, and while the `ENTITY_STATES` feed is lost, the verb refuses with the
 transient code `index_not_ready`. After that, no body state withholds it.
 
+A stored `ENTITY_STATES` value that cannot be decoded makes that entity *damaged*. The index removes the entity's text,
+so it is never found, and goes on indexing every other entity; the verb is not refused. The reply counts the damaged
+entities inside its `scope` (all of them when there is none) in `damaged_entities`, beside `data`, omitted at 0: above
+0, a match one of them would have given may be missing. `Health` reads unhealthy while one is stored, naming the count,
+up to 10 IDs with their reasons, and the repair, and the readiness record reads `degraded` with
+`failed_reasons["damaged_entity"]`. A valid write of the key or a delete of it clears the damage with no restart.
+
 ## Entity text and offloaded bodies
 
 An entity's *name* is its text values whose predicate ends in `.name` or `.title`, plus the values of the

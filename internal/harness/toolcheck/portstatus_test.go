@@ -128,11 +128,11 @@ func between(s, from, to string) string {
 	return s[i : i+j]
 }
 
-const cleanMilestonesJSON = `[{"number":1,"title":"setup","open_issues":9,"closed_issues":15},{"number":2,"title":"slice-04a","open_issues":72,"closed_issues":63},{"number":3,"title":"slice-04b","open_issues":1,"closed_issues":0},{"number":4,"title":"slice-04c","open_issues":1,"closed_issues":0}]`
+const cleanMilestonesJSON = `[{"number":11,"title":"v0.1.0-alpha.7","open_issues":1,"closed_issues":0},{"number":12,"title":"v0.1.0-alpha.8","open_issues":9,"closed_issues":0},{"number":10,"title":"v0.1.0-alpha.9","open_issues":9,"closed_issues":0},{"number":13,"title":"v0.1.0-alpha.10","open_issues":5,"closed_issues":0},{"number":5,"title":"tier-2","open_issues":5,"closed_issues":0},{"number":6,"title":"backlog","open_issues":41,"closed_issues":2}]`
 
-const cleanIssuesJSON = `[{"number":9,"title":"epic: Slice 04A","milestone":{"title":"slice-04a"},"labels":[{"name":"type:epic"}]},{"number":372,"title":"service flake","milestone":{"title":"slice-04a"},"labels":[{"name":"class:flake"}]}]`
+const cleanIssuesJSON = `[{"number":706,"title":"fusion merged search","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},{"number":372,"title":"service flake","milestone":{"title":"v0.1.0-alpha.8"},"labels":[{"name":"class:flake"}]}]`
 
-const cleanPRsJSON = `[{"number":367,"title":"feat(service): port message logger","isDraft":true,"headRefName":"claude/port-service-message-logger","milestone":{"title":"slice-04a"},"labels":[{"name":"go"}]}]`
+const cleanPRsJSON = `[{"number":711,"title":"fix(fusion): nl resolve uses merged search","isDraft":true,"headRefName":"claude/fusion-nl-merged-706","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"go"}]}]`
 
 func fakeGHScript(milestones, issues, prs string) string {
 	return `case "$*" in
@@ -169,7 +169,7 @@ func TestPortStatusCheck(t *testing.T) {
 	})
 
 	t.Run("issue missing labels fails with exit 1", func(t *testing.T) {
-		issues := `[{"number":369,"title":"subject grammar","milestone":{"title":"slice-04a"},"labels":[]}]`
+		issues := `[{"number":369,"title":"subject grammar","milestone":{"title":"v0.1.0-alpha.8"},"labels":[]}]`
 		r := runPortStatus(t, fakeGHScript(cleanMilestonesJSON, issues, cleanPRsJSON), "--check")
 		if r.status != 1 {
 			t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
@@ -180,12 +180,12 @@ func TestPortStatusCheck(t *testing.T) {
 	})
 
 	t.Run("milestone title with whitespace fails with exit 1", func(t *testing.T) {
-		ms := `[{"number":2,"title":"Slice 04A: tier-0","open_issues":1,"closed_issues":0}]`
+		ms := `[{"number":2,"title":"Alpha 8: hardening","open_issues":1,"closed_issues":0}]`
 		r := runPortStatus(t, fakeGHScript(ms, cleanIssuesJSON, cleanPRsJSON), "--check")
 		if r.status != 1 {
 			t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
 		}
-		if !strings.Contains(r.stdout, "Slice 04A: tier-0") {
+		if !strings.Contains(r.stdout, "Alpha 8: hardening") {
 			t.Errorf("stdout should name offending milestone title:\n%s", r.stdout)
 		}
 	})
@@ -204,8 +204,8 @@ func TestPortStatusCheck(t *testing.T) {
 func makeIssuesJSON(n int) (string, string, string) {
 	var listItems, gqlPage1, gqlPage2 []string
 	for i := 1; i <= n; i++ {
-		listItems = append(listItems, fmt.Sprintf(`{"number":%d,"title":"issue %d","milestone":{"title":"slice-04a"},"labels":[{"name":"bug"}]}`, i, i))
-		node := fmt.Sprintf(`{"id":"I%d","number":%d,"title":"issue %d","milestone":{"title":"slice-04a"},"projectItems":{"nodes":[]}}`, i, i, i)
+		listItems = append(listItems, fmt.Sprintf(`{"number":%d,"title":"issue %d","milestone":{"title":"v0.1.0-alpha.8"},"labels":[{"name":"bug"}]}`, i, i))
+		node := fmt.Sprintf(`{"id":"I%d","number":%d,"title":"issue %d","milestone":{"title":"v0.1.0-alpha.8"},"projectItems":{"nodes":[]}}`, i, i, i)
 		if i <= 100 {
 			gqlPage1 = append(gqlPage1, node)
 		} else {
@@ -221,17 +221,32 @@ func makeIssuesJSON(n int) (string, string, string) {
 // project (or explicit number), refuses malformed discovery or truncated GraphQL collections before
 // any write, paginates open issues/PRs beyond 100, and updates item fields.
 func TestPortStatusSyncProject(t *testing.T) {
-	t.Run("selects exact SemEngine Port Tracker title over substring match", func(t *testing.T) {
+	t.Run("selects exact SemEngine Port Tracker title and maps new and existing items to serial stage slots", func(t *testing.T) {
+		issues := `[` +
+			`{"number":706,"title":"claimed alpha7","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},` +
+			`{"number":707,"title":"already-staged alpha7","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},` +
+			`{"number":712,"title":"new alpha7","milestone":{"title":"v0.1.0-alpha.7"},"labels":[{"name":"bug"}]},` +
+			`{"number":564,"title":"restaged alpha8","milestone":{"title":"v0.1.0-alpha.8"},"labels":[{"name":"bug"}]},` +
+			`{"number":25,"title":"alpha9 rules","milestone":{"title":"v0.1.0-alpha.9"},"labels":[{"name":"class:port-refactor"}]},` +
+			`{"number":36,"title":"alpha10 maxdelivery","milestone":{"title":"v0.1.0-alpha.10"},"labels":[{"name":"class:port-refactor"}]},` +
+			`{"number":484,"title":"tier2 slot","milestone":{"title":"tier-2"},"labels":[{"name":"type:epic"}]},` +
+			`{"number":500,"title":"re-bucketed backlog","milestone":{"title":"backlog"},"labels":[{"name":"class:port-refactor"}]}` +
+			`]`
 		gh := `case "$*" in
   *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
-  *"issue list"*) printf '%s\n' '` + cleanIssuesJSON + `' ;;
+  *"issue list"*) printf '%s\n' '` + issues + `' ;;
   *"pr list"*) printf '%s\n' '` + cleanPRsJSON + `' ;;
   *"project list"*) printf '%s\n' '{"projects":[{"number":99,"title":"SemEngine experiments"},{"number":7,"title":"SemEngine Port Tracker"}],"totalCount":2}' ;;
-  *"project field-list 7"*) printf '%s\n' '{"fields":[{"id":"F_STATUS","name":"Status","options":[{"id":"OPT_TODO","name":"Todo"},{"id":"OPT_INPROG","name":"In Progress"}]},{"id":"F_STAGE","name":"Stage","options":[{"id":"OPT_S1","name":"1. In Progress"},{"id":"OPT_S3","name":"3. Slice 04A"}]},{"id":"F_START","name":"Start Date"},{"id":"F_TARGET","name":"Target Date"}]}' ;;
-  *"project view 7"*) printf '%s\n' '{"id":"P7","items":{"totalCount":3}}' ;;
-  *addProjectV2ItemById*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_NEW"}}}}' ;;
-  *updateProjectV2ItemFieldValue*) printf '%s\n' '{"data":{"m1":{"projectV2Item":{"id":"PVTI_NEW"}}}}' ;;
-  *graphql*) printf '%s\n' '{"data":{"repository":{"pullRequests":{"totalCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"PR367","number":367,"title":"port message logger","milestone":{"title":"slice-04a"},"closingIssuesReferences":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]},"issues":{"totalCount":2,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"I9","number":9,"title":"epic","milestone":{"title":"slice-04a"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I372","number":372,"title":"service flake","milestone":{"title":"slice-04a"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]}}}}' ;;
+  *"project field-list 7"*) printf '%s\n' '{"fields":[{"id":"F_STATUS","name":"Status","options":[{"id":"OPT_TODO","name":"Todo"},{"id":"OPT_INPROG","name":"In Progress"}]},{"id":"F_STAGE","name":"Stage","options":[{"id":"OPT_S1","name":"1. In Progress (Active PRs)"},{"id":"OPT_S2","name":"2. v0.1.0-alpha.7"},{"id":"OPT_S3","name":"3. v0.1.0-alpha.8"},{"id":"OPT_S4","name":"4. v0.1.0-alpha.9"},{"id":"OPT_S5","name":"5. v0.1.0-alpha.10"},{"id":"OPT_S6","name":"6. tier-2 / backlog"}]},{"id":"F_START","name":"Start Date"},{"id":"F_TARGET","name":"Target Date"}]}' ;;
+  *"project view 7"*) printf '%s\n' '{"id":"P7","items":{"totalCount":9}}' ;;
+  *addProjectV2ItemById*PR711*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_PR711"}}}}' ;;
+  *addProjectV2ItemById*I706*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I706"}}}}' ;;
+  *addProjectV2ItemById*I712*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I712"}}}}' ;;
+  *addProjectV2ItemById*I25*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I25"}}}}' ;;
+  *addProjectV2ItemById*I36*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I36"}}}}' ;;
+  *addProjectV2ItemById*I484*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_I484"}}}}' ;;
+  *updateProjectV2ItemFieldValue*) printf '%s\n' '{"data":{"m1":{"projectV2Item":{"id":"PVTI_OK"}}}}' ;;
+  *graphql*) printf '%s\n' '{"data":{"repository":{"pullRequests":{"totalCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"PR711","number":711,"title":"fusion nl","milestone":{"title":"v0.1.0-alpha.7"},"closingIssuesReferences":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"number":706}]},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]},"issues":{"totalCount":8,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"I706","number":706,"title":"claimed alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I707","number":707,"title":"already-staged alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"id":"PVTI_I707_EXISTING","project":{"number":7},"status":{"name":"Todo","optionId":"OPT_TODO"},"stage":{"name":"2. v0.1.0-alpha.7","optionId":"OPT_S2"},"startDate":{"date":"2026-11-15"},"targetDate":{"date":"2026-11-25"}}]}},{"id":"I712","number":712,"title":"new alpha7","milestone":{"title":"v0.1.0-alpha.7"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I564","number":564,"title":"restaged alpha8","milestone":{"title":"v0.1.0-alpha.8"},"projectItems":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"id":"PVTI_I564_EXISTING","project":{"number":7},"status":{"name":"Todo","optionId":"OPT_TODO"},"stage":{"name":"4. v0.1.0-alpha.9","optionId":"OPT_S4"},"startDate":{"date":"2026-11-15"},"targetDate":{"date":"2026-11-25"}}]}},{"id":"I25","number":25,"title":"alpha9 rules","milestone":{"title":"v0.1.0-alpha.9"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I36","number":36,"title":"alpha10 maxdelivery","milestone":{"title":"v0.1.0-alpha.10"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I484","number":484,"title":"tier2 slot","milestone":{"title":"tier-2"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I500","number":500,"title":"re-bucketed backlog","milestone":{"title":"backlog"},"projectItems":{"totalCount":1,"pageInfo":{"hasNextPage":false},"nodes":[{"id":"PVTI_I500_EXISTING","project":{"number":7},"status":{"name":"Todo","optionId":"OPT_TODO"},"stage":{"name":"3. v0.1.0-alpha.8","optionId":"OPT_S3"},"startDate":{"date":"2026-11-15"},"targetDate":{"date":"2026-11-25"}}]}}]}}}}' ;;
   *) echo "unexpected gh call: $*" >&2; exit 3 ;;
 esac`
 		r := runPortStatus(t, gh, "--sync-project")
@@ -244,8 +259,23 @@ esac`
 		if strings.Contains(r.ghLog, "field-list 99") || strings.Contains(r.ghLog, "view 99") {
 			t.Errorf("must not touch substring-matched project #99:\n%s", r.ghLog)
 		}
-		if !strings.Contains(r.ghLog, "updateProjectV2ItemFieldValue") {
-			t.Errorf("expected field update mutations in gh log:\n%s", r.ghLog)
+		for _, wantPair := range [][2]string{
+			{`itemId: "PVTI_PR711"`, `singleSelectOptionId: "OPT_S1"`},
+			{`itemId: "PVTI_I706"`, `singleSelectOptionId: "OPT_S1"`},
+			{`itemId: "PVTI_I712"`, `singleSelectOptionId: "OPT_S2"`},
+			{`itemId: "PVTI_I564_EXISTING"`, `singleSelectOptionId: "OPT_S3"`},
+			{`itemId: "PVTI_I25"`, `singleSelectOptionId: "OPT_S4"`},
+			{`itemId: "PVTI_I36"`, `singleSelectOptionId: "OPT_S5"`},
+			{`itemId: "PVTI_I484"`, `singleSelectOptionId: "OPT_S6"`},
+			{`itemId: "PVTI_I500_EXISTING"`, `singleSelectOptionId: "OPT_S6"`},
+		} {
+			wantLine := wantPair[0] + `, fieldId: "F_STAGE", value: {` + wantPair[1] + `}`
+			if !strings.Contains(r.ghLog, wantLine) {
+				t.Errorf("gh log missing stage assignment %s:\n%s", wantLine, r.ghLog)
+			}
+		}
+		if strings.Contains(r.ghLog, `itemId: "PVTI_I707_EXISTING", fieldId: "F_STAGE"`) {
+			t.Errorf("gh log should not rewrite already-matching stage on PVTI_I707_EXISTING:\n%s", r.ghLog)
 		}
 	})
 

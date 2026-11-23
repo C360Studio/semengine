@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
@@ -72,31 +73,44 @@ func (c *Component) subscribeQueries(ctx context.Context) error {
 	return nil
 }
 
+// position is what a handler read before its first bucket read: the revision the reply
+// carries and the damaged entities recorded then.
+type position struct {
+	follower *follower.Follower
+	revision uint64
+	damaged  int
+}
+
 // queryRevision refuses the query while the follower withholds readiness (QueryReady) or
-// has not reached minRevision (zero means none), and otherwise returns the revision the
+// has not reached minRevision (zero means none), and otherwise returns the position the
 // reply carries. It is read here, before the handler's first bucket read, so every revision
 // at or below it is reflected in what the handler then reads.
-func (c *Component) queryRevision(ctx context.Context, minRevision uint64) (uint64, error) {
+func (c *Component) queryRevision(ctx context.Context, minRevision uint64) (position, error) {
 	f := c.follower.Load()
 	if err := f.QueryReady(ctx); err != nil {
-		return 0, err
+		return position{}, err
 	}
 	revision := f.Indexed()
 	if minRevision > revision {
-		return 0, errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached,
+		return position{}, errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached,
 			map[string]any{"indexed_revision": revision},
 			fmt.Errorf("min_revision %d is above the indexed revision %d", minRevision, revision))
 	}
-	return revision, nil
+	return position{follower: f, revision: revision, damaged: f.DamagedCount(nil)}, nil
 }
 
 // reply is a successful reply: data in the graph.QueryResponse envelope, producer
-// graph-index, carrying revision.
-func reply[T any](revision uint64, data T) ([]byte, error) {
-	response, err := graph.NewQueryResponse(graph.ResponderGraphIndex, revision, data)
+// graph-index, carrying the position's revision and the damaged entities it may have left out.
+// The count is the larger of the record before the handler's reads and after them: a lane
+// records an entity before it removes the entity's rows, and clears it only after writing its
+// valid rows, so rows a read missed are counted by one of the two, unless the entity was
+// damaged and repaired again while the handler read.
+func reply[T any](at position, data T) ([]byte, error) {
+	response, err := graph.NewQueryResponse(graph.ResponderGraphIndex, at.revision, data)
 	if err != nil {
 		return nil, internalError(err)
 	}
+	response.DamagedEntities = max(at.damaged, at.follower.DamagedCount(nil))
 	return json.Marshal(response)
 }
 
@@ -130,7 +144,8 @@ func decodeEntityRequest(data []byte) (entityRequest, error) {
 }
 
 // handleQueryOutgoing answers an entity's outgoing relationships: its OUTGOING_INDEX row,
-// or none.
+// or none. For a damaged entity it answers the refusal the follower recorded, read after the
+// row, so an entity recorded while the row was read is refused rather than answered empty.
 func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
@@ -138,13 +153,17 @@ func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
 	entry, err := c.outgoingBucket.Get(ctx, req.EntityID)
 	if natsclient.IsKVNotFoundError(err) {
-		return reply(revision, graph.OutgoingRelationshipsData{Relationships: []graph.OutgoingEntry{}})
+		// A damaged entity's row is removed: say why it is absent rather than answer none.
+		if refusal := at.follower.DamagedRefusal(req.EntityID); refusal != nil {
+			return nil, refusal
+		}
+		return reply(at, graph.OutgoingRelationshipsData{Relationships: []graph.OutgoingEntry{}})
 	}
 	if err != nil {
 		return nil, internalError(err)
@@ -153,7 +172,10 @@ func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byt
 	if err := json.Unmarshal(entry.Value, &entries); err != nil {
 		return nil, internalError(err)
 	}
-	return reply(revision, graph.OutgoingRelationshipsData{Relationships: entries})
+	if refusal := at.follower.DamagedRefusal(req.EntityID); refusal != nil {
+		return nil, refusal
+	}
+	return reply(at, graph.OutgoingRelationshipsData{Relationships: entries})
 }
 
 // handleQueryIncoming answers the edges that point at an entity, read from the
@@ -169,7 +191,7 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -178,10 +200,12 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 		return nil, internalError(err)
 	}
 	entries := make([]graph.IncomingEntry, 0, len(keys))
+	skipped := 0
 	for _, key := range keys {
 		entry, ok := incomingEntryFromKey(key, prefix)
 		if !ok {
 			c.skipMalformedRow("incoming", key, "key is not target.source.hex(predicate)")
+			skipped++
 			continue
 		}
 		entries = append(entries, entry)
@@ -192,7 +216,7 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 		return cmp.Or(strings.Compare(a.FromEntityID, b.FromEntityID), strings.Compare(a.Predicate, b.Predicate))
 	})
 	entries = slices.Compact(entries)
-	return reply(revision, graph.IncomingRelationshipsData{Relationships: entries})
+	return reply(at, graph.IncomingRelationshipsData{Relationships: entries, UnreadableRecords: skipped})
 }
 
 // incomingEntryFromKey reads an INCOMING_INDEX key, target.source6.hex(predicate), whose
@@ -253,7 +277,7 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -262,10 +286,12 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 		return nil, internalError(err)
 	}
 	holders := make(map[string]struct{}, 1)
+	skipped := 0
 	for _, key := range keys {
 		entityID, _, ok := entityAndPredicate(strings.TrimPrefix(key, prefix))
 		if !ok {
 			c.skipMalformedRow("alias", key, "key is not hash.entity.hex(predicate)")
+			skipped++
 			continue
 		}
 		holders[entityID] = struct{}{}
@@ -275,9 +301,9 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 			fmt.Errorf("alias %q is held by %d entities", req.Alias, len(holders)))
 	}
 	for canonicalID := range holders {
-		return reply(revision, graph.AliasData{CanonicalID: &canonicalID})
+		return reply(at, graph.AliasData{CanonicalID: &canonicalID, UnreadableRecords: skipped})
 	}
-	return reply(revision, graph.AliasData{})
+	return reply(at, graph.AliasData{UnreadableRecords: skipped})
 }
 
 // handleQueryPredicate answers the entities carrying a predicate, sorted; with a value,
@@ -292,21 +318,24 @@ func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]by
 	if _, err := predicateExactFilter(req.Predicate); err != nil {
 		return nil, invalidPredicateQuery(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
-	entities, err := c.predicateEntities(ctx, req.Predicate)
+	entities, skipped, err := c.predicateEntities(ctx, req.Predicate)
 	if err != nil {
 		return nil, internalError(err)
 	}
 	if req.Value != nil {
 		entities, err = c.entitiesWithValue(ctx, entities, req.Predicate, *req.Value, req.Limit)
+		if graph.IsStateContractError(err) {
+			return nil, err
+		}
 		if err != nil {
 			return nil, internalError(err)
 		}
 	}
-	return reply(revision, graph.PredicateData{Entities: limited(entities, req.Limit)})
+	return reply(at, graph.PredicateData{Entities: limited(entities, req.Limit), UnreadableRecords: skipped})
 }
 
 // limited returns the first limit values; a limit of zero or less keeps them all.
@@ -318,33 +347,37 @@ func limited(values []string, limit int) []string {
 }
 
 // predicateEntities lists the entities with a PREDICATE_INDEX membership for predicate,
-// sorted and deduplicated.
-func (c *Component) predicateEntities(ctx context.Context, predicate string) ([]string, error) {
+// sorted and deduplicated, and the number of malformed rows it skipped.
+func (c *Component) predicateEntities(ctx context.Context, predicate string) ([]string, int, error) {
 	filter, err := predicateExactFilter(predicate)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	keys, err := c.predicateBucket.KeysByFilter(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	entities := make([]string, 0, len(keys))
+	skipped := 0
 	for _, key := range keys {
 		stored, entityID, ok := predicateMembershipFromKey(key)
 		if !ok || stored != predicate {
 			c.skipMalformedRow("predicate", key, "key is not predicate.entity")
+			skipped++
 			continue
 		}
 		entities = append(entities, entityID)
 	}
 	slices.Sort(entities)
-	return slices.Compact(entities), nil
+	return slices.Compact(entities), skipped, nil
 }
 
 // entitiesWithValue keeps, in order, the entities whose current ENTITY_STATES value holds
 // predicate with value, stopping once limit are found (zero or less: no limit). An entity
 // deleted since the membership was read is left out; any other read failure fails the
-// whole query rather than answer part of it.
+// whole query rather than answer part of it. A stored value that does not decode stops the
+// read at that entity with graph.UnmarshalEntityState's refusal, which names it: the request
+// cannot be answered until it is repaired, so reading on would only add names to the refusal.
 func (c *Component) entitiesWithValue(ctx context.Context, entityIDs []string, predicate, value string, limit int) ([]string, error) {
 	matched := []string{}
 	for _, entityID := range entityIDs {
@@ -412,7 +445,7 @@ func (c *Component) handleQueryPredicateList(ctx context.Context, data []byte) (
 			return nil, invalidPredicateQuery(err)
 		}
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +462,9 @@ func (c *Component) handleQueryPredicateList(ctx context.Context, data []byte) (
 	for _, key := range malformed {
 		c.skipMalformedRow("predicate", key, "key is not predicate.entity")
 	}
-	return reply(revision, graph.PredicateListData{Predicates: predicates, Total: len(predicates)})
+	return reply(at, graph.PredicateListData{
+		Predicates: predicates, Total: len(predicates), UnreadableRecords: len(malformed),
+	})
 }
 
 // handleQueryPredicateStats answers a predicate's entity count and the first sample_limit
@@ -451,18 +486,19 @@ func (c *Component) handleQueryPredicateStats(ctx context.Context, data []byte) 
 	if req.SampleLimit <= 0 {
 		req.SampleLimit = 10
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
-	entities, err := c.predicateEntities(ctx, req.Predicate)
+	entities, skipped, err := c.predicateEntities(ctx, req.Predicate)
 	if err != nil {
 		return nil, internalError(err)
 	}
-	return reply(revision, graph.PredicateStatsData{
-		Predicate:      req.Predicate,
-		EntityCount:    len(entities),
-		SampleEntities: limited(entities, req.SampleLimit),
+	return reply(at, graph.PredicateStatsData{
+		Predicate:         req.Predicate,
+		EntityCount:       len(entities),
+		SampleEntities:    limited(entities, req.SampleLimit),
+		UnreadableRecords: skipped,
 	})
 }
 
@@ -486,16 +522,18 @@ func (c *Component) handleQueryPredicateCompound(ctx context.Context, data []byt
 	if req.Operator != "AND" && req.Operator != "OR" {
 		return nil, invalidRequest(errors.New("operator must be AND or OR"))
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
 	counts := make(map[string]int)
+	skipped := 0
 	for _, predicate := range req.Predicates {
-		entities, err := c.predicateEntities(ctx, predicate)
+		entities, n, err := c.predicateEntities(ctx, predicate)
 		if err != nil {
 			return nil, internalError(err)
 		}
+		skipped += n
 		for _, entityID := range entities {
 			counts[entityID]++
 		}
@@ -509,10 +547,11 @@ func (c *Component) handleQueryPredicateCompound(ctx context.Context, data []byt
 		}
 	}
 	slices.Sort(entities)
-	return reply(revision, graph.CompoundPredicateData{
-		Entities: limited(entities, req.Limit),
-		Operator: req.Operator,
-		Matched:  len(entities),
+	return reply(at, graph.CompoundPredicateData{
+		Entities:          limited(entities, req.Limit),
+		Operator:          req.Operator,
+		Matched:           len(entities),
+		UnreadableRecords: skipped,
 	})
 }
 
@@ -617,7 +656,7 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx, req.MinRevision)
+	at, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -633,10 +672,12 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 			fmt.Errorf("name lookup exceeds read budget: %d memberships > %d", len(keys), nameQueryMaxHydration))
 	}
 	items := make([]graph.NameIndexItem, 0, len(keys))
+	skipped := 0
 	for _, key := range keys {
 		entityID, predicate, ok := entityAndPredicate(strings.TrimPrefix(key, prefix))
 		if !ok {
 			c.skipMalformedRow("name", key, "key is not hash.entity.hex(predicate)")
+			skipped++
 			continue
 		}
 		entry, err := c.nameBucket.Get(ctx, key)
@@ -649,11 +690,12 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 		var v nameCompositeValue
 		if err := json.Unmarshal(entry.Value, &v); err != nil {
 			c.skipMalformedRow("name", key, "value is not JSON: "+err.Error())
+			skipped++
 			continue
 		}
 		items = append(items, graph.NameIndexItem{EntityID: entityID, Name: v.Name, Predicate: predicate, Priority: v.Priority})
 	}
-	return reply(revision, graph.NameData{Matches: rankNameMatches(items, req.Name, req.Limit)})
+	return reply(at, graph.NameData{Matches: rankNameMatches(items, req.Name, req.Limit), UnreadableRecords: skipped})
 }
 
 // nameRank pairs a match with its label-predicate priority for ordering.
@@ -707,8 +749,8 @@ func rankNameMatches(items []graph.NameIndexItem, query string, limit int) []gra
 // skipMalformedRow declares a stored index row a query leaves out of its answer because it is
 // not the index's layout. No graph-index writer stores such a row, so one means the bucket was
 // written by something else; the query still answers from the well-formed rows, which are
-// unaffected, rather than fail on a row it cannot read. A row deleted after the listing is not
-// malformed and is not declared. The key goes to the log only: the metric's one label is the
+// unaffected, rather than fail on a row it cannot read, and counts the row in its reply's
+// unreadable_records. A row deleted after the listing is not malformed and is not declared. The key goes to the log only: the metric's one label is the
 // index, a bounded set.
 func (c *Component) skipMalformedRow(indexType, key, reason string) {
 	c.metrics.queryRowsSkipped.WithLabelValues(indexType).Inc()

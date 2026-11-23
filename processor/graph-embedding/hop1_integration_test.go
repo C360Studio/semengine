@@ -56,7 +56,6 @@ func openClient(ctx context.Context, url string) (*natsclient.Client, func(conte
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(15*time.Second),
 		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -121,9 +120,18 @@ func newEmbedding(t *testing.T, client *natsclient.Client, raw string, stores *s
 func newEmbeddingFrom(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry,
 	source *embedderSource) *harness {
 	t.Helper()
+	h := newEmbeddingBy(t, client, raw, stores, productFactory(t, source))
+	h.source = source
+	return h
+}
+
+// newEmbeddingBy is newEmbedding built by factory, for a test whose embedder is not the word-count one.
+func newEmbeddingBy(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry,
+	factory component.Factory) *harness {
+	t.Helper()
 	logs := &logBuffer{}
 	metrics := metric.NewMetricsRegistry()
-	built, err := productFactory(t, source)(json.RawMessage(raw), component.Dependencies{
+	built, err := factory(json.RawMessage(raw), component.Dependencies{
 		NATSClient: client, MetricsRegistry: metrics, StoreRegistry: stores,
 		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
@@ -134,15 +142,25 @@ func newEmbeddingFrom(t *testing.T, client *natsclient.Client, raw string, store
 	if err := c.Initialize(); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	return &harness{c: c, source: source, client: client, logs: logs, metrics: metrics}
+	return &harness{c: c, client: client, logs: logs, metrics: metrics}
 }
 
 // startEmbedding ensures ENTITY_STATES, builds graph-embedding from raw and starts it; the test's
 // cleanup stops it.
 func startEmbedding(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry) *harness {
 	t.Helper()
+	source := &embedderSource{}
+	h := startEmbeddingBy(t, client, raw, stores, productFactory(t, source))
+	h.source = source
+	return h
+}
+
+// startEmbeddingBy is startEmbedding built by factory.
+func startEmbeddingBy(t *testing.T, client *natsclient.Client, raw string, stores *storeregistry.Registry,
+	factory component.Factory) *harness {
+	t.Helper()
 	states := ensureEntityStates(t, client)
-	h := newEmbedding(t, client, raw, stores)
+	h := newEmbeddingBy(t, client, raw, stores, factory)
 	if err := h.c.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

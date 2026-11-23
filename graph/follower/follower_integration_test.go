@@ -62,7 +62,6 @@ func openClient(ctx context.Context, url string) (*natsclient.Client, func(conte
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(15*time.Second),
 		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -470,34 +469,54 @@ func TestEntryCarriesDeliveredValue(t *testing.T) {
 	}
 }
 
-// TestFollowerLatchesResetOnUnreadableSnapshotValue: a stored value that does not decode latches
-// reset with its reason; the entry is still delivered; QueryReady is fatal; a later Reset changes
-// nothing.
-func TestFollowerLatchesResetOnUnreadableSnapshotValue(t *testing.T) {
+// TestFollowerServesPastDamagedReplay: ENTITY_STATES holds a value that does not decode when Run
+// starts. The test, as the plug-in, decodes each delivered value, reports the one refused and
+// completes both: the first build completes, QueryReady answers nil, and Stuck names the damaged
+// key. A valid write of the key, completed, clears it with no restart.
+func TestFollowerServesPastDamagedReplay(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
-	put(t, kv, entityID(1), []byte("{not json"))
+	put(t, kv, entityID(1), storedEntity(entityID(1)))
+	damaged := entityID(2)
+	target := put(t, kv, damaged, []byte("{not json"))
 	delivered := make(chan Entry, 4)
 	f := open(t, client, func(_ context.Context, e Entry) { delivered <- e }, noFailures)
 	start(t, f)
 
-	// The delivery orders the reads below after the latch: the follower validates before it delivers.
-	if e := <-delivered; e.Key != entityID(1) || e.Deleted || e.Bytes != len("{not json") {
-		t.Fatalf("delivered %+v; want the unreadable entry", e)
+	apply := func(e Entry) {
+		var state graph.EntityState
+		if err := graph.UnmarshalEntityState(e.Key, e.Value, &state); err != nil {
+			f.ReportDamaged(e.Key, e.Revision, err)
+		}
+		f.Complete(e.Key, e.Revision)
 	}
-	reason := string(graph.GraphStateReasonUnreadableEntity)
-	err := f.QueryReady(t.Context())
-	requireCode(t, err, errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired)
-	if !graph.IsStateContractError(err) {
-		t.Errorf("QueryReady error %v does not carry the state contract", err)
+	apply(<-delivered)
+	apply(<-delivered)
+	if got := f.Indexed(); got != target {
+		t.Fatalf("Indexed = %d after both stored entries completed; want the snapshot's last revision %d", got, target)
 	}
-	if !stuckNames(f, reason) {
-		t.Fatalf("Stuck = %q; want it to name %s", f.Stuck(), reason)
+	// With damage stored, the first build latches only once Run has recorded the end of the startup
+	// replay, which nothing above orders before this read; QueryReady can answer index_not_ready
+	// until then, so the test waits for it to answer nil. go test -timeout bounds the wait.
+	if _, err := probe.Await(t.Context(), func(ctx context.Context) (error, error) { return f.QueryReady(ctx), nil },
+		func(err error) bool { return err == nil }); err != nil {
+		t.Fatalf("QueryReady with one damaged entity stored at start never answered nil: %v", err)
+	}
+	if !stuckNames(f, damaged+" ("+string(graph.GraphStateReasonUnreadableEntity)+")") {
+		t.Errorf("Stuck = %q; want it to name %s", f.Stuck(), damaged)
 	}
 
-	f.Reset(graph.GraphStateReasonNoncanonicalPredicate)
-	if !stuckNames(f, reason) || stuckNames(f, string(graph.GraphStateReasonNoncanonicalPredicate)) {
-		t.Fatalf("Stuck = %q after a second Reset; want only the first reason %s", f.Stuck(), reason)
+	repair := put(t, kv, damaged, storedEntity(damaged))
+	e := <-delivered
+	if e.Key != damaged || e.Revision != repair {
+		t.Fatalf("delivered %+v; want the repair of %s at %d", e, damaged, repair)
+	}
+	apply(e)
+	if n := f.DamagedCount(nil); n != 0 || len(f.Stuck()) != 0 {
+		t.Errorf("after the repair completed: DamagedCount %d, Stuck %q; want 0 and empty", n, f.Stuck())
+	}
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("QueryReady after the repair = %v; want nil", err)
 	}
 }
 
@@ -588,5 +607,51 @@ func TestBuildCompletingCallAnswersPastUnwithheldFailure(t *testing.T) {
 	}
 	if !f.bootstrapped.Load() {
 		t.Error("QueryReady's envelope did not latch the build")
+	}
+}
+
+// outageReader passes Status through to the follower's real reader unless down is set, when it
+// fails as a read does while NATS is unreachable.
+type outageReader struct {
+	kvcatalog.CatalogReader
+	down bool
+}
+
+func (r *outageReader) Status(ctx context.Context) (jetstream.KeyValueStatus, error) {
+	if r.down {
+		return nil, errors.New("nats: connection closed")
+	}
+	return r.CatalogReader.Status(ctx)
+}
+
+// statusReadFailed is the sentence Stuck holds while the latest ENTITY_STATES status read failed.
+const statusReadFailed = "ENTITY_STATES status read failed"
+
+// TestStuckNamesFailedStatusRead: while the follower's latest read of ENTITY_STATES' status has
+// failed, Stuck names it, so the components that report Stuck as health read unhealthy during a
+// NATS outage; the next successful read clears it, and the failure never marks the feed lost.
+// compute runs on this goroutine, so each Stuck call reads after the read it follows.
+func TestStuckNamesFailedStatusRead(t *testing.T) {
+	client := fixtureClient(t)
+	entityStates(t, client)
+	f := open(t, client, func(context.Context, Entry) {}, noFailures)
+	reader := &outageReader{CatalogReader: f.status}
+	f.status = reader
+
+	f.compute(t.Context())
+	if stuck := f.Stuck(); len(stuck) != 0 {
+		t.Fatalf("Stuck after a successful read: %q; want empty", stuck)
+	}
+
+	reader.down = true
+	f.compute(t.Context())
+	if stuck := f.Stuck(); !slices.Equal(stuck, []string{statusReadFailed}) {
+		t.Fatalf("Stuck after a failed read: %q; want [%q]", stuck, statusReadFailed)
+	}
+
+	reader.down = false
+	f.compute(t.Context())
+	if stuck := f.Stuck(); len(stuck) != 0 {
+		t.Fatalf("Stuck after the read succeeded again: %q; want empty, the feed not lost", stuck)
 	}
 }

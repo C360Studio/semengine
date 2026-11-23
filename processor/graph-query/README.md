@@ -32,6 +32,7 @@ tier 0 composition gets. The time-range and area searches wait for their respond
 | `localSearch` | `graph.lexical.query.search` scoped to one group, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the group's record | enveloped by `graph-query`, `data` a `graph.LocalSearchData` |
 | `globalSearch` | `graph.lexical.query.search` over every entity, then `graph.ingest.query.batch`; the `COMMUNITY_INDEX` view for the groups' records; the alias, entity and edge verbs to verify an `entity` or `path` hint | enveloped by `graph-query`, `data` a `graph.GlobalSearchData` |
 | `searchGraph` | the same handler as `globalSearch`; when `embedding_enabled` is true, also `graph.embedding.query.search`, sent with the word search | the same, `data` equal to `globalSearch`'s when `embedding_enabled` is false; when true, one list merging words and meaning |
+| `mergedSearch` | `graph.lexical.query.search`; when `embedding_enabled` is true, also `graph.embedding.query.search`, sent with the word search; no entity read | enveloped by `graph-query`, `data` a `graph.MergedSearchData`: ranked entity IDs and scores only |
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
@@ -52,6 +53,15 @@ A refusal from any verb behind these reaches the caller with its class, code, de
 no answer is refused by `graph-query` itself, class transient, code `internal`, naming the subject: nothing responding,
 `query_timeout_ms` passing, the handler's context ending (`natsclient`'s limit on a request handler, or the client
 closing), or a lost connection.
+
+An enveloped reply can carry `damaged_entities`, the number of damaged entities (stored values
+`graph.UnmarshalEntityState` refuses) its producer left out of the answer; the key is absent at 0. Every reply
+`graph-query` builds itself (`entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`,
+`searchGraph`) carries the largest `damaged_entities` among the index replies it used to build the answer, and no such
+key when none carried one. A reply it read but set aside, such as a hint it did not honour or an embedding list it could
+not merge, adds nothing. Counts are not added, since two reads can count the same entity. A forward passes the count in
+the bytes it passes unchanged. A count above 0 means rows may be missing from `data`; the answer about every other
+entity stands.
 
 ### `entityByAlias`
 
@@ -189,8 +199,9 @@ refused.
 - `missing`: hits deleted between the word search and the read, left out of `matches`.
 - `bodies_not_indexed`: entities whose offloaded body the word index did not hold, so their body words are not searched
   yet.
-- `truncated`: true when `matched` is above the matches returned, a hit was missing, or matches were left out so the
-  reply fits the connection's `max_payload`. The matches kept are then the best ones.
+- `truncated`: true when `matched` is above the matches returned, a hit was missing or damaged, the word index's reply
+  carried `damaged_entities` above 0 (it may have left a match out), or matches were left out so the reply fits the
+  connection's `max_payload`. The matches kept are then the best ones.
 - `answer`: a sentence such as `Found 3 matching entities in acme.ops.src.docs.`, then `Showing the first 2.` when
   truncated, then the record's summary when one was read.
 
@@ -215,8 +226,10 @@ including SemStreams' `max_communities`, `summarize_threshold`, `include_summari
   (below), where it is `null`. An empty `text` means the word index was read and matched nothing. It holds: `level`;
   `matches` as in `localSearch`; `groups`, each group holding a match once, in the order of its best match, with
   `community_id`, `matches` (how many of the reply's matches it holds), `record_state` and `record`; `matched`,
-  `excluded`, `missing`, `bodies_not_indexed` and `truncated` as in `localSearch`; `unreadable_groups`, how many
-  listed groups have an `unreadable` record; and `answer`, such as `Found 12 matching entities in 3 groups.`
+  `excluded`, `missing` and `bodies_not_indexed` as in `localSearch`; `truncated` as in `localSearch`, and also true
+  when a read behind an honoured hint (the alias read, or the walk of a `path` hint) carried `damaged_entities` above
+  0, since its entity or path is in the reply; `unreadable_groups`, how many listed groups have an `unreadable`
+  record; and `answer`, such as `Found 12 matching entities in 3 groups.`
 - `entity`: the entity verb's reply data as it came, present only beside an honoured `entity` hint.
 - `path`: a `graph.PathSearchData`, present only beside an honoured `path` hint.
 - `hints`: what the question asked for beyond its words (empty when nothing).
@@ -252,6 +265,50 @@ answer. The classifier takes the first start of "from A to B" and ignores B. To 
 
 `indexed_revision` is the word index's. `min_revision` goes to the word index, and to the alias read a hint makes.
 
+#### `mergedSearch`
+
+The ranked entity IDs of `searchGraph`'s merge, with no entity read back. Fusion's natural-language resolve calls it:
+it needs only IDs and scores, and reading up to 100 entities it would then discard is wasted work. It takes the word
+search's request, a `graph.LexicalSearchRequest` (`query`, `limit`, `scope`, `min_revision`), decoded strictly. Before
+any request it refuses, `invalid_request`, an unknown key, a blank `query`, a `limit` outside 0 or 1 to 100, and a
+`scope` member that is not an entity-ID prefix (an empty member means every entity). `scope` reaches both searches;
+`min_revision` reaches the word search alone. The word search needs graph-lexical, but not graph-ingest.
+
+The reply `data` is a `graph.MergedSearchData`:
+
+- `results`: at most `limit` entries, best first, entity ID ascending on ties, each with `entity_id`, `score` and
+  `vector_rank`. `vector_rank` is the entity's place in the embedding list, counting from 1, and is left out when the
+  entity came from the word list alone or nothing was merged. A reply in which no result has a `vector_rank` holds no
+  meaning result, even when `merge` is honoured: the embedding list may have been empty, or all its hits may have
+  fallen below `limit`.
+- `score`: the merged score (the sum of 1 / (60 + place) over the lists holding the entity) when `merge` is honoured,
+  otherwise the word index's score. Compare scores only within one reply.
+- `excluded` and `bodies_not_indexed`: the word search's, as `localSearch` reports them; absent or 0 when the word
+  index was not ready.
+- `merge`: there exactly when `embedding_enabled` is true, a hint entry as in `searchGraph`'s reply. With it absent,
+  `results` is the word list alone.
+
+With `embedding_enabled` true, both searches are asked together for 100 entities each, and the results are the first
+`limit` of the merge, in the order `searchGraph` gives its matches (a hit missing or damaged in `searchGraph`'s
+`batch` read is the one difference, since `mergedSearch` reads none). `mergedSearch` waits for the embedding search at
+most `query_timeout_ms` or 4 seconds, whichever is less, so a caller on the default 5 second request timeout keeps
+about a second for the word search and the reply. The failure cases:
+
+- **The embedding search is refused, broken, or silent past that wait**, or returns a hit whose ID is not a literal
+  entity ID: `results` is the word list, `merge` is not honoured with the reason, and one Warn,
+  `mergedSearch answered the word list alone: the embedding search failed`, and one count on
+  `semengine_graph_query_search_merge_failed_total` follow, once the reply is encoded.
+- **The word search is refused `index_not_ready` and the embedding search answers**: `results` is the embedding list,
+  `merge` has `detail` `index_not_ready`, and `indexed_revision` is 0. When both fail, the `index_not_ready` refusal
+  is returned.
+- **Any other word refusal** is returned as it arrived. A word hit whose ID is not a literal entity ID is the word
+  index's broken reply, refused transient `internal`.
+- **With `embedding_enabled` false**, no request goes to graph-embedding, `merge` is absent and `results` is the word
+  list.
+
+`indexed_revision` is the word search's, and `damaged_entities` is the larger count among the replies read.
+`searchGraph`'s own wait for the embedding search is not bounded this way (`query_timeout_ms` only).
+
 #### `searchGraph`'s search by meaning
 
 With `embedding_enabled` false, `searchGraph` makes no request to graph-embedding. With it true, it sends the word
@@ -274,9 +331,9 @@ In the reply:
   `embedder_type`, `unreadable_records`, `failed_records`).
 - `matched` stays the word index's count. `answer` adds `, and N more by meaning` for the N matches with no `word_rank`.
 - `truncated` is true when the lists read held more distinct entities between them than `limit` (the word list alone
-  when the embedding search failed), `matched` is above the word hits read, a hit was missing, or matches were left out
-  to fit. The embedding list has no score threshold, so at a small `limit` this
-  is nearly always true.
+  when the embedding search failed), `matched` is above the word hits read, a hit was missing or damaged, a reply the
+  answer was built from carried `damaged_entities` above 0, or matches were left out to fit. The embedding list has no
+  score threshold, so at a small `limit` this is nearly always true.
 - `indexed_revision` is the word index's.
 
 When one side fails:
@@ -397,10 +454,12 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 | Name | Type | Meaning |
 | --- | --- | --- |
 | `semengine_graph_query_search_truncated_total` | counter vec | `localSearch`, `globalSearch` and `searchGraph` answers cut short, by `verb` (`localSearch`, `globalSearch`, `searchGraph`) |
-| `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` answers given as the word list alone because the embedding search was refused, broken, or silent past `query_timeout_ms` |
+| `semengine_graph_query_search_merge_failed_total` | counter | `searchGraph` and `mergedSearch` answers given as the word list alone because the embedding search was refused, broken, or silent past its deadline (`query_timeout_ms` for `searchGraph`; that or 4 s, whichever is less, for `mergedSearch`) |
 
-A search answer is cut short when more entities matched than the `limit` returned, a hit was deleted before it was
-read, or matches were left out to fit `max_payload`: each sets `truncated` and adds one to the counter. A refused
+A search answer is cut short when more entities matched than the `limit` returned, a hit was deleted or damaged
+before it was read, a reply it was built from carried `damaged_entities` above 0, or matches were left out to fit
+`max_payload`: each sets `truncated` and adds one to the counter. While any entity is damaged, every unscoped search
+counts it, so the counter rises with each `globalSearch` and `searchGraph` until the entity is repaired. A refused
 request, and an answer that is whole, count nothing.
 
 ## Starting and stopping

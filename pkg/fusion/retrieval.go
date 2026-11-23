@@ -37,10 +37,12 @@ type RetrievalClient interface {
 	// batch verb answers cache hits first; Client.Entities in pkg/fusion/fusionnats
 	// restores request order for exactly this reason).
 	Entities(ctx context.Context, ids []string) (Hydration, error)
-	// Neighbors returns edges from id along the given predicates in a direction.
-	Neighbors(ctx context.Context, id string, predicates []string, dir Direction) ([]Edge, error)
-	// Names suggests entity display names near a query (for a miss's did_you_mean).
-	Names(ctx context.Context, query string, limit int) ([]string, error)
+	// Neighbors returns edges from id along the given predicates in a direction,
+	// and how many damaged entities the read left out.
+	Neighbors(ctx context.Context, id string, predicates []string, dir Direction) (Neighbors, error)
+	// Names suggests entity display names near a query (for a miss's did_you_mean),
+	// and how many damaged entities the read left out.
+	Names(ctx context.Context, query string, limit int) (Names, error)
 }
 
 // Seed is one resolved candidate, most relevant first.
@@ -53,8 +55,9 @@ type Seed struct {
 	// ID is the resolved entity ID.
 	ID string
 	// Similarity is the resolve mode's own relevance score, when it has one.
-	// An NL resolve reports the word index's score, on no fixed scale and
-	// comparable only within one resolve; symbol and prefix report none.
+	// An NL resolve reports the word index's score, or the merged score when
+	// meaning results were merged in; either is on no fixed scale and
+	// comparable only within one resolve. Symbol and prefix report none.
 	Similarity float64
 	// HasSimilarity distinguishes "this mode scored it 0" from "this mode does not
 	// score". Without it a prefix seed would surface as a perfect zero-relevance
@@ -66,10 +69,36 @@ type Seed struct {
 // natural-language search, what the word index's reply says it left out:
 // BodiesNotIndexed (entities whose offloaded body it did not hold) and Excluded
 // (the question's excluded terms). Symbol and prefix resolves leave both empty.
+//
+// DamagedEntities, in every mode, is the reply's count of damaged entities
+// (stored values the graph refuses to read) the index held and left out, so
+// the seeds may lack one of them. 0 says nothing was left out.
+//
+// Provenance is where the seeds came from, when the client can tell: a
+// natural-language search answered from words alone and one that used meaning
+// as well are different answers to trust. Empty says the client does not
+// tell, and the response carries its mode's provenance (ProvenanceForMode).
 type Resolution struct {
 	Seeds            []Seed
 	BodiesNotIndexed int
 	Excluded         []string
+	DamagedEntities  int
+	Provenance       Provenance
+}
+
+// Neighbors is what a Neighbors read found: the edges, and the reply's count of
+// damaged entities the index held and left out, so an edge to or from one of
+// them may be missing. 0 says nothing was left out.
+type Neighbors struct {
+	Edges           []Edge
+	DamagedEntities int
+}
+
+// Names is what a Names read found: the suggested names, and the reply's count
+// of damaged entities the index held and left out, as Neighbors carries it.
+type Names struct {
+	Names           []string
+	DamagedEntities int
 }
 
 // SeedIDs projects seeds to their IDs, for the batch-hydration call and anywhere else

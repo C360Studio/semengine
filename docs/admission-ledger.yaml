@@ -885,7 +885,7 @@
     connection status is a typed atomic that Status() reads without the client's lock. Removed:
     StatusCircuitOpen, natsclient.ErrCircuitOpen (and errs.ErrCircuitOpen), Client.Failures,
     Client.Backoff, and Status.FailureCount, LastFailureTime and Reconnects; Client.RTT and the
-    health monitor stay. Connect dials each time it is called, bounded by its context, and a failed
+    health monitor stay (the health monitor until fix-605-natsclient-poller-readiness, below). Connect dials each time it is called, bounded by its context, and a failed
     call refuses no other call. The records below that name the breaker, its timer or its tests
     (circuit threshold, Failures(), the circuit-open rows) describe the pin and the earlier
     changes, and are history.
@@ -943,10 +943,11 @@
     natsclient-close-joins-its-goroutines,
     the six sites (the health monitor :2151, the metrics poller :868, the claim releases of both consumer
     APIs, now one site, owned_delivery.go:133, the connection-loss timer's body :2040 and, until
-    simplify-04a-16 removed the breaker, the circuit timer's body :590) start through one helper, startBackground (:223), which under mu
+    simplify-04a-16 removed the breaker, the circuit timer's body :590; the health monitor until
+    fix-605-natsclient-poller-readiness removed it) start through one helper, startBackground (:223), which under mu
     refuses once Close has begun and otherwise counts the work as client-owned (an owned-work
     count under mu, which the join waits to reach zero) before the goroutine starts; Connect admits the
-    monitor and the poller through it. The first Close stops the monitor, the timer and the
+    poller through it. The first Close stops the timers and the
     poller, drains and closes the
     connection, clears the connection and the JetStream handle, and only then sets Status to
     Disconnected (the status keeps its value through the drain), bounded by its own context. Every
@@ -1144,6 +1145,19 @@
     return (nil, another client's, not comparable) are refused at once as invalid; a handle stays known for the
     client's life, so after its handlers finished or after Close returned nil it returns nil at once. The client keeps
     one map entry per consumer it returns, the handle as a lookup key only. Consumer: storage/objectstore's cleanup.
+    Changed surface, fix-605-natsclient-poller-readiness (owner approval, #605 comment 7085526705): the health poller
+    (startHealthMonitoring, stopHealthMonitoring, its healthInterval, healthTicker and healthDone fields and the
+    "health monitor" work kind) and its option WithHealthInterval are removed, so only Connect, the nats.go connection
+    handlers and Close set Status(); nats.go's own pings and the connection-loss timer are unchanged.
+    RequestReadyClassified is removed with requestMsgReady, DefaultReadinessProbeTimeout, DefaultReadinessBudget and
+    the two backoff constants: it retried every error for its whole budget and had no caller here or in a consumer.
+    Dropped tests: health_monitor_integration_test.go (TestHealthMonitorTickReturnsStatusAndClose),
+    readiness_integration_test.go (the four TestIntegration_RequestReady* tests) and the RequestReadyClassified row of
+    TestExportedNilContextRefusedOnRequestAndBucketPaths; they tested removed code. Connect now reports
+    nats.ErrConnectionClosed when Close began after admission whether or not it starts the metrics poller
+    (TestClientCloseDuringConnectStartsNothing, default and metrics subtests). Consumers delete their
+    WithHealthInterval line: semsource cmd/semsource/run.go, semteams internal/natstest/natstest.go. Records below
+    that name the health monitor, its tests or requestMsgReady describe earlier changes and are history.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource, internal/kvwatch (in-set; no exported signature names it);
     storagereport's report consumer stops its STORAGE_REPORT watch through internal/kvwatch.Stop, which drains the
@@ -1153,7 +1167,7 @@
     github.com/nats-io/nats-server/v2 v2.15.0 (embedded broker, client_connect_test.go:104),
     stretchr/testify, prometheus client_model and testutil; the integration lane imports
     internal/harness/natsfixture and internal/harness/probe and no natsclient test imports
-    testcontainers (task 3.7b). Dials NATS; runs the health monitor, the metrics poller,
+    testcontainers (task 3.7b). Dials NATS; runs the metrics poller,
     claim-release goroutines and two timers, each started through startBackground, and hands message
     handlers and connection event handlers to nats.go goroutines; Close joins all of them (design
     D3, tasks 3.7c and 3.7c2)
@@ -1954,7 +1968,8 @@
     admitted through internal/httpadmission, Stop waiting for every admitted request; mounted at
     /<instance>/graphql by the service manager. Strict configuration: ports (exactly one required graph_queries
     nats-request output on graph.query.*, graph.query v1) and query_timeout_ms (default 60000); any other key or port
-    refused naming it
+    refused naming it. An answer whose root fields read a reply with damaged_entities above 0 carries the largest
+    count as the top-level extensions.damagedEntities, absent at 0; data still holds exactly the selected fields
   dependencies_and_side_effects: >-
     production: component, graph, internal/httpadmission, natsclient, pkg/errs (in-set); github.com/vektah/gqlparser/v2
     v2.5.64 and github.com/agnivade/levenshtein v1.2.2 (both MIT, new modules); one route on the service manager's mux;
@@ -2537,7 +2552,7 @@
     setup-04a-04-graph-roots-graph-query-reads)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
-    internal/dispatch, internal/graphmutation, message, metric, natsclient,
+    internal/damage, internal/dispatch, internal/graphmutation, message, metric, natsclient,
     payloadregistry, pkg/errs, pkg/retry, pkg/types, types, vocabulary (in-set); nats.go/jetstream,
     prometheus/client_golang; JetStream consumers, KV reads/writes, request subscriptions, keyed
     lane pool, and status loop started in Start and released by Stop
@@ -3557,13 +3572,15 @@
     index layouts, owner reconciliation (ADR-077, ADR-078), the revision coalescer and the query handlers as at the
     pin, with these adaptations (specs graph-index, entity-state-follower, graph-readiness,
     graph-transport-boundary, lifecycle-suite; design D3-D10, D12): (1) the ENTITY_STATES watch, snapshot replay,
-    reset latch, lost-feed state, watermark and readiness envelope move to graph/follower, and graph-index plugs in
-    through Deliver, Failed, Complete and Reset (D3); (2) lifecycle through component.Lifecycle: a second Start is
+    damaged-entity record, lost-feed state, watermark and readiness envelope move to graph/follower, and graph-index
+    plugs in through Deliver, Failed, Complete and ReportDamaged (D3); (2) lifecycle through component.Lifecycle: a second Start is
     refused with errs.ErrAlreadyStarted, the run context is not a child of Start's context, Stop drains accepted pool
     work and writes it before the run context ends, and Health's Healthy ignores the error count (D4; ADR-108,
     ADR-109 D2, ADR-113); (3) DataFlow counts one input per delivered ENTITY_STATES entry, not one per write (D4);
     (4) every one of the eight verbs refuses with transient index_not_ready during startup replay and while the
-    feed is lost, and with fatal graph_state_reset_required after a reset (D5; ADR-109 D1; owner ruling item 2);
+    feed is lost; a stored value that does not decode is a damaged entity, so the verbs go on answering, count it in
+    damaged_entities, and refuse fatal graph_state_reset_required only a request that names it (D5; ADR-109 D1,
+    amended; #657 ruling 3);
     (5) every reply is a graph.QueryResponse naming producer graph-index and indexed_revision, the follower's floor
     read before the handler's first bucket read, the alias reply included (D6; #103); (6) query subjects are bound from graph.QueryVerbs and Start fails on a
     declared verb with no handler (D6); (7) the keyed pool is internal/dispatch.KeyedPool, keyed_dispatcher.go does
@@ -3603,8 +3620,8 @@
     TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
     TestConfigRefusesInputsTheFollowerDoesNotRead), factory_test.go, metrics_test.go, lifecycle_test.go,
     query_test.go, revision_coalescer_test.go, index_integration_test.go (TestIndexReplacementThroughEveryIndex,
-    TestFailedWriteWithholdsReadinessAndRepairClearsIt, TestNoncanonicalValueLatchesResetAndHoldsItsRevision,
-    TestKVUnsafeAliasIsIndexed), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
+    TestFailedWriteWithholdsReadinessAndRepairClearsIt, TestDamagedEntityLeftOutAndNamed (damaged_integration_test.go),
+    TestRepairedEntityReturns (damaged_integration_test.go), TestKVUnsafeAliasIsIndexed), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
     TestStopWritesAcceptedWork, TestSecondStartIsRefused, TestStartContextEndStopsNothing,
     TestHealthIgnoresErrorCountAndTracksStuckStates, TestLatchBootstrap_ContinuousWrite), query_integration_test.go
     (TestGraphIndexServesExactlyTheDeclaredVerbs, TestQueryDuringStartupReplayIsIndexNotReady,
@@ -3630,22 +3647,25 @@
     specs entity-state-follower and graph-readiness; design D3: Open waits a bounded number of attempts for
     ENTITY_STATES and returns a transient error naming the bucket, opens the readers, ensures GRAPH_STATUS and
     registers the gauges on the injected registry; Run follows one WatchAll on the caller's goroutine, observes each
-    revision in the watermark before calling Deliver, decodes each snapshot value with graph.UnmarshalEntityState
-    (a refusal latches reset and the entry is still delivered), fixes the bootstrap target at the snapshot's end
-    marker, publishes the envelope at once and then every readiness.DefaultHeartbeat from a goroutine it joins, and
-    returns with no watcher left; Complete, Failed and Reset are the plug-in's three outcomes (ADR-108 D4 as
-    changed: Deliver returns nothing because graph-index's apply is asynchronous); the lost-feed state is set when
+    revision in the watermark before calling Deliver, decodes no value (the plug-in does), fixes the bootstrap target
+    at the snapshot's end marker, publishes the envelope at once and then every readiness.DefaultHeartbeat from a
+    goroutine it joins, and returns with no watcher left; Complete, Failed and ReportDamaged are the plug-in's three
+    outcomes (ADR-108 D4 as changed: Deliver returns nothing because graph-index's apply is asynchronous);
+    ReportDamaged records one damaged entity per key at the highest revision reported, and the record is dropped when
+    the plug-in completes a higher revision of the key or a delete is delivered above it, with no restart; a report
+    never withholds a query (#657 ruling 3); DamagedCount and DamagedRefusal read the record; the lost-feed state is set when
     WatchAll fails, when Updates() closes under a live Run context, or when the backing stream's creation time
     differs from the one Open read, and holds until the process restarts (owner ruling item 2); QueryReady answers
-    nil or a classified refusal (reset: fatal graph_state_reset_required; lost feed, unresolved writes, incomplete
-    build: transient index_not_ready); the envelope carries failed_count (the pin wrote 0) and, when the plug-in's
-    Failed returns them, failed_reasons, and no first_failure_at; the stuck detector counts the plug-in's Complete
+    nil or a classified refusal (lost feed, unresolved writes, incomplete build: transient index_not_ready; a
+    damaged entity refuses nothing); the envelope carries failed_count (the pin wrote 0) and, when the plug-in's
+    Failed returns them, failed_reasons, with the damaged entities added as failed_reasons["damaged_entity"] and
+    Stuck naming up to 10 of them, and no first_failure_at; the stuck detector counts the plug-in's Complete
     calls and reads degraded in the envelope only, once the follower has been behind for 30 s with no completion,
     for every plug-in (owner ruling (a1), PR #550 comment 6721867279); an empty graph counts as caught up once the
     snapshot is delivered
   dependencies_and_side_effects: >-
-    graph, graph/kvcatalog, graph/readiness, internal/resource, internal/revlag, metric, natsclient, pkg/errs
-    (in-set); nats.go/jetstream; one KV watch on ENTITY_STATES, status reads on its stream, writes to GRAPH_STATUS,
+    graph, graph/kvcatalog, graph/readiness, internal/damage, internal/resource, internal/revlag, metric, natsclient,
+    pkg/errs (in-set); nats.go/jetstream; one KV watch on ENTITY_STATES, status reads on its stream, writes to GRAPH_STATUS,
     and one heartbeat goroutine, all ended and joined by Run's return
   known_risks: >-
     a restored stream can keep the creation time Open read, so a delete and restore inside one stall of the watch is
@@ -3659,7 +3679,10 @@
     graph/follower/follower_test.go (TestOpenRefusesMissingInputs), follower_integration_test.go
     (TestFollowerOpenRefusesAbsentBucket, TestFollowerRunReturnsAndLeavesNothing, TestFollowerConcurrentQueryReady,
     TestFollowerPublishesOnEveryHeartbeat, TestFollowerSnapshotEndSetsBootstrapTarget,
-    TestFollowerLatchesResetOnUnreadableSnapshotValue, TestFollowerDeclaresLostFeed), follower_test.go
+    TestFollowerServesPastDamagedReplay, TestFollowerDeclaresLostFeed), damaged_test.go
+    (TestDamagedEntityClearsOnHigherCompletion, TestDamagedEntityClearsOnDelete, TestDamagedEntityCountsOneError,
+    TestDamagedCountAndRefusal, TestStuckNamesDamagedEntities, TestEnvelopeCountsDamagedEntities,
+    TestDamagedEntityNeverWithholdsQuery, TestPropDamagedSetFollowsLatestEvent), follower_test.go
     (TestHeldLowRevisionWithProgress, TestGraphIndexHeldRevisionNotDegraded, TestNoCompletionsReadsDegraded,
     TestEnvelopeCarriesFailedReasons, TestGraphIndexEnvelopeUnchanged)
   owner: setup-04a-04-graph-roots-graph-index developer
@@ -3669,13 +3692,15 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the pin's decision record for the canonical predicate contract and the sticky graph_state_reset_required state,
-    which graph/follower and processor/graph-index implement (lines 69-71); carried with the graph-index port
+    which graph/follower and processor/graph-index implemented (lines 69-71) until a damaged entity stopped being
+    sticky; carried with the graph-index port
   destination: docs/adr/074-canonical-predicate-contract.md
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
     no edits to the pin's decision text; a port note added under the title naming which of its records and code are
-    ported and where the sticky reset lives
+    ported and, since the damaged-entity change, that the sticky reset is not kept and where a damaged entity is
+    recorded
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-index technical writer
   disposition: adapt
@@ -4069,10 +4094,10 @@
     package's product contract line. Not carried (unread, no contract line, inventory 4): AppliedRevision, CaughtUp,
     View.Poisoned, Snapshot.Sequence, EntryMeta.Revision; Hooks.OnTick (a test back door, #186);
     DefaultTickInterval is unexported (defaultTickInterval, 250 ms). (5) Added, new
-    (setup-04a-04-graph-roots-graph-query-text D8): ListCounted(prefix) returns what List(prefix, 0) returns and the
-    number of poisoned keys under prefix, under one hold of the view's lock, with List's readiness errors; its one
-    reader is processor/graph-query's text tier, which reads one level of COMMUNITY_INDEX through it and declares the
-    unreadable records it counts
+    (setup-04a-04-graph-roots-graph-query-text D8; key filter fix-657-damaged-read-reports): ListCounted(keep)
+    returns the entries whose keys keep accepts and the number of poisoned keys it accepts (nil keep: all), both
+    copied under one hold of the view's lock and filtered after it, with List's readiness errors; its one reader is
+    graph/embedding's VectorCache.FindSimilar, which passes a search's scope so unreadable_records covers that scope
   dependencies_and_side_effects: >-
     internal/kvwatch (in-set; no exported signature names it); nats.go/jetstream; standard library only otherwise. No
     natsclient, no message, no metric. Opens one WatchAll on the injected WatcherSource (jetstream.KeyValue and
@@ -4405,10 +4430,13 @@
     entity's most salient predicate in vocabulary.DiscoverLabelPredicates, read once at Start. TestSearchScorecard
     holds both verbs to a plain BM25 on the scorecard corpus: recall at 10 within one point of the reference, and
     mean reciprocal rank at most 0.01 below it. A damaged hit is left out, named in the reply's damaged list and not counted
-    in missing, and it sets truncated. searchGraph's semantic fallback is carried, adapted: only with
-    embedding_enabled, when word search matches nothing or is not ready, labelled in a fallback hint entry with the
-    embedding answer in semantic, and a failed fallback named, never hidden; the pin's strategy and degraded_reason
-    reply fields are not carried. Not carried: max_communities,
+    in missing, and it sets truncated. mergedSearch (new, not in the pin) answers the word search's request with the
+    ranked entity IDs of searchGraph's merge and reads no entity: a score and, for a result from the embedding
+    list, a vector_rank; it waits for the embedding search at most min(query_timeout_ms, 4 s), and a failed
+    embedding search counts on the shared merge-failed counter. searchGraph's use of the embedding search is adapted: only with
+    embedding_enabled, it merges the word and embedding lists by rank, or answers the embedding list alone when the
+    word index is not ready, labelled in a merge hint entry, and a failed merge named, never hidden; the pin's
+    strategy and degraded_reason reply fields are not carried. Not carried: max_communities,
     summarize_threshold, include_summaries, include_relationships, include_sources, auto-summary, entity digests,
     the strategies, and the reply's count, duration_ms, degraded and answer_model fields. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
@@ -4421,9 +4449,9 @@
     pkg/errs, pkg/graphview, pkg/types, vocabulary (in-set; reads its label predicate set once at Start); tests also use nats.go; one request subscription per served verb;
     zero to two downstream requests per call (a refused request makes none, entityByAlias up to two), except
     pathSearch, at most 1 plus max_nodes, doubled for direction both, summary, two (predicateList, then one prefix
-    page), localSearch, one word search and one batch read, and globalSearch and searchGraph, the same two and, for
-    searchGraph with embedding_enabled, one embedding search when the words match nothing or the index is not
-    ready, and, for an entity or path hint, an alias request and an entity read, plus the walk of pathSearch for a path; one goroutine
+    page), localSearch, one word search and one batch read, mergedSearch, one word search and, with embedding_enabled,
+    one embedding search, and globalSearch and searchGraph, the same two and, for
+    searchGraph with embedding_enabled, one embedding search, and, for an entity or path hint, an alias request and an entity read, plus the walk of pathSearch for a path; one goroutine
     (the community supervisor, joined by Stop) watching COMMUNITY_INDEX read-only, and counters on the injected
     registry; no write to any bucket
   known_risks: >-
@@ -4443,12 +4471,17 @@
     search; a path start is the hyphenated word the classifier finds, never a whole ID. Until change 7 brings the
     responders nothing reads a time range or an area, and those hints are never honoured. The scorecard's reference
     is a BM25 computed in the test, so it bounds how far below a plain BM25 a verb may fall, not how good the
-    ranking is for a consumer's questions. searchGraph's fallback answer is as good as the embedding provider's
+    ranking is for a consumer's questions. An embedder slower than mergedSearch's 4 s wait gives the word list;
+    searchGraph's own wait for the embedding search is query_timeout_ms alone. searchGraph's embedding results are as good as the embedding provider's
     model; what happens when a semantic answer pushes the reply past the NATS payload limit is not specified or
     tested. Not
     carried: the pin's searchgraph.go strategy and degraded_reason reply fields
   proving_tests: >-
-    processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
+    processor/graph-query tests (TestMergedSearchMatchesSearchGraphOrder, TestMergedSearchScopesBothSearches,
+    TestMergedSearchDecodesStrictly, TestMergedSearchReplyShape, TestMergedSearchTierZeroAsksOnlyWords,
+    TestMergedSearchFailedMergeKeepsWords, TestMergedSearchEmbeddingWaitBound,
+    TestMergedSearchBrokenEmbeddingIDKeepsWords, TestMergedSearchBrokenWordIDRefused,
+    TestMergedSearchOtherRefusalIsReturned, TestMergedSearchWordIndexNotReady, TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
     TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
     TestUnknownConfigKeyIsRefused, TestStartThroughTheTable, TestEntityByAlias,
     TestRelationshipsEnvelopeKeepsIndexRevision, TestRelationshipsRowKeys, TestRelationshipsRefusesUnknownDirection,
@@ -4509,7 +4542,8 @@
     one markdownlint disable comment (a long line) and a port note under the title naming the pin path and SHA, and
     that graph-embedding, which it describes, is in the tree (change 5, PR B), and that fusion sends the scope:
     pkg/fusion passes Request.Scope to Resolve (PR C) and pkg/fusion/fusionnats sends it on the semantic request
-    when it is not empty (PR D)
+    when it is not empty (PR D); amended since: an nl resolve goes to graph-query's mergedSearch, which applies the
+    scope to the word search and, at tier 1, the embedding search
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-query-reads technical writer
   disposition: adapt
@@ -4621,7 +4655,9 @@
     declared output is refused, as at the pin; (6) the injected store registry is kept only when a store-read input
     is declared (ADR-063), as at the pin. Behaviour: (7) the lifecycle is component.Lifecycle and the ENTITY_STATES
     watch, snapshot replay, watermark and readiness envelope are graph/follower's, with the pin's own watch, reset
-    latch, status bucket, heartbeat and readiness.go not carried (D1; ADR-108, #109); (8) a revision completes when
+    latch, status bucket, heartbeat and readiness.go not carried (D1; ADR-108, #109); a stored value that does not
+    decode is a damaged entity: the plug-in reports it with ReportDamaged, removes the entity's vectors, goes on
+    serving, and counts it in damaged_entities; (8) a revision completes when
     the Worker reports its terminal outcome or hop 1 ends it, and with coalesce_ms above zero completing a coalesced
     entity drains its lower revisions (ADR-066 section 3); (9) embedding.Worker.Run runs under the one run context
     and a Run that returns while it is live is a stuck state in Health until restart (D2; ADR-113); (10) the failed
@@ -4696,9 +4732,13 @@
     is "2" (D1). (2) The graph facet's view_revision is gone (D2). (3) Resolve returns a Resolution whose
     BodiesNotIndexed and Excluded, the word index's bodies_not_indexed and excluded, every response built after a
     natural-language resolve carries, each omitted when empty, and a symbol or prefix response never does; an nl
-    answer's provenance is lexical, a fourth value ADR-062 does not list (setup-04b-04-removal-keywords D3, D4;
-    owner question 2 ruled (b), epic #10 comment 6880665588); these replace the embedding search's
-    unreadable_records and failed_records (D3). (4)
+    answer's provenance is lexical or embedding, by the answer: Resolution.Provenance is embedding when a returned seed
+    came from the embedding list and lexical otherwise, and an empty one leaves the mode's value (lexical lies
+    outside ADR-062's three; setup-04b-04-removal-keywords D3, D4; owner question 2 ruled (b), epic #10 comment
+    6880665588; fix-706-fusion-nl-merged-search D2); these replace the embedding search's
+    unreadable_records and failed_records (D3); Response.DamagedEntities (damaged_entities, omitted at 0) is the largest
+    count of damaged entities any read of the answer reported leaving out, carried by Resolution, Neighbors and Names;
+    it is not Truncated, and an index_not_ready deferral carries none. (4)
     Every left-out piece is declared: Neighbors results are sorted by predicate then target and deduplicated before
     any cap; relations_truncated, paths_truncated, Impact.Truncated and GraphProjection.Truncated mark a cap or a
     skipped read; a path never names a node by its entity ID; each skip counts on
@@ -4714,7 +4754,8 @@
     StoreResolver; registers two counters on the injected metrics registry when one is given
   known_risks: >-
     Consumer break (migration note, owner 2026-11-02 on PR #504): NewEngine's signature, RetrievalClient without
-    Status and with Resolution, an nl answer's provenance lexical where it was embedding, the wire's index and
+    Status and with Resolution, an nl answer's provenance lexical or embedding by what it holds, where it was always
+    embedding; a seed's similarity the merged score at tier 1, the wire's index and
     view_revision gone, four defer_reason values gone, a reset the
     pin deferred is an error on a seed read and a truncated facet on a walk read, refs listed by predicate then
     target. A fatal Resolve or Entities fails the call (D1); fusionnats lists a poisoned seed unhydrated error
@@ -4733,7 +4774,7 @@
     TestFatalWalkReadSkipped, TestEndedContextReturnsError, TestEndedContextDuringBodyRead,
     TestEngine_GenuineError_Propagates); contract_test.go (TestContractVersionIsTwo,
     TestFuse_AnsweredResponseIsNotMarkedDeferred); engine_search_counts_test.go (TestNLAnswerCarriesWordIndexCounts,
-    TestSymbolAnswerOmitsCounts); lens_test.go (TestProvenanceForMode); engine_labels_test.go (TestEdgesSortedBeforeCap,
+    TestSymbolAnswerOmitsCounts); engine_search_counts_test.go (TestResolutionProvenanceWins); lens_test.go (TestProvenanceForMode); engine_labels_test.go (TestEdgesSortedBeforeCap,
     TestRelationsCapLabelled, TestRelationsFaultLabelled, TestRelationsUnreadTargetLabelled, TestPathsCapLabelled,
     TestPathStopsAtUnreadNode, TestImpactUnreadFileTruncates, TestGraphCounterpartFaultTruncates,
     TestGraphCapsIgnoreTripleOrder, TestGraphEvidenceCapIgnoresTripleOrder); construction_test.go
@@ -4790,8 +4831,9 @@
     public graph.query.* verbs), what is not carried (the research-graph-execute extraction, lensregistry) and what
     SemEngine changed (fusion reads no readiness status: ADR-109 D1, owner ruling on PR #550 comment 6716972354; a
     Resolution carrying search counts; declared truncation; NewEngine with a logger and an error; fusionvocab.New
-    takes the ancestor function; fusionnats watches no key and lists a poisoned seed unhydrated error).
-    setup-04a-05-fusionnats edited the note for fusionnats
+    takes the ancestor function; fusionnats watches no key and lists a poisoned seed unhydrated error; an nl resolve
+    asks graph-query's mergedSearch and reports its own provenance, embedding or lexical).
+    setup-04a-05-fusionnats edited the note for fusionnats; fix-706-fusion-nl-merged-search amended it for mergedSearch
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-05-fusion technical writer
   disposition: adapt
@@ -4803,8 +4845,8 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the RetrievalClient over NATS (ADR-062): a product passes fusionnats.New(natsClient, timeout) to
-    fusion.NewEngine and gets its answers from graph-query's public graph.query.* verbs and, for an nl resolve,
-    graph-lexical's word search. semsource's code-context
+    fusion.NewEngine and gets its answers from graph-query's public graph.query.* verbs, an nl resolve going to
+    mergedSearch. semsource's code-context
     calls fusionnats.New (processor/code-context/component.go:136) and its governance tests call Client.Neighbors
     (internal/governance/fusion_gateway_integration_test.go:304) (inventory § 5)
   destination: pkg/fusion/fusionnats
@@ -4812,17 +4854,19 @@
     the pin's client with these adaptations (spec fusion; design D1-D3). (1) New(requester, timeout) (*Client,
     error) refuses a nil requester and a negative timeout; a zero timeout is passed to the requester
     (natsclient's DefaultRequestTimeout). New reads the rows it uses, graph-query's entity, batch, prefixIDs,
-    byName and relationships and graph-lexical's search (setup-04b-04-removal-keywords D2), from graph.QueryVerbs()
+    byName, relationships and mergedSearch, from graph.QueryVerbs()
     and refuses, naming the verb, when one is missing; the package spells no subject. (2) The client holds no goroutine, watch, context or lock and has no Status and no Close; it
     reads no readiness status: index_not_ready arrives on the reply (owner ruling 4, PR #550 comment 6716972354;
     ADR-109 D1, D3). (3) Each reply is decoded as its row declares: an enveloped row (byName, relationships,
-    graph-lexical's search) as a graph.QueryResponse, refused when it names no producer; a bare row (entity, batch, prefix) as the
+    mergedSearch) as a graph.QueryResponse, refused when it names no producer; a bare row (entity, batch, prefix) as the
     row's type, unknown keys ignored. (4) Requests use graph.EntityRequest, EntityBatchRequest, PrefixQueryRequest
-    and, for an nl Resolve, graph.LexicalSearchRequest with the question unchanged, whose scope is left out when
-    empty (ADR-071); seeds keep the hits' order and scores; a refusal from the word index is returned as it arrived,
-    and any other failure of that request is transient internal naming graph.lexical.query.search
-    (setup-04b-04-removal-keywords D2); Neighbors reads the edge's predicate; an nl Resolve copies the word index
-    reply's bodies_not_indexed and excluded into fusion.Resolution (D3); Entity decodes through
+    and, for an nl Resolve, graph.LexicalSearchRequest, sent to mergedSearch, with the question unchanged, whose
+    scope is left out when empty (ADR-071); seeds keep the reply's order and carry its score; a refusal reaches the
+    caller as it arrived, and any other failure of that request is transient internal naming
+    graph.query.mergedSearch (fix-706-fusion-nl-merged-search); the Resolution's Provenance is embedding when a
+    returned result has a vector_rank, lexical otherwise; Neighbors reads the edge's predicate; an nl Resolve copies
+    the reply's bodies_not_indexed and excluded into fusion.Resolution (D3), and every resolve mode, byName and
+    relationships copy the reply's damaged_entities into Resolution, Neighbors and Names; Entity decodes through
     graph.UnmarshalEntityState and reads entity_not_found, and only that code, as (nil, nil). (5) Entities
     reconciles each batch reply with the request (reconcileHydration, ADR-084 D6): every distinct requested ID once,
     Entities in request order, an ID the reply lists nowhere unhydrated unknown. (6) A poisoned seed (one whose
@@ -4855,22 +4899,24 @@
     prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
     questions outright when the composition offers no embedder; closed by the embedding_enabled key: left out or false,
     a word question is refused invalid not_enabled, set true it is a transient internal refusal naming
-    graph.embedding.query.search, design D5 Q-B; since setup-04b-04-removal-keywords an nl resolve asks
-    graph-lexical and never reaches graph-query's semantic). Issues: #195 adopted here (the
+    graph.embedding.query.search, design D5 Q-B; since setup-04b-04-removal-keywords an nl resolve never reaches
+    graph-query's semantic). Issues: #195 adopted here (the
     integration test opens its client with natsfixture.Open) and stays open for other packages; #110 stays open for
     item 3; #563 stays open (fusionnats never calls searchGraph)
   proving_tests: >-
     pkg/fusion/fusionnats: client_test.go (TestNewRefusesNilRequester, TestNewRefusesNegativeTimeout,
     TestNewZeroTimeoutUsesDefault, TestSubjectsComeFromVerbTable, TestVerbLookupNamesMissingRow,
-    TestEnvelopedRowNeedsProducer, TestNeighborsReadsPredicate, TestNLResolveAsksTheWordIndex,
-    TestNLWordIndexRefusalReturned, TestNLIndexNotReadyDefers, TestWordIndexCountsReachResolution,
+    TestEnvelopedRowNeedsProducer, TestNeighborsReadsPredicate, TestNLResolveAsksTheMergedSearch,
+    TestNLWordIndexRefusalReturned, TestNLIndexNotReadyDefers, TestMergedResolveProvenance,
+    TestNLMeaningAloneWhileWordIndexBuilds, TestWordIndexCountsReachResolution,
     TestEntitiesRefusesNilContext and the pin's resolve, entity, batch, neighbors and names tests);
     exact_entity_test.go (TestSliceEFusionEntityUsesExactEntityWire,
     TestSliceEFusionEntityRejectsInvalidExactEvidence); reconcile_test.go (TestReconcileHydration);
     reconcile_prop_test.go (TestReconcileTotal, generated, against a reference model); poison_test.go
     (TestDamagedSeedUnhydrated, TestDamagedDuplicateListedOnce, TestAllSeedsDamagedDefer, TestOwnValidationNotRetried,
     TestBatchRefusalNotReadAlone); the integration-tagged client_integration_test.go
-    (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex); internal/harness/contract/fusionnats_test.go
+    (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders, TestNLResolveWithoutWordIndex,
+    TestNLMergedOverRealResponders); internal/harness/contract/fusionnats_test.go
     (TestFusionNATSImportsNoEmbedding and its sensitivity case); internal/harness/contract/reservedsubjects_test.go
     (TestReservedSubjectsDeclaredOnce); internal/smoke/fusion_integration_test.go (checkFusion, run by TestSmoke_OneConfigAnswers);
     notes/2.1.md-3.1.md of the change record seeds and mutation checks
@@ -4923,8 +4969,9 @@
     outside text_suffixes until a consumer sets graph-lexical's list, semsource's .signature and .comment included
     (MIGRATION.md). The readiness
     key counts what the Maintainer holds, not what is published. A tick already running when the feed is lost
-    finishes, so a record published just before the loss was noticed may be stale. The replay of a stored value that
-    cannot be decoded latches the follower's reset until restart. Not carried: the four graph.clustering.query.*
+    finishes, so a record published just before the loss was noticed may be stale. A stored value that cannot
+    be decoded is reported to the follower as a damaged entity and left out of its groups' records until a valid
+    write or a delete of the key; the other entities keep publishing. Not carried: the four graph.clustering.query.*
     verbs, the readiness gate on graph-index and graph-embedding (ADR-082, ADR-085), the enhancement and review
     workers (#485, #488), label propagation and the edge providers (ADR-099), anomaly detection (never ported), the
     indexing-profile check (ADR-054 not ported), and the pin's Prometheus globals
@@ -4935,7 +4982,7 @@
     (TestCreateGraphClusteringRequiresNATSClient, TestRegisterAddsGraphClustering), lifecycle_test.go
     (TestLifecycleBeforeStart), the integration-tagged files (TestRefusedValueReportedNotWithheld, TestStopLeavesNothing,
     TestStopWaitsForDelivery, TestRecordsFollowChanges, TestNothingPublishedBeforeReplay, TestLostFeedStopsPublication,
-    TestResetStopsPublication, TestPersistentPublicationFailureIsStuck, TestStopWaitsForTick,
+    TestDamagedReplayValuePublishesTheRest, TestDamagedOverwriteLeavesGroup, TestPersistentPublicationFailureIsStuck, TestStopWaitsForTick,
     TestDetectionIntervalIsRead, TestWatchOrderAcrossKeys, TestTextSuffixesIsRead); graph/follower (TestEntryCarriesDeliveredValue,
     TestFollowerDeclaresLostFeedOnOutOfOrderDelivery, TestStuckNamesReasons);
     internal/harness/contract/embeddingprovider_test.go (TestGraphClusteringImportsNoProviderModule,

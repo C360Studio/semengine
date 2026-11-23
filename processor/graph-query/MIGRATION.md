@@ -8,8 +8,7 @@ comes from reading it.
 `processor/graph-query` is whole in the tree: the lookups (`entity`, `batch`, `prefix`, `byName`, `entityByAlias`,
 `relationships`), path search and counts (`pathSearch`, `hierarchyStats`, `summary`), the forwards (`semantic`,
 `similar`, `spatial`, `temporal`), `localSearch`, `globalSearch` and `searchGraph`, which find entities by the words of
-their
-text.
+their text, and `mergedSearch`, which answers the ranked IDs of `searchGraph`'s merge.
 
 ## The changes that fail silently
 
@@ -123,6 +122,14 @@ paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `tot
 - A damaged hit no longer refuses a search. The reply gains `data.text.damaged` (the IDs left out because their
   stored value could not be read, in hit order, omitted when none). Your mcp-gateway reads only `truncated`
   (`processor/mcp-gateway/graph_matches.go:130`), which a damaged hit sets; read `damaged` to name the hit.
+- The envelope has a `damaged_entities` field (absent at 0): the number of damaged entities an index left out of its
+  answer. The indexes set it while a stored value is damaged and drop it once a valid value is written or the key is
+  deleted. `searchGraph` and `globalSearch` set `truncated` whenever a reply they read carries it above 0, so your
+  mcp-gateway, which reads only `truncated` (`processor/mcp-gateway/graph_matches.go:130`), will learn of the gap with
+  no change. One damaged entity anywhere makes every unscoped search that answers with text `truncated` until it is
+  repaired. A `searchGraph` answered from the embedding search alone, while the word index is still loading, has `text:
+  null` and so no `truncated`; it carries the count only in `damaged_entities`. Read `damaged_entities` from the
+  envelope to learn of the gap in that case, or to say how many were left out.
 
 ## SemConnect
 
@@ -148,6 +155,20 @@ backend (`cmd/cs-graph-backend/main.go:127`).
 - A `batch` reply can now list an ID in `missing` with reason `damaged` (its stored value is refused), where it used to
   refuse the whole batch. The `missing` switch at `gateway/cs-api/systems.go:896` must accept `damaged`; until it
   does, it refuses the batch loudly. A caller that reads `entities` alone gets the readable entities.
+- Your predicate read (`gateway/cs-api/systems.go:993-997`) decodes `graph.QueryResponse[PredicateData]` and returns
+  `Data.Entities`. The envelope has a `damaged_entities` field (absent at 0), which graph-index sets while a stored
+  value is damaged: above 0, the index left that many damaged entities out, so the list may lack some that hold the
+  predicate. Nothing fails if you ignore it, and the answer is right about every entity it lists; read it to tell your
+  caller the list may be short.
+- Your readiness tool no longer compiles. `graph.IndexStateResetRequired` and the readiness record's `Code` and
+  `Reason` fields are gone. It checks them at `conformance/cmd/index-readiness/main.go:155-156`, copies `Code` and
+  `Reason` into its evidence at `:216-217`, and builds them in `TestWaitForReadinessFailsImmediatelyOnResetRequired`
+  (`main_test.go:138-150`). SemStreams' graph-index wrote `reset_required` and stopped indexing when it met an entity
+  it could not decode. SemEngine's graph-index leaves that entity out, keeps indexing the rest, and reports `degraded`
+  with `failed_reasons["damaged_entity"]` counting the entities left out, so your wait for a revision still finishes.
+  Delete the check, the two evidence fields and the test. To stop the run on damage instead, fail when
+  `failed_reasons["damaged_entity"]` is above 0. A record that still reads `reset_required` comes from an older
+  build, and the readiness gate refuses it as a state it does not know.
 
 ## Whoever keeps the SPARQL gateway
 
@@ -192,6 +213,7 @@ change the following.
 | `localSearch` | Reply enveloped, was bare; matches come from the word index, scoped to the group, and the group's record is attached beside them; keys and fields change. See "Verb details". |
 | `globalSearch` | Reply enveloped, was bare; every question is searched for its words, strategies are gone, and `hints` lists what else the question asked for. See "Verb details". |
 | `searchGraph` | New on this table: `globalSearch` under its own name, with the same request and refusals; with `embedding_enabled` true it merges the word and embedding lists and adds `merge` and `semantic`; each match gains `word_rank` and `vector_rank`. In alpha.5 it answered as `globalSearch`; now its order and `score` come from the merge. See "Verb details". |
+| `mergedSearch` | New, additive: the word search's request (`query`, `limit`, `scope`, `min_revision`), and the ranked entity IDs of `searchGraph`'s merge as `data`, a `graph.MergedSearchData`, with no entity read. See "Verb details". |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
 ## Verb details
@@ -354,6 +376,24 @@ the embedding search's `data` when it answered. A failed embedding search leaves
 `index_not_ready` refusal. A word index that was not ready sends `data.text` as `null`. `strategy` and
 `degraded_reason` are gone. A truncated answer counts under `searchGraph`, not `globalSearch`. The graph-query README,
 "`searchGraph`'s search by meaning", has the cases.
+
+### `mergedSearch`
+
+Enveloped, `data` a `graph.MergedSearchData`. It is new, and nothing in the old graph-query matches it. A caller that
+needs only the ranked IDs of a question, such as SemEngine's fusion `nl` resolve, calls it instead of
+`graph.lexical.query.search`, and so gets the embedding search merged in at tier 1 without reading an entity. The
+request is the word search's, and strictly decoded: `query`, `limit`, `scope`, `min_revision`. `scope` reaches both
+searches and `min_revision` the word search alone. Each result is `entity_id`, `score` and, when it came from the
+embedding list, `vector_rank`; `score` is the merged score when `data.merge` is honoured and the word index's score
+otherwise. With `embedding_enabled` false the list is the word list and `merge` is absent. The wait for the embedding
+search is `query_timeout_ms` or 4 seconds, whichever is less, and a slower embedder gives the word list with `merge`
+not honoured, one Warn and one count on `semengine_graph_query_search_merge_failed_total`. A word index that is not
+ready gives the embedding list alone, with `merge` honoured and `detail` `index_not_ready`, when the embedding search
+answers. The graph-query README, "`mergedSearch`", has the cases.
+
+**If you called `graph.lexical.query.search` for a natural-language question:** nothing changes unless you move to
+`mergedSearch`. When you do, expect `score` to be the merged score at tier 1, a result with `vector_rank` to be one
+that came from meaning, and an answer from meaning alone while the word index is building.
 
 A stream capturing a declared `graph.query.*` subject refuses boot, and so does a declared NATS-request input
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:

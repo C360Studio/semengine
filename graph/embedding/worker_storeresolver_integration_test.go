@@ -45,7 +45,7 @@ func TestWorkerResolvesLiveRegistryStatePerFetch(t *testing.T) {
 	}
 
 	registry.Deregister("content")
-	text, err := worker.getSourceText(ctx, &Record{StorageRef: ref, IdentityText: "inline identity"})
+	text, _, err := worker.getSourceText(ctx, &Record{StorageRef: ref, IdentityText: "inline identity"})
 	if err != nil || text != "inline identity" {
 		t.Fatalf("deregistered fetch = (%q, %v), want inline identity exclusion", text, err)
 	}

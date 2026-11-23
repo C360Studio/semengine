@@ -63,7 +63,7 @@ func NewGauges(subsystem string) *Gauges {
 			Namespace: metricNamespace,
 			Subsystem: subsystem,
 			Name:      "readiness_state",
-			Help:      "Readiness state one-hot (building|ready|degraded|reset_required): current state=1, others=0, so catching-up is distinguishable from broken",
+			Help:      "Readiness state one-hot (building|ready|degraded): current state=1, others=0, so catching-up is distinguishable from broken",
 		}, []string{"state"}),
 		publishFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: metricNamespace,

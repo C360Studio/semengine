@@ -39,10 +39,10 @@ func (c *Component) summary(predicateSubject, prefixSubject string) queryHandler
 			}
 		}
 		var predicates []graph.PredicateSummary
-		var revision uint64
+		var read indexRead
 		if !request.ExcludePredicates {
 			var err error
-			predicates, revision, err = c.predicateRows(ctx, predicateSubject, request.MinRevisionField)
+			predicates, read, err = c.predicateRows(ctx, predicateSubject, request.MinRevisionField)
 			if err != nil {
 				return nil, err
 			}
@@ -59,7 +59,7 @@ func (c *Component) summary(predicateSubject, prefixSubject string) queryHandler
 		if err != nil {
 			return nil, c.brokenReply(prefixSubject, err)
 		}
-		return envelope(c, prefixSubject, revision, graph.SummaryData{
+		return envelope(c, prefixSubject, read, graph.SummaryData{
 			TotalEntities:   page.total,
 			EntitiesScanned: len(page.ids),
 			Truncated:       page.nextCursor != "",
@@ -70,26 +70,27 @@ func (c *Component) summary(predicateSubject, prefixSubject string) queryHandler
 	}
 }
 
-// predicateRows asks the predicateList verb and reads its reply, with the revision it answered at. A
+// predicateRows asks the predicateList verb and reads its reply, with the revision it answered at and
+// the damaged entities it left out. A
 // reply with no list is refused rather than read as none: real graph-index always sends one, and [] is
 // how it says none.
-func (c *Component) predicateRows(ctx context.Context, subject string, minRevision graph.MinRevisionField) ([]graph.PredicateSummary, uint64, error) {
+func (c *Component) predicateRows(ctx context.Context, subject string, minRevision graph.MinRevisionField) ([]graph.PredicateSummary, indexRead, error) {
 	request, err := json.Marshal(graph.PredicateListQuery{MinRevisionField: minRevision})
 	if err != nil {
-		return nil, 0, internalError(err)
+		return nil, indexRead{}, internalError(err)
 	}
 	raw, err := c.ask(ctx, subject, request)
 	if err != nil {
-		return nil, 0, err
+		return nil, indexRead{}, err
 	}
 	reply, err := decodeIndexReply[graph.PredicateListData](c, subject, raw)
 	if err != nil {
-		return nil, 0, err
+		return nil, indexRead{}, err
 	}
 	if reply.Data.Predicates == nil {
-		return nil, 0, c.brokenReply(subject, errors.New("holds no predicates"))
+		return nil, indexRead{}, c.brokenReply(subject, errors.New("holds no predicates"))
 	}
-	return reply.Data.Predicates, reply.IndexedRevision, nil
+	return reply.Data.Predicates, readOf(reply), nil
 }
 
 // entityTypes groups ids by system.domain.type, read by named field (ADR-102), by count descending then

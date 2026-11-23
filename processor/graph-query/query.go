@@ -21,7 +21,7 @@ type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 // queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its
 // handler. A forward answers from the row it names here by responder and name, since semantic
 // forwards to search, and entityByAlias, relationships, pathSearch, hierarchyStats, summary,
-// localSearch and globalSearch from the rows they name, so a row that is gone leaves its verb with
+// localSearch, globalSearch, searchGraph and mergedSearch from the rows they name, so a row that is gone leaves its verb with
 // no handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
@@ -81,6 +81,15 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	}
 	if lexical != "" && batch != "" {
 		handlers["localSearch"] = c.localSearch(lexical, batch)
+	}
+	if lexical != "" {
+		// mergedSearch reads only the two search verbs; it merges when the composition runs
+		// graph-embedding.
+		semantic := ""
+		if c.config.EmbeddingEnabled {
+			semantic = subjectOf(graph.ResponderGraphEmbedding, "search")
+		}
+		handlers["mergedSearch"] = c.mergedSearch(lexical, semantic)
 	}
 	return handlers
 }
@@ -209,7 +218,7 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 		if err := json.Unmarshal(data, &request); err != nil {
 			return nil, invalidRequest(err)
 		}
-		id, revision, err := c.resolveReference(ctx, aliasSubject, data, request.Alias)
+		id, read, err := c.resolveReference(ctx, aliasSubject, data, request.Alias)
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +229,7 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 		if err != nil {
 			return nil, err
 		}
-		return envelope(c, entitySubject, revision, json.RawMessage(entity))
+		return envelope(c, entitySubject, read, json.RawMessage(entity))
 	}
 }
 
@@ -233,25 +242,25 @@ func entityNotFound(reference string) error {
 // resolveReference is the one rule an entity reference is read by, for entityByAlias and global
 // search: it asks the alias verb with aliasRequest, whose alias is reference; a holder wins, else a
 // reference that is a valid entity ID is itself, else it names no entity and the ID is "". The
-// revision is the alias reply's. Every refusal of the alias verb returns as it arrived,
+// revision and damaged count are the alias reply's. Every refusal of the alias verb returns as it arrived,
 // alias_ambiguous, index_not_ready, internal and revision_not_reached among them (ADR-114), never
 // as "no holder". There is no suffix lookup.
-func (c *Component) resolveReference(ctx context.Context, aliasSubject string, aliasRequest []byte, reference string) (string, uint64, error) {
+func (c *Component) resolveReference(ctx context.Context, aliasSubject string, aliasRequest []byte, reference string) (string, indexRead, error) {
 	raw, err := c.ask(ctx, aliasSubject, aliasRequest)
 	if err != nil {
-		return "", 0, err
+		return "", indexRead{}, err
 	}
 	reply, err := decodeIndexReply[graph.AliasData](c, aliasSubject, raw)
 	if err != nil {
-		return "", 0, err
+		return "", indexRead{}, err
 	}
 	switch {
 	case reply.Data.CanonicalID != nil:
-		return *reply.Data.CanonicalID, reply.IndexedRevision, nil
+		return *reply.Data.CanonicalID, readOf(reply), nil
 	case semtypes.ValidateEntityID(reference) == nil:
-		return reference, reply.IndexedRevision, nil
+		return reference, readOf(reply), nil
 	default:
-		return "", reply.IndexedRevision, nil
+		return "", readOf(reply), nil
 	}
 }
 
@@ -291,61 +300,61 @@ func (c *Component) relationships(outgoingSubject, incomingSubject string) query
 }
 
 func (c *Component) outgoingEdges(ctx context.Context, subject, entityID string, data []byte) ([]byte, error) {
-	edges, revision, err := c.outgoingRows(ctx, subject, entityID, data)
+	edges, read, err := c.outgoingRows(ctx, subject, entityID, data)
 	if err != nil {
 		return nil, err
 	}
-	return envelope(c, subject, revision, edges)
+	return envelope(c, subject, read, edges)
 }
 
 func (c *Component) incomingEdges(ctx context.Context, subject, entityID string, data []byte) ([]byte, error) {
-	edges, revision, err := c.incomingRows(ctx, subject, entityID, data)
+	edges, read, err := c.incomingRows(ctx, subject, entityID, data)
 	if err != nil {
 		return nil, err
 	}
-	return envelope(c, subject, revision, edges)
+	return envelope(c, subject, read, edges)
 }
 
 // outgoingRows asks the outgoing verb and reads its reply as edges the graph holds, with the revision
-// it answered at.
-func (c *Component) outgoingRows(ctx context.Context, subject, entityID string, data []byte) ([]graph.RelationshipEdge, uint64, error) {
+// it answered at and the damaged entities it left out.
+func (c *Component) outgoingRows(ctx context.Context, subject, entityID string, data []byte) ([]graph.RelationshipEdge, indexRead, error) {
 	raw, err := c.ask(ctx, subject, data)
 	if err != nil {
-		return nil, 0, err
+		return nil, indexRead{}, err
 	}
 	reply, err := decodeIndexReply[graph.OutgoingRelationshipsData](c, subject, raw)
 	if err != nil {
-		return nil, 0, err
+		return nil, indexRead{}, err
 	}
 	if reply.Data.Relationships == nil {
-		return nil, 0, c.brokenReply(subject, errors.New("holds no relationships"))
+		return nil, indexRead{}, c.brokenReply(subject, errors.New("holds no relationships"))
 	}
 	edges := make([]graph.RelationshipEdge, 0, len(reply.Data.Relationships))
 	for _, entry := range reply.Data.Relationships {
 		edges = append(edges, graph.RelationshipEdge{Predicate: entry.Predicate, FromEntityID: entityID, ToEntityID: entry.ToEntityID})
 	}
-	return edges, reply.IndexedRevision, nil
+	return edges, readOf(reply), nil
 }
 
 // incomingRows asks the incoming verb and reads its reply as edges the graph holds, with the revision
-// it answered at.
-func (c *Component) incomingRows(ctx context.Context, subject, entityID string, data []byte) ([]graph.RelationshipEdge, uint64, error) {
+// it answered at and the damaged entities it left out.
+func (c *Component) incomingRows(ctx context.Context, subject, entityID string, data []byte) ([]graph.RelationshipEdge, indexRead, error) {
 	raw, err := c.ask(ctx, subject, data)
 	if err != nil {
-		return nil, 0, err
+		return nil, indexRead{}, err
 	}
 	reply, err := decodeIndexReply[graph.IncomingRelationshipsData](c, subject, raw)
 	if err != nil {
-		return nil, 0, err
+		return nil, indexRead{}, err
 	}
 	if reply.Data.Relationships == nil {
-		return nil, 0, c.brokenReply(subject, errors.New("holds no relationships"))
+		return nil, indexRead{}, c.brokenReply(subject, errors.New("holds no relationships"))
 	}
 	edges := make([]graph.RelationshipEdge, 0, len(reply.Data.Relationships))
 	for _, entry := range reply.Data.Relationships {
 		edges = append(edges, graph.RelationshipEdge{Predicate: entry.Predicate, FromEntityID: entry.FromEntityID, ToEntityID: entityID})
 	}
-	return edges, reply.IndexedRevision, nil
+	return edges, readOf(reply), nil
 }
 
 // decodeStrict decodes one composed verb's request: an unknown key or bytes after it are refused.
@@ -375,14 +384,35 @@ func decodeIndexReply[T any](c *Component, subject string, raw []byte) (graph.Qu
 	return reply, nil
 }
 
-// envelope builds graph-query's reply to a verb, from what subject answered. A json.RawMessage that is
-// not JSON fails the marshal, which is how a broken entity reply is refused. The marshal compacts and
-// HTML-escapes a json.RawMessage, which bytes another Go json.Marshal wrote do not show.
-func envelope[T any](c *Component, subject string, revision uint64, data T) ([]byte, error) {
-	response, err := graph.NewQueryResponse(graph.ResponderGraphQuery, revision, data)
+// indexRead is what an index reply says of its answer beside its data: the ENTITY_STATES revision it
+// reflects and how many damaged entities its producer left out.
+type indexRead struct {
+	revision uint64
+	damaged  int
+}
+
+// readOf is reply's revision and damaged count.
+func readOf[T any](reply graph.QueryResponse[T]) indexRead {
+	return indexRead{revision: reply.IndexedRevision, damaged: reply.DamagedEntities}
+}
+
+// and is what an answer built from both r and other reflects: the smaller revision, since only writes
+// at or below it are in both, and the larger count. Counts are not added: each read may have counted
+// the same damaged entity, so the larger is what the answer is known to lack.
+func (r indexRead) and(other indexRead) indexRead {
+	return indexRead{revision: min(r.revision, other.revision), damaged: max(r.damaged, other.damaged)}
+}
+
+// envelope builds graph-query's reply to a verb, from what subject answered, under read's revision
+// and damaged count. A json.RawMessage that is not JSON fails the marshal, which is how a broken
+// entity reply is refused. The marshal compacts and HTML-escapes a json.RawMessage, which bytes
+// another Go json.Marshal wrote do not show.
+func envelope[T any](c *Component, subject string, read indexRead, data T) ([]byte, error) {
+	response, err := graph.NewQueryResponse(graph.ResponderGraphQuery, read.revision, data)
 	if err != nil {
 		return nil, c.brokenReply(subject, err)
 	}
+	response.DamagedEntities = read.damaged
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		return nil, c.brokenReply(subject, err)

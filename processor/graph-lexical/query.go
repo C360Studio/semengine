@@ -89,6 +89,14 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 			fmt.Errorf("min_revision %d is above the indexed revision %d", req.MinRevision, revision))
 	}
 
+	// The damaged entities in scope are counted before and after the search, and the larger
+	// kept: an entity is recorded before its text is deleted and cleared only after its valid
+	// text is put, so text the search missed is counted by one of the two.
+	var inScope func(id string) bool
+	if len(req.Scope) > 0 {
+		inScope = func(id string) bool { return graph.MatchesAnyIDPrefix(id, req.Scope) }
+	}
+	damagedBefore := f.DamagedCount(inScope)
 	result, err := c.apply.index.Search(query, lexical.Options{Scope: req.Scope, Limit: limit})
 	if err != nil {
 		return nil, internalError(err)
@@ -110,6 +118,7 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 	if err != nil {
 		return nil, internalError(err)
 	}
+	response.DamagedEntities = max(damagedBefore, f.DamagedCount(inScope))
 	return json.Marshal(response)
 }
 

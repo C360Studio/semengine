@@ -21,7 +21,7 @@ import (
 // the wait for the call to return after the cancellation; and the cancelling goroutine is joined on
 // every outcome.
 func TestRequestCancelledInFlightRecordsNoFailure(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	c, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)

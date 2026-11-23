@@ -1174,9 +1174,10 @@ func notDegraded(t *testing.T, s stack) []string {
 // TestSmoke_BrokerOutageUnderRunningStack holds composed-stack, "Restart the broker under the
 // running stack", for an outage the stack notices: the NATS server stays down until every index
 // the composition runs reports itself degraded, so each has failed to read ENTITY_STATES at least
-// once, and only then starts again on the same URL with its file storage. The stack, never
-// restarted, still holds every revision it stored, answers what it did before plus the writes
-// published after, and lists its components healthy, with no envelope reporting a lost feed.
+// once, and each reads unhealthy naming that read; only then does it start again on the same URL
+// with its file storage. The stack, never restarted, still holds every revision it stored, answers
+// what it did before plus the writes published after, and lists its components healthy, with no
+// envelope reporting a lost feed.
 func TestSmoke_BrokerOutageUnderRunningStack(t *testing.T) {
 	// Own server: holds the NATS server down under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -1210,9 +1211,17 @@ func TestSmoke_BrokerOutageUnderRunningStack(t *testing.T) {
 			return notDegraded(t, s), nil
 		}, func(keys []string) bool { return len(keys) == 0 })
 		t.Logf("every index read degraded %v into the outage (recorded, not asserted)", time.Since(down).Round(time.Millisecond))
-		// Whether components read healthy while NATS is down is not yet decided; recorded only.
+		// Each index read degraded because its ENTITY_STATES status read failed, so its health names
+		// that read: a stuck state while it lasts, cleared once NATS is back.
 		for _, c := range readHealth(t, s).Components {
-			t.Logf("during the outage: %s healthy=%v %s %s", c.Component, c.Healthy, c.Status, c.Message)
+			if slices.Contains(s.composition.indexKeys, c.Component) &&
+				(c.Healthy || !strings.Contains(c.Message, "ENTITY_STATES status read failed")) {
+				t.Errorf("during the outage %s reads healthy=%v %q; want unhealthy, naming the failed status read",
+					c.Component, c.Healthy, c.Message)
+			}
+		}
+		if t.Failed() {
+			t.FailNow()
 		}
 		return nil
 	}

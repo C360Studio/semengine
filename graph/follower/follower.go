@@ -120,6 +120,10 @@ type Follower struct {
 	bootstrapTarget atomic.Uint64 // stored before snapshotDone is raised
 	bootstrapped    atomic.Bool   // the initial build is complete; never cleared
 
+	// statusReadFailed is the latest ENTITY_STATES status read's outcome: set while it failed,
+	// cleared by the next one that succeeds. Stuck names it; it never latches.
+	statusReadFailed atomic.Bool
+
 	// statusMu serialises reads through status: up to nats.go v1.54.0, KV Status wrote the handle's
 	// stream-info cache unsynchronised, and QueryReady callers and the heartbeat share the handle
 	// (TestFollowerConcurrentQueryReady). v1.55.0 stores that cache in an atomic.Pointer
@@ -361,8 +365,8 @@ func (f *Follower) Indexed() uint64 {
 
 // Stuck returns the states that hold now, each a short sentence: the damaged entities the plug-in
 // reported (ReportDamaged), the plug-in's unresolved failures (Config.Failed's count, then each
-// reason with its count in name order when it reports reasons), and a lost feed. It is empty when
-// none holds.
+// reason with its count in name order when it reports reasons), a failed latest status read, and a
+// lost feed. It is empty when none holds.
 func (f *Follower) Stuck() []string {
 	var stuck []string
 	if sentence := f.damagedSentence(); sentence != "" {
@@ -370,6 +374,10 @@ func (f *Follower) Stuck() []string {
 	}
 	if n, reasons := f.failed(); n > 0 {
 		stuck = append(stuck, unresolved(n, reasons))
+	}
+	if f.statusReadFailed.Load() {
+		// A NATS outage: the follower cannot confirm it is caught up until a read succeeds again.
+		stuck = append(stuck, "ENTITY_STATES status read failed")
 	}
 	if f.feedLost.Load() {
 		stuck = append(stuck, "ENTITY_STATES feed lost; restart the process")
@@ -445,6 +453,8 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 	indexed, indexedAt := f.watermark.IndexedAt()
 	f.statusMu.Lock()
 	target, created, err := readStream(ctx, f.status)
+	// Stored under statusMu, so concurrent reads record their outcomes in the order they read.
+	f.statusReadFailed.Store(err != nil)
 	f.statusMu.Unlock()
 	if err == nil && !created.Equal(f.created) {
 		// The bucket was deleted and created again: the watch, still open, reads nothing more (seen at

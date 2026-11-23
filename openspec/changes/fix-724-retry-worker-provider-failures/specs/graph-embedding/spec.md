@@ -7,7 +7,8 @@
 On each repair pass graph-embedding SHALL re-drive Worker failures whose reason `embedding.RetryableReason` accepts,
 converging the entity on its current `ENTITY_STATES` value as a delivery does; no other failure SHALL be re-driven.
 An entity queued after its failure, or seeded failed at Start, SHALL wait for the Worker's outcome before another
-re-drive, and SHALL stay counted failed until it.
+re-drive, and SHALL stay counted failed until it,
+unless hop 1's own read or write of it fails meanwhile (a known limit, #734).
 
 #### Scenario: A failure the lane leaves alone
 
@@ -23,17 +24,6 @@ re-drive, and SHALL stay counted failed until it.
 
 - **WHEN** a pass runs while the Worker's first snapshot is still retrying a failed record found at Start
 - **THEN** the lane does not re-drive it and it stays failed with its reason (`TestStartSeedsFailedMap`)
-
-### Requirement: A NATS fault during a retry is counted under hop 1
-
-When hop 1's own read or write of an entity fails during a re-drive, the entity SHALL be counted under hop 1's reason;
-from hop 1's convergence until the Worker's outcome it SHALL NOT be counted failed. This is a declared limit.
-
-#### Scenario: Retries after a NATS fault
-
-- **WHEN** hop 1's read of a re-driven entity fails, and a later pass converges it before the Worker reports
-- **THEN** the entity is counted under `entity_read_failed`, then not counted failed until the Worker's outcome
-  (README "Failed entities and the repair lane")
 
 ### Requirement: Retries are paced by the provider's answer
 

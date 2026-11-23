@@ -45,6 +45,8 @@ lives once, in `embedding.RetryableReason(reason) bool`, beside the closed reaso
   sentinel. Adopter seam: a product embedder that does nothing still has refused connections and timeouts retried;
   its other outages are filed `embedder_error`, read `degraded`, and wait for a restart, as today. It gets retries by
   returning a transient `errs` error, which ADR-060 consumers already use. The `graph/embedding` README says so.
+  The text checks still read the whole message, so `WrapTransient`'s action word must contain none of "timeout",
+  "connection refused" or "dimension"; a 5xx whose body says "dimension" is filed `provider_unavailable`.
 - (B) Two new sentinels in `graph/embedding`. Cost: a second spelling of `pkg/errs`, against ADR-111 Decision 3.
 - (C) Retry `embedder_error` as a whole. Cost: refused texts and config errors retried forever, against the ruling.
 - `model.ErrorKind` is not reused: it has no production reader (#155), and httpembedder may not import `model`.
@@ -73,12 +75,12 @@ question 3.
 it reads current truth (ADR-108 Decision 4), so an entity deleted, damaged or left without text is ended, not
 embedded. (B) A new `Storage` method flipping a failed record to pending. Cost: new surface that bypasses current truth.
 
-**D5. A NATS fault during a retry (declared limit).** If hop 1's read or write fails during a re-drive, the entity
-is counted under hop 1's reason and withholds the verbs, as any hop-1 fault does (`failed.go:100-111`). Once hop 1
-converges, the entity is counted not failed until the Worker reports (`failed.go:113-121`), and a repeat Worker
-failure counts again in ErrorCount. Declared in the spec and README, not fixed: the trigger is a NATS fault during a
-retry, nothing is lost, and the Worker's outcome restores the count. The fix would keep the Worker's reason under
-hop 1's, at the cost of another field and a fault-injected test.
+**D5. A NATS fault during a retry (declared limit).** If hop 1's read or write fails during a re-drive, the entity is
+counted under hop 1's reason and withholds the verbs, as any hop-1 fault does (`failed.go:100-111`). Once hop 1
+converges, the entity is counted not failed until the Worker reports (`failed.go:113-121`), and a repeat Worker failure
+counts again in ErrorCount. Declared in the README's known limits and filed as #734, not fixed: the trigger is a NATS
+fault during a retry, nothing is lost, and the Worker's outcome restores the count. The fix would keep the Worker's
+reason under hop 1's, at the cost of another field and a fault-injected test.
 
 **D6. Proof.**
 

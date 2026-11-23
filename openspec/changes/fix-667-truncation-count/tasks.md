@@ -1,0 +1,19 @@
+# Tasks: fix-667-truncation-count
+
+Tests come first. Each code task ends at a clean-tree local `task verify`. Single PR (#728), `Closes #667`.
+
+## 1. Proposal
+
+- [ ] 1.1 Proposal (`proposal.md`); `task spec:check` and `task docs:check` pass.
+  Hold: OPEN-Q proposal awaits owner approval.
+
+## 2. Code
+
+- [ ] 2.1 Tests that `httpembedder` returns each text's `truncated` mark, and that graph-embedding's
+  `truncated_total` counts a provider-marked cut under `by="provider"` and a cut at `max_text_len` under
+  `by="text_cap"`; then `TruncationMarker`, `IncTruncated(by)`, the httpembedder field and the collector. Every
+  existing test passes with its fakes updated to the new `IncTruncated` signature.
+
+## 3. Close-out
+
+- [ ] 3.1 Archive: `openspec archive fix-667-truncation-count --yes`; `task spec:check` and `task docs:check` pass.

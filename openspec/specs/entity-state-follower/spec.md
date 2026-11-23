@@ -111,7 +111,8 @@ undetected as a lost feed: a declared limit, not a promise, as in `graph-ingest-
 The follower's envelope SHALL be `ComputeIndexStatus` over the floor, the commit time `IndexedAt` returns with it and
 the bucket's last sequence, with these overrides: a target of 0 after the snapshot marker reads ready; a `Failed()`
 count above zero, or a recorded damaged entity, reads not ready, `degraded`, and is carried in `failed_count`, which
-is `Failed()`'s count plus the damaged count; a failed target read reads `degraded`.
+is `Failed()`'s count plus the damaged count; a failed target read reads `degraded`, which `Stuck` SHALL name
+until a read succeeds.
 
 #### Scenario: Unresolved writes
 
@@ -123,6 +124,12 @@ is `Failed()`'s count plus the damaged count; a failed target read reads `degrad
 - **WHEN** `Failed()` returns 0, one damaged entity is recorded and the floor has reached the target
 - **THEN** the envelope reads `ready` false, state `degraded`, `failed_count` 1 and `failed_reasons`
   `{"damaged_entity": 1}` (`TestEnvelopeCountsDamagedEntities`)
+
+#### Scenario: A failed target read
+
+- **WHEN** the follower's read of `ENTITY_STATES`' last sequence fails, as it does while NATS is down
+- **THEN** the envelope reads `degraded`, `Stuck` names the failed status read and the feed is not lost, and after
+  the next successful read `Stuck` no longer names it
 
 ### Requirement: Failure reasons
 

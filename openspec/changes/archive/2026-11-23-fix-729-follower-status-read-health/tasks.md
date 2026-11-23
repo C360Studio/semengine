@@ -8,13 +8,14 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 2. Code
 
-- [ ] 2.1 Follower unit test: after a failed target read `Stuck` names "ENTITY_STATES status read failed" and the
+- [x] 2.1 Follower test (integration-tagged, `TestStuckNamesFailedStatusRead`: a real reader is needed for the
+  read that succeeds): after a failed target read `Stuck` names "ENTITY_STATES status read failed" and the
   feed is not lost; after a successful read on the same follower it is gone. Shown failing first.
-- [ ] 2.2 The follower records its latest target read's outcome in `compute`, and `Stuck` names a failed one.
-- [ ] 2.3 `TestSmoke_BrokerOutageUnderRunningStack` requires graph-index, graph-lexical and graph-clustering
+- [x] 2.2 The follower records its latest target read's outcome in `compute`, and `Stuck` names a failed one.
+- [x] 2.3 `TestSmoke_BrokerOutageUnderRunningStack` requires graph-index, graph-lexical and graph-clustering
   unhealthy during the held outage, each naming the failed read, in place of the logged reading.
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-729-follower-status-read-health --yes`, which syncs
+- [x] 3.1 Archive: `openspec archive fix-729-follower-status-read-health --yes`, which syncs
   `entity-state-follower`; `task spec:check` and `task docs:check` pass.

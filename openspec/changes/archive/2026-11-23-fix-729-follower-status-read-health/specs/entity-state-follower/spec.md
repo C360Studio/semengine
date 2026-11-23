@@ -7,9 +7,8 @@
 The follower's envelope SHALL be `ComputeIndexStatus` over the floor, the commit time `IndexedAt` returns with it and
 the bucket's last sequence, with these overrides: a target of 0 after the snapshot marker reads ready; a `Failed()`
 count above zero, or a recorded damaged entity, reads not ready, `degraded`, and is carried in `failed_count`, which
-is `Failed()`'s count plus the damaged count; a failed target read reads `degraded`. While the latest target read has
-failed, `Stuck` SHALL name the failed status read; the next successful read SHALL clear it, and a failed read SHALL
-NOT declare the feed lost.
+is `Failed()`'s count plus the damaged count; a failed target read reads `degraded`, which `Stuck` SHALL name
+until a read succeeds.
 
 #### Scenario: Unresolved writes
 

@@ -12,6 +12,7 @@ package httpembedder
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"sync/atomic"
 
 	"github.com/c360studio/semengine/graph/embedding"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 var (
@@ -203,26 +205,60 @@ func (e *Embedder) embed(ctx context.Context, texts []string, inputType string) 
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("httpembedder: %w", err)
+		// A certificate the client does not trust will not be trusted on the next try either.
+		var certErr *tls.CertificateVerificationError
+		if errors.As(err, &certErr) {
+			return nil, fmt.Errorf("httpembedder: %w", err)
+		}
+		// No reply at all: the provider is down, restarting or unreachable, which may clear.
+		return nil, transient(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		var refusal errorReply
-		err := json.NewDecoder(resp.Body).Decode(&refusal)
-		switch {
-		case err == nil && refusal.Error.Message != "":
-			return nil, fmt.Errorf("httpembedder: provider answered %s: %s", resp.Status, refusal.Error.Message)
-		case err != nil && ctx.Err() != nil:
-			return nil, fmt.Errorf("httpembedder: provider answered %s, reading its body: %w", resp.Status, ctx.Err())
-		}
-		return nil, fmt.Errorf("httpembedder: provider answered %s", resp.Status)
+		return nil, refused(ctx, resp)
 	}
 	var r reply
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		return nil, fmt.Errorf("httpembedder: decode reply: %w", err)
 	}
 	return e.accept(r, len(texts))
+}
+
+// refused returns the error for a reply outside 2xx, carrying the provider's own message when it
+// sent one. A 429 matches errs.ErrRateLimited and is returned at once: Retry-After is not waited
+// on and the request is not sent again, because the caller decides when to try again. A 500, 502,
+// 503 or 504 is a provider failing in a way it may recover from, so it is marked transient. Every
+// other status, 501 among them, refuses the request itself and is left unmarked, because sending
+// it again would be refused again.
+func refused(ctx context.Context, resp *http.Response) error {
+	var err error
+	var refusal errorReply
+	decodeErr := json.NewDecoder(resp.Body).Decode(&refusal)
+	switch {
+	case decodeErr == nil && refusal.Error.Message != "":
+		err = fmt.Errorf("provider answered %s: %s", resp.Status, refusal.Error.Message)
+	case decodeErr != nil && ctx.Err() != nil:
+		err = fmt.Errorf("provider answered %s, reading its body: %w", resp.Status, ctx.Err())
+	default:
+		err = fmt.Errorf("provider answered %s", resp.Status)
+	}
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return fmt.Errorf("httpembedder: %w: %w", err, errs.ErrRateLimited)
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return transient(err)
+	default:
+		return fmt.Errorf("httpembedder: %w", err)
+	}
+}
+
+// transient marks err as a provider failure that may clear, so a caller can retry it by reading
+// errs.IsTransient rather than the text. The action word names no reason a caller reads from
+// text, such as a timeout, a refused connection or a dimension.
+func transient(err error) error {
+	return errs.WrapTransient(err, "httpembedder", "embed", "embeddings request")
 }
 
 // accept returns the reply's vectors in input order, each with its entry's truncated mark, or an

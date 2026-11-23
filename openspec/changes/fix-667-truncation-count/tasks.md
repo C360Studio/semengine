@@ -13,6 +13,8 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
   `truncated_total` counts a provider-marked cut under `by="provider"` and a cut at `max_text_len` under
   `by="text_cap"`; then `TruncationMarker`, `IncTruncated(by)`, the httpembedder field and the collector. Every
   existing test passes with its fakes updated to the new `IncTruncated` signature.
+- [x] 2.2 Count SemSource's cut entities with the new counter on one full index of the SemSource repository,
+  cross-checked against semembed's own count (`notes/probes/semsource-truncation.md`).
 
 ## 3. Close-out
 

@@ -33,7 +33,12 @@ import (
 //     the absence, and it is not counted. A stranded failure keeps the revision of the outcome it
 //     replaced, so the fence survives it too. A fence at ^uint64(0) names no revision, and an
 //     entity with no outcome has none: either is forgotten.
-//   - Hop 1 about to write a pending record changes no count, reason or repair target.
+//   - Hop 1 about to write a pending record at r for an entity the Worker failed makes it wait
+//     for r ("Provider failures are retried"): until the Worker reports at or above r, the
+//     Worker's outcomes for older records change nothing, so the entity stays counted failed with
+//     its reason. A failure seeded at Start waits for its own record's revision. Hop 1's own
+//     outcomes (its failure, an ended revision, an absent entity) are not the Worker's and end
+//     the wait. Waiting changes no count, reason or hop 1 repair target.
 //   - Count and reasons are over the failures held; the repair lane retries exactly hop 1's own.
 type modelEntry struct {
 	revision uint64
@@ -41,6 +46,8 @@ type modelEntry struct {
 	reason   string
 	stranded bool
 	ownFail  bool // a failure of hop 1's own
+	waiting  bool // a pending record written after the Worker's failure waits for waitFor
+	waitFor  uint64
 }
 
 type failedModel map[string]modelEntry
@@ -52,6 +59,27 @@ func (m failedModel) worker(key string, e modelEntry) {
 		return
 	}
 	m[key] = e
+}
+
+// workerOutcome is a Worker outcome: below the revision a waiting entity waits for, it is an
+// older record's and changes nothing.
+func (m failedModel) workerOutcome(key string, e modelEntry) {
+	if held := m[key]; held.waiting && e.revision < held.waitFor {
+		return
+	}
+	m.worker(key, e)
+}
+
+func (m failedModel) queueing(key string, revision uint64) {
+	held, ok := m[key]
+	if !ok || !held.failed || held.ownFail {
+		return
+	}
+	if !held.waiting || revision > held.waitFor {
+		held.waitFor = revision
+	}
+	held.waiting = true
+	m[key] = held
 }
 
 func (m failedModel) drained(key string) {
@@ -126,24 +154,25 @@ func (op failedOp) apply(m *failedMap, model failedModel) (entered, wantEntered,
 	case "seed":
 		m.seed(op.seed)
 		for _, e := range op.seed {
-			model.worker(e.EntityID, modelEntry{revision: e.SourceRevision, failed: true, reason: e.Reason})
+			model.worker(e.EntityID, modelEntry{revision: e.SourceRevision, failed: true, reason: e.Reason,
+				waiting: true, waitFor: e.SourceRevision})
 		}
 	case "worker failed":
 		entered, failure = m.failed(op.key, op.revision, op.reason), true
-		model.worker(op.key, modelEntry{revision: op.revision, failed: true, reason: op.reason})
+		model.workerOutcome(op.key, modelEntry{revision: op.revision, failed: true, reason: op.reason})
 	case "succeeded":
 		m.succeeded(op.key, op.revision, op.outcome)
 		if op.revision == strandedRevision {
 			model.drained(op.key)
 		} else {
-			model.worker(op.key, modelEntry{revision: op.revision})
+			model.workerOutcome(op.key, modelEntry{revision: op.revision})
 		}
 	case "hop 1 failed":
 		entered, failure = m.mark(op.key, op.revision, op.reason), true
 		model.hopOneFailed(op.key, op.revision, op.reason)
 	case "queueing":
-		// Hop 1 about to write a pending record changes no count and no repair target.
 		m.queueing(op.key, op.revision)
+		model.queueing(op.key, op.revision)
 	case "queued":
 		m.queued(op.key, op.revision)
 		model.hopOneConverged(op.key, op.revision, false)
@@ -321,6 +350,24 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "hop 1 failed", key: "a", revision: 5, reason: embedding.ReasonDeleteFailed},
 		{kind: "worker failed", key: "a", revision: 6, reason: "timeout"},
 	},
+	// A retry of the failure at 4 is held when the entity is written again at 5; the old call
+	// then fails, its failed record is superseded, and the Worker reports it skipped at 4. The
+	// entity stays failed until the record at 5 reports, and a failure there is not a new entry.
+	"an older record's outcome while a newer one waits changes nothing": {
+		{kind: "worker failed", key: "a", revision: 4, reason: "provider_unavailable"},
+		{kind: "queueing", key: "a", revision: 5},
+		{kind: "queued", key: "a", revision: 5},
+		{kind: "succeeded", key: "a", revision: 4, outcome: embedding.OutcomeSkipped},
+		{kind: "worker failed", key: "a", revision: 4, reason: "timeout"},
+		{kind: "worker failed", key: "a", revision: 5, reason: "provider_unavailable"},
+		{kind: "worker failed", key: "b", revision: 4, reason: "timeout"},
+		{kind: "queueing", key: "b", revision: 6},
+		{kind: "succeeded", key: "b", revision: 5, outcome: embedding.OutcomeGenerated},
+		{kind: "succeeded", key: "b", revision: 6, outcome: embedding.OutcomeGenerated},
+		{kind: "worker failed", key: "c", revision: 4, reason: "timeout"},
+		{kind: "queueing", key: "c", revision: 6},
+		{kind: "ended", key: "c", revision: 5}, // hop 1's end is not the Worker's: it clears
+	},
 	"repair targets leave the Worker's failures out": {
 		{kind: "worker failed", key: "a", revision: 1, reason: "connection_refused"},
 		{kind: "hop 1 failed", key: "b", revision: 1, reason: embedding.ReasonPendingWriteFailed},
@@ -454,6 +501,20 @@ func TestRetryTargets(t *testing.T) {
 	m.succeeded("d", rev, embedding.OutcomeGenerated)
 	pass("after d's re-drive stored a vector", "c")
 	pass("the pass after", "c")
+
+	// A slow retry of c is overtaken by a write of the entity: the old record's skipped outcome
+	// leaves c failed and waiting for the new one, which the next stored vector does not count
+	// either.
+	m.queueing("c", rev+3)
+	m.succeeded("c", rev, embedding.OutcomeSkipped)
+	if _, reasons := m.counts(); reasons["rate_limited"] != 1 {
+		t.Fatalf("after an older record's skipped outcome: reasons %v; want c still rate_limited", reasons)
+	}
+	pass("while c waits for the newer record")
+	if m.failed("c", rev+3, "rate_limited") {
+		t.Fatalf("the newer record's failure entered the failed set again; want c counted once")
+	}
+	pass("after the newer record failed", "c")
 
 	// Failures seeded at Start wait for the Worker's first snapshot.
 	m = &failedMap{}

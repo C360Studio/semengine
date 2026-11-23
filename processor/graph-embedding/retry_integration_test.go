@@ -21,8 +21,8 @@ import (
 // While down it fails as a product's embedder reports an outage: a text naming "busy" with
 // errs.ErrRateLimited, any other with an errs.WrapTransient error. A text naming "wide" always
 // fails with a reply of the wrong width, which no retry can fix. While hold is set, each call
-// reports its text on entered and waits until hold is closed, as a slow provider would. calls
-// counts the calls per text.
+// reports its text on entered and waits until hold is closed, as a slow provider would, and then
+// answers as the provider is at that moment. calls counts the calls per text.
 type outageEmbedder struct {
 	entered chan string
 
@@ -54,7 +54,7 @@ func (e *outageEmbedder) Generate(ctx context.Context, texts []string) ([][]floa
 	for _, text := range texts {
 		e.calls[text]++
 	}
-	down, hold := e.down, e.hold
+	hold := e.hold
 	e.mu.Unlock()
 	if hold != nil {
 		e.entered <- texts[0]
@@ -64,6 +64,9 @@ func (e *outageEmbedder) Generate(ctx context.Context, texts []string) ([][]floa
 			return nil, ctx.Err()
 		}
 	}
+	e.mu.Lock()
+	down := e.down
+	e.mu.Unlock()
 	vectors := make([][]float32, len(texts))
 	for i, text := range texts {
 		switch {
@@ -196,4 +199,49 @@ func TestRepairWaitsForRedrivenOutcome(t *testing.T) {
 	h.awaitGenerated(t, a, rev)
 	// The Worker's callback records the outcome after the generated record is written.
 	h.awaitFailed(t, "after the re-drive's vector", nil)
+}
+
+// TestRetryOvertakenByWriteStaysFailed: a retry the provider holds is overtaken by a new write of
+// the entity. The held call then fails while the provider is still down; its failed record is
+// superseded by the new pending record, so the Worker reports it skipped. That outcome is the
+// older record's: the entity stays failed with its reason while the new record waits, and when
+// the new record fails too, the entity has not left the failed set, so ErrorCount does not rise.
+func TestRetryOvertakenByWriteStaysFailed(t *testing.T) {
+	e := newOutageEmbedder()
+	h := startEmbeddingBy(t, fixtureClient(t), `{}`, nil, outageFactory(t, e))
+	a := entityID(1)
+	h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "down one"))
+	down := map[string]uint64{"provider_unavailable": 1}
+	h.awaitFailed(t, "while the provider is down", down)
+	if got := h.c.Health().ErrorCount; got != 1 {
+		t.Fatalf("ErrorCount after the first failure = %d; want 1", got)
+	}
+
+	first := make(chan struct{})
+	e.set(true, first)
+	// This pass re-drives the entity, or the lane's own pass already has; either way the
+	// Worker's call arrives and is held.
+	h.c.repair(t.Context())
+	if text := <-e.entered; text != "down one" {
+		t.Fatalf("the held call embeds %q; want down one", text)
+	}
+	rev := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "down two"))
+	h.awaitPending(t, a, rev)
+
+	second := make(chan struct{})
+	e.set(true, second)
+	close(first)
+	// The Worker reports an entity's records in order, the held one's outcome before it calls the
+	// embedder for the next, so the second call orders these reads after the first outcome.
+	if text := <-e.entered; text != "down two" {
+		t.Fatalf("the second call embeds %q; want down two", text)
+	}
+	h.assertFailed(t, "after the overtaken retry's outcome", down)
+	close(second)
+	// onTerminal records the outcome before it completes the revision.
+	h.awaitIndexed(t, "the new revision's outcome", rev)
+	h.assertFailed(t, "after the new revision failed", down)
+	if got := h.c.Health().ErrorCount; got != 1 {
+		t.Errorf("ErrorCount after the new revision failed = %d; want 1, the entity never left the failed set", got)
+	}
 }

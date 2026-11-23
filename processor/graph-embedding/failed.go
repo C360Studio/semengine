@@ -22,7 +22,8 @@ type outcome struct {
 	stranded bool
 	// waiting is set while a pending record written after the Worker's failure, or a failed
 	// record the Worker retries at Start, waits for the Worker: its outcome at or above waitFor
-	// ends the wait. A retry is not sent again meanwhile.
+	// ends the wait, as does any outcome of hop 1's own. Meanwhile a retry is not sent again, and
+	// the Worker's outcomes of older records change nothing (workerOutcome).
 	waiting bool
 	waitFor uint64
 }
@@ -84,7 +85,7 @@ func (m *failedMap) seed(entries []embedding.FailedEntry) {
 func (m *failedMap) failed(key string, revision uint64, reason string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.worker(key, outcome{revision: revision, reason: reason})
+	return m.workerOutcome(key, outcome{revision: revision, reason: reason})
 }
 
 // succeeded records the Worker's success of key at revision, of kind generated, skipped or
@@ -102,24 +103,32 @@ func (m *failedMap) succeeded(key string, revision uint64, kind embedding.Termin
 		return
 	}
 	_, wasFailed := m.failures[key]
-	m.worker(key, outcome{revision: revision})
+	m.workerOutcome(key, outcome{revision: revision})
 	if _, still := m.failures[key]; wasFailed && !still && kind == embedding.OutcomeGenerated {
 		m.stored = true
 	}
 }
 
-// worker records, with mu held, the Worker's outcome o when it is at or above the entity's
-// latest one: a failure below it is not counted, and a success clears a failure at or below it.
-// A stranded failure stays: no Worker outcome names the revision it lacks. An outcome below the
-// revision a pending record waits on leaves the wait standing. It reports whether key entered the
-// failed set.
+// workerOutcome records, with mu held, an outcome the Worker reported. While the entity waits for
+// a pending record written after its failure, an outcome below that record's revision is an older
+// record's: a slow retry overtaken by a new write reports skipped when its failed record is
+// superseded. It changes nothing, so the entity stays counted failed with its reason until the
+// waiting record reports. Otherwise it is recorded as worker records it.
+func (m *failedMap) workerOutcome(key string, o outcome) bool {
+	if held := m.entries[key]; held.waiting && o.revision < held.waitFor {
+		return false
+	}
+	return m.worker(key, o)
+}
+
+// worker records, with mu held, outcome o when it is at or above the entity's latest one: a
+// failure below it is not counted, and a success clears a failure at or below it. A stranded
+// failure stays: no Worker outcome names the revision it lacks. o replaces the entry, so any wait
+// ends. It reports whether key entered the failed set.
 func (m *failedMap) worker(key string, o outcome) bool {
 	held, ok := m.entries[key]
 	if ok && (held.stranded || o.revision < held.revision) {
 		return false
-	}
-	if held.waiting && o.revision < held.waitFor {
-		o.waiting, o.waitFor = true, held.waitFor
 	}
 	return m.store(key, o)
 }

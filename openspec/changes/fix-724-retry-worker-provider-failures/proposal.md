@@ -1,6 +1,6 @@
 # Proposal: fix-724-retry-worker-provider-failures
 
-Approved-by:
+Approved-by: cglusky (2026-11-23) <https://github.com/C360Studio/semengine/issues/724#issuecomment-7107136844> sha256:3f530b5d1ba9
 
 Track: `design`. Capabilities: `graph-embedding` (added), `embedding-index` (added), `graph-query` (modified).
 Packages: `graph/embedding`, `graph/embedding/httpembedder`, `processor/graph-embedding`, tests in

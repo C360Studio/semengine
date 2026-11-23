@@ -5,9 +5,8 @@ output in `notes/<task>.md`. One pull request (#733), `Closes #724`, `Closes #73
 
 ## 1. Design
 
-- [ ] 1.1 Inventory and design: INVENTORY PASS, then pre-owner design review passes; the owner fills `Approved-by:`
+- [x] 1.1 Inventory and design: INVENTORY PASS, then pre-owner design review passes; the owner fills `Approved-by:`
   and rules on design questions 1 to 4.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. graph/embedding and httpembedder: name the provider's unavailability
 

@@ -343,7 +343,8 @@ func (failingStatusReader) Status(context.Context) (jetstream.KeyValueStatus, er
 
 // TestStatusReadFailureReadsDegraded: when the follower cannot read ENTITY_STATES' last sequence it
 // cannot tell whether it has caught up, so the envelope reads degraded and not ready, and a follower
-// still on its first build refuses queries rather than latching the build complete. The same
+// still on its first build refuses queries rather than latching the build complete. The feed is not
+// declared lost: the read fails during any NATS outage, and the feed returns with the server. The same
 // follower state with the target read is ready, so the failed read alone makes the difference.
 func TestStatusReadFailureReadsDegraded(t *testing.T) {
 	caughtUp := func() *Follower {
@@ -364,6 +365,11 @@ func TestStatusReadFailureReadsDegraded(t *testing.T) {
 	requireNotReady(t, "status read failed before the first build", f.QueryReady(t.Context()))
 	if f.bootstrapped.Load() {
 		t.Fatal("a failed status read latched the first build complete")
+	}
+	// An outage passes: the feed is still there once NATS is back, so a failed read must not mark it
+	// lost, which only a process restart clears.
+	if f.feedLost.Load() {
+		t.Fatal("a failed status read marked the ENTITY_STATES feed lost")
 	}
 }
 

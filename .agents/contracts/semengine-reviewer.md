@@ -330,7 +330,8 @@ Carried with graph-ingest from SemStreams' reviewer contract at the pin (§ Grap
 - A lifecycle phase or other single-valued predicate replaces the old triple. An append is a finding: a reader may
   pick the first value or the last.
 - State carried in a `context` value (`context.WithValue`, `ctx.Value`) is `BLOCKING` (owner ruling, #91 comment
-  6124130342).
+  6124130342). The sole exception is natsclient's trace context (`ContextWithTrace`, `TraceContextFromContext`),
+  which crosses consumer handler code (#605); any other value added to it, or a second context key, is `BLOCKING`.
 
 ### Component and schema wiring
 

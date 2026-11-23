@@ -20,10 +20,22 @@ type outcome struct {
 	revision uint64
 	reason   string // empty for a success
 	stranded bool
+	// waiting is set while a pending record written after the Worker's failure, or a failed
+	// record the Worker retries at Start, waits for the Worker: its outcome at or above waitFor
+	// ends the wait. A retry is not sent again meanwhile.
+	waiting bool
+	waitFor uint64
 }
 
 // hopOne reports whether o is a failure of hop 1's own, the kind hop 1's convergence clears.
 func (o outcome) hopOne() bool { return repaired(o.reason) }
+
+// retry reports whether the repair lane re-drives o: a Worker failure whose reason names a fault
+// that may clear on its own, with no pending record waiting for the Worker. Hop 1's own failures
+// are not retryable reasons; the lane repairs them on every pass.
+func (o outcome) retry() bool {
+	return o.reason != "" && !o.stranded && !o.waiting && embedding.RetryableReason(o.reason)
+}
 
 // failedMap is the per-entity failed map: the latest terminal outcome of each entity, so a
 // failure older than it is not counted. The Worker's outcomes reach it on the Worker's goroutines,
@@ -36,10 +48,17 @@ type failedMap struct {
 	// failures holds the entries that are failures, so counts and repairTargets walk only those
 	// and never every entity embedded. store and forget keep it in step with entries.
 	failures map[string]outcome
+	// stored is set when the Worker stores a vector for an entity that was failed, and read and
+	// cleared by each pass's retryTargets: the provider answers again, so every retry is sent.
+	stored bool
+	// lastRetried is the last entity, in entity ID order, the latest pass returned; a pass that
+	// returns one picks the one after it, so one entity whose own text keeps failing never holds
+	// back the rest.
+	lastRetried string
 }
 
 // repaired reports whether reason is one of hop 1's own failures, the three the repair lane
-// re-drives. They are in memory only and never in a stored record
+// re-drives on every pass. They are in memory only and never in a stored record
 // (graph/embedding/derived_reasons.go), so no Worker outcome carries one.
 func repaired(reason string) bool {
 	switch reason {
@@ -50,10 +69,13 @@ func repaired(reason string) bool {
 }
 
 // seed fills the map from the failed records EMBEDDING_INDEX holds at Start
-// (Storage.ScanFailed), each as the Worker's failure at its record's revision.
+// (Storage.ScanFailed), each as the Worker's failure at its record's revision. Each waits: the
+// Worker retries every failed record in its first snapshot and reports the outcome.
 func (m *failedMap) seed(entries []embedding.FailedEntry) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, e := range entries {
-		m.failed(e.EntityID, e.SourceRevision, e.Reason)
+		m.worker(e.EntityID, outcome{revision: e.SourceRevision, reason: e.Reason, waiting: true, waitFor: e.SourceRevision})
 	}
 }
 
@@ -65,11 +87,12 @@ func (m *failedMap) failed(key string, revision uint64, reason string) bool {
 	return m.worker(key, outcome{revision: revision, reason: reason})
 }
 
-// succeeded records the Worker's success of key at revision. A success at strandedRevision is
-// the Worker's drain of a record it cannot decode (graph/embedding worker.go), which names no
-// source revision: it forgets an entity that is not stranded, so it never stands as a latest
-// outcome no later failure can pass.
-func (m *failedMap) succeeded(key string, revision uint64) {
+// succeeded records the Worker's success of key at revision, of kind generated, skipped or
+// deleted. A success at strandedRevision is the Worker's drain of a record it cannot decode
+// (graph/embedding worker.go), which names no source revision: it forgets an entity that is not
+// stranded, so it never stands as a latest outcome no later failure can pass. A vector stored for
+// a failed entity, the one kind that shows the provider answers, is noted for the next pass.
+func (m *failedMap) succeeded(key string, revision uint64, kind embedding.TerminalOutcome) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if revision == strandedRevision {
@@ -78,17 +101,25 @@ func (m *failedMap) succeeded(key string, revision uint64) {
 		}
 		return
 	}
+	_, wasFailed := m.failures[key]
 	m.worker(key, outcome{revision: revision})
+	if _, still := m.failures[key]; wasFailed && !still && kind == embedding.OutcomeGenerated {
+		m.stored = true
+	}
 }
 
 // worker records, with mu held, the Worker's outcome o when it is at or above the entity's
 // latest one: a failure below it is not counted, and a success clears a failure at or below it.
-// A stranded failure stays: no Worker outcome names the revision it lacks. It reports whether
-// key entered the failed set.
+// A stranded failure stays: no Worker outcome names the revision it lacks. An outcome below the
+// revision a pending record waits on leaves the wait standing. It reports whether key entered the
+// failed set.
 func (m *failedMap) worker(key string, o outcome) bool {
 	held, ok := m.entries[key]
 	if ok && (held.stranded || o.revision < held.revision) {
 		return false
+	}
+	if held.waiting && o.revision < held.waitFor {
+		o.waiting, o.waitFor = true, held.waitFor
 	}
 	return m.store(key, o)
 }
@@ -108,6 +139,23 @@ func (m *failedMap) mark(key string, revision uint64, reason string) bool {
 		return false
 	}
 	return m.store(key, outcome{revision: revision, reason: reason})
+}
+
+// queueing records, under hop1Mu, that hop 1 is about to write key's pending record for revision.
+// A Worker failure of key then waits for the Worker's outcome of that record, so the repair lane
+// does not send it again meanwhile. It is set before the write, not after, because the Worker can
+// report the record's outcome before the write's call returns. A write that fails, or finds a
+// generated record standing, replaces the entry (mark, ended), which ends the wait.
+func (m *failedMap) queueing(key string, revision uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if held, ok := m.failures[key]; ok && !held.hopOne() {
+		if !held.waiting || revision > held.waitFor {
+			held.waitFor = revision
+		}
+		held.waiting = true
+		m.store(key, held)
+	}
 }
 
 // queued records, under hop1Mu, that hop 1 wrote key's pending record for revision: hop 1 has
@@ -204,8 +252,7 @@ func (m *failedMap) withheld() int64 {
 }
 
 // repairTargets returns, sorted, the entities whose failure is hop 1's own: the repair lane
-// re-drives those, and the Worker's failures wait for a new revision or a restart. It releases mu
-// before the caller takes hop1Mu.
+// re-drives every one on each pass. It releases mu before the caller takes hop1Mu.
 func (m *failedMap) repairTargets() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -217,4 +264,46 @@ func (m *failedMap) repairTargets() []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// retryTargets returns, sorted, the Worker failures this repair pass re-drives (outcome.retry).
+// When the Worker stored a vector for a failed entity since the previous pass, the provider
+// answers again and every one is returned. Otherwise only one is, the next in entity ID order
+// after the last one the previous pass returned, wrapping, so a provider still down is sent one
+// request per pass. It releases mu before the caller takes hop1Mu.
+func (m *failedMap) retryTargets() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	all := m.stored
+	m.stored = false
+	var keys []string
+	for key, o := range m.failures {
+		if o.retry() {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	slices.Sort(keys)
+	if all {
+		m.lastRetried = keys[len(keys)-1]
+		return keys
+	}
+	next := keys[0]
+	if i, found := slices.BinarySearch(keys, m.lastRetried); found && i+1 < len(keys) {
+		next = keys[i+1]
+	} else if !found && i < len(keys) {
+		next = keys[i]
+	}
+	m.lastRetried = next
+	return []string{next}
+}
+
+// retryable reports whether key is still one the repair lane re-drives, under hop1Mu: a delivery
+// can write its pending record between retryTargets and the lane taking hop1Mu.
+func (m *failedMap) retryable(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.failures[key].retry()
 }

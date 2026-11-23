@@ -114,7 +114,9 @@ and `internal` when the Worker's own read or write of a bucket fails.
 `RetryableReason` reports which reasons name a fault that may clear on its own, so that embedding
 the same text later can succeed: `connection_refused`, `timeout`, `rate_limited`,
 `provider_unavailable` and `internal`. The others say the request itself was refused, or nothing
-says it would not be refused again.
+says it would not be refused again. graph-embedding's repair lane re-drives the entities that
+failed with a retryable reason, so they are embedded once the provider answers again, with no
+restart.
 
 A product's own embedder gets the retryable reasons for its outages by returning a `pkg/errs`
 error: `errs.ErrRateLimited` (wrapped with `%w` or `errs.WrapTransient`) when the provider asks it

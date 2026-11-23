@@ -9,6 +9,12 @@
 // failed one holding a reason. The Worker is what this package runs; the hop-1 component is
 // processor/graph-embedding, which is not part of this package.
 //
+// A failed record's reason comes from a closed set, and RetryableReason reports which reasons
+// name a fault that may clear on its own. An Embedder has its provider's outages filed under a
+// retryable reason by returning a pkg/errs error: errs.ErrRateLimited when the provider asks it
+// to slow down, errs.WrapTransient for a failure the provider may recover from. The README lists
+// the reasons and the order the Worker reads them in.
+//
 // # Parts
 //
 // Embedder is the interface an embedding source implements, for documents (Generate) and for

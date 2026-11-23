@@ -10,7 +10,7 @@ output in `notes/<task>.md`. One pull request (#733), `Closes #724`, `Closes #73
 
 ## 2. graph/embedding and httpembedder: name the provider's unavailability
 
-- [ ] 2.1 Tests first, shown failing (`notes/2.1.md`):
+- [x] 2.1 Tests first, shown failing (`notes/2.1.md`):
   - `TestClassifyEmbedErr` gains: `errs.ErrRateLimited` wrapped by `WrapTransient` → `rate_limited`; a
     `WrapTransient` error → `provider_unavailable`; a refused connection wrapped by `WrapTransient` →
     `connection_refused`; a plain error → `embedder_error`.
@@ -21,7 +21,7 @@ output in `notes/<task>.md`. One pull request (#733), `Closes #724`, `Closes #73
     422, 501, an untrusted reply, and an `httptest.NewTLSServer` the client does not trust are not (this last is the
     probe of the TLS error at the pinned Go).
   Premises: `worker.go:786-805,827-830`, `storage.go:513-535`, `httpembedder.go:204-219`, `pkg/errs/errs.go:154-171`.
-- [ ] 2.2 Implement D1 and D2 (A): two reasons, `RetryableReason`, the classifier order, httpembedder marking, the
+- [x] 2.2 Implement D1 and D2 (A): two reasons, `RetryableReason`, the classifier order, httpembedder marking, the
   package doc. Accept: 2.1 passes, `task verify`.
 
 ## 3. graph-embedding: the retry lane

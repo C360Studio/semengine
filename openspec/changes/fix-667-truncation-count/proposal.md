@@ -32,7 +32,7 @@ counted by the Worker through `WorkerMetrics.IncTruncated`, but graph-embedding'
 
 ## Non-goals
 
-- Splitting long text into pieces, and the SemSource count (#667 step 3).
+- Splitting long text into pieces.
 - A provider cut on a vector reused from the dedup bucket is not counted again: the dedup record does not keep the
   mark. Query-side cuts (`GenerateQuery`) are not counted.
 - How `httpembedder` answers a provider's 429.

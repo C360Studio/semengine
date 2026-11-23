@@ -1,6 +1,6 @@
 # Proposal: fix-667-truncation-count
 
-Approved-by:
+Approved-by: cglusky (2026-11-23) <https://github.com/C360Studio/semengine/issues/667#issuecomment-7102129649> sha256:46b1b13aaa5f
 
 Track: `quick`. No capability changes: no spec states graph-embedding's metrics or the HTTP embedder's handling of a
 cut, and no requirement is added or changed. Packages: `graph/embedding`, `graph/embedding/httpembedder`,

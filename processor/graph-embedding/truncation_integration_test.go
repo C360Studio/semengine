@@ -105,9 +105,12 @@ func TestProviderCutCounted(t *testing.T) {
 	long, short := entityID(1), entityID(2)
 	longRev := h.put(t, long, entityValue(t, long, nil, "doc.meta.title", strings.Repeat("word ", 10)))
 	shortRev := h.put(t, short, entityValue(t, short, nil, "doc.meta.title", "short title"))
-	// The Worker counts a cut before it writes the generated record awaited here.
 	h.awaitGenerated(t, long, longRev)
 	h.awaitGenerated(t, short, shortRev)
+	// The Worker counts a cut after it stores the vector and before it reports the entity done,
+	// which moves the follower's floor awaited here; shortRev is the later write, so the floor
+	// past it covers both entities.
+	h.awaitIndexed(t, "both entities done", shortRev)
 
 	if n := truncatedCount(t, h, "provider"); n != 1 {
 		t.Errorf(`truncated_total{by="provider"} = %v, want 1: one entity's text was marked`, n)
@@ -126,9 +129,12 @@ func TestTextCapCutCounted(t *testing.T) {
 	long, short := entityID(1), entityID(2)
 	longRev := h.put(t, long, entityValue(t, long, nil, "doc.meta.title", strings.Repeat("word ", 10)))
 	shortRev := h.put(t, short, entityValue(t, short, nil, "doc.meta.title", "short title"))
-	// The Worker counts a cut before it writes the generated record awaited here.
 	h.awaitGenerated(t, long, longRev)
 	h.awaitGenerated(t, short, shortRev)
+	// The Worker counts a cut after it stores the vector and before it reports the entity done,
+	// which moves the follower's floor awaited here; shortRev is the later write, so the floor
+	// past it covers both entities.
+	h.awaitIndexed(t, "both entities done", shortRev)
 
 	if n := truncatedCount(t, h, "text_cap"); n != 1 {
 		t.Errorf(`truncated_total{by="text_cap"} = %v, want 1: one entity's text is past max_text_len`, n)
@@ -151,10 +157,12 @@ func TestCapCutCountedOnceWhenProviderAlsoCuts(t *testing.T) {
 	long, short := entityID(1), entityID(2)
 	longRev := h.put(t, long, entityValue(t, long, nil, "doc.meta.title", strings.Repeat("word ", 10)))
 	shortRev := h.put(t, short, entityValue(t, short, nil, "doc.meta.title", "short title"))
-	// The provider marks a text before it replies, and the Worker counts a cut before it writes
-	// the generated record awaited here.
 	h.awaitGenerated(t, long, longRev)
 	h.awaitGenerated(t, short, shortRev)
+	// The provider marks a text before it replies. The Worker counts a cut after it stores the
+	// vector and before it reports the entity done, which moves the follower's floor awaited
+	// here; shortRev is the later write, so the floor past it covers both entities.
+	h.awaitIndexed(t, "both entities done", shortRev)
 
 	if n := marked.Load(); n != 1 {
 		t.Fatalf("the provider marked %d texts, want 1: the capped text must still be over its window", n)

@@ -107,24 +107,26 @@ func TestGetSourceText_CapKeepsIdentityTrimsBody(t *testing.T) {
 	}
 }
 
-// TestGetSourceText_OffloadedTruncationCountedOnce guards the cap's no-double-count: an
-// over-cap offloaded body is counted once (in fetchTextFromStorage). Prepending
-// identity and re-truncating the combined text must NOT count it a second time.
-func TestGetSourceText_OffloadedTruncationCountedOnce(t *testing.T) {
-	// A body well over the cap so fetchTextFromStorage truncates + counts exactly once.
+// TestGetSourceText_OffloadedCapCutReported: an over-cap offloaded body, cut again once the
+// identity is prepended, is reported as one cap cut, and getSourceText counts nothing itself: the
+// Worker counts the cut only once the vector is stored.
+func TestGetSourceText_OffloadedCapCutReported(t *testing.T) {
 	body := strings.Repeat("word ", 200) // 1000 runes, cap 50
 	const capLen = 50
 
 	m := &recordingWorkerMetrics{}
 	w := offloadedWorker(t, body, capLen, m)
-	if _, _, err := w.getSourceText(t.Context(), &Record{IdentityText: "Identity Prefix", StorageRef: offloadedRef()}); err != nil {
+	_, capCut, err := w.getSourceText(t.Context(), &Record{IdentityText: "Identity Prefix", StorageRef: offloadedRef()})
+	if err != nil {
 		t.Fatalf("getSourceText: %v", err)
+	}
+	if !capCut {
+		t.Fatal("capCut = false for a body over the cap")
 	}
 
 	snap := m.snapshot()
-	if snap.truncated != 1 {
-		t.Fatalf("truncated = %d, want exactly 1: the offloaded lane must count the over-cap body once, "+
-			"not double-count when identity prepends push the combined back over the cap (#602/D3)", snap.truncated)
+	if snap.truncated != 0 {
+		t.Fatalf("truncated = %d before any vector is stored, want 0", snap.truncated)
 	}
 	// getSourceText produces text; it does NOT count the offloaded-identity pair (the
 	// successful-persistence path does). Assert it stays silent here.
@@ -134,12 +136,11 @@ func TestGetSourceText_OffloadedTruncationCountedOnce(t *testing.T) {
 	}
 }
 
-// TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce is the combined-cap edge: a body
+// TestGetSourceText_IdentityTipsCombinedOverCap_Reported is the combined-cap edge: a body
 // that FITS the cap but whose identity+separator+body EXCEEDS it is truncated at the
-// combined stage — and that truncation MUST be counted exactly once (fetchTextFromStorage
-// did not truncate the body, so getSourceText owns the count here). Uncounted, this
-// truncation would be silent, which the truncation metric exists to prevent.
-func TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce(t *testing.T) {
+// combined stage, and that cut is reported, so the Worker counts it once the vector is stored.
+// Unreported, this cut would be silent, which the truncation metric exists to prevent.
+func TestGetSourceText_IdentityTipsCombinedOverCap_Reported(t *testing.T) {
 	const capLen = 40
 	const identity = "Distinctive Title Phrase"   // 24 runes, survives at the front
 	body := strings.Repeat("x", 26) + " TAILWORD" // 35 runes < cap, so the BODY itself is not truncated
@@ -150,7 +151,7 @@ func TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce(t *testing.T) {
 
 	m := &recordingWorkerMetrics{}
 	w := offloadedWorker(t, body, capLen, m)
-	got, _, err := w.getSourceText(t.Context(), &Record{IdentityText: identity, StorageRef: offloadedRef()})
+	got, capCut, err := w.getSourceText(t.Context(), &Record{IdentityText: identity, StorageRef: offloadedRef()})
 	if err != nil {
 		t.Fatalf("getSourceText: %v", err)
 	}
@@ -164,9 +165,8 @@ func TestGetSourceText_IdentityTipsCombinedOverCap_CountsOnce(t *testing.T) {
 	if strings.Contains(got, "TAILWORD") {
 		t.Fatalf("the body tail must be trimmed by the combined truncation; got %q", got)
 	}
-	if snap := m.snapshot(); snap.truncated != 1 {
-		t.Fatalf("truncated = %d, want exactly 1: a body that fits but whose combined text exceeds the cap "+
-			"must be counted once — not silent (#602), not double-counted", snap.truncated)
+	if !capCut {
+		t.Fatal("capCut = false: a body that fits but whose combined text exceeds the cap is a cap cut")
 	}
 }
 

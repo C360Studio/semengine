@@ -56,11 +56,15 @@ type countingMetrics struct {
 	dedup, failed, unresolved, resolveErr, resolved, truncated, dedupSkipped int
 	identityIncluded, identityAbsent                                         int
 	failedReasons                                                            []string
+	truncatedBy                                                              []string
 }
 
-func (m *countingMetrics) IncDedupHits()            { m.dedup++ }
-func (m *countingMetrics) IncDedupSkipped(string)   { m.dedupSkipped++ }
-func (m *countingMetrics) IncTruncated(string)      { m.truncated++ }
+func (m *countingMetrics) IncDedupHits()          { m.dedup++ }
+func (m *countingMetrics) IncDedupSkipped(string) { m.dedupSkipped++ }
+func (m *countingMetrics) IncTruncated(by string) {
+	m.truncated++
+	m.truncatedBy = append(m.truncatedBy, by)
+}
 func (m *countingMetrics) IncFailed()               { m.failed++ }
 func (m *countingMetrics) IncFailedReason(r string) { m.failedReasons = append(m.failedReasons, r) }
 func (m *countingMetrics) IncContentResolveError()  { m.resolveErr++ }

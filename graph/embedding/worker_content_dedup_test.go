@@ -328,31 +328,6 @@ func TestDedupKeyIsOverTruncatedEmbeddedBytes(t *testing.T) {
 	}
 }
 
-// TestTruncationEmitsSignal is the truncation observability half: truncating text to
-// the cap must emit a signal so the bytes actually embedded are discoverable, not
-// silently dropped. Text within the cap emits nothing, so the counter stays at zero.
-func TestTruncationEmitsSignal(t *testing.T) {
-	t.Parallel()
-
-	truncM := &recordingWorkerMetrics{}
-	wTrunc := &Worker{maxSourceTextLen: 10, metrics: truncM}
-	if _, _, err := wTrunc.getSourceText(t.Context(), &Record{SourceText: "this text is definitely longer than ten characters"}); err != nil {
-		t.Fatalf("getSourceText: %v", err)
-	}
-	if got := truncM.snapshot().truncated; got != 1 {
-		t.Fatalf("truncation signal count = %d, want 1: truncation must be observable, not silent (#602)", got)
-	}
-
-	shortM := &recordingWorkerMetrics{}
-	wShort := &Worker{maxSourceTextLen: 100, metrics: shortM}
-	if _, _, err := wShort.getSourceText(t.Context(), &Record{SourceText: "short"}); err != nil {
-		t.Fatalf("getSourceText: %v", err)
-	}
-	if got := shortM.snapshot().truncated; got != 0 {
-		t.Fatalf("truncation signal count = %d, want 0: text within the cap must not signal truncation", got)
-	}
-}
-
 // TestDedupSkippedIsCounted is the dedup observability half: an entity
 // embedded on a condition where dedup is not consulted increments
 // dedup_skipped_total{reason}, so the avoided-reuse cost is visible rather than

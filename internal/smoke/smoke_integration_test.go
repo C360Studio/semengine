@@ -1151,6 +1151,97 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	stopStack(t, s)
 }
 
+// notDegraded returns the index keys whose follower does not read degraded on the stack's metrics
+// server, which answers over HTTP while NATS is down: each follower sets its readiness_state gauge
+// from the same envelope it writes to GRAPH_STATUS.
+func notDegraded(t *testing.T, s stack) []string {
+	t.Helper()
+	url, code, body := get(t, s, s.metricsPort, "/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET %s: HTTP %d: %s", url, code, body)
+	}
+	lines := strings.Split(string(body), "\n")
+	var keys []string
+	for _, key := range s.composition.indexKeys {
+		degraded := "semengine_" + strings.ReplaceAll(key, "-", "_") + `_readiness_state{state="degraded"} 1`
+		if !slices.Contains(lines, degraded) {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+// TestSmoke_BrokerOutageUnderRunningStack holds composed-stack, "Restart the broker under the
+// running stack", for an outage the stack notices: the NATS server stays down until every index
+// the composition runs reports itself degraded, so each has failed to read ENTITY_STATES at least
+// once, and only then starts again on the same URL with its file storage. The stack, never
+// restarted, still holds every revision it stored, answers what it did before plus the writes
+// published after, and lists its components healthy, with no envelope reporting a lost feed.
+func TestSmoke_BrokerOutageUnderRunningStack(t *testing.T) {
+	// Own server: holds the NATS server down under the running stack, which the shared one must not.
+	broker := natsfixture.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer cancel()
+	if err := broker.Start(ctx); err != nil {
+		t.Fatalf("start the NATS server: %v", err)
+	}
+	url := broker.URL()
+
+	o := newObserver(t, url)
+	s := startStack(t, o, url)
+	f := fixture{platform: s.platform}
+	requireComponentsListed(t, s)
+
+	inputs := f.fixedEntities()
+	var last uint64
+	for _, e := range inputs {
+		last = o.publish(t, e)
+	}
+	o.awaitAcknowledged(t, s, last)
+	revision := o.awaitIndexed(t, s)
+	requireComponentsHealthy(t, s)
+	before := wantOf(inputs...)
+	checkAnswers(t, o, s, f, before, revision)
+
+	reconnects := o.client.GetConnection().Stats().Reconnects
+	held := func(context.Context) error {
+		down := time.Now()
+		await(t, s, "every index to report degraded while NATS is down", func(context.Context) ([]string, error) {
+			return notDegraded(t, s), nil
+		}, func(keys []string) bool { return len(keys) == 0 })
+		t.Logf("every index read degraded %v into the outage (recorded, not asserted)", time.Since(down).Round(time.Millisecond))
+		// Whether components read healthy while NATS is down is not yet decided; recorded only.
+		for _, c := range readHealth(t, s).Components {
+			t.Logf("during the outage: %s healthy=%v %s %s", c.Component, c.Healthy, c.Status, c.Message)
+		}
+		return nil
+	}
+	rctx, rcancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer rcancel()
+	if err := broker.RestartAfter(rctx, held); err != nil {
+		t.Fatalf("restart the NATS server after the held outage: %v", err)
+	}
+	if broker.URL() != url {
+		t.Fatalf("the NATS server's URL changed across the outage, %s to %s: a fixture failure, not the stack's", url, broker.URL())
+	}
+	await(t, s, "the observer's connection to reconnect", func(context.Context) (uint64, error) {
+		return o.client.GetConnection().Stats().Reconnects, nil
+	}, func(n uint64) bool { return n > reconnects && o.client.IsHealthy() })
+	if !s.process.Alive() {
+		t.Fatal("the stack exited across the NATS outage")
+	}
+	// Before any new write: a bucket that lost what it stored fails here, naming it, rather than in a
+	// wait for writes that never land.
+	if got := o.entityRevision(t); got != revision {
+		t.Fatalf("%s revision %d after the outage, want %d: the bucket did not keep what it stored",
+			graph.BucketEntityStates, got, revision)
+	}
+	s.ingestStatusBefore = o.statusRevision(t, readiness.KeyGraphIngest)
+
+	checkWritesAfterRestart(t, o, s, f, before)
+	stopStack(t, s)
+}
+
 // gatewayRoute is graph-gateway's GraphQL route: the service manager mounts the component's routes
 // at /<instance> (service/service_manager_http.go), and the configuration names it graph-gateway.
 const gatewayRoute = "/graph-gateway/graphql"

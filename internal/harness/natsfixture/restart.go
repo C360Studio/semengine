@@ -37,6 +37,18 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // log than before it; if Docker log rotation drops earlier lines the count can fall, and the wait
 // then runs until ctx ends and fails at the start-container phase.
 func (f *Fixture) Restart(ctx context.Context) error {
+	return f.RestartAfter(ctx, nil)
+}
+
+// RestartAfter is Restart with the server held down: once the container has stopped it calls
+// whileDown, and starts the container only after whileDown returns nil. A test that must prove a
+// stack notices an outage, not just a blink, waits inside whileDown for the stack to report it; a
+// timed hold could not tell an outage the stack noticed from one it slept through (#574). A nil
+// whileDown is Restart.
+//
+// An error from whileDown fails the restart at the while-down phase with the container stopped,
+// as any phase failure does.
+func (f *Fixture) RestartAfter(ctx context.Context, whileDown func(context.Context) error) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Restart with a nil context")
 	}
@@ -47,7 +59,7 @@ func (f *Fixture) Restart(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return f.restart(ctx, c, id)
+	return f.restart(ctx, c, id, whileDown)
 }
 
 // restartable reports the container to restart, or why there is none.
@@ -60,7 +72,9 @@ func (f *Fixture) restartable() (testcontainers.Container, string, error) {
 	return f.container, f.containerID, nil
 }
 
-func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id string) error {
+func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id string,
+	whileDown func(context.Context) error,
+) error {
 	f.mu.Lock()
 	nc, oldURL := f.nc, f.url
 	f.mu.Unlock()
@@ -96,6 +110,11 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 		return c.Stop(ctx, nil)
 	}); err != nil {
 		return err
+	}
+	if whileDown != nil {
+		if err := run("while-down", func() error { return whileDown(ctx) }); err != nil {
+			return err
+		}
 	}
 	if err := run("start-container", func() error {
 		// The container's log keeps every boot's lines, so the ready log of the last boot is

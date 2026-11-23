@@ -33,6 +33,12 @@ import (
 //     the absence, and it is not counted. A stranded failure keeps the revision of the outcome it
 //     replaced, so the fence survives it too. A fence at ^uint64(0) names no revision, and an
 //     entity with no outcome has none: either is forgotten.
+//   - Hop 1 about to write a pending record at r for an entity the Worker failed makes it wait
+//     for r ("Provider failures are retried"): until the Worker reports at or above r, the
+//     Worker's outcomes for older records change nothing, so the entity stays counted failed with
+//     its reason. A failure seeded at Start waits for its own record's revision. Hop 1's own
+//     outcomes (its failure, an ended revision, an absent entity) are not the Worker's and end
+//     the wait. Waiting changes no count, reason or hop 1 repair target.
 //   - Count and reasons are over the failures held; the repair lane retries exactly hop 1's own.
 type modelEntry struct {
 	revision uint64
@@ -40,6 +46,8 @@ type modelEntry struct {
 	reason   string
 	stranded bool
 	ownFail  bool // a failure of hop 1's own
+	waiting  bool // a pending record written after the Worker's failure waits for waitFor
+	waitFor  uint64
 }
 
 type failedModel map[string]modelEntry
@@ -51,6 +59,27 @@ func (m failedModel) worker(key string, e modelEntry) {
 		return
 	}
 	m[key] = e
+}
+
+// workerOutcome is a Worker outcome: below the revision a waiting entity waits for, it is an
+// older record's and changes nothing.
+func (m failedModel) workerOutcome(key string, e modelEntry) {
+	if held := m[key]; held.waiting && e.revision < held.waitFor {
+		return
+	}
+	m.worker(key, e)
+}
+
+func (m failedModel) queueing(key string, revision uint64) {
+	held, ok := m[key]
+	if !ok || !held.failed || held.ownFail {
+		return
+	}
+	if !held.waiting || revision > held.waitFor {
+		held.waitFor = revision
+	}
+	held.waiting = true
+	m[key] = held
 }
 
 func (m failedModel) drained(key string) {
@@ -92,10 +121,11 @@ func (m failedModel) hopOneConverged(key string, revision uint64, ended bool) {
 
 // failedOp is one generated or named step, applied to the failed map and the model alike.
 type failedOp struct {
-	kind     string // "worker failed", "succeeded", "hop 1 failed", "queued", "ended", "absent", "seed"
+	kind     string // "worker failed", "succeeded", "hop 1 failed", "queueing", "queued", "ended", "absent", "seed"
 	key      string
 	revision uint64
 	reason   string
+	outcome  embedding.TerminalOutcome // a success's kind: generated (the zero value), skipped or deleted
 	seed     []embedding.FailedEntry
 }
 
@@ -124,21 +154,25 @@ func (op failedOp) apply(m *failedMap, model failedModel) (entered, wantEntered,
 	case "seed":
 		m.seed(op.seed)
 		for _, e := range op.seed {
-			model.worker(e.EntityID, modelEntry{revision: e.SourceRevision, failed: true, reason: e.Reason})
+			model.worker(e.EntityID, modelEntry{revision: e.SourceRevision, failed: true, reason: e.Reason,
+				waiting: true, waitFor: e.SourceRevision})
 		}
 	case "worker failed":
 		entered, failure = m.failed(op.key, op.revision, op.reason), true
-		model.worker(op.key, modelEntry{revision: op.revision, failed: true, reason: op.reason})
+		model.workerOutcome(op.key, modelEntry{revision: op.revision, failed: true, reason: op.reason})
 	case "succeeded":
-		m.succeeded(op.key, op.revision)
+		m.succeeded(op.key, op.revision, op.outcome)
 		if op.revision == strandedRevision {
 			model.drained(op.key)
 		} else {
-			model.worker(op.key, modelEntry{revision: op.revision})
+			model.workerOutcome(op.key, modelEntry{revision: op.revision})
 		}
 	case "hop 1 failed":
 		entered, failure = m.mark(op.key, op.revision, op.reason), true
 		model.hopOneFailed(op.key, op.revision, op.reason)
+	case "queueing":
+		m.queueing(op.key, op.revision)
+		model.queueing(op.key, op.revision)
 	case "queued":
 		m.queued(op.key, op.revision)
 		model.hopOneConverged(op.key, op.revision, false)
@@ -316,6 +350,24 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "hop 1 failed", key: "a", revision: 5, reason: embedding.ReasonDeleteFailed},
 		{kind: "worker failed", key: "a", revision: 6, reason: "timeout"},
 	},
+	// A retry of the failure at 4 is held when the entity is written again at 5; the old call
+	// then fails, its failed record is superseded, and the Worker reports it skipped at 4. The
+	// entity stays failed until the record at 5 reports, and a failure there is not a new entry.
+	"an older record's outcome while a newer one waits changes nothing": {
+		{kind: "worker failed", key: "a", revision: 4, reason: "provider_unavailable"},
+		{kind: "queueing", key: "a", revision: 5},
+		{kind: "queued", key: "a", revision: 5},
+		{kind: "succeeded", key: "a", revision: 4, outcome: embedding.OutcomeSkipped},
+		{kind: "worker failed", key: "a", revision: 4, reason: "timeout"},
+		{kind: "worker failed", key: "a", revision: 5, reason: "provider_unavailable"},
+		{kind: "worker failed", key: "b", revision: 4, reason: "timeout"},
+		{kind: "queueing", key: "b", revision: 6},
+		{kind: "succeeded", key: "b", revision: 5, outcome: embedding.OutcomeGenerated},
+		{kind: "succeeded", key: "b", revision: 6, outcome: embedding.OutcomeGenerated},
+		{kind: "worker failed", key: "c", revision: 4, reason: "timeout"},
+		{kind: "queueing", key: "c", revision: 6},
+		{kind: "ended", key: "c", revision: 5}, // hop 1's end is not the Worker's: it clears
+	},
 	"repair targets leave the Worker's failures out": {
 		{kind: "worker failed", key: "a", revision: 1, reason: "connection_refused"},
 		{kind: "hop 1 failed", key: "b", revision: 1, reason: embedding.ReasonPendingWriteFailed},
@@ -352,14 +404,19 @@ func TestFailedMapHistoryMatchesModel(t *testing.T) {
 			}
 			for range rapid.IntRange(1, 30).Draw(rt, "steps") {
 				op := failedOp{
-					kind: rapid.SampledFrom([]string{"worker failed", "succeeded", "hop 1 failed", "queued", "ended", "absent"}).Draw(rt, "kind"),
-					key:  rapid.SampledFrom(keys).Draw(rt, "key"),
+					kind: rapid.SampledFrom([]string{"worker failed", "succeeded", "hop 1 failed", "queueing", "queued", "ended",
+						"absent"}).Draw(rt, "kind"),
+					key: rapid.SampledFrom(keys).Draw(rt, "key"),
 				}
 				switch op.kind {
 				case "worker failed":
 					op.revision = rapid.SampledFrom(revisions).Draw(rt, "revision")
 					op.reason = rapid.SampledFrom(workerReasons).Draw(rt, "reason")
-				case "succeeded", "queued", "ended":
+				case "succeeded":
+					op.revision = rapid.SampledFrom(revisions).Draw(rt, "revision")
+					op.outcome = rapid.SampledFrom([]embedding.TerminalOutcome{embedding.OutcomeGenerated,
+						embedding.OutcomeSkipped, embedding.OutcomeDeleted}).Draw(rt, "outcome")
+				case "queueing", "queued", "ended":
 					op.revision = rapid.SampledFrom(revisions).Draw(rt, "revision")
 				case "hop 1 failed":
 					op.revision = rapid.SampledFrom(revisions).Draw(rt, "revision")
@@ -370,4 +427,101 @@ func TestFailedMapHistoryMatchesModel(t *testing.T) {
 			checkHistory(rt, ops)
 		})
 	})
+}
+
+// TestRetryTargets: a repair pass re-drives only the Worker's failures with a retryable reason
+// (embedding.RetryableReason) that are not waiting for the Worker. While no vector was stored for
+// a failed entity since the previous pass, a pass picks one, the next after the last one picked in
+// entity ID order, wrapping; after one was stored it picks all of them, and the pass after picks
+// one again. A skipped or deleted outcome is not a stored vector. An entity whose pending record
+// hop 1 writes after its failure waits until the Worker reports at or above that record's
+// revision, and a failure seeded at Start waits for the Worker's first snapshot to retry it.
+//
+// The expected sets are written from those rules, the outcomes reach the map through the calls
+// onTerminal makes (failed, succeeded) and hop 1 makes (queueing, queued, mark), and a pass's
+// re-drive is not simulated unless the step says so, so each set below follows from the steps
+// before it alone.
+func TestRetryTargets(t *testing.T) {
+	const rev = 4
+	m := &failedMap{}
+	pass := func(what string, want ...string) {
+		t.Helper()
+		if got := m.retryTargets(); !slices.Equal(got, want) {
+			t.Fatalf("%s: retry targets %v; want %v", what, got, want)
+		}
+	}
+
+	// Four retryable failures, two the lane leaves alone, one of hop 1's own, and one whose
+	// pending record hop 1 wrote after its failure, between b and c in entity ID order.
+	for key, reason := range map[string]string{"a": "timeout", "b": "provider_unavailable", "c": "rate_limited",
+		"d": "internal", "x": "dimension_mismatch", "y": "embedder_error", "bb": "connection_refused"} {
+		m.failed(key, rev, reason)
+	}
+	m.mark("h", rev, embedding.ReasonPendingWriteFailed)
+	m.queueing("bb", rev+1)
+	m.queued("bb", rev+1)
+
+	pass("the first pass", "a")
+	pass("the second pass", "b")
+	pass("the third pass, past the waiting entity", "c")
+	pass("the fourth pass", "d")
+	pass("the fifth pass wraps", "a")
+
+	pass("the sixth pass", "b")
+
+	// The Worker reports below the queued record's revision: still waiting, so the pass after b
+	// skips it. At that revision: retried again, as the next set of all shows.
+	m.failed("bb", rev, "connection_refused")
+	pass("a report below the queued revision", "c")
+	m.failed("bb", rev+1, "connection_refused")
+	pass("the Worker reported the queued revision", "d")
+
+	// A vector stored for a failed entity: the next pass picks every retryable failure, then one.
+	m.succeeded("a", rev, embedding.OutcomeGenerated)
+	pass("after a stored vector", "b", "bb", "c", "d")
+	pass("the pass after", "b")
+
+	// Neither a skipped nor a deleted outcome is a stored vector.
+	m.succeeded("b", rev, embedding.OutcomeSkipped)
+	pass("after a skipped outcome", "bb")
+	m.succeeded("bb", rev+1, embedding.OutcomeDeleted)
+	pass("after a deleted outcome", "c")
+
+	// A vector the map refuses, below the failure's revision, and one for an entity that never
+	// failed, are not a failed entity's stored vector.
+	m.succeeded("c", rev-1, embedding.OutcomeGenerated)
+	pass("after a refused vector", "d")
+	m.succeeded("z", rev, embedding.OutcomeGenerated)
+	pass("after a vector for an entity not failed", "c")
+
+	// The lane re-drives d: hop 1 writes its pending record, so d waits for its outcome.
+	m.queueing("d", rev)
+	m.queued("d", rev)
+	pass("while d's re-drive waits", "c")
+	m.succeeded("d", rev, embedding.OutcomeGenerated)
+	pass("after d's re-drive stored a vector", "c")
+	pass("the pass after", "c")
+
+	// A slow retry of c is overtaken by a write of the entity: the old record's skipped outcome
+	// leaves c failed and waiting for the new one, which the next stored vector does not count
+	// either.
+	m.queueing("c", rev+3)
+	m.succeeded("c", rev, embedding.OutcomeSkipped)
+	if _, reasons := m.counts(); reasons["rate_limited"] != 1 {
+		t.Fatalf("after an older record's skipped outcome: reasons %v; want c still rate_limited", reasons)
+	}
+	pass("while c waits for the newer record")
+	if m.failed("c", rev+3, "rate_limited") {
+		t.Fatalf("the newer record's failure entered the failed set again; want c counted once")
+	}
+	pass("after the newer record failed", "c")
+
+	// Failures seeded at Start wait for the Worker's first snapshot.
+	m = &failedMap{}
+	m.seed([]embedding.FailedEntry{{EntityID: "a", Reason: "timeout", SourceRevision: rev},
+		{EntityID: "b", Reason: "provider_unavailable", SourceRevision: rev}})
+	pass("with both seeded failures waiting")
+	m.failed("a", rev, "timeout")
+	pass("after the snapshot failed a again", "a")
+	pass("b still waiting", "a")
 }

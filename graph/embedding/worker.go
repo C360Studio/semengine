@@ -780,15 +780,21 @@ func (w *Worker) fetchTextFromStorage(ctx context.Context, ref *StorageRef) (tex
 }
 
 // classifyEmbedErr maps a generation error to the bounded reason enum (the failReason*
-// constants in storage.go). It matches the context deadline and message substrings, because
-// a remote embedder's errors often arrive flattened into text; anything else is
-// embedder_error.
+// constants in storage.go). Typed marks are read before text where both could match: the
+// call's deadline is timeout; errs.ErrRateLimited is rate_limited. A remote embedder's errors
+// often arrive flattened into text, so "connection refused" and "timeout" are read next. Any
+// other error errs.IsTransient reports is provider_unavailable, a provider failure that may
+// clear. Only then is "dimension" read, so a transient reply whose text names a dimension is
+// still provider_unavailable. Anything else is embedder_error.
 func classifyEmbedErr(err error) string {
 	if err == nil {
 		return failReasonEmbedderError
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return failReasonTimeout
+	}
+	if errors.Is(err, errs.ErrRateLimited) {
+		return failReasonRateLimited
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
@@ -797,6 +803,8 @@ func classifyEmbedErr(err error) string {
 	case strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded") ||
 		strings.Contains(msg, "context deadline"):
 		return failReasonTimeout
+	case errs.IsTransient(err):
+		return failReasonProviderUnavailable
 	case strings.Contains(msg, "dimension"):
 		return failReasonDimensionMismatch
 	default:

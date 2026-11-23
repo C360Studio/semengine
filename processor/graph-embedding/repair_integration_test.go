@@ -168,7 +168,7 @@ func TestStrandedWithoutRevisionClearsOnlyOnConvergence(t *testing.T) {
 // those. A read that succeeds while the pending write after it fails marks the entity again, now
 // for the write. A tombstone whose record delete fails is marked at its revision; when the repair
 // pass finds the entity absent and the delete succeeds, the entity converges. The Worker's failure
-// of an entity is not retried.
+// of an entity under a reason no retry can fix is not retried.
 func TestRepairConvergesStranded(t *testing.T) {
 	client := fixtureClient(t)
 	h := startEmbedding(t, client, `{}`, nil)
@@ -177,8 +177,8 @@ func TestRepairConvergesStranded(t *testing.T) {
 	h.awaitGenerated(t, b, h.put(t, b, entityValue(t, b, nil, "doc.meta.title", "b first")))
 	// The Worker's failure, through its production callback, of an entity ENTITY_STATES does not
 	// hold: a repair pass that retried it would find it absent and clear it.
-	h.c.onTerminal(t.Context(), gone, 5, embedding.OutcomeFailed, "timeout")
-	h.assertFailed(t, "after the Worker's failure", map[string]uint64{"timeout": 1})
+	h.c.onTerminal(t.Context(), gone, 5, embedding.OutcomeFailed, "dimension_mismatch")
+	h.assertFailed(t, "after the Worker's failure", map[string]uint64{"dimension_mismatch": 1})
 
 	editStream(t, client, graph.BucketEntityStates, directGets(false))
 	editStream(t, client, graph.BucketEmbeddingIndex, writesFail(true))
@@ -191,19 +191,19 @@ func TestRepairConvergesStranded(t *testing.T) {
 	// Hop 1 marks the failed delete before it completes the tombstone's revision.
 	h.awaitIndexed(t, "B's tombstone indexed", lastRevision(t, client, graph.BucketEntityStates))
 	h.assertFailed(t, "after A's read and B's delete failed", map[string]uint64{
-		embedding.ReasonEntityReadFailed: 1, embedding.ReasonDeleteFailed: 1, "timeout": 1})
+		embedding.ReasonEntityReadFailed: 1, embedding.ReasonDeleteFailed: 1, "dimension_mismatch": 1})
 
 	// The read answers now and the write after it fails: A is marked for the write.
 	h.c.repair(t.Context())
 	h.assertFailed(t, "after a pass with writes failing", map[string]uint64{
-		embedding.ReasonPendingWriteFailed: 1, embedding.ReasonDeleteFailed: 1, "timeout": 1})
+		embedding.ReasonPendingWriteFailed: 1, embedding.ReasonDeleteFailed: 1, "dimension_mismatch": 1})
 	if record, err := h.record(t.Context(), b); err != nil || record == nil {
 		t.Fatalf("B's record while deletes fail = %+v, %v; want still there", record, err)
 	}
 
 	editStream(t, client, graph.BucketEmbeddingIndex, writesFail(false))
 	h.c.repair(t.Context())
-	h.assertFailed(t, "after a pass with writes answering", map[string]uint64{"timeout": 1})
+	h.assertFailed(t, "after a pass with writes answering", map[string]uint64{"dimension_mismatch": 1})
 	if record, err := h.record(t.Context(), b); err != nil || record != nil {
 		t.Errorf("B's record after the repair = %+v, %v; want none", record, err)
 	}
@@ -212,8 +212,8 @@ func TestRepairConvergesStranded(t *testing.T) {
 	s := await(t, "the Worker's failure published alone",
 		func(ctx context.Context) (status, error) { return publishedStatus(ctx, client) },
 		func(s status) bool { return s.envelope.FailedCount == 1 })
-	if !maps.Equal(s.envelope.FailedReasons, map[string]uint64{"timeout": 1}) || s.envelope.Ready {
-		t.Errorf("published envelope %+v; want not ready with reasons {timeout: 1}", s.envelope)
+	if !maps.Equal(s.envelope.FailedReasons, map[string]uint64{"dimension_mismatch": 1}) || s.envelope.Ready {
+		t.Errorf("published envelope %+v; want not ready with reasons {dimension_mismatch: 1}", s.envelope)
 	}
 }
 
@@ -221,7 +221,8 @@ func TestRepairConvergesStranded(t *testing.T) {
 // Start returns, with their reasons, and the first envelope carries them; with none, nothing is
 // counted. The seeded entity is not in ENTITY_STATES, so nothing delivered changes its record.
 // The Worker retries a failed record it finds at Start; the record's body is in the gated store,
-// so the retry waits there while the seed is checked, and once let go it clears the failure.
+// so the retry waits there while the seed is checked, and once let go it clears the failure. A
+// repair pass while the retry waits leaves the entity alone: it waits for the Worker's outcome.
 func TestStartSeedsFailedMap(t *testing.T) {
 	t.Run("failed records", func(t *testing.T) {
 		client := fixtureClient(t)
@@ -258,6 +259,10 @@ func TestStartSeedsFailedMap(t *testing.T) {
 		if key := <-store.opened; key != "seeded" {
 			t.Fatalf("the Worker opened %q; want seeded", key)
 		}
+		// timeout is a reason the lane retries, and the entity is not in ENTITY_STATES: a pass that
+		// re-drove it would find it absent and clear it.
+		h.c.repair(t.Context())
+		h.assertFailed(t, "after a pass while the Worker's retry waits", map[string]uint64{"timeout": 1})
 		store.release("seeded")
 		h.awaitGenerated(t, a, 4)
 		// The Worker's callback records the success after the generated record is written.

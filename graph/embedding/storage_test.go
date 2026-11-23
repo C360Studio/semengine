@@ -778,6 +778,38 @@ func TestScanFailed_SeedsFromSnapshot(t *testing.T) {
 	}
 }
 
+// TestScanFailed_KeepsProviderReasons: a failure filed as rate_limited or provider_unavailable
+// reads back under the same reason after a restart, not as unknown.
+func TestScanFailed_KeepsProviderReasons(t *testing.T) {
+	t.Parallel()
+	kv := &replayKV{memKV: newMemKV()}
+	s := newTestStorage(t, kv, newMemKV())
+
+	putRecord(t, kv, &Record{EntityID: "acme.ops.src.embed.record.busy", Status: StatusFailed, Reason: "rate_limited", SourceRevision: 3})
+	putRecord(t, kv, &Record{EntityID: "acme.ops.src.embed.record.down", Status: StatusFailed, Reason: "provider_unavailable", SourceRevision: 4})
+
+	got, err := s.ScanFailed(t.Context())
+	if err != nil {
+		t.Fatalf("ScanFailed: %v", err)
+	}
+	byID := map[string]FailedEntry{}
+	for _, e := range got {
+		byID[e.EntityID] = e
+	}
+	want := map[string]FailedEntry{
+		"acme.ops.src.embed.record.busy": {EntityID: "acme.ops.src.embed.record.busy", Reason: "rate_limited", SourceRevision: 3},
+		"acme.ops.src.embed.record.down": {EntityID: "acme.ops.src.embed.record.down", Reason: "provider_unavailable", SourceRevision: 4},
+	}
+	if len(byID) != len(want) {
+		t.Fatalf("ScanFailed returned %v, want %v", byID, want)
+	}
+	for id, w := range want {
+		if byID[id] != w {
+			t.Errorf("entry %s = %+v, want %+v", id, byID[id], w)
+		}
+	}
+}
+
 // TestScanFailed_NormalizesReasonAndSeedsRevision: the scan collapses every stored
 // reason outside the bounded enum to reasonUnknown and carries each record's source
 // revision.

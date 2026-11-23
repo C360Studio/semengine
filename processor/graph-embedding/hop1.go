@@ -66,6 +66,11 @@ func (c *Component) reconcileBatch(ctx context.Context, keys []string) {
 func (c *Component) reconcileEntity(ctx context.Context, key string) {
 	c.hop1Mu.Lock()
 	defer c.hop1Mu.Unlock()
+	c.reconcileLocked(ctx, key)
+}
+
+// reconcileLocked is reconcileEntity with hop1Mu held.
+func (c *Component) reconcileLocked(ctx context.Context, key string) {
 	delivered := c.delivered.Load()
 	entry, err := c.entities.Get(ctx, key)
 	if err != nil {
@@ -168,6 +173,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 		}
 	}
 
+	c.failed.queueing(key, revision)
 	saved, err := c.storage.SavePendingGuarded(ctx, record, c.identity())
 	if err != nil {
 		// No durable record was written, so the revision is not done: it stays pending
@@ -256,7 +262,7 @@ func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevisio
 			c.lifecycle.CountError()
 		}
 	} else {
-		c.failed.succeeded(entityID, sourceRevision)
+		c.failed.succeeded(entityID, sourceRevision, outcome)
 	}
 	c.complete(entityID, sourceRevision)
 }
@@ -278,15 +284,13 @@ func (c *Component) complete(key string, revision uint64) {
 	c.follower.Load().Complete(key, revision)
 }
 
-// repairInterval is how often the repair lane retries hop 1's failures, as graph-index's
-// indexRepairInterval.
+// repairInterval is how often the repair lane runs, as graph-index's indexRepairInterval.
 const repairInterval = 30 * time.Second
 
-// repairLoop is the repair lane: every repairInterval
-// it retries hop 1's failures, on a goroutine of its own so its reads and writes never delay
-// the follower's heartbeat, until ctx, the run context, ends. Retry is flat and unbounded: the
-// lane re-drives only failures of the component's own reads and writes, never the Worker's, so
-// no entity fails there for good, and while one is failed readiness reads degraded.
+// repairLoop is the repair lane: every repairInterval it runs a pass (repair), on a goroutine of
+// its own so its reads and writes never delay the follower's heartbeat, until ctx, the run
+// context, ends. Retry is unbounded: an entity leaves the lane on a stored vector, a failure whose
+// reason no retry can fix, or a new revision, and while one is failed readiness reads degraded.
 func (c *Component) repairLoop(ctx context.Context) {
 	ticker := time.NewTicker(repairInterval)
 	defer ticker.Stop()
@@ -300,10 +304,14 @@ func (c *Component) repairLoop(ctx context.Context) {
 	}
 }
 
-// repair is one pass of the repair lane: each entity whose failure is hop 1's own converges on
-// the ENTITY_STATES value read now, through the same reconcileEntity as a delivery; a failure
-// on the way marks it again for the next pass. The targets are read before hop1Mu is taken
-// (lock order hop1Mu, then the map's).
+// repair is one pass of the repair lane. First each entity whose failure is hop 1's own
+// converges on the ENTITY_STATES value read now, through the same reconcileEntity as a delivery;
+// a failure on the way marks it again for the next pass. Then the Worker's failures that may clear
+// on their own are re-driven the same way, so an entity deleted, damaged or left without text
+// meanwhile is ended rather than embedded: all of them when the provider answered since the
+// previous pass, one otherwise (failedMap.retryTargets). Each re-drive writes a pending record, and
+// the entity waits for the Worker's outcome of it before another. The targets are read before
+// hop1Mu is taken (lock order hop1Mu, then the map's).
 func (c *Component) repair(ctx context.Context) {
 	for _, key := range c.failed.repairTargets() {
 		if ctx.Err() != nil {
@@ -311,4 +319,21 @@ func (c *Component) repair(ctx context.Context) {
 		}
 		c.reconcileEntity(ctx, key)
 	}
+	for _, key := range c.failed.retryTargets() {
+		if ctx.Err() != nil {
+			return
+		}
+		c.retryEntity(ctx, key)
+	}
+}
+
+// retryEntity re-drives the Worker's failure of key through hop 1, unless a delivery queued the
+// entity since retryTargets read it: that pending record already waits for the Worker.
+func (c *Component) retryEntity(ctx context.Context, key string) {
+	c.hop1Mu.Lock()
+	defer c.hop1Mu.Unlock()
+	if !c.failed.retryable(key) {
+		return
+	}
+	c.reconcileLocked(ctx, key)
 }

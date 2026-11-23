@@ -29,7 +29,7 @@ from `EMBEDDING_INDEX`; "Query verbs" below says what they accept and return.
 ENTITY_STATES ──► graph/follower ──► hop 1 ──► EMBEDDING_INDEX (pending) ──► Worker ──► EMBEDDING_INDEX (generated
   (KV watch)       (the one watch,    (this      ▲                          (hop 2)      or failed), EMBEDDING_DEDUP
                     the watermark,    package)   │
-                    GRAPH_STATUS)                └── repair lane retries hop 1's failures every 30 s
+                    GRAPH_STATUS)                └── repair lane retries failures every 30 s
 ```
 
 `graph/follower` owns the watch, the replay, the watermark and the readiness record it writes to `GRAPH_STATUS` under
@@ -152,8 +152,20 @@ older revision is not counted, and a success at a revision clears a failure at o
 the failed records `EMBEDDING_INDEX` holds at start. Three failures are hop 1's own: a failed record delete, a failed
 pending write and a failed entity read. Every 30 seconds the repair lane retries them against the entity's current
 value; any later convergence of the entity in hop 1 (hop 1 writes its pending record, removes its record, or finds a
-generated record already standing) clears the failure. The Worker's failures are not retried: they wait for a new
-revision of the entity or a restart.
+generated record already standing) clears the failure.
+
+After those, the same pass retries the Worker's failures whose reason names a fault that may clear on its own
+(`embedding.RetryableReason`: `connection_refused`, `timeout`, `rate_limited`, `provider_unavailable`, `internal`).
+A retry goes through hop 1 as a delivery does, reading the entity's current value, so an entity deleted, damaged or
+left without text meanwhile is ended rather than embedded. While the provider is still down a pass retries one
+entity, the next after the last one retried in entity ID order, wrapping, so the provider gets one request per pass
+and one entity whose own text keeps failing holds back no other. Once the Worker has stored a vector for a failed
+entity since the previous pass, the provider answers again, and the next pass retries every one. A skipped or
+deleted outcome does not count as a stored vector. An entity whose pending record is waiting for the Worker (written
+by a retry or a delivery after its failure, or a failed record the Worker retries at start) is not retried again
+until the Worker reports, and stays counted failed meanwhile. The other reasons (`dimension_mismatch`,
+`embedder_error`, `content_error`, `unknown`) are never retried: they wait for a new revision of the entity or a
+restart. Tier 1 search thus comes back without a restart once the provider answers.
 
 ## Query verbs
 
@@ -236,7 +248,14 @@ under the same prefix.
 - **Double count after a restart without the store.** If the process restarts with no store registered for an
   offloaded body, the Worker's replay of the old pending record and hop 1's re-read of the entity are two
   exclusions, and `content_unresolved_total` counts both.
-- **No retry for the Worker's failures.** See the repair lane above.
+- **Only some of the Worker's failures are retried.** A failure whose reason says the request itself was refused
+  waits for a new revision or a restart; see the repair lane above. An entity whose Worker outcome never arrives (its
+  failed record could not be written, or its processing panicked) waits too, and is not retried.
+- **A NATS fault during a retry counts the entity under hop 1's reason.** If hop 1's own read or write of the entity
+  fails while the lane retries it, the entity is counted under that hop 1 reason, as any hop 1 failure is, and the
+  verbs are withheld. Once hop 1 converges, the entity is counted not failed until the Worker reports its outcome, and
+  a repeat Worker failure then adds one to `ErrorCount` again. Nothing is lost: the Worker's outcome restores the
+  count.
 - **Hop 1 is serial.** A slow pending write delays delivery of every entry behind it; the heartbeat keeps
   publishing, and `staleness_ms` rises.
 

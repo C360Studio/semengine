@@ -27,7 +27,7 @@ func TestTruncate_CrossLaneEquivalence(t *testing.T) {
 
 	// Inline lane.
 	inline := &Worker{maxSourceTextLen: capLen}
-	inlineText, err := inline.getSourceText(t.Context(), &Record{SourceText: body})
+	inlineText, _, err := inline.getSourceText(t.Context(), &Record{SourceText: body})
 	if err != nil {
 		t.Fatalf("inline getSourceText: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestTruncate_CrossLaneEquivalence(t *testing.T) {
 		maxSourceTextLen: capLen,
 		storeResolver:    fakeResolver{stores: map[string]storage.StreamableStore{"objectstore": readerStore{data: body}}},
 	}
-	offloadedText, err := offloaded.getSourceText(t.Context(), &Record{StorageRef: &StorageRef{StorageInstance: "objectstore", Key: "k"}})
+	offloadedText, _, err := offloaded.getSourceText(t.Context(), &Record{StorageRef: &StorageRef{StorageInstance: "objectstore", Key: "k"}})
 	if err != nil {
 		t.Fatalf("offloaded getSourceText: %v", err)
 	}

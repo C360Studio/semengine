@@ -93,7 +93,7 @@ func TestGetSourceText_Truncation(t *testing.T) {
 		SourceText: "this is a longer text that should be truncated",
 	}
 
-	text, err := w.getSourceText(t.Context(), record)
+	text, _, err := w.getSourceText(t.Context(), record)
 	if err != nil {
 		t.Fatalf("getSourceText error: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestGetSourceText_Truncation(t *testing.T) {
 func TestGetSourceText_ZeroCapMeansDefault(t *testing.T) {
 	w := &Worker{maxSourceTextLen: 0}
 
-	text, err := w.getSourceText(t.Context(), &Record{SourceText: strings.Repeat("abcd ", 2000)})
+	text, _, err := w.getSourceText(t.Context(), &Record{SourceText: strings.Repeat("abcd ", 2000)})
 	if err != nil {
 		t.Fatalf("getSourceText error: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestGetSourceText_ZeroCapMeansDefault(t *testing.T) {
 	}
 
 	short := strings.Repeat("word ", 500)
-	if text, _ := w.getSourceText(t.Context(), &Record{SourceText: short}); text != short {
+	if text, _, _ := w.getSourceText(t.Context(), &Record{SourceText: short}); text != short {
 		t.Error("text under the default cap was truncated")
 	}
 }
@@ -263,7 +263,7 @@ func TestGetSourceText_StorageRef_UsesStreaming(t *testing.T) {
 		StorageRef: &StorageRef{StorageInstance: "content", Key: "doc/safety"},
 	}
 
-	text, err := w.getSourceText(ctx, record)
+	text, _, err := w.getSourceText(ctx, record)
 	if err != nil {
 		t.Fatalf("getSourceText error: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestGetSourceText_OffloadedWithIdentity_ConcatenatesIdentityFirst(t *testin
 		StorageRef:   &StorageRef{StorageInstance: "content", Key: "doc/safety"},
 	}
 
-	text, err := w.getSourceText(ctx, record)
+	text, _, err := w.getSourceText(ctx, record)
 	if err != nil {
 		t.Fatalf("getSourceText error: %v", err)
 	}

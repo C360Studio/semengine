@@ -9,13 +9,11 @@ import (
 	"github.com/c360studio/semengine/storage"
 )
 
-// TestFetchTextFromStorage_OverCapCountsTruncation is the offloaded-lane half of
-// the "truncation MUST be observable" requirement. The offloaded (ContentStorable)
-// lane truncates in fetchTextFromStorage, NOT at getSourceText's word-cut branch, so
-// it must count its own truncation (IncTruncated) or truncation of the primary
-// adopter's lane is silent. semsource drives exactly this lane, so silence here
-// means the metric reads ~0 for the lane that truncates most.
-func TestFetchTextFromStorage_OverCapCountsTruncation(t *testing.T) {
+// TestFetchTextFromStorage_OverCapReportsCut is the offloaded lane's half of keeping a cut
+// observable: the body is truncated in fetchTextFromStorage, not in getSourceText's inline
+// branch, so it must report the cut, or the Worker never counts a cut on the lane offloaded
+// bodies, the longest texts, take.
+func TestFetchTextFromStorage_OverCapReportsCut(t *testing.T) {
 	store := &mockStreamableStore{
 		data: map[string][]byte{
 			"doc/big": []byte(strings.Repeat("x", 250)), // 250 bytes, cap 100
@@ -28,22 +26,24 @@ func TestFetchTextFromStorage_OverCapCountsTruncation(t *testing.T) {
 		metrics:          m,
 	}
 
-	text, _, err := w.fetchTextFromStorage(t.Context(), &StorageRef{StorageInstance: "content", Key: "doc/big"})
+	text, bodyTruncated, err := w.fetchTextFromStorage(t.Context(), &StorageRef{StorageInstance: "content", Key: "doc/big"})
 	if err != nil {
 		t.Fatalf("fetchTextFromStorage: %v", err)
 	}
 	if len(text) != 100 {
 		t.Errorf("returned %d bytes, want the cap of 100", len(text))
 	}
-	if got := m.snapshot().truncated; got != 1 {
-		t.Errorf("truncated count = %d, want 1: offloaded-lane truncation must be observable (#602)", got)
+	if !bodyTruncated {
+		t.Error("bodyTruncated = false for a body over the cap")
+	}
+	if got := m.snapshot().truncated; got != 0 {
+		t.Errorf("truncated count = %d before any vector is stored, want 0", got)
 	}
 }
 
-// TestFetchTextFromStorage_UnderCapDoesNotCountTruncation guards the boundary: a
-// body that fits the cap must not report truncation (the +1 read must not
-// mis-fire on exactly-cap content).
-func TestFetchTextFromStorage_UnderCapDoesNotCountTruncation(t *testing.T) {
+// TestFetchTextFromStorage_UnderCapReportsNoCut guards the boundary: a body that fits the
+// cap must not report a cut (the +1 read must not mis-fire on exactly-cap content).
+func TestFetchTextFromStorage_UnderCapReportsNoCut(t *testing.T) {
 	store := &mockStreamableStore{
 		data: map[string][]byte{
 			"doc/exact": []byte(strings.Repeat("y", 100)), // exactly the cap
@@ -56,11 +56,15 @@ func TestFetchTextFromStorage_UnderCapDoesNotCountTruncation(t *testing.T) {
 		metrics:          m,
 	}
 
-	if _, _, err := w.fetchTextFromStorage(t.Context(), &StorageRef{StorageInstance: "content", Key: "doc/exact"}); err != nil {
+	_, bodyTruncated, err := w.fetchTextFromStorage(t.Context(), &StorageRef{StorageInstance: "content", Key: "doc/exact"})
+	if err != nil {
 		t.Fatalf("fetchTextFromStorage: %v", err)
 	}
+	if bodyTruncated {
+		t.Error("bodyTruncated = true: content that fits the cap is not truncated")
+	}
 	if got := m.snapshot().truncated; got != 0 {
-		t.Errorf("truncated count = %d, want 0: content that fits the cap is not truncated", got)
+		t.Errorf("truncated count = %d, want 0", got)
 	}
 }
 
@@ -96,7 +100,7 @@ func TestSaveAndNotify_SupersededDropSkipsOnGenerated(t *testing.T) {
 
 	// An older revision (5) completes last — its SaveGenerated drops as superseded.
 	// Inline record (no StorageRef): the offloaded-identity counting block is not exercised.
-	w.saveAndNotify(ctx, entityID, &Record{EntityID: entityID}, []float32{5, 5, 5}, "hash-5", 5, false)
+	w.saveAndNotify(ctx, entityID, &Record{EntityID: entityID}, []float32{5, 5, 5}, "hash-5", 5, false, "")
 
 	if onGeneratedFired {
 		t.Error("onGenerated fired for a superseded (older-revision) write; a stale vector would be pushed to caches")
@@ -138,7 +142,7 @@ func TestSaveAndNotify_SupersededDedupHitDoesNotCount(t *testing.T) {
 	}
 
 	// A dedup HIT for an older revision (5) — its save is superseded by rev 10.
-	w.saveAndNotify(ctx, entityID, &Record{EntityID: entityID}, []float32{5, 5, 5}, "hash-5", 5, true)
+	w.saveAndNotify(ctx, entityID, &Record{EntityID: entityID}, []float32{5, 5, 5}, "hash-5", 5, true, "")
 
 	if got := m.snapshot().dedupHits; got != 0 {
 		t.Errorf("dedupHits = %d, want 0: a superseded dedup hit must not count (it skips generated_total)", got)
@@ -165,7 +169,7 @@ func TestSaveAndNotify_StoredDedupHitCounts(t *testing.T) {
 	}
 
 	// A dedup hit at the current revision stores successfully.
-	if terminal, _, _ := w.saveAndNotify(ctx, entityID, &Record{EntityID: entityID}, []float32{1, 2, 3}, "hash-3", 3, true); !terminal {
+	if terminal, _, _ := w.saveAndNotify(ctx, entityID, &Record{EntityID: entityID}, []float32{1, 2, 3}, "hash-3", 3, true, ""); !terminal {
 		t.Error("saveAndNotify returned non-terminal for a successful store")
 	}
 	if got := m.snapshot().dedupHits; got != 1 {

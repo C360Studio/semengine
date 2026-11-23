@@ -13,7 +13,8 @@ import (
 // FuzzReplyIsWholeOrRefused feeds arbitrary bytes as a provider's 200 reply to a two-text
 // request. Whatever the bytes, the call never panics, and it either returns an error with no
 // vectors or two non-empty vectors whose width is the one Dimensions reports, each the
-// numbers the reply carries at that vector's index.
+// numbers the reply carries at that vector's index and marked truncated only when that entry
+// carries "truncated": true.
 func FuzzReplyIsWholeOrRefused(f *testing.F) {
 	for _, seed := range []string{
 		`{"object":"list","model":"m","data":[{"index":0,"embedding":[1,1]},{"index":1,"embedding":[2,2]}]}`,
@@ -31,6 +32,10 @@ func FuzzReplyIsWholeOrRefused(f *testing.F) {
 		`{"object":"list","model":"m","data":[{"index":null,"embedding":[1]},{"index":1,"embedding":[2]}]}`,
 		`{"object":"list","model":"m","data":[{"index":0,"embedding":[null,1]},{"index":1,"embedding":[2,2]}]}`,
 		`{"object":"list","model":"m","data":null}`,
+		`{"object":"list","model":"m","data":[{"index":0,"embedding":[1,1],"truncated":true},{"index":1,"embedding":[2,2],"truncated":false}]}`,
+		`{"object":"list","model":"m","data":[{"index":1,"embedding":[2,2],"truncated":true},{"index":0,"embedding":[1,1],"truncated":null}]}`,
+		`{"object":"list","model":"m","data":[{"index":0,"embedding":[1,1],"truncated":"true"},{"index":1,"embedding":[2,2]}]}`,
+		`{"object":"list","model":"m","data":[{"index":0,"embedding":[1,1],"truncated":1},{"index":1,"embedding":[2,2]}]}`,
 		`{"index":99999999999999999999}`,
 		`not json`,
 		``,
@@ -43,7 +48,7 @@ func FuzzReplyIsWholeOrRefused(f *testing.F) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		got, err := e.Generate(t.Context(), []string{"a", "b"})
+		got, err := e.GenerateMarked(t.Context(), []string{"a", "b"})
 		if err != nil {
 			if got != nil {
 				t.Fatalf("error %v came with vectors %v", err, got)
@@ -58,16 +63,19 @@ func FuzzReplyIsWholeOrRefused(f *testing.F) {
 			t.Fatalf("accepted %v with Dimensions() %d; want two vectors of a learned width", got, width)
 		}
 		for i, v := range got {
-			if len(v) != width {
-				t.Fatalf("vector %d has width %d, Dimensions() says %d", i, len(v), width)
+			if len(v.Vector) != width {
+				t.Fatalf("vector %d has width %d, Dimensions() says %d", i, len(v.Vector), width)
 			}
 		}
-		want := replyVectors(t, body)
+		want, marks := replyVectors(t, body), replyMarks(t, body)
 		for i := range got {
-			for j := range got[i] {
-				if got[i][j] != want[i][j] {
+			for j := range got[i].Vector {
+				if got[i].Vector[j] != want[i][j] {
 					t.Fatalf("accepted %v, but the reply carries %v", got, want)
 				}
+			}
+			if got[i].Truncated != marks[i] {
+				t.Fatalf("text %d marked truncated %v, but the reply's mark is %v", i, got[i].Truncated, marks[i])
 			}
 		}
 	})
@@ -109,6 +117,36 @@ func replyVectors(t *testing.T, body string) [2][]float32 {
 				t.Fatalf("accepted coordinate %s: %v", n, err)
 			}
 			out[i] = append(out[i], float32(f))
+		}
+	}
+	return out
+}
+
+// replyMarks reads each accepted entry's truncated mark at its index without the client's decoder:
+// absent or null is false, and an accepted mark that is not a boolean fails the test.
+func replyMarks(t *testing.T, body string) [2]bool {
+	t.Helper()
+	var r struct {
+		Data []struct {
+			Index     json.Number `json:"index"`
+			Truncated any         `json:"truncated"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatalf("accepted a reply that does not decode: %v", err)
+	}
+	var out [2]bool
+	for _, entry := range r.Data {
+		i, err := strconv.Atoi(entry.Index.String())
+		if err != nil || i < 0 || i > 1 {
+			t.Fatalf("accepted index %s", entry.Index)
+		}
+		switch mark := entry.Truncated.(type) {
+		case nil:
+		case bool:
+			out[i] = mark
+		default:
+			t.Fatalf("accepted a truncated mark %v that is not a boolean", mark)
 		}
 	}
 	return out

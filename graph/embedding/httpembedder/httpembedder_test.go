@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/graph/embedding/httpembedder"
 )
 
@@ -431,5 +432,39 @@ func TestNewRefusesConfig(t *testing.T) {
 			t.Fatalf("New(%q): Model %q, Dimensions %d, Close %v; want %q, 0, nil",
 				base, e.Model(), e.Dimensions(), e.Close(), testModel)
 		}
+	}
+}
+
+// TestTruncatedMarkPerText: GenerateMarked returns each text's vector with the provider's
+// truncated mark for that text, placed by index like the vector. The reply is out of input order
+// and marks only the second text; a text with no mark was read whole. Generate returns the same
+// vectors without the marks.
+func TestTruncatedMarkPerText(t *testing.T) {
+	p := newProvider(t, fixed(http.StatusOK, embedReply{Object: "list", Model: testModel, Data: []embedObject{
+		{Object: "embedding", Embedding: []float32{2, 2}, Index: 1, Truncated: true},
+		{Object: "embedding", Embedding: []float32{3, 3}, Index: 2},
+		{Object: "embedding", Embedding: []float32{1, 1}, Index: 0},
+	}}))
+	e := newEmbedder(t, httpembedder.Config{BaseURL: p.BaseURL(), Model: testModel})
+
+	got, err := e.GenerateMarked(t.Context(), []string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("GenerateMarked: %v", err)
+	}
+	want := []embedding.MarkedVector{
+		{Vector: []float32{1, 1}},
+		{Vector: []float32{2, 2}, Truncated: true},
+		{Vector: []float32{3, 3}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GenerateMarked = %+v, want %+v: only text 1 was marked truncated", got, want)
+	}
+
+	vectors, err := e.Generate(t.Context(), []string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if want := [][]float32{{1, 1}, {2, 2}, {3, 3}}; !reflect.DeepEqual(vectors, want) {
+		t.Fatalf("Generate = %v, want %v", vectors, want)
 	}
 }

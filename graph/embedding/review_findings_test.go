@@ -348,7 +348,7 @@ func TestColdStartIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 
 		const K = 8
 		start := make(chan struct{})
-		results := make([][]float32, K)
+		results := make([]MarkedVector, K)
 		errsOut := make([]error, K)
 		var wg sync.WaitGroup
 		for i := 0; i < K; i++ {
@@ -379,7 +379,7 @@ func TestColdStartIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 		}
 		for i := 0; i < K; i++ {
 			require.NoError(t, errsOut[i])
-			require.Equal(t, []float32{1, 2, 3}, results[i])
+			require.Equal(t, []float32{1, 2, 3}, results[i].Vector)
 		}
 	})
 }

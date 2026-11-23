@@ -50,3 +50,20 @@ type Embedder interface {
 	// this is typically a no-op; a local model releases its GPU/CPU resources here.
 	Close() error
 }
+
+// TruncationMarker is implemented by an Embedder whose provider says which texts it embedded
+// from only their opening, cutting each to fit the model's input window. The Worker embeds
+// documents through GenerateMarked when its embedder has it, and counts each text the provider
+// cut; for an embedder without it, only the Worker's own text cap is counted.
+type TruncationMarker interface {
+	// GenerateMarked is Generate, returning each text's vector with whether the provider cut
+	// that text, in the texts' order.
+	GenerateMarked(ctx context.Context, texts []string) ([]MarkedVector, error)
+}
+
+// MarkedVector is one text's embedding and whether the provider embedded only the opening of
+// the text.
+type MarkedVector struct {
+	Vector    []float32
+	Truncated bool
+}

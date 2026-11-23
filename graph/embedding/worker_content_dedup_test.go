@@ -39,7 +39,7 @@ func (m *recordingWorkerMetrics) IncFailedReason(reason string) {
 func (m *recordingWorkerMetrics) IncContentResolveError() { m.inc(&m.resolveErr) }
 func (m *recordingWorkerMetrics) IncContentResolved()     { m.inc(&m.resolved) }
 func (m *recordingWorkerMetrics) IncContentUnresolved()   { m.inc(&m.unresolved) }
-func (m *recordingWorkerMetrics) IncTruncated()           { m.inc(&m.truncated) }
+func (m *recordingWorkerMetrics) IncTruncated(string)     { m.inc(&m.truncated) }
 
 func (m *recordingWorkerMetrics) IncOffloadedIdentityIncluded() { m.inc(&m.identityIncluded) }
 func (m *recordingWorkerMetrics) IncOffloadedIdentityAbsent()   { m.inc(&m.identityAbsent) }
@@ -325,31 +325,6 @@ func TestDedupKeyIsOverTruncatedEmbeddedBytes(t *testing.T) {
 	if got := gen.count(); got != 1 {
 		t.Fatalf("Generate calls = %d, want 1: two texts identical within the cap must dedup on "+
 			"the truncated bytes, and hop-2 must ignore the hop-1 ContentHash (#623/#602)", got)
-	}
-}
-
-// TestTruncationEmitsSignal is the truncation observability half: truncating text to
-// the cap must emit a signal so the bytes actually embedded are discoverable, not
-// silently dropped. Text within the cap emits nothing, so the counter stays at zero.
-func TestTruncationEmitsSignal(t *testing.T) {
-	t.Parallel()
-
-	truncM := &recordingWorkerMetrics{}
-	wTrunc := &Worker{maxSourceTextLen: 10, metrics: truncM}
-	if _, err := wTrunc.getSourceText(t.Context(), &Record{SourceText: "this text is definitely longer than ten characters"}); err != nil {
-		t.Fatalf("getSourceText: %v", err)
-	}
-	if got := truncM.snapshot().truncated; got != 1 {
-		t.Fatalf("truncation signal count = %d, want 1: truncation must be observable, not silent (#602)", got)
-	}
-
-	shortM := &recordingWorkerMetrics{}
-	wShort := &Worker{maxSourceTextLen: 100, metrics: shortM}
-	if _, err := wShort.getSourceText(t.Context(), &Record{SourceText: "short"}); err != nil {
-		t.Fatalf("getSourceText: %v", err)
-	}
-	if got := shortM.snapshot().truncated; got != 0 {
-		t.Fatalf("truncation signal count = %d, want 0: text within the cap must not signal truncation", got)
 	}
 }
 

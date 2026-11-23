@@ -235,7 +235,8 @@ where it finds out (compile > boot error > typed runtime error > log > doc > now
     ID.
 - Platform: `service/component_manager.go:217` — `platform:          deps.Platform,`, copied as given. Nothing in
   `service` compares it with `config.Manager`'s effective ID (`git grep -n 'Platform' -- service/*.go ':!*_test.go'`:
-  only this line). graph-ingest checks authority against it: `processor/graph-ingest/authority_gate.go:52` —
+  six hits, `service/component_manager.go:42,217,434`, `service/dependencies.go:21`, `service/doc.go:81,202`, none
+  comparing). graph-ingest checks authority against it: `processor/graph-ingest/authority_gate.go:52` —
   `return semtypes.ValidateEntityIDAuthority(subject, c.platform.Org, c.platform.Platform, importLane)`.
 - Do-nothing path, `deps.Platform` built from the loaded cfg:
   - The boot has no error.
@@ -243,7 +244,10 @@ where it finds out (compile > boot error > typed runtime error > log > doc > now
   - Outside producers that read the record, as ADR-104 tells them to, get `authority_foreign`.
   - This silently undoes ADR-104 (`:178-179`, "passes `deps.Platform` unchanged" assumes it came from the effective
     configuration).
-  - Found out: nowhere at boot.
+  - Found out: nowhere at boot. The first-read examples point toward the wrong copy: `service/doc.go:80-84` and
+    `service/README.md:97-101` pass `cfg.Services` (`cfg` is never defined) and a `platform` of unstated source;
+    `service/README.md:348` passes `cfg.Services` again; the Dependencies table (`service/README.md:240`) says only
+    "the deployment's identity, given to each component".
 - Seen in a consumer: semboids origin/main ab4e0fb `cmd/semboids/main.go:146` — `platform := extractPlatformMeta(cfg)`,
   built from the loaded cfg before `NewConfigManager` (`:148`), at `:381-389`. semboids is still on SemStreams
   `v1.0.0-beta.160` (`go.mod:6`), and minting arrived in the beta.163 wave (ADR-104:134). So this is harmless today
@@ -253,12 +257,12 @@ where it finds out (compile > boot error > typed runtime error > log > doc > now
     `:420`). A `main` passing the file's services would run the file's services while the component manager reads
     the effective components.
   - `EnsureStreams` (item 1): smoke uses effective; semsource uses the file.
-  - No doc states which copy each step must read.
+  - No doc states which copy each step must read, and the examples above suggest the loaded one.
 
 ### F3: component writes before the component manager land in this boot
 
 - Writers: `config/manager.go:994` — `func (cm *Manager) PutComponentToKV(...)` and `:923` —
-  `func (cm *Manager) DeleteComponentFromKV(...)`. The in-memory apply is synchronous (`:1015-1017` `applyRevision`
+  `func (cm *Manager) DeleteComponentFromKV(...)`. The in-memory apply is synchronous (`:1014` `applyRevision`
   before return).
 - The component manager snapshots once when it is built: `service/component_manager.go:186-189` — "Runtime
   construction reads one snapshot of the configuration. Later desired writes remain configuration-manager state for
@@ -297,9 +301,12 @@ where it finds out (compile > boot error > typed runtime error > log > doc > now
 ### F6: optional and conditional calls, and teardown
 
 - Required in every boot spelling seen:
-  - `cfg.Validate()` (smoke `:246`)
-  - `client.WaitForConnection` (smoke `:258`)
-  - `service.RegisterAll` (smoke `:300`)
+  - `client.WaitForConnection` (smoke `:258`; semsource `run.go:502`)
+  - `service.RegisterAll` (smoke `:300`; semsource `run.go:401`)
+- Optional, before `config.Manager.Start`: `cfg.Validate()` (smoke `:246`) gives an earlier, clearer error. `Start`
+  validates anyway, on the mint and the adopt paths (`config/manager.go:1325,1473` -> `applyEffectivePlatformID` ->
+  `Mutate` -> `Validate`; doc `:1476-1483`). SemSource never calls it; it validates only its own configuration
+  (semsource `config/config.go:210`; `buildSemstreamsConfig`, `run.go:542`, has none).
 - Optional, before `StartAll`:
   - `Manager.StartHealthListener` (`service/service_manager_http.go:127`): probes answer during a slow boot, such as
     item 1's wait.
@@ -322,7 +329,7 @@ The fact being modelled is the ordered startup a product's `main` runs.
 | Spelling | Where | Order it uses |
 | --- | --- | --- |
 | Smoke composition root | `internal/smoke/stack_integration_test.go:242-320` | load -> `Validate` -> client Connect -> `WaitForConnection` -> `config.Manager.Start` -> `EnsureStreams(effective)` -> component registry -> vocabulary labels -> payload registry -> `RegisterAll` -> `ConfigureFromServices(effective)` with `deps.Platform` from effective -> `StartAll`; teardown `StopAll`, `Manager.Stop`, `Close` |
-| `service` package doc | `service/doc.go:68-97` | registry -> `UseHTTPMiddleware` (optional) -> `ConfigureFromServices` -> `StartAll` -> `StopAll` (no client, no config.Manager, no streams, no vocabulary) |
+| `service` package doc | `service/doc.go:68-97` | registry -> `UseHTTPMiddleware` (optional) -> `ConfigureFromServices(cfg.Services, deps)` (`cfg` undefined; `Platform: platform` of unstated source) -> `StartAll` -> `StopAll` (no client, no config.Manager, no streams, no vocabulary) |
 | `service/README.md` | `:82` "Composing and starting" | as `doc.go`; no `EnsureStreams` (grep: only `:750`) |
 | `config/README.md` | `:177-198` | config.Manager Start/Stop only; streams at `:301` |
 | `docs/contract.md` | `:146-191` | component and payload registries only; ends at "start them" |

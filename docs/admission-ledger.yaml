@@ -5068,9 +5068,9 @@
     any other key or port refused naming it; a nil NATS client refused
   dependencies_and_side_effects: >-
     production: component, graph, graph/kvcatalog, internal/httpadmission, internal/kvwatch, internal/tlsutil, metric,
-    natsclient, pkg/errs, pkg/graphview, pkg/security (in-set); github.com/gorilla/websocket v1.5.3 (BSD-2-Clause, new
-    module); nats.go; prometheus/client_golang. Binds its own TCP listener; one core subscription or one ENTITY_STATES
-    watch per instance; one writer and one reader goroutine per client, joined by Stop; no bucket write
+    natsclient, pkg/errs, pkg/graphview, pkg/security (in-set); github.com/gorilla/websocket
+    v1.5.4-0.20240701034025-d67f41855da4 (BSD-2-Clause, new module); nats.go; prometheus/client_golang. Binds its own
+    TCP listener; one core subscription or one ENTITY_STATES watch per instance; one writer and one reader goroutine per client, joined by Stop; no bucket write
   known_risks: >-
     class:port-refactor, tracked by #34. Subject delivery is at most once, best effort, nothing acknowledged or
     replayed; the pin's JetStream input, pending-ack ring and delivery_mode are dropped. Applied state converges and

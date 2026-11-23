@@ -43,7 +43,7 @@ output in `notes/<task>.md`. One pull request (#733), `Closes #724`, `Closes #73
   Premises: `failed.go:44-50,100-121,209-220`, `hop1.go:253-262,281-314`, `component.go:346-350`,
   `repair_integration_test.go:180,237-246`.
 - [ ] 3.2 Implement D3 (B) and D4 (A) in `failed.go` and `hop1.go`, with the re-check under `hop1Mu`. Update the
-  README sections "Failed entities and the repair lane" (with D5's declared limit, linking #734) and "Known limits", the
+  README sections "Failed entities and the repair lane" (with D5's declared limit in plain words) and "Known limits", the
   `graph/embedding` README paragraph on reasons and `pkg/errs` marking, and `docs/contract.md:34` (tier 1 returns
   without a restart). Accept: 3.1 passes, `task verify`.
 

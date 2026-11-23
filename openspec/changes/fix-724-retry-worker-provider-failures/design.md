@@ -92,9 +92,8 @@ reason under hop 1's, at the cost of another field and a fault-injected test.
   restored; the test waits up to one 30 s pass. `connection_refused` stays proven by `TestClassifyEmbedErr`. Owner
   question 4.
 
-Loop supervision (#714's questions): the goal is a stored vector; the Worker measures it, not the lane; unbounded
-by design, as hop 1's lane; it ends on a vector, a reason not retried, or a new revision; `degraded` notices no
-progress.
+Loop supervision (#714): the goal is a stored vector, measured by the Worker; unbounded, as hop 1's lane; it ends on
+a vector, a reason not retried, or a new revision; `degraded` shows no progress.
 
 ## Invariants (spec homes)
 

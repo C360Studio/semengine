@@ -210,9 +210,11 @@ func TestRetryOvertakenByWriteStaysFailed(t *testing.T) {
 	e := newOutageEmbedder()
 	h := startEmbeddingBy(t, fixtureClient(t), `{}`, nil, outageFactory(t, e))
 	a := entityID(1)
-	h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "down one"))
+	firstRev := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "down one"))
 	down := map[string]uint64{"provider_unavailable": 1}
 	h.awaitFailed(t, "while the provider is down", down)
+	// onTerminal counts the error before it completes the revision.
+	h.awaitIndexed(t, "the first failure", firstRev)
 	if got := h.c.Health().ErrorCount; got != 1 {
 		t.Fatalf("ErrorCount after the first failure = %d; want 1", got)
 	}

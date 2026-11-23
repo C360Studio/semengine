@@ -1,0 +1,51 @@
+// kvcount counts the keys of one KV bucket and tallies each record's "status" field.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+)
+
+func main() {
+	nc, err := nats.Connect(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+	defer nc.Close()
+	js, _ := jetstream.New(nc)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	kv, err := js.KeyValue(ctx, os.Args[2])
+	if err != nil {
+		fmt.Println("no bucket:", err)
+		return
+	}
+	lister, err := kv.ListKeys(ctx)
+	if err != nil {
+		panic(err)
+	}
+	keys, status := 0, map[string]int{}
+	for k := range lister.Keys() {
+		keys++
+		e, err := kv.Get(ctx, k)
+		if err != nil {
+			status["get_error"]++
+			continue
+		}
+		var r struct {
+			Status string `json:"status"`
+		}
+		if json.Unmarshal(e.Value(), &r) != nil {
+			status["undecodable"]++
+			continue
+		}
+		status[r.Status]++
+	}
+	fmt.Printf("bucket=%s keys=%d status=%v\n", os.Args[2], keys, status)
+}

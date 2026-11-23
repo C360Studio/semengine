@@ -54,5 +54,5 @@ output in `notes/<task>.md`. One pull request (#733), `Closes #724`, `Closes #73
 
 ## 5. Close
 
-- [ ] 5.1 Spec sync and archive as the last content commit; PR body `Closes #724`, `Closes #732`, `implemented-by:`,
+- [x] 5.1 Spec sync and archive as the last content commit; PR body `Closes #724`, `Closes #732`, `implemented-by:`,
   `reviewed-by:`.

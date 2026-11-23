@@ -435,6 +435,83 @@ func TestRestartURLDials(t *testing.T) {
 	}
 }
 
+// containerRunning reports Docker's own view of whether the container is running, read with the
+// Docker CLI rather than through the fixture.
+func containerRunning(t *testing.T, id string) bool {
+	t.Helper()
+	out, err := exec.Command("docker", "inspect", "--format", "{{.State.Running}}", id).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker inspect %s: %v\n%s", id, err, out)
+	}
+	return strings.TrimSpace(string(out)) == "true"
+}
+
+// RestartAfter calls whileDown once, with the container stopped as Docker reports it, and starts
+// the container only after whileDown returns: a file-backed message published before is readable
+// after, and the fixture's URL still dials.
+func TestRestartAfterHoldsTheServerDown(t *testing.T) {
+	f := startFixture(t)
+	ctx := t.Context()
+	if _, err := CreateStream(ctx, f.JetStream(), jetstream.FileStorage, "held", "held.>"); err != nil {
+		t.Fatal(err)
+	}
+	ack, err := f.JetStream().Publish(ctx, "held.1", []byte("kept"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := f.containerID
+
+	calls := 0
+	if err := f.RestartAfter(ctx, func(context.Context) error {
+		calls++
+		if containerRunning(t, id) {
+			t.Error("whileDown ran with the container still running")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("RestartAfter: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("whileDown ran %d times; want 1", calls)
+	}
+	if !containerRunning(t, id) {
+		t.Fatal("container not running after RestartAfter returned nil")
+	}
+	s, err := f.JetStream().Stream(ctx, "held")
+	if err != nil {
+		t.Fatalf("file stream after the held restart: %v", err)
+	}
+	if msg, err := s.GetMsg(ctx, ack.Sequence); err != nil || string(msg.Data) != "kept" {
+		t.Fatalf("file-backed message at sequence %d after the held restart: %v %v", ack.Sequence, msg, err)
+	}
+}
+
+// An error from whileDown fails RestartAfter at the while-down phase, wrapping the error, with the
+// container left stopped; the fixture refuses a later Restart and Stop still removes the container.
+func TestRestartAfterWhileDownErrorLeavesServerDown(t *testing.T) {
+	f := startFixture(t)
+	id := f.containerID
+	held := errors.New("held outage failed")
+	ctx := t.Context()
+	err := f.RestartAfter(ctx, func(context.Context) error { return held })
+	var pe *phaseError
+	if !errors.Is(err, held) || !errors.As(err, &pe) || pe.phase != "while-down" {
+		t.Fatalf("RestartAfter = %v; want the while-down phase wrapping %v", err, held)
+	}
+	if containerRunning(t, id) {
+		t.Fatal("container running after whileDown failed; want it left stopped")
+	}
+	if err := f.Restart(ctx); !errors.Is(err, errNotStarted) {
+		t.Fatalf("Restart after a failed RestartAfter = %v; want %v", err, errNotStarted)
+	}
+	if err := stop(t, f); err != nil {
+		t.Fatalf("Stop after a failed RestartAfter: %v", err)
+	}
+	if containerExists(t, id) {
+		t.Fatal("container still exists after Stop")
+	}
+}
+
 // nats-fixture › "Restart before Start", its second half: once Stop has begun, Restart refuses and
 // starts no container. The container is removed behind the fixture's back with the Docker CLI, so
 // Stop's own removal fails: Stop has begun, and keeps the container handle for a later Stop.

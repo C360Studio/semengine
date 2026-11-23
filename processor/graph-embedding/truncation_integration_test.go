@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/c360studio/semengine/component"
@@ -48,10 +49,12 @@ func truncatedCount(t *testing.T, h *harness, by string) float64 {
 const windowRunes = 20
 
 // cuttingProvider is a semembed-shaped embeddings endpoint that marks each text longer than
-// windowRunes truncated. Every vector is {1, 0, 0, 0}: the test reads only the marks.
-func cuttingProvider(t *testing.T) *httptest.Server {
+// windowRunes truncated, and counts the texts it marked in marked. Every vector is {1, 0, 0, 0}:
+// the test reads only the marks.
+func cuttingProvider(t *testing.T) (srv *httptest.Server, marked *atomic.Int64) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	marked = &atomic.Int64{}
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Model string   `json:"model"`
 			Input []string `json:"input"`
@@ -70,12 +73,25 @@ func cuttingProvider(t *testing.T) *httptest.Server {
 		for i, text := range req.Input {
 			data[i] = entry{Object: "embedding", Embedding: []float32{1, 0, 0, 0}, Index: i,
 				Truncated: len([]rune(text)) > windowRunes}
+			if data[i].Truncated {
+				marked.Add(1)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "model": req.Model, "data": data})
 	}))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, marked
+}
+
+// semembedFactory is graph-embedding registered with an HTTP embedder on provider.
+func semembedFactory(t *testing.T, provider *httptest.Server) component.Factory {
+	t.Helper()
+	return registeredFactory(t, func(registry *component.Registry) error {
+		return RegisterWithEmbedder(registry, "semembed", func() (embedding.Embedder, error) {
+			return httpembedder.New(httpembedder.Config{BaseURL: provider.URL + "/v1", Model: "m"})
+		})
+	})
 }
 
 // TestProviderCutCounted: graph-embedding on the HTTP embedder, against a provider that marks a
@@ -83,13 +99,8 @@ func cuttingProvider(t *testing.T) *httptest.Server {
 // text is under graph-embedding's own cap, and the short entity is not marked.
 func TestProviderCutCounted(t *testing.T) {
 	client := fixtureClient(t)
-	provider := cuttingProvider(t)
-	factory := registeredFactory(t, func(registry *component.Registry) error {
-		return RegisterWithEmbedder(registry, "semembed", func() (embedding.Embedder, error) {
-			return httpembedder.New(httpembedder.Config{BaseURL: provider.URL + "/v1", Model: "m"})
-		})
-	})
-	h := startEmbeddingBy(t, client, `{}`, nil, factory)
+	provider, _ := cuttingProvider(t)
+	h := startEmbeddingBy(t, client, `{}`, nil, semembedFactory(t, provider))
 
 	long, short := entityID(1), entityID(2)
 	longRev := h.put(t, long, entityValue(t, long, nil, "doc.meta.title", strings.Repeat("word ", 10)))
@@ -124,5 +135,34 @@ func TestTextCapCutCounted(t *testing.T) {
 	}
 	if n := truncatedCount(t, h, "provider"); n != 0 {
 		t.Errorf(`truncated_total{by="provider"} = %v, want 0: the embedder marks nothing`, n)
+	}
+}
+
+// TestCapCutCountedOnceWhenProviderAlsoCuts: an entity whose text graph-embedding cut at
+// max_text_len, and which the provider then marked truncated as well, is one entity embedded from
+// its opening, counted once under by="text_cap" and not under by="provider", so the two series
+// add up to the entities cut. The cap, 30, leaves the text longer than the provider's window, 20,
+// and the provider's own count shows it did mark that text.
+func TestCapCutCountedOnceWhenProviderAlsoCuts(t *testing.T) {
+	client := fixtureClient(t)
+	provider, marked := cuttingProvider(t)
+	h := startEmbeddingBy(t, client, `{"max_text_len":30}`, nil, semembedFactory(t, provider))
+
+	long, short := entityID(1), entityID(2)
+	longRev := h.put(t, long, entityValue(t, long, nil, "doc.meta.title", strings.Repeat("word ", 10)))
+	shortRev := h.put(t, short, entityValue(t, short, nil, "doc.meta.title", "short title"))
+	// The provider marks a text before it replies, and the Worker counts a cut before it writes
+	// the generated record awaited here.
+	h.awaitGenerated(t, long, longRev)
+	h.awaitGenerated(t, short, shortRev)
+
+	if n := marked.Load(); n != 1 {
+		t.Fatalf("the provider marked %d texts, want 1: the capped text must still be over its window", n)
+	}
+	if n := truncatedCount(t, h, "text_cap"); n != 1 {
+		t.Errorf(`truncated_total{by="text_cap"} = %v, want 1: one entity's text is past max_text_len`, n)
+	}
+	if n := truncatedCount(t, h, "provider"); n != 0 {
+		t.Errorf(`truncated_total{by="provider"} = %v, want 0: the provider's cut is of a text the cap already cut`, n)
 	}
 }

@@ -240,11 +240,11 @@ func TestOverCapContentDedupsAcrossLanes(t *testing.T) {
 		WithMaxSourceTextLen(capLen).
 		WithEmbedderType("test").
 		WithStoreResolver(resolver)
-	inlineText, err := w.getSourceText(ctx, &Record{SourceText: overCap})
+	inlineText, _, err := w.getSourceText(ctx, &Record{SourceText: overCap})
 	if err != nil {
 		t.Fatalf("inline getSourceText: %v", err)
 	}
-	offloadedText, err := w.getSourceText(ctx, &Record{StorageRef: &StorageRef{StorageInstance: "objectstore", Key: "k"}})
+	offloadedText, _, err := w.getSourceText(ctx, &Record{StorageRef: &StorageRef{StorageInstance: "objectstore", Key: "k"}})
 	if err != nil {
 		t.Fatalf("offloaded getSourceText: %v", err)
 	}

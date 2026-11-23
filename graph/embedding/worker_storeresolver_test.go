@@ -114,7 +114,7 @@ func TestGetSourceText_UnregisteredInstanceExcludesBodyAndContinuesIdentity(t *t
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
-	got, err := w.getSourceText(t.Context(), &Record{
+	got, _, err := w.getSourceText(t.Context(), &Record{
 		IdentityText: "inline identity",
 		StorageRef:   &StorageRef{StorageInstance: "missing", Key: "k"},
 	})

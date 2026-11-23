@@ -423,7 +423,7 @@ func (w *Worker) handleKVEntry(
 
 	w.logger.Debug("Processing pending embedding", "lane", lane, "entity_id", entityID)
 
-	sourceText, err := w.getSourceText(ctx, &record)
+	sourceText, capCut, err := w.getSourceText(ctx, &record)
 	if err != nil {
 		w.logger.Error("Failed to get source text", "entity_id", entityID, "error", err)
 		outcome, reason, terminal = w.markFailed(ctx, entityID, fmt.Errorf("text extraction failed: %w", err), failReasonContentError, sourceRevision)
@@ -453,7 +453,7 @@ func (w *Worker) handleKVEntry(
 	// truncated text), so the inline and offloaded lanes key identical content alike.
 	dedupKey := DedupKey(w.embedderIdentity(), sourceText)
 
-	vector, wasDedupHit, genOutcome, genReason, genTerminal, err := w.getOrGenerateEmbedding(ctx, entityID, sourceText, dedupKey, sourceRevision)
+	vector, wasDedupHit, genOutcome, genReason, genTerminal, err := w.getOrGenerateEmbedding(ctx, entityID, sourceText, dedupKey, sourceRevision, capCut)
 	if err != nil {
 		// Already logged and marked. genTerminal is false when the failure could not be
 		// recorded, so the record is still pending.
@@ -483,7 +483,10 @@ func (w *Worker) embedderIdentity() EmbedderIdentity {
 //
 // wasDedupHit reports a vector from the dedup bucket. The caller counts the hit only once the
 // save succeeds, so dedup hits never exceed stored vectors.
-func (w *Worker) getOrGenerateEmbedding(ctx context.Context, entityID, sourceText, key string, sourceRevision uint64) (vec []float32, wasDedupHit bool, outcome TerminalOutcome, reason string, terminal bool, err error) {
+//
+// capCut reports that getSourceText cut the text at the cap and counted it; a provider's mark on
+// that text is then not counted again.
+func (w *Worker) getOrGenerateEmbedding(ctx context.Context, entityID, sourceText, key string, sourceRevision uint64, capCut bool) (vec []float32, wasDedupHit bool, outcome TerminalOutcome, reason string, terminal bool, err error) {
 	dedupEnabled := key != ""
 
 	if dedupEnabled {
@@ -515,9 +518,11 @@ func (w *Worker) getOrGenerateEmbedding(ctx context.Context, entityID, sourceTex
 	}
 
 	vector := generated.Vector
-	// Counted per entity, so peers that shared this call each count their own cut text. A
-	// vector later reused from the dedup bucket is not counted again: the bucket keeps no mark.
-	if generated.Truncated && w.metrics != nil {
+	// Each entity embedded from its opening is counted once, so the two series add up: a text the
+	// cap already cut and counted is not counted again for the provider's mark. Counted per
+	// entity, so peers that shared this call each count their own cut text. A vector later reused
+	// from the dedup bucket is not counted again: the bucket keeps no mark.
+	if generated.Truncated && !capCut && w.metrics != nil {
 		w.metrics.IncTruncated(TruncatedByProvider)
 	}
 
@@ -685,16 +690,17 @@ func (w *Worker) textCap() int {
 //   - Inline (StorageRef nil): SourceText is the whole text.
 //
 // Both lanes truncate with truncateAtWord at textCap, so identical content embeds identical
-// bytes on either lane. The offloaded-identity pair is counted by saveAndNotify, not here.
-func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, error) {
+// bytes on either lane. capCut reports that the cap cut the text, counted here once. The
+// offloaded-identity pair is counted by saveAndNotify, not here.
+func (w *Worker) getSourceText(ctx context.Context, record *Record) (text string, capCut bool, err error) {
 	limit := w.textCap()
 	if record.StorageRef == nil {
-		text := record.SourceText
-		truncated := truncateAtWord(text, limit)
-		if len(truncated) < len(text) && w.metrics != nil {
+		truncated := truncateAtWord(record.SourceText, limit)
+		capCut = len(truncated) < len(record.SourceText)
+		if capCut && w.metrics != nil {
 			w.metrics.IncTruncated(TruncatedByTextCap)
 		}
-		return truncated, nil
+		return truncated, capCut, nil
 	}
 
 	// fetchTextFromStorage truncates the body and counts that truncation.
@@ -703,12 +709,12 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 		body, bodyTruncated, err = "", false, nil
 	}
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	// The separator joins identity and body only when both are present: an identity with an
 	// empty body embeds the identity alone, as an inline entity with that text would.
-	text := body
+	text = body
 	switch {
 	case record.IdentityText != "" && body != "":
 		text = record.IdentityText + identityBodySeparator + body
@@ -720,10 +726,11 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 	// counted at the fetch, so count here only a body that fit but was pushed over the cap by
 	// the identity.
 	truncated := truncateAtWord(text, limit)
-	if !bodyTruncated && len(truncated) < len(text) && w.metrics != nil {
+	combinedCut := len(truncated) < len(text)
+	if !bodyTruncated && combinedCut && w.metrics != nil {
 		w.metrics.IncTruncated(TruncatedByTextCap)
 	}
-	return truncated, nil
+	return truncated, bodyTruncated || combinedCut, nil
 }
 
 // truncateAtWord cuts text to at most maxLen runes at a word, by entitytext.Truncate. Both lanes

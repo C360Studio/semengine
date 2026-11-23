@@ -20,15 +20,16 @@ counted by the Worker through `WorkerMetrics.IncTruncated`, but graph-embedding'
   `GenerateMarked` returns each text's vector with whether the provider cut it (`MarkedVector`). The Worker embeds
   documents through it when the embedder has it. `Embedder` itself is unchanged, so every existing embedder still
   works and reports no provider cuts.
-- `WorkerMetrics.IncTruncated()` becomes `IncTruncated(by string)`, `by` being `provider` or `text_cap`. The Worker
-  counts a provider cut once per entity whose vector came back marked from the provider, and its own cap as today.
+- `WorkerMetrics.IncTruncated()` becomes `IncTruncated(by string)`, `by` being `provider` or `text_cap`. Each cut
+  entity is counted once, so the two series add up (owner, 2026-11-23): `text_cap` when the Worker's cap cut its
+  text, even if the provider then marks it too; `provider` only when the provider alone cut it.
 - `httpembedder` reads `truncated` from each reply entry and implements `TruncationMarker`. A reply whose
   `truncated` is not a boolean is refused like any other malformed reply.
 - graph-embedding registers `semengine_graph_embedding_truncated_total{by}` on the injected registry through
   `metric.RegisterOrGet`, both series starting at 0, and its `IncTruncated` adds to it. The README lists it.
 - Tests: `httpembedder` returns the mark per text; graph-embedding, run against a semembed-shaped provider that
   marks a text, counts `by="provider"`; run with a small `max_text_len`, counts `by="text_cap"` for the long entity
-  only.
+  only; with both cutting one entity, counts it under `text_cap` alone.
 
 ## Non-goals
 

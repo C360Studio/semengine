@@ -213,9 +213,10 @@ registers two counters:
 
 - `semengine_graph_embedding_content_unresolved_total`: entities whose offloaded body was left out because no store
   is registered for its storage instance.
-- `semengine_graph_embedding_truncated_total{by}`: entities embedded from only the opening of their text. `by` is
-  `text_cap` when the text was cut at `max_text_len`, and `provider` when the embedder's provider cut it to fit the
-  model's input window. Only an embedder that reports such a cut is counted under `provider`: `httpembedder` reads
+- `semengine_graph_embedding_truncated_total{by}`: entities embedded from only the opening of their text, each
+  counted once, so the two series add up. `by` is `text_cap` when the text was cut at `max_text_len`, even if the
+  provider then cut it again, and `provider` when only the embedder's provider cut it, to fit the model's input
+  window. Only an embedder that reports such a cut is counted under `provider`: `httpembedder` reads
   semembed's `"truncated": true` reply mark; a product's own embedder reports it by implementing
   `embedding.TruncationMarker`. A vector reused from the dedup bucket is not counted again.
 

@@ -336,7 +336,7 @@ func TestTruncationEmitsSignal(t *testing.T) {
 
 	truncM := &recordingWorkerMetrics{}
 	wTrunc := &Worker{maxSourceTextLen: 10, metrics: truncM}
-	if _, err := wTrunc.getSourceText(t.Context(), &Record{SourceText: "this text is definitely longer than ten characters"}); err != nil {
+	if _, _, err := wTrunc.getSourceText(t.Context(), &Record{SourceText: "this text is definitely longer than ten characters"}); err != nil {
 		t.Fatalf("getSourceText: %v", err)
 	}
 	if got := truncM.snapshot().truncated; got != 1 {
@@ -345,7 +345,7 @@ func TestTruncationEmitsSignal(t *testing.T) {
 
 	shortM := &recordingWorkerMetrics{}
 	wShort := &Worker{maxSourceTextLen: 100, metrics: shortM}
-	if _, err := wShort.getSourceText(t.Context(), &Record{SourceText: "short"}); err != nil {
+	if _, _, err := wShort.getSourceText(t.Context(), &Record{SourceText: "short"}); err != nil {
 		t.Fatalf("getSourceText: %v", err)
 	}
 	if got := shortM.snapshot().truncated; got != 0 {

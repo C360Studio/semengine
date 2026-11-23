@@ -1,5 +1,8 @@
 # SemSource truncation count
 
+These numbers were measured at `0c3f00ea`, before each cut entity was counted once: `provider` then also counted
+entities the cap had already cut, so the two series below overlap and do not add up. They were not measured again.
+
 How many of SemSource's entities graph-embedding embeds from only the opening of their text, read from the new
 `semengine_graph_embedding_truncated_total{by}` counter on one full index of the SemSource repository. Run on
 2026-11-23 on an arm64 Mac (Apple silicon, Docker Desktop).
@@ -37,9 +40,12 @@ different things, so equality is what this run happened to show, not a promise:
 - semembed counts every text it cuts, query texts included; graph-embedding counts only entity texts. No queries were
   sent in this run.
 
-The two labels overlap. A text cut at 4,000 characters is almost always still longer than 512 tokens, so most or all
-of the 137 `text_cap` entities are also among the 890 `provider` ones. The run does not show how many; the counter is
-not meant to give a distinct total.
+The two labels overlap in this run. A text cut at 4,000 characters is almost always still longer than 512 tokens, so
+most or all of the 137 `text_cap` entities are also among the 890 `provider` ones; the run does not show how many.
+That overlap is why the counter now counts each entity once: a text the cap cut is counted under `text_cap` only, and
+`provider` counts the texts only semembed cut, so the two series add up to the entities embedded from their opening.
+Under that rule this run would read 137 `text_cap` and between 753 and 890 `provider`, and `provider` would no longer
+be expected to match semembed's own counter.
 
 8,916 requests against 8,911 distinct texts means five texts were embedded twice; why was not checked.
 

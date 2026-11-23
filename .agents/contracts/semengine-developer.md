@@ -323,7 +323,10 @@ to register every OpenAPI `SchemaRef` type is the first bullet below.
 - A single-valued fact, such as a lifecycle phase, replaces the old triple; it never appends a competing value
   (`graph-entity-writes` spec, "One rule per write mode").
 - State travels as an argument, a field or a stored entry, never as a `context` value (`context.WithValue`,
-  `ctx.Value`) (owner ruling, #91 comment 6124130342).
+  `ctx.Value`) (owner ruling, #91 comment 6124130342). The sole exception is natsclient's trace context
+  (`ContextWithTrace`, `TraceContextFromContext`): between the handler wrapper that sets it and the outgoing call
+  that reads it runs a consumer's handler code, which SemEngine cannot give an extra argument (#605). Nothing else
+  rides with it.
 - A component package exports `Register(*component.Registry) error`. A consumer creates components, seals the
   composition and reads admitted components through the component manager (`service.ComponentManager`, change 3),
   never by calling `Registry.CreateComponent`, `SealComposition` or `Snapshots` itself (their doc comments; ruling

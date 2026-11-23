@@ -108,8 +108,10 @@ type WorkerMetrics interface {
 	// the reason (today only an embedder whose vector width is unresolved, so no dedup key can
 	// be derived).
 	IncDedupSkipped(reason string)
-	// IncTruncated counts one source text truncated at the cap.
-	IncTruncated()
+	// IncTruncated counts one entity embedded from only the opening of its text, by who cut it:
+	// TruncatedByTextCap for the Worker's own text cap, TruncatedByProvider for an embedder
+	// whose provider marked the text cut (TruncationMarker).
+	IncTruncated(by string)
 	// IncOffloadedIdentityIncluded counts one offloaded entity whose stored vector included its
 	// inline identity text ahead of the body. It fires only when the save succeeded.
 	IncOffloadedIdentityIncluded()
@@ -173,6 +175,14 @@ type Worker struct {
 
 	logger *slog.Logger
 }
+
+// The values WorkerMetrics.IncTruncated receives: who cut an entity's text.
+const (
+	// TruncatedByTextCap is a text cut at the Worker's text cap (WithMaxSourceTextLen).
+	TruncatedByTextCap = "text_cap"
+	// TruncatedByProvider is a text the embedder's provider cut to fit the model's input window.
+	TruncatedByProvider = "provider"
+)
 
 // dedupSkipReasonIdentityUnresolved labels a dedup skip caused by an embedder whose vector
 // width is not resolved yet (Dimensions() == 0), so DedupKey withholds a key.
@@ -492,7 +502,7 @@ func (w *Worker) getOrGenerateEmbedding(ctx context.Context, entityID, sourceTex
 	}
 
 	w.logger.Debug("Generating new embedding", "entity_id", entityID)
-	vector, gerr := w.generateShared(ctx, key, sourceText)
+	generated, gerr := w.generateShared(ctx, key, sourceText)
 	if gerr != nil {
 		if errors.Is(gerr, errNoEmbeddingReturned) {
 			w.logger.Error("No embedding generated", "entity_id", entityID)
@@ -502,6 +512,13 @@ func (w *Worker) getOrGenerateEmbedding(ctx context.Context, entityID, sourceTex
 		w.logger.Error("Failed to generate embedding", "entity_id", entityID, "error", gerr)
 		outcome, reason, terminal = w.markFailed(ctx, entityID, fmt.Errorf("generation failed: %w", gerr), classifyEmbedErr(gerr), sourceRevision)
 		return nil, false, outcome, reason, terminal, gerr
+	}
+
+	vector := generated.Vector
+	// Counted per entity, so peers that shared this call each count their own cut text. A
+	// vector later reused from the dedup bucket is not counted again: the bucket keeps no mark.
+	if generated.Truncated && w.metrics != nil {
+		w.metrics.IncTruncated(TruncatedByProvider)
 	}
 
 	if dedupEnabled {
@@ -522,7 +539,7 @@ var errNoEmbeddingReturned = errors.New("no embedding returned")
 // the first caller's vector, or its error. key is the dedup key; when it is empty (the
 // embedder's width is unresolved) a content-derived in-process key is used instead, so a
 // cold-start burst also collapses to one call while the dedup bucket stays untouched.
-func (w *Worker) generateShared(ctx context.Context, key, sourceText string) ([]float32, error) {
+func (w *Worker) generateShared(ctx context.Context, key, sourceText string) (MarkedVector, error) {
 	sfKey := key
 	if sfKey == "" {
 		sfKey = InProcessDedupKey(w.embedderIdentity(), sourceText)
@@ -531,31 +548,42 @@ func (w *Worker) generateShared(ctx context.Context, key, sourceText string) ([]
 		return w.generateOne(ctx, sourceText)
 	})
 	if err != nil {
-		return nil, err
+		return MarkedVector{}, err
 	}
-	return v.([]float32), nil
+	return v.(MarkedVector), nil
 }
 
-// generateOne is the single embedder call; an empty result is errNoEmbeddingReturned. The call
+// generateOne is the single embedder call, through GenerateMarked when the embedder is a
+// TruncationMarker so the provider's cut is known; an empty result is errNoEmbeddingReturned. The call
 // runs under a context derived from ctx that ends 30 seconds after it begins. When the embedder
 // fails and that context has ended by then, the error wraps the context's error,
 // context.DeadlineExceeded for the deadline, whatever the embedder's error was: an embedder may
 // answer its deadline with an error of its own that wraps no context error. An embedder that
 // ignores its context is not bounded by the deadline.
-func (w *Worker) generateOne(ctx context.Context, sourceText string) ([]float32, error) {
+func (w *Worker) generateOne(ctx context.Context, sourceText string) (MarkedVector, error) {
 	callCtx, cancel := context.WithTimeout(ctx, embedTimeout)
 	defer cancel()
-	vectors, err := w.embedder.Generate(callCtx, []string{sourceText})
+	var marked []MarkedVector
+	var err error
+	if marker, ok := w.embedder.(TruncationMarker); ok {
+		marked, err = marker.GenerateMarked(callCtx, []string{sourceText})
+	} else {
+		var vectors [][]float32
+		vectors, err = w.embedder.Generate(callCtx, []string{sourceText})
+		if len(vectors) > 0 {
+			marked = []MarkedVector{{Vector: vectors[0]}}
+		}
+	}
 	if err != nil {
 		if ctxErr := callCtx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("%w (embedder: %v)", ctxErr, err)
+			return MarkedVector{}, fmt.Errorf("%w (embedder: %v)", ctxErr, err)
 		}
-		return nil, err
+		return MarkedVector{}, err
 	}
-	if len(vectors) == 0 {
-		return nil, errNoEmbeddingReturned
+	if len(marked) == 0 {
+		return MarkedVector{}, errNoEmbeddingReturned
 	}
-	return vectors[0], nil
+	return marked[0], nil
 }
 
 // dedupRecordUsable reports whether a dedup record belongs to the vector space this Worker's
@@ -664,7 +692,7 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 		text := record.SourceText
 		truncated := truncateAtWord(text, limit)
 		if len(truncated) < len(text) && w.metrics != nil {
-			w.metrics.IncTruncated()
+			w.metrics.IncTruncated(TruncatedByTextCap)
 		}
 		return truncated, nil
 	}
@@ -693,7 +721,7 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 	// the identity.
 	truncated := truncateAtWord(text, limit)
 	if !bodyTruncated && len(truncated) < len(text) && w.metrics != nil {
-		w.metrics.IncTruncated()
+		w.metrics.IncTruncated(TruncatedByTextCap)
 	}
 	return truncated, nil
 }
@@ -741,7 +769,7 @@ func (w *Worker) fetchTextFromStorage(ctx context.Context, ref *StorageRef) (tex
 	truncated := truncateAtWord(raw, limit)
 	bodyTruncated = len(truncated) < len(raw)
 	if bodyTruncated && w.metrics != nil {
-		w.metrics.IncTruncated()
+		w.metrics.IncTruncated(TruncatedByTextCap)
 	}
 	if w.metrics != nil {
 		w.metrics.IncContentResolved()

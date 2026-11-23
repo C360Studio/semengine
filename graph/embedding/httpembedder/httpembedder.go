@@ -4,7 +4,9 @@
 //
 // It sends one request per call and trusts only a whole reply: one non-empty vector per text,
 // each placed by its index, all of the width the first accepted reply had, from the configured
-// model. Any other reply is an error with no vectors.
+// model. Any other reply is an error with no vectors. A text the provider cut to fit the model's
+// input window, which semembed marks "truncated": true on its reply entry, is reported by
+// GenerateMarked.
 package httpembedder
 
 import (
@@ -20,7 +22,10 @@ import (
 	"github.com/c360studio/semengine/graph/embedding"
 )
 
-var _ embedding.Embedder = (*Embedder)(nil)
+var (
+	_ embedding.Embedder         = (*Embedder)(nil)
+	_ embedding.TruncationMarker = (*Embedder)(nil)
+)
 
 // Config configures an Embedder.
 type Config struct {
@@ -99,6 +104,12 @@ func New(cfg Config) (*Embedder, error) {
 // Generate embeds documents: one vector per text, in the texts' order, sent as input_type
 // "document" unless OmitInputType is set. No texts sends no request.
 func (e *Embedder) Generate(ctx context.Context, texts []string) ([][]float32, error) {
+	return vectorsOf(e.embed(ctx, texts, "document"))
+}
+
+// GenerateMarked is Generate, returning with each vector whether the provider marked its text
+// truncated. A reply entry without the mark is a text the provider read whole.
+func (e *Embedder) GenerateMarked(ctx context.Context, texts []string) ([]embedding.MarkedVector, error) {
 	return e.embed(ctx, texts, "document")
 }
 
@@ -106,13 +117,25 @@ func (e *Embedder) Generate(ctx context.Context, texts []string) ([][]float32, e
 // with the configured query prefix in front. With no prefix it sends the same texts Generate does.
 func (e *Embedder) GenerateQuery(ctx context.Context, texts []string) ([][]float32, error) {
 	if e.queryPrefix == "" {
-		return e.embed(ctx, texts, "query")
+		return vectorsOf(e.embed(ctx, texts, "query"))
 	}
 	prefixed := make([]string, len(texts))
 	for i, text := range texts {
 		prefixed[i] = e.queryPrefix + text
 	}
-	return e.embed(ctx, prefixed, "query")
+	return vectorsOf(e.embed(ctx, prefixed, "query"))
+}
+
+// vectorsOf drops the marks from embed's result.
+func vectorsOf(marked []embedding.MarkedVector, err error) ([][]float32, error) {
+	if err != nil || marked == nil {
+		return nil, err
+	}
+	vectors := make([][]float32, len(marked))
+	for i, m := range marked {
+		vectors[i] = m.Vector
+	}
+	return vectors, nil
 }
 
 // Dimensions returns the width of the first accepted reply, or 0 before one.
@@ -143,6 +166,7 @@ type reply struct {
 	Data []struct {
 		Embedding []*float32 `json:"embedding"`
 		Index     *int       `json:"index"`
+		Truncated bool       `json:"truncated"`
 	} `json:"data"`
 	Model string `json:"model"`
 }
@@ -154,7 +178,7 @@ type errorReply struct {
 }
 
 // embed sends texts as one request, naming inputType unless the Embedder omits it.
-func (e *Embedder) embed(ctx context.Context, texts []string, inputType string) ([][]float32, error) {
+func (e *Embedder) embed(ctx context.Context, texts []string, inputType string) ([]embedding.MarkedVector, error) {
 	if ctx == nil {
 		return nil, errors.New("httpembedder: nil context")
 	}
@@ -201,16 +225,17 @@ func (e *Embedder) embed(ctx context.Context, texts []string, inputType string) 
 	return e.accept(r, len(texts))
 }
 
-// accept returns the reply's vectors in input order, or an error if any part of the reply cannot
-// be trusted. The width is learned only from a reply accepted whole.
-func (e *Embedder) accept(r reply, n int) ([][]float32, error) {
+// accept returns the reply's vectors in input order, each with its entry's truncated mark, or an
+// error if any part of the reply cannot be trusted. The width is learned only from a reply
+// accepted whole.
+func (e *Embedder) accept(r reply, n int) ([]embedding.MarkedVector, error) {
 	if r.Model != "" && r.Model != e.model {
 		return nil, fmt.Errorf("httpembedder: reply is from model %q, configured %q", r.Model, e.model)
 	}
 	if len(r.Data) != n {
 		return nil, fmt.Errorf("httpembedder: reply has %d vectors for %d texts", len(r.Data), n)
 	}
-	vectors := make([][]float32, n)
+	vectors := make([]embedding.MarkedVector, n)
 	width := 0
 	for _, d := range r.Data {
 		if d.Index == nil {
@@ -220,7 +245,7 @@ func (e *Embedder) accept(r reply, n int) ([][]float32, error) {
 		switch {
 		case i < 0 || i >= n:
 			return nil, fmt.Errorf("httpembedder: reply index %d is outside 0..%d", i, n-1)
-		case vectors[i] != nil:
+		case vectors[i].Vector != nil:
 			return nil, fmt.Errorf("httpembedder: reply repeats index %d", i)
 		case len(d.Embedding) == 0:
 			return nil, fmt.Errorf("httpembedder: reply has an empty vector at index %d", i)
@@ -235,7 +260,7 @@ func (e *Embedder) accept(r reply, n int) ([][]float32, error) {
 			vector[j] = *c
 		}
 		width = len(vector)
-		vectors[i] = vector
+		vectors[i] = embedding.MarkedVector{Vector: vector, Truncated: d.Truncated}
 	}
 	if !e.dimensions.CompareAndSwap(0, int64(width)) {
 		if learned := int(e.dimensions.Load()); learned != width {

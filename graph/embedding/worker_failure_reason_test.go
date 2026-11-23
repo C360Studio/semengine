@@ -174,7 +174,7 @@ func TestConcurrentIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 			key = "shared-dedup-key"
 		)
 		start := make(chan struct{})
-		results := make([][]float32, K)
+		results := make([]MarkedVector, K)
 		errsOut := make([]error, K)
 		var wg sync.WaitGroup
 		for i := 0; i < K; i++ {
@@ -206,7 +206,7 @@ func TestConcurrentIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 			if errsOut[i] != nil {
 				t.Fatalf("worker %d error: %v", i, errsOut[i])
 			}
-			if len(results[i]) != 3 || results[i][0] != 1 {
+			if len(results[i].Vector) != 3 || results[i].Vector[0] != 1 {
 				t.Fatalf("worker %d got %v, want the shared [1 2 3]", i, results[i])
 			}
 		}

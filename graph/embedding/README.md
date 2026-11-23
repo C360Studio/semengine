@@ -22,6 +22,7 @@ tell older work from newer work.
 | Name | What it does |
 | --- | --- |
 | `Embedder` | Interface: `Generate` for documents, `GenerateQuery` for search queries |
+| `TruncationMarker` | Optional interface an `Embedder` also implements when its provider says which texts it cut to fit the model's input window; the Worker then counts each cut text |
 | `Storage` | Reads and writes `EMBEDDING_INDEX` (one record per entity) and `EMBEDDING_DEDUP` (one vector per content key) |
 | `VectorCache` | In-memory copy of the generated vectors, kept current by watching `EMBEDDING_INDEX`; `FindSimilar` ranks those made under the running embedder's identity by cosine similarity |
 | `Worker` | Hop 2: turns pending records into generated or failed ones, and calls `GeneratedCallback` and `TerminalCallback` |

@@ -9,7 +9,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 2. Code
 
-- [ ] 2.1 Tests that `httpembedder` returns each text's `truncated` mark, and that graph-embedding's
+- [x] 2.1 Tests that `httpembedder` returns each text's `truncated` mark, and that graph-embedding's
   `truncated_total` counts a provider-marked cut under `by="provider"` and a cut at `max_text_len` under
   `by="text_cap"`; then `TruncationMarker`, `IncTruncated(by)`, the httpembedder field and the collector. Every
   existing test passes with its fakes updated to the new `IncTruncated` signature.

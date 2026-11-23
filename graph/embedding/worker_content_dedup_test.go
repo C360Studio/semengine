@@ -39,7 +39,7 @@ func (m *recordingWorkerMetrics) IncFailedReason(reason string) {
 func (m *recordingWorkerMetrics) IncContentResolveError() { m.inc(&m.resolveErr) }
 func (m *recordingWorkerMetrics) IncContentResolved()     { m.inc(&m.resolved) }
 func (m *recordingWorkerMetrics) IncContentUnresolved()   { m.inc(&m.unresolved) }
-func (m *recordingWorkerMetrics) IncTruncated()           { m.inc(&m.truncated) }
+func (m *recordingWorkerMetrics) IncTruncated(string)     { m.inc(&m.truncated) }
 
 func (m *recordingWorkerMetrics) IncOffloadedIdentityIncluded() { m.inc(&m.identityIncluded) }
 func (m *recordingWorkerMetrics) IncOffloadedIdentityAbsent()   { m.inc(&m.identityAbsent) }

@@ -60,7 +60,7 @@ type countingMetrics struct {
 
 func (m *countingMetrics) IncDedupHits()            { m.dedup++ }
 func (m *countingMetrics) IncDedupSkipped(string)   { m.dedupSkipped++ }
-func (m *countingMetrics) IncTruncated()            { m.truncated++ }
+func (m *countingMetrics) IncTruncated(string)      { m.truncated++ }
 func (m *countingMetrics) IncFailed()               { m.failed++ }
 func (m *countingMetrics) IncFailedReason(r string) { m.failedReasons = append(m.failedReasons, r) }
 func (m *countingMetrics) IncContentResolveError()  { m.resolveErr++ }

@@ -209,8 +209,17 @@ degraded while such a failure stands. A malformed request is refused `invalid_re
 ## Metrics
 
 Collectors register on the injected `metric.MetricsRegistry`, never on Prometheus' global registry. This component
-registers one, `semengine_graph_embedding_content_unresolved_total` (counter): entities whose offloaded body was
-left out because no store is registered for its storage instance. The follower adds `readiness`, `lag`,
+registers two counters:
+
+- `semengine_graph_embedding_content_unresolved_total`: entities whose offloaded body was left out because no store
+  is registered for its storage instance.
+- `semengine_graph_embedding_truncated_total{by}`: entities embedded from only the opening of their text. `by` is
+  `text_cap` when the text was cut at `max_text_len`, and `provider` when the embedder's provider cut it to fit the
+  model's input window. Only an embedder that reports such a cut is counted under `provider`: `httpembedder` reads
+  semembed's `"truncated": true` reply mark; a product's own embedder reports it by implementing
+  `embedding.TruncationMarker`. A vector reused from the dedup bucket is not counted again.
+
+The follower adds `readiness`, `lag`,
 `bootstrap_complete`, `readiness_state`, `status_publish_failures_total`, `indexed_revision` and `target_revision`
 under the same prefix.
 

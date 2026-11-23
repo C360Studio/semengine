@@ -22,14 +22,15 @@ by the text or config are not. A 429 is recorded under its own reason. Retry-Aft
 
 - The repair lane, every 30 s, also re-drives Worker failures whose reason says the provider was unavailable. It
   writes the entity's pending record again from its current value, and the Worker embeds it. While no retry has
-  succeeded, a pass retries one entity, so a provider that is still down sees one request per 30 s. Once a retry
-  gets a vector, the next pass retries the rest. An entity already waiting for the Worker is not retried again.
-- `httpembedder` marks a 429 as rate-limited, and marks a 5xx reply or a network failure as provider unavailable.
-  `graph/embedding` exports both marks, so a product's own embedder can use them. The Worker files them as
-  `rate_limited` and `provider_unavailable`.
+  stored a vector, a pass retries one entity, so a provider that is still down sees one request per 30 s. Once one
+  does, the next pass retries the rest. An entity already waiting for the Worker is not retried again.
+- `httpembedder` marks a 429 with the framework's `errs.ErrRateLimited`, and marks 500, 502, 503, 504 and network
+  failures transient (`errs.WrapTransient`). A TLS certificate failure is not transient. The Worker files these as
+  `rate_limited` and `provider_unavailable`. A product's own embedder gets the same by using `pkg/errs`.
 - Retried reasons: `connection_refused`, `timeout`, `rate_limited`, `provider_unavailable`, `internal`. Not retried:
-  `dimension_mismatch`, `embedder_error` (now a 4xx reply or a malformed reply), `content_error`, `unknown`.
+  `dimension_mismatch`, `embedder_error` (now a refused or malformed reply), `content_error`, `unknown`.
 - The provider-loss scenario restores the provider and sees the entity's vector and graph-embedding ready.
+  `docs/contract.md` says tier 1 comes back without a restart.
 
 ## Non-goals
 
@@ -38,5 +39,5 @@ issue (#722).
 
 ## Impact
 
-New exported surface in `graph/embedding`: `ErrRateLimited`, `ErrProviderUnavailable`, `RetryableReason`. Two new
-stored reason values; no migration. One PR (#733), `Closes #724`, `Closes #732`.
+One new export, `embedding.RetryableReason`. Two new stored reason values; no migration. SemSource's provider-fault
+report will read `provider_unavailable` where it reads `embedder_error`. One PR (#733), `Closes #724`, `Closes #732`.

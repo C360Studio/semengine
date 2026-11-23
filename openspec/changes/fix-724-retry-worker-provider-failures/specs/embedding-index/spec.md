@@ -4,25 +4,29 @@
 
 ### Requirement: An unavailable provider is named
 
-The Worker SHALL file a generation error matching `embedding.ErrRateLimited` as `rate_limited`, and one matching
-`embedding.ErrProviderUnavailable` as `provider_unavailable`, unless an earlier rule files it `timeout` or
-`connection_refused`. `embedding.RetryableReason` SHALL accept exactly `connection_refused`, `timeout`,
-`rate_limited`, `provider_unavailable` and `internal`.
+The Worker SHALL file a generation error as `timeout` when its call's deadline passed; else as `rate_limited` when it
+matches `errs.ErrRateLimited`; else `connection_refused` or `timeout` by its text as today; else as
+`provider_unavailable` when `errs.IsTransient` reports it; else `dimension_mismatch` or `embedder_error` as today.
+`embedding.RetryableReason` SHALL accept exactly `connection_refused`, `timeout`, `rate_limited`,
+`provider_unavailable` and `internal`.
 
 #### Scenario: Reasons
 
-- **WHEN** each sentinel, a refused connection wrapped in `ErrProviderUnavailable`, and each stored reason are
-  classified
-- **THEN** each gets its reason, and only the five are retryable (`TestClassifyEmbedErr`, `TestRetryableReason`)
+- **WHEN** a rate-limited error, a transient error, a refused connection marked transient, a plain error, and each
+  stored reason are classified
+- **THEN** they are `rate_limited`, `provider_unavailable`, `connection_refused`, `embedder_error`, and only the five
+  are retryable (`TestClassifyEmbedErr`, `TestRetryableReason`)
 
 ### Requirement: The HTTP embedder marks a busy or failing provider
 
-The HTTP embedder SHALL return an error matching `embedding.ErrRateLimited` for a 429 reply, without waiting on
-`Retry-After` or sending again, and an error matching `embedding.ErrProviderUnavailable` for a 5xx reply or a request
-that got no reply. Any other non-2xx reply and any untrusted reply SHALL match neither.
+The HTTP embedder SHALL return, for a 429 reply, an error matching `errs.ErrRateLimited`, without waiting on
+`Retry-After` or sending again; and, for a 500, 502, 503 or 504 reply or a request that got no reply, an error
+`errs.IsTransient` reports. A TLS certificate failure, any other non-2xx reply and any untrusted reply SHALL NOT be
+transient.
 
 #### Scenario: Status classes
 
-- **WHEN** the provider answers 429 with `Retry-After`, 503, or 400, or is closed
-- **THEN** the errors are rate-limited (one request), unavailable, neither, and unavailable
-  (`TestProviderUnavailableIsMarked`)
+- **WHEN** the provider answers 429 with `Retry-After`, 503, 400 or 501, is closed, or presents an untrusted
+  certificate
+- **THEN** the errors are rate-limited after one request, transient, not transient, not transient, transient, and
+  not transient (`TestProviderUnavailableIsMarked`)

@@ -4,11 +4,10 @@
 
 ### Requirement: Provider failures are retried
 
-On each repair pass, after hop 1's own failures, graph-embedding SHALL re-drive Worker failures whose reason
-`embedding.RetryableReason` accepts, by converging the entity on its current `ENTITY_STATES` value as a delivery does.
-A failure with any other reason SHALL NOT be re-driven. A re-driven entity SHALL stay counted failed until the
-Worker's outcome, and SHALL NOT be re-driven again until that outcome arrives; a failure seeded at Start waits the
-same way.
+On each repair pass graph-embedding SHALL re-drive Worker failures whose reason `embedding.RetryableReason` accepts,
+converging the entity on its current `ENTITY_STATES` value as a delivery does; no other failure SHALL be re-driven.
+An entity queued after its failure, or seeded failed at Start, SHALL wait for the Worker's outcome before another
+re-drive, and SHALL stay counted failed until it.
 
 #### Scenario: A failure the lane leaves alone
 
@@ -17,21 +16,43 @@ same way.
 
 #### Scenario: A retry still waiting
 
-- **WHEN** a pass runs while a re-driven entity's embedding is still in progress
+- **WHEN** passes run while a re-driven entity's embedding is still in progress
 - **THEN** no second call is made for that entity (`TestRepairWaitsForRedrivenOutcome`)
+
+#### Scenario: A failure seeded at Start
+
+- **WHEN** a pass runs while the Worker's first snapshot is still retrying a failed record found at Start
+- **THEN** the lane does not re-drive it and it stays failed with its reason (`TestStartSeedsFailedMap`)
+
+### Requirement: A NATS fault during a retry is counted under hop 1
+
+When hop 1's own read or write of an entity fails during a re-drive, the entity SHALL be counted under hop 1's reason;
+from hop 1's convergence until the Worker's outcome it SHALL NOT be counted failed. This is a declared limit.
+
+#### Scenario: Retries after a NATS fault
+
+- **WHEN** hop 1's read of a re-driven entity fails, and a later pass converges it before the Worker reports
+- **THEN** the entity is counted under `entity_read_failed`, then not counted failed until the Worker's outcome
+  (README "Failed entities and the repair lane")
 
 ### Requirement: Retries are paced by the provider's answer
 
-A pass SHALL re-drive every retryable failure when, since the previous pass, the Worker stored a vector for an entity
-that was failed. Otherwise it SHALL re-drive one: the next after the last re-driven, in entity ID order.
+A pass SHALL re-drive every retryable failure that is not waiting when, since the previous pass, the Worker stored a
+vector for an entity that was failed. Otherwise it SHALL re-drive one: the next after the last re-driven, in entity
+ID order. A skipped or deleted outcome SHALL NOT count as a stored vector.
 
 #### Scenario: The provider is still down
 
-- **WHEN** four entities hold retryable failures and the embedder still fails
-- **THEN** each pass makes one embedder call, for a different entity each time, and all four stay failed
-  (`TestRepairRetriesProviderFailures`)
+- **WHEN** four entities hold retryable failures and no vector was stored since the previous pass
+- **THEN** each pass picks one, a different one each time, wrapping in entity ID order (`TestRetryTargets`)
 
 #### Scenario: The provider answers again
 
-- **WHEN** the embedder answers and a pass's one re-drive gets a vector
-- **THEN** the next pass re-drives the other three and each gets a vector (`TestRepairRetriesProviderFailures`)
+- **WHEN** a vector was stored for a failed entity since the previous pass
+- **THEN** the pass picks every retryable failure that is not waiting, and the next pass picks one again unless
+  another vector was stored (`TestRetryTargets`)
+
+#### Scenario: An outcome without a vector
+
+- **WHEN** the only outcome since the previous pass for a failed entity is skipped or deleted
+- **THEN** the pass picks one (`TestRetryTargets`)

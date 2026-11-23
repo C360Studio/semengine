@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -27,12 +28,23 @@ import (
 // fakeProviderModel is the model the fake provider serves and the client asks for.
 const fakeProviderModel = "fake-embed-v1"
 
-// newFakeProvider is an embedding service shaped like semembed's OpenAI-style API: POST
-// /v1/embeddings answers one four-wide vector per input, naming the model it was asked for. The
-// test closes it; the cleanup's second Close does nothing.
-func newFakeProvider(t *testing.T) *httptest.Server {
+// fakeProvider is an embedding service shaped like semembed's OpenAI-style API: POST
+// /v1/embeddings answers one four-wide vector per input, naming the model it was asked for. While
+// down is set it answers every request 503, as a provider behind a proxy does while the provider
+// itself is away; clearing down brings it back on the same address.
+type fakeProvider struct {
+	*httptest.Server
+	down atomic.Bool
+}
+
+func newFakeProvider(t *testing.T) *fakeProvider {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	provider := &fakeProvider{}
+	provider.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if provider.down.Load() {
+			http.Error(w, `{"error":{"message":"provider unavailable","type":"server_error"}}`, http.StatusServiceUnavailable)
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/embeddings" {
 			http.NotFound(w, r)
 			return
@@ -61,8 +73,8 @@ func newFakeProvider(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(reply)
 	}))
-	t.Cleanup(srv.Close)
-	return srv
+	t.Cleanup(provider.Close)
+	return provider
 }
 
 // embeddingStatus reads graph-embedding's GRAPH_STATUS entry as a remote reader does.
@@ -81,10 +93,12 @@ func embeddingStatus(ctx context.Context, client *natsclient.Client) (graph.Inde
 
 // TestLosingTheProviderKeepsWordSearch: graph-ingest, graph-index, graph-lexical, graph-embedding
 // with the HTTP client against a fake provider, and graph-query at tier 1. Entity A is written and
-// both indexes are seen to hold it; the provider is closed and entity B written. Then the word
-// searches find B, the semantic verb refuses rather than answering empty, searchGraph answers B by
-// its words and, for B and for a question nothing matches, names its failed merge, and
-// graph-embedding's readiness reads degraded with B's provider failure counted.
+// both indexes are seen to hold it; the provider goes down, answering 503, and entity B is written.
+// Then the word searches find B, the semantic verb refuses rather than answering empty, searchGraph
+// answers B by its words and, for B and for a question nothing matches, names its failed merge, and
+// graph-embedding's readiness reads degraded with B's provider failure counted. Once the provider
+// answers again, with nothing restarted, the semantic verb finds B and graph-embedding reads ready
+// with no failures.
 func TestLosingTheProviderKeepsWordSearch(t *testing.T) {
 	stack := startIngestAndIndex(t)
 	startWordIndex(t, stack.client)
@@ -97,27 +111,32 @@ func TestLosingTheProviderKeepsWordSearch(t *testing.T) {
 		return stack.client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphQuery, verb).Subject, []byte(request), requestTimeout)
 	}
 
+	// The embedding index holds an entity once a semantic search answers it; until then the search
+	// refuses or answers without it, and the answer naming the entity is the event.
+	awaitSemantic := func(query, id string) {
+		t.Helper()
+		held, err := probe.Await(t.Context(), func(context.Context) (searchOutcome, error) {
+			raw, err := ask("semantic", query)
+			return searchOutcome{raw, err}, nil
+		}, func(o searchOutcome) bool {
+			if o.err != nil {
+				return false
+			}
+			var reply graph.QueryResponse[graph.SemanticData]
+			return json.Unmarshal(o.raw, &reply) == nil &&
+				slices.ContainsFunc(reply.Data.Results, func(hit graph.SimilarityHit) bool { return hit.EntityID == id })
+		})
+		if err != nil || held.err != nil {
+			t.Fatalf("await %s in the embedding index: %v, %v", id, err, held.err)
+		}
+	}
+
 	a := stack.create(t, drone1, [2]string{vocabulary.DCTermsTitle, "Alpha widget"})
 	stack.awaitIndexed(t, a)
 	awaitWordIndexed(t, stack.client, a)
-	// The embedding index holds A once a semantic search answers it; until then the search refuses
-	// index_not_ready or answers without it, and the answer naming A is the event.
-	held, err := probe.Await(t.Context(), func(context.Context) (searchOutcome, error) {
-		raw, err := ask("semantic", `{"query":"alpha widget"}`)
-		return searchOutcome{raw, err}, nil
-	}, func(o searchOutcome) bool {
-		if o.err != nil {
-			return false
-		}
-		var reply graph.QueryResponse[graph.SemanticData]
-		return json.Unmarshal(o.raw, &reply) == nil &&
-			slices.ContainsFunc(reply.Data.Results, func(hit graph.SimilarityHit) bool { return hit.EntityID == drone1 })
-	})
-	if err != nil || held.err != nil {
-		t.Fatalf("await A in the embedding index: %v, %v", err, held.err)
-	}
+	awaitSemantic(`{"query":"alpha widget"}`, drone1)
 
-	provider.Close()
+	provider.down.Store(true)
 	b := stack.create(t, drone2, [2]string{vocabulary.DCTermsTitle, "Bravo gadget"})
 	stack.awaitIndexed(t, b)
 	awaitWordIndexed(t, stack.client, b)
@@ -133,7 +152,7 @@ func TestLosingTheProviderKeepsWordSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("await graph-embedding degraded: %v", err)
 	}
-	if want := map[string]uint64{"connection_refused": 1}; !maps.Equal(status.FailedReasons, want) {
+	if want := map[string]uint64{"provider_unavailable": 1}; !maps.Equal(status.FailedReasons, want) {
 		t.Errorf("failed_reasons = %v, want %v", status.FailedReasons, want)
 	}
 
@@ -171,5 +190,19 @@ func TestLosingTheProviderKeepsWordSearch(t *testing.T) {
 		if reply.Merge == nil || reply.Merge.Honoured || reply.Merge.Code == "" {
 			t.Errorf("searchGraph %s: merge = %+v, want not honoured with a code", question.request, reply.Merge)
 		}
+	}
+
+	// The provider comes back. The repair lane re-drives B's failure on its next pass, so B is
+	// embedded without a restart and graph-embedding's failure clears.
+	provider.down.Store(false)
+	awaitSemantic(`{"query":"bravo gadget"}`, drone2)
+	// The published entry reading ready is the event; B's vector being served, awaited above, does
+	// not order the status write, so it is awaited on its own.
+	if _, err := probe.Await(t.Context(), func(ctx context.Context) (graph.IndexStatusResponse, error) {
+		return embeddingStatus(ctx, stack.client)
+	}, func(s graph.IndexStatusResponse) bool {
+		return s.State == graph.IndexStateReady && s.FailedCount == 0 && len(s.FailedReasons) == 0
+	}); err != nil {
+		t.Fatalf("await graph-embedding ready with no failures after the provider returned: %v", err)
 	}
 }

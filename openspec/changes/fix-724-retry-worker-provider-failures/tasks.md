@@ -48,7 +48,7 @@ output in `notes/<task>.md`. One pull request (#733), `Closes #724`, `Closes #73
 
 ## 4. End to end
 
-- [ ] 4.1 `TestLosingTheProviderKeepsWordSearch`: a switchable fake provider (503 while down); `failed_reasons`
+- [x] 4.1 `TestLosingTheProviderKeepsWordSearch`: a switchable fake provider (503 while down); `failed_reasons`
   `{provider_unavailable: 1}`; after restore, `semantic` answers B and graph-embedding's status reads ready with no
   failures. Shown failing on main (`notes/4.1.md`). Accept: `task verify`.
 

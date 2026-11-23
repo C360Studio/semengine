@@ -1,6 +1,6 @@
 # Proposal: fix-729-follower-status-read-health
 
-Approved-by:
+Approved-by: cglusky (2026-11-23) <https://github.com/C360Studio/semengine/issues/729#issuecomment-7104642470> sha256:9ffa3079f38b
 
 Track: `quick`. Capability modified: `entity-state-follower` ("The envelope": its text gains what `Stuck` says
 while a target read fails, and one scenario). One package, `graph/follower`.

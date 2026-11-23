@@ -453,8 +453,9 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 	indexed, indexedAt := f.watermark.IndexedAt()
 	f.statusMu.Lock()
 	target, created, err := readStream(ctx, f.status)
-	f.statusMu.Unlock()
+	// Stored under statusMu, so concurrent reads record their outcomes in the order they read.
 	f.statusReadFailed.Store(err != nil)
+	f.statusMu.Unlock()
 	if err == nil && !created.Equal(f.created) {
 		// The bucket was deleted and created again: the watch, still open, reads nothing more (seen at
 		// nats.go v1.54.0, not promised; the created check declares the loss either way).

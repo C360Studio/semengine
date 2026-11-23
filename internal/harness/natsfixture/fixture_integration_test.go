@@ -462,9 +462,7 @@ func TestRestartAfterHoldsTheServerDown(t *testing.T) {
 	id := f.containerID
 
 	calls := 0
-	rctx, cancel := context.WithTimeout(ctx, stopBound)
-	defer cancel()
-	if err := f.RestartAfter(rctx, func(context.Context) error {
+	if err := f.RestartAfter(ctx, func(context.Context) error {
 		calls++
 		if containerRunning(t, id) {
 			t.Error("whileDown ran with the container still running")
@@ -494,8 +492,7 @@ func TestRestartAfterWhileDownErrorLeavesServerDown(t *testing.T) {
 	f := startFixture(t)
 	id := f.containerID
 	held := errors.New("held outage failed")
-	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
-	defer cancel()
+	ctx := t.Context()
 	err := f.RestartAfter(ctx, func(context.Context) error { return held })
 	var pe *phaseError
 	if !errors.Is(err, held) || !errors.As(err, &pe) || pe.phase != "while-down" {

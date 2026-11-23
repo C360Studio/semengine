@@ -17,4 +17,4 @@ Tests come first. Each code task ends at a clean-tree local `task verify`. Singl
 
 ## 3. Close-out
 
-- [ ] 3.1 Archive: `openspec archive fix-667-truncation-count --yes`; `task spec:check` and `task docs:check` pass.
+- [x] 3.1 Archive: `openspec archive fix-667-truncation-count --yes`; `task spec:check` and `task docs:check` pass.

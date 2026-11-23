@@ -31,7 +31,7 @@ goes away, the deployment drops to the tier below and keeps working.
 | Tier | Needs | Adds | If the provider is lost |
 | --- | --- | --- | --- |
 | 0 | NATS only | the whole graph, keyword search (BM25, computed in process), rules, workflows, clustering, change feeds, the operator endpoints | — (nothing outside NATS to lose) |
-| 1 | an embedding service | search by meaning ("neural" search) | drops to tier 0; keyword search still answers |
+| 1 | an embedding service | search by meaning ("neural" search) | drops to tier 0; keyword search still answers; tier 1 comes back without a restart once the provider answers again |
 | 2 | an LLM service | nothing yet: reserved for summaries, review, query classification, and agent features | drops to tier 1 or 0 |
 
 The rest of this page is about tier 0, because that is what every deployment gets.

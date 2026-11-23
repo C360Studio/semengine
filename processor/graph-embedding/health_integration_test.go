@@ -65,7 +65,8 @@ func TestHealthIgnoresErrorCount(t *testing.T) {
 		{"a failure older than the success is refused", 6, embedding.OutcomeFailed, 2},
 		{"a newer failure enters again", 8, embedding.OutcomeFailed, 3},
 	} {
-		h.c.onTerminal(t.Context(), gone, step.revision, step.outcome, "timeout")
+		// A reason the repair lane does not retry, so no pass of its own clears the entity between steps.
+		h.c.onTerminal(t.Context(), gone, step.revision, step.outcome, "dimension_mismatch")
 		if health := h.c.Health(); health.ErrorCount != step.want {
 			t.Fatalf("ErrorCount after %s = %d, want %d", step.what, health.ErrorCount, step.want)
 		}

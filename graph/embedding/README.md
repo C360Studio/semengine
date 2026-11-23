@@ -93,6 +93,44 @@ how many such records it skipped, read at the same moment as the vectors it scor
 write of that key is scored again. Results are sorted by `ScoredEntityLess` (score, then entity ID)
 before the limit applies, and `keep`, when set, filters entity IDs before scoring.
 
+## Failure reasons
+
+A failed record holds one reason from a closed set; the raw error text is kept beside it but is
+never a reason. The Worker files an embedder's error in this order, the first match winning:
+
+| Reason | When |
+| --- | --- |
+| `timeout` | the call's 30-second context had ended |
+| `rate_limited` | the error matches `errs.ErrRateLimited` (package `pkg/errs`) |
+| `connection_refused` | the text says "connection refused" |
+| `timeout` | the text says "timeout" or "deadline exceeded" |
+| `provider_unavailable` | `errs.IsTransient` reports the error |
+| `dimension_mismatch` | the text says "dimension" |
+| `embedder_error` | anything else |
+
+Two more come from outside the embedder: `content_error` when the record's text cannot be read,
+and `internal` when the Worker's own read or write of a bucket fails.
+
+`RetryableReason` reports which reasons name a fault that may clear on its own, so that embedding
+the same text later can succeed: `connection_refused`, `timeout`, `rate_limited`,
+`provider_unavailable` and `internal`. The others say the request itself was refused, or nothing
+says it would not be refused again. graph-embedding's repair lane re-drives the entities that
+failed with a retryable reason, so they are embedded once the provider answers again, with no
+restart.
+
+A product's own embedder gets the retryable reasons for its outages by returning a `pkg/errs`
+error: `errs.ErrRateLimited` (wrapped with `%w` or `errs.WrapTransient`) when the provider asks it
+to slow down, and `errs.WrapTransient(err, ...)` when the provider failed in a way it may recover
+from. The marks are read from the error, never from its text. An embedder that marks nothing
+still has refused connections and timeouts filed as retryable; its other outages are
+`embedder_error`. `httpembedder` marks a 429 reply with `errs.ErrRateLimited`, and a 500, 502,
+503 or 504 reply or a request that got no reply as transient; a certificate the client does not
+trust, any other status and any reply it cannot trust stay unmarked.
+
+The text checks read the whole message, a transient error's included, so an action word given to
+`errs.WrapTransient` must not contain "timeout", "connection refused" or "dimension". A 504
+"Gateway Timeout" reply is filed `timeout` by its text, which is retryable too.
+
 ## Ordering
 
 The Worker hands each watch entry to a keyed pool (`internal/dispatch.KeyedPool`) under the entity

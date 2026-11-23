@@ -3958,7 +3958,7 @@
     elsewhere a product must set QueryPrefix to it; whether a provider honoured input_type is not visible in the reply,
     so only a search-quality run shows a missing or wrong instruction. A provider that echoes a model name other than the one it serves
     passes the model check; a provider such as TEI that echoes its own id needs that id as Model. After an outage,
-    entities whose embedding failed wait for a new revision or a restart. The pin's http_embedder_test.go and
+    graph-embedding's repair lane retries the entities that failed with a retryable reason, with no restart. The pin's http_embedder_test.go and
     http_embedder_dimensions_test.go carry over as the GenerateQuery and Dimensions tests named below. Real-provider
     run against semembed 7ceb5281 (count and order, served model, width before and after the first reply, query
     versus document vectors, cancel and deadline, recovery across a restart) is recorded in

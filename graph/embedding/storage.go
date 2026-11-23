@@ -507,16 +507,35 @@ type FailedEntry struct {
 
 // Bounded failure-reason enum. These are the ONLY values that ever reach the
 // failures_total{reason} metric label — the raw ErrorMsg is unbounded and must never
-// be a label. Keep the set small and closed; classifyEmbedErr maps embedder error
-// shapes into the network/timeout/dimension buckets, defaulting to embedder_error.
+// be a label. Keep the set small and closed; classifyEmbedErr maps embedder errors
+// into these buckets, defaulting to embedder_error.
 const (
-	failReasonContentError      = "content_error"      // source-text extraction failed
-	failReasonInternal          = "internal"           // dedup-check / save write fault
-	failReasonConnectionRefused = "connection_refused" // embedder endpoint unreachable
-	failReasonTimeout           = "timeout"            // embedder call timed out
-	failReasonDimensionMismatch = "dimension_mismatch" // embedder returned an off-width vector
-	failReasonEmbedderError     = "embedder_error"     // any other embedder-side failure
+	failReasonContentError        = "content_error"        // source-text extraction failed
+	failReasonInternal            = "internal"             // dedup-check / save write fault
+	failReasonConnectionRefused   = "connection_refused"   // embedder endpoint unreachable
+	failReasonTimeout             = "timeout"              // embedder call timed out
+	failReasonRateLimited         = "rate_limited"         // provider asked us to slow down (errs.ErrRateLimited)
+	failReasonProviderUnavailable = "provider_unavailable" // provider failed in a way it may recover from (errs.IsTransient)
+	failReasonDimensionMismatch   = "dimension_mismatch"   // embedder returned an off-width vector
+	failReasonEmbedderError       = "embedder_error"       // any other embedder-side failure
 )
+
+// RetryableReason reports whether a stored failure reason names a fault that may clear on its
+// own, so embedding the same text again later can succeed: the provider was unreachable, slow,
+// busy or failing, or SemEngine's own read or write of a bucket failed. A refused text, a
+// vector of the wrong width, a missing body, any other embedder error and a reason this build
+// does not know are not retried: sending the same request again would fail the same way, or
+// nothing says it would not. Hop 1's in-memory reasons (ReasonDeleteFailed and the others) are
+// not stored failures and report false.
+func RetryableReason(reason string) bool {
+	switch reason {
+	case failReasonConnectionRefused, failReasonTimeout, failReasonRateLimited,
+		failReasonProviderUnavailable, failReasonInternal:
+		return true
+	default:
+		return false
+	}
+}
 
 // reasonUnknown is the fallback for a stored failure reason that is empty or not a
 // member of the bounded failure enum. It keeps the readiness envelope's reason
@@ -529,7 +548,8 @@ const reasonUnknown = "unknown"
 func normalizeFailureReason(reason string) string {
 	switch reason {
 	case failReasonContentError, failReasonInternal, failReasonConnectionRefused,
-		failReasonTimeout, failReasonDimensionMismatch, failReasonEmbedderError:
+		failReasonTimeout, failReasonRateLimited, failReasonProviderUnavailable,
+		failReasonDimensionMismatch, failReasonEmbedderError:
 		return reason
 	default:
 		return reasonUnknown

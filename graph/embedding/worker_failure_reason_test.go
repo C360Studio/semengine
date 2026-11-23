@@ -10,6 +10,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/storage"
 )
 
@@ -28,6 +29,15 @@ func TestClassifyEmbedErr(t *testing.T) {
 		{"dimension mismatch", errors.New("embedding dimension 512 does not match index 384"), failReasonDimensionMismatch},
 		{"unrecognized defaults to embedder_error", errors.New("HTTP 500 upstream error"), failReasonEmbedderError},
 		{"nil defaults to embedder_error", nil, failReasonEmbedderError},
+		// Typed marks from pkg/errs, as httpembedder or a product embedder returns them. The
+		// expected reasons are spelled out so a renamed constant cannot hide a changed reason.
+		{"rate limited marked transient", errs.WrapTransient(errs.ErrRateLimited, "embedder", "Generate", "embed"), "rate_limited"},
+		{"rate limited sentinel alone", fmt.Errorf("provider answered 429 Too Many Requests: %w", errs.ErrRateLimited), "rate_limited"},
+		{"transient provider failure", errs.WrapTransient(errors.New("provider answered 503 Service Unavailable"), "embedder", "Generate", "embed"), "provider_unavailable"},
+		{"transient 5xx naming a dimension", errs.WrapTransient(errors.New("provider answered 500: dimension table not loaded"), "embedder", "Generate", "embed"), "provider_unavailable"},
+		{"refused connection marked transient", errs.WrapTransient(errors.New("dial tcp 127.0.0.1:8080: connect: connection refused"), "embedder", "Generate", "embed"), "connection_refused"},
+		{"deadline marked transient", errs.WrapTransient(context.DeadlineExceeded, "embedder", "Generate", "embed"), "timeout"},
+		{"plain provider failure", errors.New("provider answered 400 Bad Request: input too long"), "embedder_error"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -35,6 +45,33 @@ func TestClassifyEmbedErr(t *testing.T) {
 				t.Errorf("classifyEmbedErr(%v) = %q, want %q", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestRetryableReason pins which stored reasons are worth embedding again: a provider that was
+// unreachable, slow, busy or failing, and SemEngine's own read or write. A refused text, a
+// wrong width, a missing body and a reason this build does not know are not. Hop 1's reasons are
+// re-driven by hop 1 itself, not by this check.
+func TestRetryableReason(t *testing.T) {
+	want := map[string]bool{
+		"connection_refused":   true,
+		"timeout":              true,
+		"rate_limited":         true,
+		"provider_unavailable": true,
+		"internal":             true,
+		"dimension_mismatch":   false,
+		"embedder_error":       false,
+		"content_error":        false,
+		"unknown":              false,
+		"":                     false,
+		"delete_failed":        false,
+		"pending_write_failed": false,
+		"entity_read_failed":   false,
+	}
+	for reason, retry := range want {
+		if got := RetryableReason(reason); got != retry {
+			t.Errorf("RetryableReason(%q) = %v, want %v", reason, got, retry)
+		}
 	}
 }
 

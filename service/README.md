@@ -237,7 +237,7 @@ to `ConfigureFromServices`:
 | `ComponentRegistry` | required; the factories it builds from, and the registry it seals |
 | `PayloadRegistry` | given to each component |
 | `NATSClient` | given to each component; with none, the manager publishes no component health |
-| `Platform` | the deployment's identity, given to each component |
+| `Platform` | the deployment's identity, given to each component; when either field is set it must equal the configuration manager's `GetConfig().Get().Platform` (`org`, `id`) after `Start`, or construction is refused, classified invalid |
 | `MetricsRegistry`, `Logger` | given to each component; the manager's own metrics and log lines |
 
 `NewComponentManager` reads the boot configuration once, and later writes to it change nothing in the running set: they

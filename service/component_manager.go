@@ -170,6 +170,13 @@ func (r *componentRecord) managed() *component.ManagedComponent {
 // configuration key, a missing configuration manager or component registry, a
 // component that cannot be built (naming every one) and a composition with an
 // error-severity finding; a refusal returns a nil Service.
+//
+// deps.Platform must be the pair deps.Manager holds: build it from
+// GetConfig().Get().Platform after the configuration manager's Start, which
+// may replace the declared platform.id with a minted one. A deps.Platform with
+// either field set that differs from that pair is refused, classified invalid
+// and naming both pairs, before any component factory runs. A wholly empty
+// deps.Platform is not refused here; a component that needs one refuses it.
 func NewComponentManager(rawConfig json.RawMessage, deps *Dependencies) (Service, error) {
 	var cfg ComponentManagerConfig
 	if err := decodeStrictServiceJSON(rawConfig, &cfg); err != nil {
@@ -190,6 +197,9 @@ func NewComponentManager(rawConfig json.RawMessage, deps *Dependencies) (Service
 		return nil, fmt.Errorf("component-manager config manager has no config")
 	}
 	bootConfig := currentConfig.Get()
+	if err := checkPlatform(deps.Platform, bootConfig.Platform); err != nil {
+		return nil, err
+	}
 	componentsConfig := bootConfig.Components
 	if componentsConfig == nil {
 		componentsConfig = make(config.ComponentConfigs)
@@ -228,6 +238,22 @@ func NewComponentManager(rawConfig json.RawMessage, deps *Dependencies) (Service
 		return nil, fmt.Errorf("initialize component manager: %w", err)
 	}
 	return cm, nil
+}
+
+// checkPlatform refuses a given platform that is set, even in part, and is not
+// the configured one. Components stamp entity IDs and gate subjects with the
+// pair they receive, so one that differs from the configuration would write
+// and accept facts under a platform the deployment does not own.
+func checkPlatform(given types.PlatformMeta, configured config.PlatformConfig) error {
+	if given == (types.PlatformMeta{}) ||
+		(given.Org == configured.Org && given.Platform == configured.ID) {
+		return nil
+	}
+	return errs.WrapInvalid(
+		fmt.Errorf("deps.Platform (org %q, platform %q) is not the configured platform (org %q, id %q); "+
+			"build it from the configuration manager's GetConfig().Get().Platform after Start",
+			given.Org, given.Platform, configured.Org, configured.ID),
+		"ComponentManager", "NewComponentManager", "platform check")
 }
 
 // initialize builds every enabled component in instance-name order, refuses

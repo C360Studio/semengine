@@ -10,7 +10,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`; docs 
 
 ## 2. service: refuse a platform the configuration manager did not establish
 
-- [ ] 2.1 Test first, shown failing (`notes/2.1.md`): `TestComponentManagerRefusesAPlatformOtherThanTheEstablishedOne`.
+- [x] 2.1 Test first, shown failing (`notes/2.1.md`): `TestComponentManagerRefusesAPlatformOtherThanTheEstablishedOne`.
   - On a fresh bucket, start a `config.Manager` declaring org `o` and stem `s`, so it mints `s-<hex>`. Register one
     component factory that counts its calls.
   - It is a table test over `deps.Platform`, with each field empty, equal to the effective value or different:
@@ -26,7 +26,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`; docs 
   Premises: `service/component_manager.go:186-192` (snapshot read), `:217` (copied as given);
   `config/config.go:123-133` (`Mutate` swaps a clone, so the caller's `cfg` keeps the stem).
   Accept: the test fails on the base commit for the right reason (no error).
-- [ ] 2.2 Implement design D3 (B), plus a doc comment on `NewComponentManager` and the `Platform` row at
+- [x] 2.2 Implement design D3 (B), plus a doc comment on `NewComponentManager` and the `Platform` row at
   `service/README.md:240`. Fix the fixtures that pass the stem to a manager that minted:
   - `service/component_manager_boot_only_integration_test.go:65`
   - `service/config_boot_process_restart_integration_test.go:175`

@@ -62,7 +62,8 @@ func TestComponentManagerPostBootComponentAndModelWritesDoNotChangeRuntimeCompos
 	deps.NATSClient = client
 	deps.Manager = configManager
 	deps.ComponentRegistry = registry
-	deps.Platform = types.PlatformMeta{Org: "test", Platform: "boot-only"}
+	effective := configManager.GetConfig().Get().Platform
+	deps.Platform = types.PlatformMeta{Org: effective.Org, Platform: effective.ID}
 	built, err := NewComponentManager(json.RawMessage(`{}`), deps)
 	require.NoError(t, err)
 	manager, ok := built.(*ComponentManager)

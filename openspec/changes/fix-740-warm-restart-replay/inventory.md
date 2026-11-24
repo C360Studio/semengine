@@ -258,7 +258,8 @@ A product `main` composing several graph readers on one `natsclient.Client`. Sem
 graph-clustering, websocket in its registration map (`run.go:305-313`, which also registers graph-ingest, R6; this is
 what SemSource can register, not its composed config, which was not read); `configs/nats.conf:10` — `max_pending: 536870912`.
 
-1. What must they know: that boot replay load grows with store size × reader count on one connection; that the
+1. What must they know: that boot replay load is the number of readers replaying at once × the server's
+   per-watch flow-control window (about 32–47 MB each, whatever the store size; corrected after probe P8); that the
    server's `max_pending` must exceed it; that a Start failure from a lost connection is not retried.
    That is three items, so by the contract it is a design finding.
 2. If they do nothing: warm restart over a large store fails Start every time (issue: 5 of 5 at 230 MB).

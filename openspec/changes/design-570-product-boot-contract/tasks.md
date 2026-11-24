@@ -12,11 +12,17 @@ Tests come first. Each code task ends at a clean-tree local `task verify`; docs 
 ## 2. service: refuse a platform the configuration manager did not establish
 
 - [ ] 2.1 Test first, shown failing (`notes/2.1.md`): `TestComponentManagerRefusesAPlatformOtherThanTheEstablishedOne`.
-  - On a fresh bucket, start a `config.Manager` declaring stem `s`, so it mints `s-<hex>`.
-  - `NewComponentManager` with `deps.Platform{Org, "s"}` returns an error naming both pairs.
-  - `ConfigureFromServices` returns it and `GetService` finds nothing.
-  - With `deps.Platform` from `GetConfig().Get()`, construction succeeds.
-  - With an empty `deps.Platform`, construction is not refused for that reason.
+  - On a fresh bucket, start a `config.Manager` declaring org `o` and stem `s`, so it mints `s-<hex>`. Register one
+    component factory that counts its calls.
+  - It is a table test over `deps.Platform`, with each field empty, equal to the effective value or different:
+    nine cases, covered exhaustively, so no generated check (design D3).
+    - Wholly empty: not refused for this reason.
+    - Both fields equal (`{o, s-<hex>}`): constructed.
+    - Each of the other seven cases is refused with an error that `errs.IsInvalid` reports and that names both
+      pairs. These include the stem (`{o, s}`), an org-only mismatch (`{other, s-<hex>}`), and the two half-empty
+      pairs (`{o, ""}` and `{"", s-<hex>}`).
+  - For every refused case: the factory's count is 0, and `ConfigureFromServices` returns the error with
+    `GetService` finding nothing.
 
   Premises: `service/component_manager.go:186-192` (snapshot read), `:217` (copied as given);
   `config/config.go:123-133` (`Mutate` swaps a clone, so the caller's `cfg` keeps the stem).

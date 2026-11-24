@@ -17,23 +17,15 @@ unobservable, code only where the framework holds the value. Non-goals: as in th
 
 D1. One guide, `docs/boot.md`, linked from `docs/contract.md:146` (the consumer's first-read section),
 `service/README.md:82` and `config/README.md:170`. Steps in order, as `internal/smoke` runs them
-(`stack_integration_test.go:242-320`), which is the tested reference:
-
-1. load the file;
-2. connect and wait for the connection;
-3. start `config.Manager`;
-4. read `effective := mgr.GetConfig().Get()`;
-5. `EnsureStreams(ctx, effective)`;
-6. register components, vocabulary and payloads;
-7. `RegisterAll`;
-8. `ConfigureFromServices(effective.Services, deps)` with `deps.Platform` from `effective`;
-9. optional calls;
-10. `StartAll`;
-11. tear down with `StopAll`, then `Manager.Stop`, then `Close`.
-
-Each step says what happens if it is skipped and links the package README for detail. Other homes considered:
-extending `docs/contract.md` (it is about guarantees, and thirteen steps would bury them); package READMEs only
-(today's state, which is the gap).
+(`stack_integration_test.go:242-320`), which is the tested reference: (1) load the file; (2) connect and wait for
+the connection; (3) start `config.Manager`; (4) read `effective := mgr.GetConfig().Get()`;
+(5) `EnsureStreams(ctx, effective)`; (6) register components, vocabulary and payloads; (7) `RegisterAll`;
+(8) `ConfigureFromServices(effective.Services, deps)` with `deps.Platform` from `effective`; (9) optional calls;
+(10) `StartAll`; (11) tear down with `StopAll`, then `Manager.Stop`, then `Close`. Component writes
+(`PutComponentToKV`, `DeleteComponentFromKV`) between (3) and (8) land in this boot; after (8), only in the next
+(F3). Each step says what happens if it is skipped and links the package README. Other homes considered: extending
+`docs/contract.md` (it is about guarantees, and thirteen steps would bury them); package READMEs only (today's
+state, which is the gap).
 
 D2. Per item. Options are listed with cost, blast radius and what each forecloses; the chosen one is marked.
 
@@ -43,9 +35,10 @@ D2. Per item. Options are listed with cost, blast radius and what each foreclose
     touches every composition and forecloses a product's own stream order.
   - (C) An exported boot helper. New API with two callers; ADR-058 allows helpers but needs none.
 - Item 2, payloads.
-  - **(A) Doc, chosen.** A nil registry is already refused (`graph-ingest/component.go:272`). An unregistered
-    product type is the product's own domain.
-  - (B) The component manager refuses a nil registry. Only graph-ingest needs one, and it already refuses.
+  - **(A) Doc, chosen.** A nil registry is already refused by the components that decode
+    (`graph-ingest/component.go:272`; objectstore with inputs, `storage/objectstore/component.go:189-191`). An
+    unregistered product type is the product's own domain.
+  - (B) The component manager refuses a nil registry. A composition without a decoding component needs none.
 - Item 3, ports.
   - **(A) Doc, chosen:** the defaults, every interface, `metrics: {"enabled": false}`.
   - (B) Port 0 means kernel-picked, plus an exported address reader. That changes what an absent key means (a
@@ -60,29 +53,35 @@ D2. Per item. Options are listed with cost, blast radius and what each foreclose
   - (B) An exported reader. No named outside caller (inventory E4).
 - Item 7, the bucket wins. Already documented (`config/README.md:222-242`).
   - **(A) Doc pointer, chosen;** the defects stay with #646 and #647.
-  - (B) The engine owns a drift warning like SemSource's (`config_drift.go`, 257 lines). That belongs with #646 and
-    #647.
-- F1, vocabulary.
+  - (B) The engine owns a drift warning like SemSource's (`config_drift.go`, 257 lines); it belongs with #646, #647.
+- F1, vocabulary. The framework cannot observe what a product never registered.
   - **(A) Doc, chosen.**
   - (B) Read the vocabulary per use: hot paths in graph-index and `entitytext`, across packages.
   - (C) Warn on a registration after the first read: global state, and the missing case stays unseen.
-  - The framework cannot observe what a product never registered.
 - F3, F4, F5, F6. **Doc, chosen.** All are loud or ordering facts.
 
 D3. F2, the platform copy.
 
 - (A) Doc only: the failure stays silent.
-- **(B) Refuse, chosen.** `NewComponentManager` refuses a non-empty `deps.Platform` whose `Org` or `Platform` differs
-  from `deps.Manager.GetConfig().Get().Platform` (`service/component_manager.go:189-192` already reads that
-  snapshot). The error names both pairs. `ConfigureFromServices` returns it and composes nothing. This is the
-  framework observing a value it holds. Blast radius: package `service`; three test fixtures (tasks 2.2); no exported
-  change. An empty `deps.Platform` is not refused here: the components that need one refuse it
-  (`graph-ingest/component.go:280`), and more than thirty service fixtures pass none.
+- **(B) Refuse, chosen.** `NewComponentManager` refuses a `deps.Platform` with either field set whose pair
+  (`Org`, `Platform`) differs from `deps.Manager.GetConfig().Get().Platform`'s (`org`, `id`); the snapshot is
+  already read at `service/component_manager.go:189-192`. The refusal is classified invalid (`errs.WrapInvalid`, as
+  graph-ingest's at `component.go:281-283`), names both pairs, and comes before any component factory runs (before
+  `cm.initialize()`, `:226`). `ConfigureFromServices` returns it and composes nothing. A half-empty pair is refused
+  as a mismatch. A wholly empty `deps.Platform` is not refused here; the components that need one refuse it
+  (`graph-ingest/component.go:280`), and 35 `Dependencies{` literals in `service` tests pass none. Blast radius:
+  package `service`; three test fixtures (task 2.2); no exported change.
+- (B') Fill a wholly empty `deps.Platform` from the effective pair and still refuse a mismatch. It does not break
+  anything, and it removes a fact from the guide. Cost: the 35 fixtures receive a real platform, graph-ingest's
+  empty-platform refusal becomes unreachable through the component manager, and the field has two meanings (given,
+  or left for the framework). It is the half-step to (C) and is offered in owner question 1.
 - (C) Remove `service.Dependencies.Platform` and read it from `deps.Manager`. This removes the spelling entirely. It
   is a breaking field removal, costs one line in SemSource, and changes the AGENTS.md authority row,
   `harness-boundaries` (`:700-705`) and ADR-104 `:178`. Owner question 1.
 - The services and streams copies (`effective.Services`, `EnsureStreams(effective)`) get doc only. The component
   manager cannot tell which services map it was handed.
+- Generated checks (`docs/testing.md:438`): not used. The rule reads two fields, each empty, equal or different:
+  nine cases, which one table test covers exhaustively.
 
 D4. Correct the examples: `service/doc.go:80-84`, `service/README.md:97-101,240,348`, and `docs/contract.md:146-191`
 (the stale note at `:150-152`; the sketch points to `docs/boot.md`). ADR-104 `:183` gets a port-note correction:
@@ -99,9 +98,8 @@ the record's shape lives in the `config-manager` spec.
 ## Risks / Trade-offs
 
 - A doc can drift. The guide names `internal/smoke`'s composition root as the tested order; the reviewer checks
-  they match. Docs do not fail a build.
-- D3 does not catch an unstarted `config.Manager`, which still reports the file's ID. The guide says Start comes
-  first.
+  they match. D3 does not catch an unstarted `config.Manager`, which still reports the file's ID; the guide says
+  Start comes first.
 
 ## Migration Plan
 
@@ -115,6 +113,7 @@ lands second updates the one `docs/boot.md` line it changes.
 
 ## Open Questions (owner)
 
-1. OPEN-Q: F2. Refuse a mismatched `deps.Platform` (D3 B, recommended), or remove the field (D3 C)?
+1. OPEN-Q: F2. Refuse a mismatched `deps.Platform` (D3 B, recommended), also fill an empty one (D3 B'), or remove
+   the field (D3 C)?
 2. OPEN-Q: item 3. Take the kernel-picked port and bound-address reader in this change, or leave them with #614
    (recommended: leave)?

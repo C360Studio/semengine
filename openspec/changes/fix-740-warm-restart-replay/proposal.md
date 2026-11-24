@@ -1,6 +1,6 @@
 # Proposal: fix-740-warm-restart-replay
 
-Approved-by: owner, 2026-11-24 in Enjoy, proposal at `fdf0b086` approved as drafted; recorded on #740 (comment 7137820958)
+Approved-by: cglusky (2026-11-24) <https://github.com/C360Studio/semengine/issues/740#issuecomment-7137820958> sha256:1bdbee72cc24
 
 Track: `design`. Capabilities: `composed-stack`, `transport-client`, `entity-state-follower` (each gains
 Requirements). Packages: `natsclient`, `graph/follower`, `output/websocket`, `processor/graph-query`,

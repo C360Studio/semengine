@@ -147,9 +147,8 @@ wired without any UI, render it as a Mermaid diagram with the composition comman
 
 - **Register what you use.** The engine has no list of "all components". Your `main` registers each component it
   wires into the program's startup, and each payload type it uses (a payload type is the Go type of a message body,
-  which the engine looks up by name to decode), so your program builds only what it names. The sketch below is
-  illustrative: the package paths and signatures are SemStreams' at commit `8b99efe9` (with the module path swapped,
-  it compiles there), and SemEngine's are fixed when each package is copied over.
+  which the engine looks up by name to decode), so your program builds only what it names. The sketch below
+  shows the registration; the order of the whole startup is in [Booting SemEngine from your own main](boot.md).
 
 ```go
 package main
@@ -188,7 +187,8 @@ func main() {
             log.Fatal(err)
         }
     }
-    // Build the service and component managers from these registries and start them.
+    // Next: connect, start the configuration manager, create the streams, then build and start the managers.
+    // The order, and what each step does when skipped, is in docs/boot.md.
 }
 ```
 

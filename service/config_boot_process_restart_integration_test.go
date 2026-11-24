@@ -172,7 +172,8 @@ func runConfigBootProcessRole(ctx context.Context, url, role string) (result err
 	deps.NATSClient = client
 	deps.Manager = configManager
 	deps.ComponentRegistry = registry
-	deps.Platform = types.PlatformMeta{Org: "test", Platform: "config-boot-process-proof"}
+	effective := configManager.GetConfig().Get().Platform
+	deps.Platform = types.PlatformMeta{Org: effective.Org, Platform: effective.ID}
 	serviceValue, err := NewComponentManager(json.RawMessage(`{}`), deps)
 	if err != nil {
 		return fmt.Errorf("construct ComponentManager: %w", err)

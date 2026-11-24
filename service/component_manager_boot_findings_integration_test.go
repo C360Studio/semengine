@@ -109,7 +109,8 @@ func newBootFindingsManager(
 	deps.NATSClient = client
 	deps.Manager = bootFindingsConfigManager(t, client, platformID, components, streams)
 	deps.ComponentRegistry = registry
-	deps.Platform = types.PlatformMeta{Org: "acme", Platform: platformID}
+	effective := deps.Manager.GetConfig().Get().Platform
+	deps.Platform = types.PlatformMeta{Org: effective.Org, Platform: effective.ID}
 	return NewComponentManager(json.RawMessage(`{}`), deps)
 }
 

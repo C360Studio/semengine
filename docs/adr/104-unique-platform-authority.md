@@ -183,5 +183,8 @@ e2e and tooling read the effective pair from `semstreams_config/platform_identit
 configuration file. The record's shape is normative in the `component-runtime-config` capability spec: exactly the
 three fields `org`, `stem`, `id`.
 
+> **Note (SemEngine):** no `component-runtime-config` spec exists here. The record's shape is normative in the
+> `config-manager` spec, Requirement "The platform identity record is a read contract".
+>
 > **Correction (SemEngine port):** "one environment per bucket" went with decision 7 (supersedes the clause at pin
 > `:145`). A sister separates deployments by giving each its own `platform.id`, not its own `platform.environment`.

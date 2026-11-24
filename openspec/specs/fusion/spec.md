@@ -372,6 +372,31 @@ least one result in the reply carries a `vector_rank`, and `lexical` otherwise.
 - **WHEN** a `RetrievalClient` returns a `Resolution` with no `Provenance`
 - **THEN** the response carries its mode's provenance (`TestResolutionProvenanceWins`)
 
+### Requirement: An NL answer says whether the embedding search was merged in
+
+An NL `Resolve` in `fusionnats` SHALL copy the reply's `merge` (`honoured`, `detail`, `reason`, `code`) into
+`Resolution.Merge`, and leave it nil when the reply has none. Every response built after an NL resolve answered SHALL
+carry that `Merge` as `merge`; a symbol or prefix resolve, a failed resolve, and a resolve with no `Merge` SHALL leave
+`merge` out.
+
+#### Scenario: A merge honoured
+
+- **WHEN** the merged search reply holds an honoured `merge` with `detail` `merged`
+- **THEN** the `Resolution` carries `Merge` with `honoured` true and that `detail`, and the response carries them as
+  `merge`, with no `reason` or `code` key (`TestMergedResolveMerge`, `TestNLAnswerCarriesMerge`)
+
+#### Scenario: A merge that failed
+
+- **WHEN** the merged search reply holds a `merge` not honoured, with its `detail`, `reason` and `code`
+- **THEN** the `Resolution` carries `Merge` with `honoured` false and the three strings, and the response, with
+  nodes, a miss, an all-seeds-unhydrated deferral or an `index_not_ready` deferral from the batch read, carries
+  them as `merge` (`TestMergedResolveMerge`, `TestNLAnswerCarriesMerge`)
+
+#### Scenario: No merge answer
+
+- **WHEN** the merged search reply has no `merge`, the lens picks symbol mode, or the resolve fails
+- **THEN** the response has no `merge` key (`TestMergedResolveMerge`, `TestNLAnswerCarriesMerge`)
+
 ### Requirement: A damaged seed is unhydrated, not a failed read
 
 `Entities` SHALL list a requested ID the batch reply names `damaged` as unhydrated `error`, hydrate the others in

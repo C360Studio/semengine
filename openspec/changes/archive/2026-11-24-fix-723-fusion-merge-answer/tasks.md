@@ -31,5 +31,5 @@ in `notes/<task>.md`. One pull request (#744), `Closes #723`.
 
 ## 4. Close
 
-- [ ] 4.1 Archive the change and sync the spec as the last content commit. Accept: `task spec:check`, and
+- [x] 4.1 Archive the change and sync the spec as the last content commit. Accept: `task spec:check`, and
   `task merge:check` on this PR.

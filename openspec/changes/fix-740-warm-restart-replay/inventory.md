@@ -35,6 +35,17 @@ jetstream.AllKeys)`; `graph/embedding/vector_cache.go:91` — `return s.index.Wa
 EMBEDDING_INDEX); `processor/graph-query/community.go:87` — `view, err := graphview.New(reader, decodeCommunityEntry)`
 (COMMUNITY_INDEX).
 
+Request-driven full reads of ENTITY_STATES on the same connection (not at boot; they reach the limit only if an
+operator or UI opens one during a large replay): `service/message_logger_kv_watch.go:138` — `watcher, err =
+kv.WatchAll(watchCtx)` (full values, any bucket the request names, ENTITY_STATES included);
+`service/graph_triples_http.go:134`, `:259` — `keys, err := natsclient.FilteredKeys(ctx, reader, ">")` (a meta-only
+key listing of all ENTITY_STATES). Disposition: out of scope for the boot fix; the design says whether its bound covers
+them.
+
+Small boot-time watches, named to close the category: `config/manager.go:519` (config families),
+`natsclient/storagereport/storage_report_consumer.go:222` (storage report, `WatchAll`), `graph/readiness/watcher.go:282`
+(one readiness key). Each carries a few entries, not store-sized.
+
 Count, the issue's list vs today's tree: the issue names R1, R2, R5 (plus R3, R4 when enabled). R6 is not in the issue.
 The tier-0 composed stack runs R1, R2, R3, R5, R6 on one connection; with tier 1, R4 and three EMBEDDING_INDEX watches
 are added.
@@ -146,6 +157,18 @@ ADR-108 D4 (`docs/adr/108-processor-shell.md:119-120`, one `WatchAll` per follow
 `:153`); ADR-109 (ready after boot, `index_not_ready` as retry); ADR-112 (natsclient promises); ADR-113 (Start bounds
 Start); ADR-058 (boot phases).
 
+Governing text for R6 (graph-ingest's boot sweep): `openspec/specs/graph-ingest-recovery/spec.md:332` (the sweep waits
+at most 5 s for its watch to close); `openspec/specs/graph-entity-writes/spec.md:404` (the sweep applies the decode
+rule); ADR-113 `docs/adr/113-start-context-bounds-start.md:118` (the snapshot sweep is startup work under the
+Start context); ADR-081 `docs/adr/081-graph-view-subscription.md:242` (the boot sweep is out of graphview's scope).
+Moving R6 out of Start changes ADR-113's decision and is an owner question.
+
+Boot contract a product `main` follows: `docs/boot.md:51-59` — `Connect`, then `WaitForConnection`; the client
+reconnects forever, 2 s apart; "watches can take a while to resume", no time promised; a program that would rather
+exit sets `natsclient.WithConnectionLossTimeout` (`natsclient/options.go:62`) and a callback. SemSource uses that
+option (`connectNATS`, `connectionLossGrace`). Any retry of a transient Start failure interacts with both, and any doc
+fix lands in `docs/boot.md`.
+
 Open PRs (`gh pr list --state open --json number,title,changedFiles,files`): only #747 (draft, this claim, 0 files).
 
 Open issues (searches: follower, graphview, natsclient, "slow consumer", WatchAll, replay, ENTITY_STATES, websocket,
@@ -160,6 +183,10 @@ max_pending, reconnect):
   15 s wait), #659 (fusion seed read `response_too_large`).
 - Names the word, not the package: #195, #196, #284, #641, #502, #83, #141, #300, #68, #60, #24, #134, #111, #702,
   #704, #730, #742, #9, #11.
+- graph-ingest search (R6's package): #630 (port history in test messages), #270 (one unexplained integration
+  failure), #350 (constraint model decision); none on this territory. #109 is open ("an ENTITY_STATES follower and a
+  processor shell…; spatial/temporal become plug-ins"); the follower half exists, the spatial/temporal half does not,
+  so it stays open and this change does not touch it.
 - Open `class:flake` issues: none. alpha.8 milestone open: #740, #11.
 
 Consumer ask: C360Studio/semsource#351 (`max_pending: 536870912` workaround).
@@ -228,7 +255,8 @@ No boundary moves (no port-set, tier or exclusion change). Not applicable.
 
 A product `main` composing several graph readers on one `natsclient.Client`. SemSource at 52e3f67a: one Client from
 `connectNATS` (`cmd/semsource/run.go:463-477`), composes graph-embedding, graph-index, graph-lexical,
-graph-clustering, websocket (`run.go:305-313`); `configs/nats.conf:10` — `max_pending: 536870912`.
+graph-clustering, websocket in its registration map (`run.go:305-313`, which also registers graph-ingest, R6; this is
+what SemSource can register, not its composed config, which was not read); `configs/nats.conf:10` — `max_pending: 536870912`.
 
 1. What must they know: that boot replay load grows with store size × reader count on one connection; that the
    server's `max_pending` must exceed it; that a Start failure from a lost connection is not retried.
@@ -244,5 +272,7 @@ graph-clustering, websocket (`run.go:305-313`); `configs/nats.conf:10` — `max_
 - No probe was run. Every nats.go and nats-server statement is a source read at v1.55.0 / v2.15.3; 2.14.10 and
   2.15.0 server source were not read.
 - Not reproduced. Not established: whether it reproduces inside the Docker network, and the store size where it starts.
-- Not traced: per-component Start deadlines and the `INCOMING_INDEX` timeout's own bound; whether #109 is closable.
+- Start deadlines: SemEngine sets no Start budget of its own. The manager hands every component the caller's ctx and
+  never ends it (`service/component_manager_lifecycle.go:18-23` doc; ADR-113), so the bound is the product `main`'s
+  Start ctx. Not traced: the `INCOMING_INDEX` timeout's own bound.
 - SemSource was not read beyond its imports, component list and nats.conf (inventory-scope).

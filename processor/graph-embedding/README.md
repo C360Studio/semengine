@@ -202,7 +202,10 @@ in neither.
   vector is not regenerated yet is not a hit and is refused as a `similar` source, rather than compared across two
   vector spaces. A restart with the same embedder keeps every stored vector, provided the embedder reports its width
   from the start: one that reports 0 until its first response cannot vouch for a stored vector, so the entities hop 1
-  replays before that response are embedded again.
+  replays before that response are embedded again. The HTTP embedder (`graph/embedding/httpembedder`) reports 0
+  until its first reply unless its `Config.Dimensions` is set, so a product on it sets `Dimensions` to its model's
+  width, such as 384 for `Snowflake/snowflake-arctic-embed-s`. A wrong value fails every embed with an error naming
+  both widths.
 
 ### When a call is withheld
 

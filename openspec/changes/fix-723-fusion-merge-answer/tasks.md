@@ -1,12 +1,11 @@
 # Tasks: fix-723-fusion-merge-answer
 
 Tests come first. Each code task ends at a clean-tree local `task verify`. "Shown to fail" means failing-first output
-in `notes/<task>.md`. One pull request, `Closes #723`.
+in `notes/<task>.md`. One pull request (#744), `Closes #723`.
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 The owner fills `Approved-by:`.
 
 ## 2. The merge answer on the response
 

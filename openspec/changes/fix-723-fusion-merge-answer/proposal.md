@@ -1,6 +1,6 @@
 # Proposal: fix-723-fusion-merge-answer
 
-Approved-by:
+Approved-by: cglusky (2026-11-24) <https://github.com/C360Studio/semengine/issues/723#issuecomment-7129177245> sha256:f80136b5d8a1
 
 Track: `quick`. Capability: `fusion` (modified). Packages: `pkg/fusion`, `pkg/fusion/fusionnats`.
 

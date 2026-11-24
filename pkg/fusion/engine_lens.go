@@ -142,10 +142,11 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 		resp.DamagedEntities = skips.damaged
 	}
 	// Every response built after a natural-language search answered carries what
-	// the word index left out; symbol and prefix resolves leave nothing out, so
-	// their responses carry neither.
+	// the word index left out and whether the embedding search was merged in;
+	// symbol and prefix resolves do neither, so their responses carry none of it.
 	if mode == ResolveModeNL {
 		resp.BodiesNotIndexed, resp.Excluded = resolution.BodiesNotIndexed, resolution.Excluded
+		resp.Merge = resolution.Merge
 	}
 	return resp, nil
 }

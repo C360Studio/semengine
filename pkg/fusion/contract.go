@@ -62,6 +62,23 @@ const (
 	ProvenanceLLM           Provenance = "llm"           // an LLM reasoned over the result
 )
 
+// Merge says whether a natural-language search merged the embedding search's
+// results with the word index's, so a lexical answer can be told apart: the
+// merge was done and no embedding result made the list, or the embedding search
+// failed or ran late and the answer is words alone.
+//
+// Honoured is true when the reply holds the merge's answer. Detail is "merged"
+// when the two lists were merged, or "index_not_ready" when the word index was
+// not ready and the seeds are the embedding search's alone. Reason says why the
+// merge was not honoured, and Code is the refusal's code when a refusal caused
+// it. Detail, Reason and Code are omitted when empty.
+type Merge struct {
+	Honoured bool   `json:"honoured"`
+	Detail   string `json:"detail,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Code     string `json:"code,omitempty"`
+}
+
 // DeferReasonAllSeedsUnhydrated is the engine-level defer cause for a query whose seeds
 // all resolved but none could be read: the reads answered and the hydration failed, so
 // nothing was withheld for readiness. The other value Response.DeferReason takes is
@@ -189,6 +206,13 @@ type Response struct {
 	// resolve.
 	BodiesNotIndexed int      `json:"bodies_not_indexed,omitempty"`
 	Excluded         []string `json:"excluded,omitempty"`
+	// Merge is the merge answer of a natural-language search that ran with the
+	// embedding search, copied onto every response built after it answered:
+	// nodes, a miss, or a later deferral. Provenance lexical beside a Merge not
+	// honoured says the embedding search did not take part. Omitted when the
+	// search ran without the embedding search, and always after a symbol or
+	// prefix resolve or a failed resolve.
+	Merge *Merge `json:"merge,omitempty"`
 	// DamagedEntities is the largest count of damaged entities (stored values
 	// the graph refuses to read) that any graph read this response's answer
 	// used reported leaving out: the resolve, a relations or walk read, or a

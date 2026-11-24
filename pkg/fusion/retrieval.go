@@ -78,12 +78,17 @@ type Seed struct {
 // natural-language search answered from words alone and one that used meaning
 // as well are different answers to trust. Empty says the client does not
 // tell, and the response carries its mode's provenance (ProvenanceForMode).
+//
+// Merge, for a natural-language search, is the reply's answer on merging the
+// embedding search's results in; nil when the search ran without one. Symbol
+// and prefix resolves leave it nil.
 type Resolution struct {
 	Seeds            []Seed
 	BodiesNotIndexed int
 	Excluded         []string
 	DamagedEntities  int
 	Provenance       Provenance
+	Merge            *Merge
 }
 
 // Neighbors is what a Neighbors read found: the edges, and the reply's count of

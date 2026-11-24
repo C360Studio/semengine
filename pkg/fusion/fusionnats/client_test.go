@@ -524,6 +524,60 @@ func TestMergedResolveProvenance(t *testing.T) {
 	}
 }
 
+// TestMergedResolveMerge holds that an NL resolve copies the merged search
+// reply's merge answer into the Resolution, and the engine onto the response's
+// merge key: honoured with its detail, or not honoured with its detail, reason
+// and code. A reply with no merge leaves the Resolution's Merge nil and the
+// response without the key.
+func TestMergedResolveMerge(t *testing.T) {
+	results := []graph.MergedSearchHit{{EntityID: "a.b.c.d.e.1", Score: 4.5}}
+	for name, tc := range map[string]struct {
+		merge   *graph.GlobalSearchHint
+		want    *fusion.Merge
+		wantKey map[string]any
+	}{
+		"honoured": {
+			&graph.GlobalSearchHint{Hint: "semantic", Detail: "merged", Honoured: true},
+			&fusion.Merge{Honoured: true, Detail: "merged"},
+			map[string]any{"honoured": true, "detail": "merged"},
+		},
+		"not honoured": {
+			&graph.GlobalSearchHint{
+				Hint: "semantic", Detail: "merged", Reason: "the embedding search failed", Code: graph.ErrorCodeInternal,
+			},
+			&fusion.Merge{Detail: "merged", Reason: "the embedding search failed", Code: graph.ErrorCodeInternal},
+			map[string]any{
+				"honoured": false, "detail": "merged", "reason": "the embedding search failed", "code": "internal",
+			},
+		},
+		"no merge": {nil, nil, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			reply := graph.MergedSearchData{Results: results, Merge: tc.merge}
+			res, err := newClient(t, mergedThenBatch(t, reply)).Resolve(t.Context(),
+				fusion.ResolveQuery{Query: "widget", Mode: fusion.ResolveModeNL, Limit: 10})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, res.Merge, "the Resolution")
+
+			resp, err := newNLEngine(t, mergedThenBatch(t, reply)).Fuse(t.Context(), fusion.Request{Query: "widget"}, nlLens{})
+			require.NoError(t, err)
+			require.Len(t, resp.Nodes, 1, "the reply's result is answered")
+			raw, err := json.Marshal(resp)
+			require.NoError(t, err)
+			var keys map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(raw, &keys))
+			if tc.wantKey == nil {
+				assert.NotContains(t, keys, "merge", "the response")
+				return
+			}
+			require.Contains(t, keys, "merge", "the response")
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(keys["merge"], &got))
+			assert.Equal(t, tc.wantKey, got, "the response")
+		})
+	}
+}
+
 // TestNLMeaningAloneWhileWordIndexBuilds holds that a reply holding the
 // embedding list alone, merge honoured with detail index_not_ready, is an
 // answer: its entities as nodes, provenance embedding, and none of the word

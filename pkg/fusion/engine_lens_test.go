@@ -52,6 +52,8 @@ type fakeGraph struct {
 	namesDamaged     int
 	// provenance is the Provenance Resolve reports; empty reports none.
 	provenance fusion.Provenance
+	// merge is the Merge Resolve reports; nil reports none.
+	merge *fusion.Merge
 	// unhydrated, when set, is reported alongside whatever entitiesFn returns.
 	unhydrated []fusion.Unhydrated
 	// seedsFn, when set, overrides seed resolution so a test can attach similarity
@@ -64,7 +66,7 @@ func (g *fakeGraph) Resolve(_ context.Context, q fusion.ResolveQuery) (fusion.Re
 	counted := func(seeds []fusion.Seed) fusion.Resolution {
 		return fusion.Resolution{
 			Seeds: seeds, BodiesNotIndexed: g.bodiesNotIndexed, Excluded: g.excluded, DamagedEntities: g.resolveDamaged,
-			Provenance: g.provenance,
+			Provenance: g.provenance, Merge: g.merge,
 		}
 	}
 	if g.seedsFn != nil {

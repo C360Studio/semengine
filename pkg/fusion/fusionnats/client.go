@@ -151,7 +151,7 @@ func (c *Client) resolvePrefix(ctx context.Context, query string, limit int) (fu
 // scope keeps only entities under its ID prefixes (ADR-071); an empty one is
 // left out of the request. Seeds keep the reply's order and carry each
 // result's score as the mode's own score; the reply's bodies_not_indexed,
-// excluded and damaged_entities ride along in the Resolution. A request nothing
+// excluded, damaged_entities and merge ride along in the Resolution. A request nothing
 // answers, graph-query not composed included, is a transient internal error
 // naming the subject.
 func (c *Client) resolveMerged(ctx context.Context, query string, scope []string, limit int) (fusion.Resolution, error) {
@@ -191,9 +191,15 @@ func (c *Client) resolveMerged(ctx context.Context, query string, scope []string
 			break
 		}
 	}
+	var merge *fusion.Merge
+	if resp.Merge != nil {
+		merge = &fusion.Merge{
+			Honoured: resp.Merge.Honoured, Detail: resp.Merge.Detail, Reason: resp.Merge.Reason, Code: resp.Merge.Code,
+		}
+	}
 	return fusion.Resolution{
 		Seeds: seeds, BodiesNotIndexed: resp.BodiesNotIndexed, Excluded: resp.Excluded, DamagedEntities: damaged,
-		Provenance: provenance,
+		Provenance: provenance, Merge: merge,
 	}, nil
 }
 

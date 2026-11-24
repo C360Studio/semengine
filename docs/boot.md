@@ -49,9 +49,9 @@ client in step 2 with `natsclient` options.
 
 ### 2. Connect, and wait for the connection
 
-Create the client, call `Connect`, then `WaitForConnection`. `Connect` returns before the connection is up;
-`WaitForConnection` polls until the client reports it is connected or its context ends
-(`natsclient/client.go:379-396`). Every later step uses the connection, so wait before going on.
+Create the client, call `Connect`, then `WaitForConnection`. `Connect` opens the connection and returns its error;
+`WaitForConnection` then checks, under its context, that the client still reports itself connected
+(`natsclient/client.go:379-396`). Every later step uses the connection.
 
 The client's defaults are to reconnect forever, two seconds apart (`natsclient/client.go:311-312`). After a broker
 restart, watches can take a while to resume. How long is up to nats.go and is not promised, so this page states no
@@ -64,9 +64,10 @@ callback (`natsclient/options.go:50-62`); the callback only signals, and your `m
 named from the declared `platform.org` and stem, and decides which copy wins:
 
 - First boot: the file is written to the bucket, and the stem gets its suffix.
-- Later boots: a file whose `version` is newer than the bucket's is written. A file with an equal or older version
-  loses, and the bucket's content is used; this is logged only at debug level (`config/manager.go:492-496`). If you
-  edit the file and never raise `version`, the edits are ignored without a warning. The full table is in
+- Later boots: a file whose `version` is newer than the bucket's is written. A file with an older version loses and
+  is logged as a warning (`config/manager.go:485-490`). A file with an equal version also loses, logged only at debug
+  level (`config/manager.go:492-496`): if you edit the file and never raise `version`, the edits are ignored without
+  a warning. The full table is in
   [config/README.md](../config/README.md#the-configuration-manager).
 
 Start comes before step 4 because the effective platform ID exists only after it. Install the `Stop` call before you
@@ -174,7 +175,8 @@ failed, `StopAll` runs it again (`service/service_manager.go:330-338`). A second
 ### 11. Tear down in reverse
 
 Stop the services (`manager.StopAll`), then the configuration manager (`mgr.Stop`), then close the client
-(`client.Close`). Deferring each call right after it succeeds gives this order. Give each a context that has not
+(`client.Close`). Deferring each cleanup as soon as its object exists gives this order; for the configuration
+manager that is right after `NewConfigManager`, before `Start`. Give each a context that has not
 ended; `Stop` needs one even when the run context is done.
 
 ## A short sketch, in the same order
@@ -204,10 +206,10 @@ mgr, err := config.NewConfigManager(cfg, client, logger) // 3
 if err != nil {
     return err
 }
+defer stopManager(mgr) // 11, second to last; before Start, so a failed Start can still clean up
 if err := mgr.Start(ctx); err != nil {
     return err
 }
-defer stopManager(mgr) // 11, second to last
 effective := mgr.GetConfig().Get() // 4
 
 if err := config.NewStreamsManager(client, logger).EnsureStreams(ctx, effective); err != nil { // 5

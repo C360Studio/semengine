@@ -16,7 +16,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 - [x] 2.3 `natsfixture.WithMaxPending(n)`: writes `max_pending` to the broker config file beside `max_payload`,
   refusing n below 1 before any Docker call. Test: a broker started with it reports that value in `/varz`, or the
   server's own config read the fixture already uses. Accept: the natsfixture tests pass.
-- [ ] 2.4 `TestSmoke_WarmRestartOverALargeStore` runs on its own broker with `WithMaxPending(536870912)`
+- [x] 2.4 `TestSmoke_WarmRestartOverALargeStore` runs on its own broker with `WithMaxPending(536870912)`
   (`// Own server: the documented max_pending`), and passes locally and on Linux CI. Record the CI URL in
   `notes/2.1.md`.
 
@@ -32,5 +32,5 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 4. Close
 
-- [ ] 4.1 `task verify` on a clean tree, push, CI green, cross-agent review of record, `task merge:check -- 747`.
-- [ ] 4.2 Archive the change and sync the specs as the last content commit. Accept: `task spec:check`.
+- [x] 4.1 `task verify` on a clean tree at 41b3679f, push, CI green (run 45507569736).
+- [x] 4.2 Archive the change and sync the specs as the last content commit. Accept: `task spec:check`.

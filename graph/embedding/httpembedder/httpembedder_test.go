@@ -468,3 +468,53 @@ func TestTruncatedMarkPerText(t *testing.T) {
 		t.Fatalf("Generate = %v, want %v", vectors, want)
 	}
 }
+
+// TestDeclaredWidth: a width set in Config is what Dimensions reports from construction, before
+// any request, so a product restarting graph-embedding can vouch for its stored vectors without
+// waiting for the provider. A reply of another width is refused even when it is the first reply,
+// which a learned width would have accepted. A negative width is refused by New.
+func TestDeclaredWidth(t *testing.T) {
+	// The provider answers 2 wide for the text "narrow" and 3 wide for anything else.
+	p := newProvider(t, func(req embedRequest) (int, any) {
+		if len(req.Input) > 0 && req.Input[0] == "narrow" {
+			return semembed(2)(req)
+		}
+		return semembed(3)(req)
+	})
+	e := newEmbedder(t, httpembedder.Config{BaseURL: p.BaseURL(), Model: testModel, Dimensions: 3})
+
+	if d := e.Dimensions(); d != 3 {
+		t.Fatalf("Dimensions() = %d before any request, want the declared 3", d)
+	}
+	if reqs := p.Requests(); len(reqs) != 0 {
+		t.Fatalf("provider saw %d requests at New, want none", len(reqs))
+	}
+
+	got, err := e.Generate(t.Context(), []string{"narrow"})
+	if err == nil || got != nil {
+		t.Fatalf("Generate of a 2-wide reply = %v, %v; want an error and no vectors", got, err)
+	}
+	for _, want := range []string{"2", "3"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not name width %s", err, want)
+		}
+	}
+	if d := e.Dimensions(); d != 3 {
+		t.Fatalf("Dimensions() = %d after a refused 2-wide reply, want 3", d)
+	}
+
+	got, err = e.Generate(t.Context(), []string{"wide"})
+	if err != nil {
+		t.Fatalf("Generate of a 3-wide reply: %v", err)
+	}
+	if want := [][]float32{{1, 1, 1}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("vectors = %v, want %v", got, want)
+	}
+	if d := e.Dimensions(); d != 3 {
+		t.Fatalf("Dimensions() = %d after a 3-wide reply, want 3", d)
+	}
+
+	if e, err := httpembedder.New(httpembedder.Config{BaseURL: p.BaseURL(), Model: testModel, Dimensions: -1}); err == nil {
+		t.Fatalf("New with Dimensions -1 = %v, nil; want an error", e)
+	}
+}

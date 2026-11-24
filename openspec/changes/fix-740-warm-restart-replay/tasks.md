@@ -10,12 +10,12 @@ closed under and why it meets the contract's rule on terminal, bounded detachmen
 
 ## 1. Proposal and design
 
-- [ ] 1.1 Inventory and design: INVENTORY PASS, then pre-owner design review passes; the owner fills `Approved-by:`.
+- [x] 1.1 Inventory and design: INVENTORY PASS, then pre-owner design review passes; the owner fills `Approved-by:`.
   The owner's rulings on the six design questions are recorded on #740 (comment 7136495793).
-  Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Post probe740 on PR #747: `main.go`, `run.sh`, `runnet.sh`, `probes.sh` and every file under `out/`
+- [x] 1.2 Post probe740 on PR #747: `main.go`, `run.sh`, `runnet.sh`, `probes.sh` and every file under `out/`
   (one per run, named by the design's P-numbers, with `out/env.txt` for the versions). Accept: the comment opens on
   another machine, and each P-number in `design.md` names a file there.
+  Posted: PR #747 comments 7137819740 (scripts) and 7137820382 (outputs).
 
 ## 2. The failing test
 

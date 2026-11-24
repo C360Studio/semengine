@@ -28,4 +28,4 @@ in `notes/<task>.md`. One pull request (#746), `Closes #745`.
 
 ## 4. Close
 
-- [ ] 4.1 Archive the change as the last content commit. Accept: `task spec:check`, `task merge:check -- 746`.
+- [x] 4.1 Archive the change as the last content commit. Accept: `task spec:check`, `task merge:check -- 746`.

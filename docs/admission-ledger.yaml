@@ -3940,7 +3940,7 @@
   destination: graph/embedding/httpembedder/httpembedder.go
   contract: >-
     A new package, so graph/embedding still holds no embedder and imports no provider
-    (TestEmbeddingImportsNoProviderModule). New(Config{BaseURL, Model, APIKey, QueryPrefix, OmitInputType}) returns an *Embedder
+    (TestEmbeddingImportsNoProviderModule). New(Config{BaseURL, Model, APIKey, QueryPrefix, OmitInputType, Dimensions}) returns an *Embedder
     that implements embedding.Embedder with plain net/http: no SDK, no model package. BaseURL is the provider's API
     root and must end in /v1 for semembed; New refuses an empty base URL or model and a base URL that is not http or
     https, and makes no request. Generate posts one POST <BaseURL>/embeddings {"model","input","input_type":"document"}, sends Authorization:

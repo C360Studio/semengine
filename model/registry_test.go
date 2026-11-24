@@ -97,6 +97,15 @@ func TestValidate(t *testing.T) {
 			wantErr: "endpoint \"bad\": max_output_tokens must not be negative",
 		},
 		{
+			name: "endpoint negative dimensions",
+			modify: func(r *Registry) {
+				r.Endpoints["bad"] = &EndpointConfig{
+					Model: "test", MaxTokens: 1000, Dimensions: -1,
+				}
+			},
+			wantErr: "endpoint \"bad\": dimensions must not be negative",
+		},
+		{
 			name: "endpoint unknown provider",
 			modify: func(r *Registry) {
 				r.Endpoints["bad"] = &EndpointConfig{
@@ -1147,6 +1156,51 @@ func TestResolveEndpointWithConfig_KeepalivePlumbing(t *testing.T) {
 	// silent strip.
 	if ep.QueryPrefix != "Represent this sentence for searching relevant passages: " {
 		t.Errorf("QueryPrefix = %q, want the arctic query prefix (gh#438 plumbing)", ep.QueryPrefix)
+	}
+}
+
+// TestResolveEndpointWithConfig_EmbeddingDimensions checks that an embedding
+// endpoint's declared vector width reaches the caller from a registry loaded
+// from JSON, and that leaving the key out means not declared.
+func TestResolveEndpointWithConfig_EmbeddingDimensions(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		want     int
+	}{
+		{
+			name:     "declared",
+			endpoint: `{"provider": "openai", "url": "http://semembed:8081/v1", "model": "all-minilm", "dimensions": 384}`,
+			want:     384,
+		},
+		{
+			name:     "not declared",
+			endpoint: `{"provider": "openai", "url": "http://semembed:8081/v1", "model": "all-minilm"}`,
+			want:     0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte(`{
+				"endpoints": {"semembed": ` + tt.endpoint + `},
+				"capabilities": {"embedding": {"preferred": ["semembed"]}},
+				"defaults": {"model": "semembed"}
+			}`)
+			var reg Registry
+			if err := json.Unmarshal(data, &reg); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if err := reg.Validate(); err != nil {
+				t.Fatalf("Validate: %v", err)
+			}
+			_, ep, err := ResolveEndpointWithConfig(&reg, CapabilityEmbedding)
+			if err != nil {
+				t.Fatalf("ResolveEndpointWithConfig: %v", err)
+			}
+			if ep.Dimensions != tt.want {
+				t.Errorf("Dimensions = %d, want %d", ep.Dimensions, tt.want)
+			}
+		})
 	}
 }
 

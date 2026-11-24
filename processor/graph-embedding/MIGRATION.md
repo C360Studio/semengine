@@ -28,13 +28,14 @@ start.
   register it with `graphembedding.RegisterWithEmbedder(registry, name, newEmbedder)`, where `newEmbedder` builds
   your `embedding.Embedder`. The registration asks boot for no model registry. For a provider such as semembed, build
   the client with `graph/embedding/httpembedder`. In SemSource's constructor, take the endpoint from
-  `model.ResolveEndpointWithConfig(reg, model.CapabilityEmbedding)` and pass its URL, Model, APIKey and QueryPrefix as
-  `httpembedder.Config{BaseURL, Model, APIKey, QueryPrefix}`. Four things differ from the SemStreams client:
-  `BaseURL` must end in `/v1` (the client adds `/embeddings`), `QueryPrefix` is applied only to queries and nothing
-  checks it is the right one for the model, every request carries `input_type` (`query` or `document`; semembed then
-  adds the model's instruction itself, so on semembed `QueryPrefix` can be left empty, and `OmitInputType` drops the
-  field for a provider that refuses it), and a reply naming a model other than `Model` is refused, so with a
-  provider that echoes its own model id (TEI, for example) set `Model` to that id.
+  `model.ResolveEndpointWithConfig(reg, model.CapabilityEmbedding)` and pass its URL, Model, APIKey, QueryPrefix and
+  Dimensions as `httpembedder.Config{BaseURL, Model, APIKey, QueryPrefix, Dimensions}`; set `dimensions` on the
+  endpoint to the model's vector width so a restart keeps the stored vectors. Four things differ from the SemStreams
+  client: `BaseURL` must end in `/v1` (the client adds `/embeddings`), `QueryPrefix` is applied only to queries and
+  nothing checks it is the right one for the model, every request carries `input_type` (`query` or `document`;
+  semembed then adds the model's instruction itself, so on semembed `QueryPrefix` can be left empty, and
+  `OmitInputType` drops the field for a provider that refuses it), and a reply naming a model other than `Model` is
+  refused, so with a provider that echoes its own model id (TEI, for example) set `Model` to that id.
 - **`graphembedding.CreateGraphEmbedding` is gone.** SemStreams exported the factory, so a caller could build the
   component without a registry. *Do:* register with `RegisterWithEmbedder` and create the component through the
   component manager.

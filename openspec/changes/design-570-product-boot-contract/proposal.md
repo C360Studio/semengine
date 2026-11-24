@@ -1,6 +1,6 @@
 # Proposal: design-570-product-boot-contract
 
-Approved-by:
+Approved-by: cglusky (2026-11-23) <https://github.com/C360Studio/semengine/issues/570#issuecomment-7118217704> sha256:cdf46e65aefd
 
 Track: `design`. Capabilities: `service-lifecycle` (added), `config-manager` (added). Packages: `service`; docs.
 

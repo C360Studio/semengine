@@ -13,12 +13,14 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 )
 
 // The large store TestSmoke_WarmRestartOverALargeStore restarts over: cargoEntities entities, each
 // carrying one literal of cargoManifestBytes, about 142 MB stored in ENTITY_STATES, twice
-// defaultMaxPending. At half that, about 71 MB, the boot's replays on one connection stayed under
-// the limit on a Mac, so the test passed over the very fault it is for.
+// defaultMaxPending. At the server's default max_pending this store failed the restart on Linux and
+// on a Mac; at half its size the boot's replays stayed under the default on a Mac, so the test
+// would have passed over the very fault it is for.
 const (
 	cargoEntities      = 16000
 	cargoManifestBytes = 8 * 1024
@@ -31,6 +33,10 @@ const (
 	// connection whose pending bytes pass it as a slow consumer. That is the pinned server's
 	// behaviour as this test observes it, not a promise of nats-server's.
 	defaultMaxPending = 64 << 20
+	// requiredMaxPending is the max_pending docs/boot.md tells a deployment to set: every
+	// whole-bucket reader replays at boot at once, each up to about one flow-control window ahead,
+	// so the bytes waiting on the one connection grow with the reader count, not the store.
+	requiredMaxPending = 512 << 20
 )
 
 // cargo is the i-th large entity: c360.<platform>.fleet.ops.cargo.<i>, with one manifest literal.
@@ -152,14 +158,21 @@ func (o observer) awaitBootstrapped(t *testing.T, s stack, key string, before, r
 		})
 }
 
-// TestSmoke_WarmRestartOverALargeStore holds composed-stack, "Restart over 66 MB of entity state":
+// TestSmoke_WarmRestartOverALargeStore holds composed-stack, "Restart over 132 MB of entity state":
 // a stack seeded through graph-ingest with more than the server's default max_pending in
-// ENTITY_STATES, stopped and started again on the same server with default settings, starts, every
-// follower and the websocket view apply their snapshot, and the server closes no connection as a
-// slow consumer during the boot. The shared server is used: it runs with nats-server's defaults,
-// and the slow-consumer count is compared before and after the restart, never against zero.
+// ENTITY_STATES, stopped and started again on a server with the max_pending docs/boot.md requires,
+// starts, every follower and the websocket view apply their snapshot, and the server closes no
+// connection as a slow consumer during the boot. The slow-consumer count is compared before and
+// after the restart, never against zero.
 func TestSmoke_WarmRestartOverALargeStore(t *testing.T) {
-	url := shared.Reset(t)
+	// Own server: runs with the max_pending docs/boot.md requires; the shared one keeps the defaults.
+	broker := natsfixture.New(t, natsfixture.WithMaxPending(requiredMaxPending))
+	ctx, cancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer cancel()
+	if err := broker.Start(ctx); err != nil {
+		t.Fatalf("start the NATS server: %v", err)
+	}
+	url := broker.URL()
 	o := newObserver(t, url)
 	first := startStack(t, o, url)
 	f := fixture{platform: first.platform}

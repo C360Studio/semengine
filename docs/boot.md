@@ -58,6 +58,18 @@ restart, watches can take a while to resume. How long is up to nats.go and is no
 time. A program that would rather exit than wait out a long outage sets `natsclient.WithConnectionLossTimeout` and a
 callback (`natsclient/options.go:50-62`); the callback only signals, and your `main` decides what to do.
 
+**Set `max_pending: 536870912` (512 MiB) in the NATS server's configuration.** nats-server's default is 64 MiB, and a
+warm restart over a stored graph needs more. At boot every graph reader that keeps a copy of a whole bucket (the
+graph-index, graph-lexical, graph-clustering and graph-embedding followers, the websocket output's view,
+graph-query's community view, graph-ingest's boot sweep and graph-embedding's index watches) replays that bucket at
+once over the one connection. The server lets each replay run up to about one flow-control window ahead of the
+reader. When the bytes waiting on a connection pass `max_pending`, the server closes it as a slow consumer and logs
+`Slow Consumer Detected: MaxPending of 67108864 Exceeded`. A component whose `Start` runs while the connection is
+down fails with `not connected to NATS`, and so does the boot. The bytes waiting grow with the number of readers, not
+with the size of the store. On nats-server 2.15.0 ten readers replaying at once peaked at about 344 MB, at both
+230 MB and 460 MB stored; that is a measurement, not a promise of nats-server's. `TestSmoke_WarmRestartOverALargeStore`
+restarts the stack over 132 MB with this setting. Revisit the number when a release adds a whole-bucket reader.
+
 ### 3. Start the configuration manager
 
 `config.NewConfigManager(cfg, client, logger)` then `Start(ctx)`. `Start` opens the configuration bucket, which is

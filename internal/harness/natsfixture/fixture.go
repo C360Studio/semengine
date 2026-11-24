@@ -39,8 +39,9 @@ const (
 	startAttempts = 2
 	// readyLog is the line nats-server logs once per boot when it accepts clients.
 	readyLog = "Server is ready"
-	// maxPayloadConfig is where WithMaxPayload's config file lands in the container.
-	maxPayloadConfig = "/etc/nats/semengine-fixture.conf"
+	// brokerConfig is where the config file for WithMaxPayload and WithMaxPending lands in the
+	// container.
+	brokerConfig = "/etc/nats/semengine-fixture.conf"
 )
 
 // imagePin is the pin file, the one spelling of the NATS image (harness-boundaries › "One image
@@ -91,6 +92,8 @@ type Fixture struct {
 	js            jetstream.JetStream
 	maxPayload    int64 // broker max_payload in bytes, from WithMaxPayload
 	maxPayloadSet bool  // unset leaves the broker default
+	maxPending    int64 // broker max_pending in bytes, from WithMaxPending
+	maxPendingSet bool  // unset leaves the broker default
 }
 
 // Option configures a fixture's broker; New applies it before any Docker call.
@@ -101,6 +104,25 @@ type Option func(*Fixture)
 // refuses an n below 1 before any Docker call.
 func WithMaxPayload(n int64) Option {
 	return func(f *Fixture) { f.maxPayload, f.maxPayloadSet = n, true }
+}
+
+// WithMaxPending starts the broker with max_pending set to n bytes: how much a connection may have
+// waiting to be sent before the broker closes it as a slow consumer. Without it the broker's own
+// default applies. Start refuses an n below 1 before any Docker call.
+func WithMaxPending(n int64) Option {
+	return func(f *Fixture) { f.maxPending, f.maxPendingSet = n, true }
+}
+
+// brokerConfigFile is the config file the options ask for, empty when none does.
+func (f *Fixture) brokerConfigFile() string {
+	var b strings.Builder
+	if f.maxPayloadSet {
+		fmt.Fprintf(&b, "max_payload: %d\n", f.maxPayload)
+	}
+	if f.maxPendingSet {
+		fmt.Fprintf(&b, "max_pending: %d\n", f.maxPending)
+	}
+	return b.String()
 }
 
 // TB is what New uses of its caller: a test passes its *testing.T, and a program run by Task
@@ -145,6 +167,9 @@ func (f *Fixture) Start(ctx context.Context) error {
 	}
 	if f.maxPayloadSet && f.maxPayload < 1 {
 		return fmt.Errorf("natsfixture: max payload %d bytes: the broker needs at least 1", f.maxPayload)
+	}
+	if f.maxPendingSet && f.maxPending < 1 {
+		return fmt.Errorf("natsfixture: max pending %d bytes: the broker needs at least 1", f.maxPending)
 	}
 	f.mu.Lock()
 	used := f.used
@@ -198,11 +223,12 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	// port, and a broker started later on the same machine can be handed that port.
 	token := rand.Text()
 	cmd := []string{"--port", "4222", "--js", "--auth", token}
-	if f.maxPayloadSet {
-		// nats-server has no command-line flag for max_payload, so it goes in a config file
-		// copied in before the container starts; the flags above still apply over it. The file
-		// is in the container's writable layer, so a Restart keeps the limit.
-		cmd = append(cmd, "--config", maxPayloadConfig)
+	config := f.brokerConfigFile()
+	if config != "" {
+		// nats-server has no command-line flag for max_payload or max_pending, so they go in a
+		// config file copied in before the container starts; the flags above still apply over it.
+		// The file is in the container's writable layer, so a Restart keeps the limits.
+		cmd = append(cmd, "--config", brokerConfig)
 	}
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
@@ -228,13 +254,13 @@ func (f *Fixture) attempt(ctx context.Context) error {
 			if err != nil {
 				return errors.Join(startErr, err)
 			}
-			if f.maxPayloadSet {
+			if config != "" {
 				// testcontainers copies Files in a PostCreates hook before ContainerStart, draining the
 				// Reader, so each attempt gets a new one (not promised by testcontainers;
 				// TestStartRetriesOnceOnPortInUse checks the limit after a retry).
 				req.Files = []testcontainers.ContainerFile{{
-					Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
-					ContainerFilePath: maxPayloadConfig,
+					Reader:            strings.NewReader(config),
+					ContainerFilePath: brokerConfig,
 					FileMode:          0o644,
 				}}
 			}

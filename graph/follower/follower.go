@@ -20,7 +20,7 @@
 //     time with the one Open read; a stream deleted and restored with that creation time inside one
 //     stall of the watch reads as the same stream, and the revisions it skipped are not declared.
 //   - How long a watch stalls after a reconnect, and when a deleted bucket closes it, is nats.go's
-//     timing (about 20 s measured at nats.go v1.54.0; TestFollowerDeclaresLostFeed deletes the
+//     timing (about 20 s measured at nats.go v1.55.0; TestFollowerDeclaresLostFeed deletes the
 //     bucket), not promised here.
 package follower
 

@@ -5,8 +5,7 @@ in `notes/<task>.md`. One pull request (#746), `Closes #745`.
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 The owner fills `Approved-by:`.
 
 ## 2. model: an embedding endpoint's width
 

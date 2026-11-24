@@ -1,6 +1,6 @@
 # Proposal: feat-745-endpoint-dimensions
 
-Approved-by:
+Approved-by: cglusky (2026-11-24) <https://github.com/C360Studio/semengine/issues/745#issuecomment-7130928576> sha256:21419b89a559
 
 Track: `quick`. No spec delta: no capability spec covers `model.EndpointConfig`'s fields (`skip_specs`). Package:
 `model`; docs in `processor/graph-embedding/MIGRATION.md` and `model`'s doc comments.

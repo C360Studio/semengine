@@ -71,5 +71,5 @@ Tests come first. Each code task ends at a clean-tree local `task verify`; docs 
 
 ## 5. Close
 
-- [ ] 5.1 Archive the change and sync the specs as the last content commit. Accept: `task spec:check`,
+- [x] 5.1 Archive the change and sync the specs as the last content commit. Accept: `task spec:check`,
   `task merge:check -- 739`.

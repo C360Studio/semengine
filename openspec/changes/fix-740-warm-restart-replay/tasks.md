@@ -36,7 +36,7 @@ closed under and why it meets the contract's rule on terminal, bounded detachmen
 
 ## 3. natsclient: a sibling Client
 
-- [ ] 3.1 Tests first, shown failing, in `natsclient`: `NewSibling() (*Client, error)` returns a Client that is not
+- [x] 3.1 Tests first, shown failing, in `natsclient`: `NewSibling() (*Client, error)` returns a Client that is not
   connected; after `Connect` it reaches a password-protected fixture server with the parent's credentials, and the
   server lists it under the parent's name. In-package, after the sibling connected: no metrics poller runs for it
   (`AwaitNoStacks` over `startMetricsPoller`'s goroutine, `natsclient/client.go:617`), it holds no metrics object, no
@@ -46,8 +46,9 @@ closed under and why it meets the contract's rule on terminal, bounded detachmen
   (`natsclient/client.go:1903-1906`).
   Premises: `natsclient/client.go:398-424` (the settings), `natsclient/options.go:43-62`, `:143-157`,
   `docs/admission-ledger.yaml:1175-1178`.
-- [ ] 3.2 Implement `NewSibling` and its doc comment, which promises no timing and says the parent's `Close` does
+- [x] 3.2 Implement `NewSibling` and its doc comment, which promises no timing and says the parent's `Close` does
   not close a sibling. Accept: 3.1 passes; `task verify`.
+  Done: `natsclient/client.go` `NewSibling`; tests and failing-first evidence in `notes/3.1.md`.
 
 ## 4. Each boot-time whole-bucket reader on its own connection
 

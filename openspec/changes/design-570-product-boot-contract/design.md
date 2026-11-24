@@ -67,7 +67,7 @@ D3. F2, the platform copy.
   (`Org`, `Platform`) differs from `deps.Manager.GetConfig().Get().Platform`'s (`org`, `id`); the snapshot is
   already read at `service/component_manager.go:189-192`. The refusal is classified invalid (`errs.WrapInvalid`, as
   graph-ingest's at `component.go:281-283`), names both pairs, and comes before any component factory runs (before
-  `cm.initialize()`, `:226`). `ConfigureFromServices` returns it and composes nothing. A half-empty pair is refused
+  `cm.initialize()`, `:227`). `ConfigureFromServices` returns it and composes nothing. A half-empty pair is refused
   as a mismatch. A wholly empty `deps.Platform` is not refused here; the components that need one refuse it
   (`graph-ingest/component.go:280`), and 35 `Dependencies{` literals in `service` tests pass none. Blast radius:
   package `service`; three test fixtures (task 2.2); no exported change.

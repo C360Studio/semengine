@@ -335,49 +335,6 @@ func NewClient(urls string, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
-// NewSibling returns a new Client, not connected, with this Client's server
-// URLs, credentials, timeouts, reconnect settings, logger and name. The name is
-// shared, so the server lists a Client and its siblings under one name. A
-// sibling gives work that holds a connection busy, such as a watch over a whole
-// bucket, a connection of its own; the caller connects it with Connect and
-// closes it with its own Close. The parent's Close does not close it.
-//
-// A sibling has no metrics: two Clients on one registry overwrite each other's
-// series, so a sibling registers nothing, runs no metrics poller and writes
-// none of the parent's series, and a server refusal on it is logged but not
-// counted. It has no connection-lost callback and no connection-loss timeout,
-// so the parent alone decides what an absent broker means for the process. A
-// sibling promises nothing about timing that any Client does not.
-//
-// Once the parent's Close has begun, NewSibling returns an error matching
-// nats.ErrConnectionClosed.
-func (m *Client) NewSibling() (*Client, error) {
-	// Close sets closing under mu before it clears the credentials, so a
-	// sibling made while closing is false carries them.
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.closing {
-		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", "NewSibling", "client closed")
-	}
-	s := &Client{
-		urls:                  m.urls,
-		logger:                m.logger,
-		maxReconnects:         m.maxReconnects,
-		reconnectWait:         m.reconnectWait,
-		pingInterval:          m.pingInterval,
-		writeTimeout:          m.writeTimeout,
-		timeout:               m.timeout,
-		drainTimeout:          m.drainTimeout,
-		netDial:               m.netDial,
-		requestHandlerTimeout: m.requestHandlerTimeout,
-		username:              m.username,
-		password:              m.password,
-		clientName:            m.clientName,
-	}
-	s.setStatus(StatusDisconnected)
-	return s, nil
-}
-
 // URLs returns the NATS server URLs (comma-separated for clustering)
 func (m *Client) URLs() string {
 	return m.urls

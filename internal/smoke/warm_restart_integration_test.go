@@ -207,6 +207,7 @@ func TestSmoke_WarmRestartOverALargeStore(t *testing.T) {
 	// Ordered by the waits above: the server counts a slow consumer when it closes the connection,
 	// and a reader whose connection was closed mid-replay reconnects and resumes before its
 	// snapshot is applied, so every close during the boot is counted before the last wait returned.
+	// That is the pinned server's behaviour as this test observes it, not a promise of nats-server's.
 	if slowAfter := o.slowConsumers(t); slowAfter != slowBefore {
 		t.Errorf("the server closed %d connection(s) as slow consumers during the restart (account %s count %d before, %d after)",
 			slowAfter-slowBefore, defaultAccount, slowBefore, slowAfter)

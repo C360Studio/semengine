@@ -11,9 +11,15 @@ nothing about timing beyond what any Client promises.
 
 #### Scenario: A sibling reaches the parent's server with the parent's credentials
 
-- **WHEN** a sibling of a Client built with credentials for a password-protected server calls `Connect`
+- **WHEN** a sibling of a Client whose URL carries the server's credential calls `Connect`
 - **THEN** it connects, and the server's connection listing shows it under the parent's name
 - **AND** the test that verifies this is `TestSiblingCarriesTheClientSettings`
+
+#### Scenario: A sibling copies every setting
+
+- **WHEN** a sibling is made from a Client built with non-default settings, a user and a password included
+- **THEN** each of those settings on the sibling equals the parent's
+- **AND** the test that verifies this is `TestSiblingCopiesEverySetting`
 
 #### Scenario: No sibling once Close has begun
 

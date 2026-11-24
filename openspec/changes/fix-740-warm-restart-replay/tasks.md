@@ -92,7 +92,9 @@ closed under and why it meets the contract's rule on terminal, bounded detachmen
   on", with the date and the ruling's comment, as the owner ruled.
 - [ ] 5.4 File the follow-up for two simultaneous message-logger KV watches on `ENTITY_STATES` on the main
   connection (`service/message_logger_kv_watch.go:138`), linked from the PR without a closing keyword.
-- [ ] 5.5 The deltas under `specs/` match the code and the test names. Accept: `task spec:check`.
+- [ ] 5.5 `docs/admission-ledger.yaml`, the natsclient row: add "New exported surface: `Client.NewSibling`" with its
+  tests. Accept: `task docs:check`; `task verify`.
+- [ ] 5.6 The deltas under `specs/` match the code and the test names. Accept: `task spec:check`.
 
 ## 6. Close
 

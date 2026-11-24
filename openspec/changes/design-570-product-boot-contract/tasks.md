@@ -6,7 +6,7 @@ Tests come first. Each code task ends at a clean-tree local `task verify`; docs 
 ## 1. Design
 
 - [ ] 1.1 Inventory and design: INVENTORY PASS (done, round 2), then the pre-owner design review passes; the owner
-  fills `Approved-by:` and rules on open questions 1 and 2.
+  fills `Approved-by:` (open questions 1 and 2 ruled on #570, 2026-11-23).
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. service: refuse a platform the configuration manager did not establish

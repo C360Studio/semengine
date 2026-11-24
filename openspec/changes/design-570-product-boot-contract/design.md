@@ -42,7 +42,7 @@ D2. Per item. Options are listed with cost, blast radius and what each foreclose
 - Item 3, ports.
   - **(A) Doc, chosen:** the defaults, every interface, `metrics: {"enabled": false}`.
   - (B) Port 0 means kernel-picked, plus an exported address reader. That changes what an absent key means (a
-    pointer or a new key), touches `service` and `metric`, and retires #614's hook. Owner question 2.
+    pointer or a new key), touches `service` and `metric`, and retires #614's hook. Ruled out of this change (#570).
   - (C) A bind-host key. No asker.
 - Item 4, restart. **Leave, chosen** (ADR-095); one line in the guide.
 - Item 5, reconnect. **Leave, chosen.** The guide states the defaults (`natsclient/client.go:311-312`) and
@@ -74,10 +74,10 @@ D3. F2, the platform copy.
 - (B') Fill a wholly empty `deps.Platform` from the effective pair and still refuse a mismatch. It does not break
   anything, and it removes a fact from the guide. Cost: the 35 fixtures receive a real platform, graph-ingest's
   empty-platform refusal becomes unreachable through the component manager, and the field has two meanings (given,
-  or left for the framework). It is the half-step to (C) and is offered in owner question 1.
+  or left for the framework). It is the half-step to (C) and was not taken (#570).
 - (C) Remove `service.Dependencies.Platform` and read it from `deps.Manager`. This removes the spelling entirely. It
   is a breaking field removal, costs one line in SemSource, and changes the AGENTS.md authority row,
-  `harness-boundaries` (`:700-705`) and ADR-104 `:178`. Owner question 1.
+  `harness-boundaries` (`:700-705`) and ADR-104 `:178`. Not taken (#570).
 - The services and streams copies (`effective.Services`, `EnsureStreams(effective)`) get doc only. The component
   manager cannot tell which services map it was handed.
 - Generated checks (`docs/testing.md:438`): not used. The rule reads two fields, each empty, equal or different:
@@ -113,7 +113,5 @@ lands second updates the one `docs/boot.md` line it changes.
 
 ## Open Questions (owner)
 
-1. OPEN-Q: F2. Refuse a mismatched `deps.Platform` (D3 B, recommended), also fill an empty one (D3 B'), or remove
-   the field (D3 C)?
-2. OPEN-Q: item 3. Take the kernel-picked port and bound-address reader in this change, or leave them with #614
-   (recommended: leave)?
+1. Ruled 2026-11-23 (#570): F2, refuse a mismatched `deps.Platform` (D3 B). B' and C are not taken.
+2. Ruled 2026-11-23 (#570): item 3, the kernel-picked port and bound-address reader stay with #614.

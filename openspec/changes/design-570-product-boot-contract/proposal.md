@@ -29,7 +29,7 @@ un-minted ID. The first-read examples in `service/doc.go` and `service/README.md
 
 ## Non-goals
 
-- A kernel-picked port and a reader for the bound address (#614; owner question 2).
+- A kernel-picked port and a reader for the bound address (left with #614, owner ruling 2026-11-23).
 - The arbitration defects #646 and #647.
 - Restarting a manager in-process (ADR-095).
 - Promising a reconnect time, which is nats.go's (ADR-112).

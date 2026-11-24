@@ -19,7 +19,7 @@ closed under and why it meets the contract's rule on terminal, bounded detachmen
 
 ## 2. The failing test
 
-- [ ] 2.1 `TestSmoke_WarmRestartOverALargeStore` in `internal/smoke`: seed the composed stack
+- [x] 2.1 `TestSmoke_WarmRestartOverALargeStore` in `internal/smoke`: seed the composed stack
   (`internal/smoke/stack_integration_test.go:122`) through graph-ingest with at least 66 MB in `ENTITY_STATES`
   (8,000 entities of about 8 KiB), stop it, start it again on the same server with its default `max_pending`, and
   assert: `Start` returns nil; every follower envelope and the websocket view report the snapshot applied; and the

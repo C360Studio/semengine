@@ -290,8 +290,7 @@ nothing for no texts. It SHALL import neither the OpenAI SDK nor the module's `m
 
 The HTTP embedder SHALL return one vector per text, placed by the reply's `index`. It SHALL return an error and no
 vectors when the reply's status is not 2xx, its count differs from the texts', an `index` is out of range or repeated,
-a vector is empty or of another width than it learned, or the reply names another model. `Dimensions` SHALL be 0
-until the first accepted reply and that reply's width after it.
+a vector is empty or of another width than it was configured with or learned, or the reply names another model.
 
 #### Scenario: Out-of-order reply
 
@@ -302,6 +301,18 @@ until the first accepted reply and that reply's width after it.
 
 - **WHEN** the reply has a wrong count, a repeated index, an empty vector, a second width, or another model
 - **THEN** the call returns an error and no vectors (`TestRefusesUntrustedReply`)
+
+### Requirement: The HTTP embedder can be given its width
+
+With `Config.Dimensions` set, `Dimensions` SHALL report that width from construction and `New` SHALL send no request.
+With it 0, `Dimensions` SHALL be 0 until the first accepted reply and that reply's width after it. `New` SHALL refuse
+a negative `Config.Dimensions`.
+
+#### Scenario: A declared width
+
+- **WHEN** the embedder is built with `Config.Dimensions` 3
+- **THEN** `Dimensions` is 3 before any request, a reply of width 2 is refused with no vectors, and `Dimensions`
+  stays 3 (`TestDeclaredWidth`)
 
 ### Requirement: Only query text carries the query prefix
 

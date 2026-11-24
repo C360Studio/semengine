@@ -3,8 +3,9 @@
 // such a provider passes an *Embedder to graph-embedding.
 //
 // It sends one request per call and trusts only a whole reply: one non-empty vector per text,
-// each placed by its index, all of the width the first accepted reply had, from the configured
-// model. Any other reply is an error with no vectors. A text the provider cut to fit the model's
+// each placed by its index, all of one width, from the configured model. The width is the one set
+// in Config.Dimensions, or else the width of the first accepted reply. Any other reply is an error
+// with no vectors. A text the provider cut to fit the model's
 // input window, which semembed marks "truncated": true on its reply entry, is reported by
 // GenerateMarked.
 package httpembedder
@@ -57,6 +58,13 @@ type Config struct {
 	// reads to put the model's own query or document instruction in front of each text. Set it for a
 	// provider that refuses the field.
 	OmitInputType bool
+
+	// Dimensions is the width of the vectors the model produces, such as 384 for
+	// Snowflake/snowflake-arctic-embed-s. Set, it is what Dimensions reports from construction, so
+	// graph-embedding can vouch for vectors it stored before a restart without waiting for the
+	// provider's first reply, and a reply of any other width is refused. 0 learns the width from the
+	// first accepted reply. A negative value is refused.
+	Dimensions int
 }
 
 // Embedder calls an embedding provider over HTTP. It is safe for concurrent use. The caller's
@@ -68,15 +76,15 @@ type Embedder struct {
 	queryPrefix string
 	inputType   bool // send input_type
 
-	// dimensions is the width of the first accepted reply, or 0 before one. It is read by other
-	// goroutines while a Generate call writes it.
+	// dimensions is the configured width, or else the width of the first accepted reply, or 0
+	// before one. It is read by other goroutines while a Generate call writes it.
 	dimensions atomic.Int64
 }
 
-// New returns an Embedder for cfg. It refuses an empty base URL or model, and a base URL that is
-// not an absolute http or https URL with a host. It makes no request: the width is learned from
-// the first reply, so a provider that is down at start degrades graph-embedding rather than
-// failing it.
+// New returns an Embedder for cfg. It refuses an empty base URL or model, a base URL that is not
+// an absolute http or https URL with a host, and a negative width. It makes no request, so a
+// provider that is down at start degrades graph-embedding rather than failing it: the width is
+// cfg.Dimensions when set, and otherwise learned from the first accepted reply.
 func New(cfg Config) (*Embedder, error) {
 	if cfg.BaseURL == "" {
 		return nil, errors.New("httpembedder: base URL is required")
@@ -94,13 +102,18 @@ func New(cfg Config) (*Embedder, error) {
 	if base.Hostname() == "" {
 		return nil, fmt.Errorf("httpembedder: base URL %q has no host", cfg.BaseURL)
 	}
-	return &Embedder{
+	if cfg.Dimensions < 0 {
+		return nil, fmt.Errorf("httpembedder: dimensions %d is negative", cfg.Dimensions)
+	}
+	e := &Embedder{
 		endpoint:    base.JoinPath("embeddings").String(),
 		model:       cfg.Model,
 		apiKey:      cfg.APIKey,
 		queryPrefix: cfg.QueryPrefix,
 		inputType:   !cfg.OmitInputType,
-	}, nil
+	}
+	e.dimensions.Store(int64(cfg.Dimensions))
+	return e, nil
 }
 
 // Generate embeds documents: one vector per text, in the texts' order, sent as input_type
@@ -140,7 +153,8 @@ func vectorsOf(marked []embedding.MarkedVector, err error) ([][]float32, error) 
 	return vectors, nil
 }
 
-// Dimensions returns the width of the first accepted reply, or 0 before one.
+// Dimensions returns the configured width, or else the width of the first accepted reply, or 0
+// before one.
 func (e *Embedder) Dimensions() int {
 	return int(e.dimensions.Load())
 }
@@ -262,8 +276,8 @@ func transient(err error) error {
 }
 
 // accept returns the reply's vectors in input order, each with its entry's truncated mark, or an
-// error if any part of the reply cannot be trusted. The width is learned only from a reply
-// accepted whole.
+// error if any part of the reply cannot be trusted. A reply of another width than the configured
+// or learned one is refused; with neither, the width is learned only from a reply accepted whole.
 func (e *Embedder) accept(r reply, n int) ([]embedding.MarkedVector, error) {
 	if r.Model != "" && r.Model != e.model {
 		return nil, fmt.Errorf("httpembedder: reply is from model %q, configured %q", r.Model, e.model)
@@ -299,8 +313,8 @@ func (e *Embedder) accept(r reply, n int) ([]embedding.MarkedVector, error) {
 		vectors[i] = embedding.MarkedVector{Vector: vector, Truncated: d.Truncated}
 	}
 	if !e.dimensions.CompareAndSwap(0, int64(width)) {
-		if learned := int(e.dimensions.Load()); learned != width {
-			return nil, fmt.Errorf("httpembedder: reply dimension %d, learned %d", width, learned)
+		if known := int(e.dimensions.Load()); known != width {
+			return nil, fmt.Errorf("httpembedder: reply dimension %d, expected %d", width, known)
 		}
 	}
 	return vectors, nil

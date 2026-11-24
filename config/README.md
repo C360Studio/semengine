@@ -175,6 +175,8 @@ a restart and another process (an operator's tool, a UI) can change what the nex
 `semengine_config_<org>_<stem>` from the document's `platform.org` and the `platform.id` it declares:
 `config.BucketName("acme", "dep")` returns `semengine_config_acme_dep`.
 
+The rest of a boot, in order, is in [Booting SemEngine from your own main](../docs/boot.md).
+
 ```go
 func run(ctx context.Context, cfg *config.Config, client *natsclient.Client, logger *slog.Logger) (err error) {
     mgr, err := config.NewConfigManager(cfg, client, logger)

@@ -37,14 +37,14 @@ Tests come first. Each code task ends at a clean-tree local `task verify`; docs 
 
 ## 3. Specs
 
-- [ ] 3.1 Deltas `specs/service-lifecycle/spec.md` and `specs/config-manager/spec.md` as drafted. The
+- [x] 3.1 Deltas `specs/service-lifecycle/spec.md` and `specs/config-manager/spec.md` as drafted. The
   `config-manager` Requirement names an existing test (`config/manager_identity_integration_test.go:160` —
   `require.ElementsMatch(t, []string{"org", "stem", "id"}, mapKeys(fields))`, in
   `TestConfigManagerFirstBootMintsPlatformIdentity`). Accept: `task spec:check`.
 
 ## 4. Docs
 
-- [ ] 4.1 Write `docs/boot.md` per design D1. Every "if skipped" line cites the code that produces it:
+- [x] 4.1 Write `docs/boot.md` per design D1. Every "if skipped" line cites the code that produces it:
   - item 1: `processor/graph-ingest/consume.go:218`
   - item 2: `processor/graph-ingest/component.go:272`
   - item 3: `service/service_manager.go:165-166`, `service/service_configs.go:90`
@@ -59,14 +59,14 @@ Tests come first. Each code task ends at a clean-tree local `task verify`; docs 
   No reconnect time is stated. Plain words; no port history.
   Accept: a reviewer checks each step against `internal/smoke/stack_integration_test.go:242-320`;
   `task docs:check`.
-- [ ] 4.2 Correct the examples:
+- [x] 4.2 Correct the examples:
   - `service/doc.go:80-84`
   - `service/README.md:97-101,348` (use `effective.Services` and `deps.Platform` from `effective`)
   - `docs/contract.md:146-191` (drop the stale note at `:150-152`; point to `docs/boot.md`)
   - Add links from `service/README.md:82` and `config/README.md:170`
 
   Accept: `task docs:check`; `task build` (doc.go compiles).
-- [ ] 4.3 ADR-104: a port-note correction under `:183`, saying the record's shape is normative in `config-manager`
+- [x] 4.3 ADR-104: a port-note correction under `:183`, saying the record's shape is normative in `config-manager`
   ("The platform identity record is a read contract"). Accept: `task docs:check`.
 
 ## 5. Close

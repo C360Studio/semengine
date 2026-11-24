@@ -82,7 +82,9 @@ stopping one as degraded; a stopped service is unhealthy. `GetStatus()` returns 
 ### Composing and starting
 
 A composition root builds a `Manager` from a `Registry` of service constructors, hands it the `services` section of
-the configuration, and starts it:
+the configuration, and starts it. `effective` is the configuration manager's `GetConfig().Get()` after its `Start`,
+never the file as loaded. The whole boot order, with what each step does when skipped, is in
+[Booting SemEngine from your own main](../docs/boot.md):
 
 ```go
 services := service.NewServiceRegistry()
@@ -95,10 +97,10 @@ manager.UseHTTPMiddleware(authMiddleware) // optional; before StartAll
 
 deps := &service.Dependencies{
     NATSClient: client, MetricsRegistry: registry, Logger: logger,
-    Platform: platform, Manager: configManager,
-    ComponentRegistry: components, PayloadRegistry: payloads,
+    Platform: types.PlatformMeta{Org: effective.Platform.Org, Platform: effective.Platform.ID},
+    Manager:  configManager, ComponentRegistry: components, PayloadRegistry: payloads,
 }
-if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
+if err := manager.ConfigureFromServices(effective.Services, deps); err != nil {
     return err
 }
 if err := manager.StartAll(startCtx); err != nil {
@@ -345,7 +347,7 @@ writes, and replace a whole group with one reconcile call (`projection.Predicate
 hand it one; the composition root does, in this order, after `ConfigureFromServices` and before `StartAll`:
 
 ```go
-if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
+if err := manager.ConfigureFromServices(effective.Services, deps); err != nil {
     return err
 }
 if err := service.ConfigureRulePackMutations(manager); err != nil {

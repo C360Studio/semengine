@@ -66,7 +66,9 @@
 // # The service manager
 //
 // A composition root builds a Manager from a Registry of service constructors,
-// hands it the services section of the configuration, and starts it:
+// hands it the services section of the configuration, and starts it. effective
+// is the configuration manager's GetConfig().Get() after its Start, never the
+// file as loaded; docs/boot.md in the repository gives the whole boot order:
 //
 //	services := service.NewServiceRegistry()
 //	if err := service.RegisterAll(services); err != nil { // every built-in service
@@ -78,10 +80,10 @@
 //
 //	deps := &service.Dependencies{
 //		NATSClient: client, MetricsRegistry: registry, Logger: logger,
-//		Platform: platform, Manager: configManager,
-//		ComponentRegistry: components, PayloadRegistry: payloads,
+//		Platform: types.PlatformMeta{Org: effective.Platform.Org, Platform: effective.Platform.ID},
+//		Manager:  configManager, ComponentRegistry: components, PayloadRegistry: payloads,
 //	}
-//	if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
+//	if err := manager.ConfigureFromServices(effective.Services, deps); err != nil {
 //		return err
 //	}
 //	if err := manager.StartAll(startCtx); err != nil {

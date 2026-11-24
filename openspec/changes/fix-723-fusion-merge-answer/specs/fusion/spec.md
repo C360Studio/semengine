@@ -33,14 +33,20 @@ or prefix resolve, a failed resolve, and a resolve with no `Merge` SHALL leave `
 - **WHEN** a `RetrievalClient` returns a `Resolution` with no `Provenance`
 - **THEN** the response carries its mode's provenance (`TestResolutionProvenanceWins`)
 
+#### Scenario: A merge honoured
+
+- **WHEN** the merged search reply holds an honoured `merge` with `detail` `merged`
+- **THEN** the `Resolution` carries `Merge` with `honoured` true and that `detail`, and the response carries them as
+  `merge`, with no `reason` or `code` key (`TestMergedResolveMerge`, `TestNLAnswerCarriesMerge`)
+
 #### Scenario: A merge that failed
 
 - **WHEN** the merged search reply holds a `merge` not honoured, with its `detail`, `reason` and `code`
 - **THEN** the `Resolution` carries `Merge` with `honoured` false and the three strings, and the response, with
-  nodes, a miss or an all-seeds-unhydrated deferral, carries them as `merge` (`TestMergedResolveMerge`,
-  `TestNLAnswerCarriesMerge`)
+  nodes, a miss, an all-seeds-unhydrated deferral or an `index_not_ready` deferral from the batch read, carries
+  them as `merge` (`TestMergedResolveMerge`, `TestNLAnswerCarriesMerge`)
 
 #### Scenario: No merge answer
 
-- **WHEN** the merged search reply has no `merge`, or the lens picks symbol mode
+- **WHEN** the merged search reply has no `merge`, the lens picks symbol mode, or the resolve fails
 - **THEN** the response has no `merge` key (`TestMergedResolveMerge`, `TestNLAnswerCarriesMerge`)

@@ -2,6 +2,7 @@ package fusion_test
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"testing"
 
@@ -187,6 +188,101 @@ func TestResolutionProvenanceWins(t *testing.T) {
 			}
 			if shape != tc.shape || resp.Provenance != tc.prov {
 				t.Errorf("a %s with provenance %q, want a %s with %q", shape, resp.Provenance, tc.shape, tc.prov)
+			}
+		})
+	}
+}
+
+// mergeKey decodes the response's merge key, and reports whether it was there.
+func mergeKey(t *testing.T, keys map[string]json.RawMessage) (map[string]any, bool) {
+	t.Helper()
+	raw, ok := keys["merge"]
+	if !ok {
+		return nil, false
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("merge %s: %v", raw, err)
+	}
+	return got, true
+}
+
+// TestNLAnswerCarriesMerge: an NL resolve reporting a merge answer puts it,
+// as the merge key, on a response with nodes, on a miss, and on both kinds of
+// deferral from the batch read that followed the search. A merge not honoured
+// carries its detail, reason and code; an honoured one leaves out the empty
+// reason and code. A symbol resolve's response, a failed NL resolve's deferral,
+// and an NL resolve that reports no merge answer have no merge key.
+func TestNLAnswerCarriesMerge(t *testing.T) {
+	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
+	failed := &fusion.Merge{Detail: "merged", Reason: "the embedding search failed", Code: "internal"}
+	wantFailed := map[string]any{
+		"honoured": false, "detail": "merged", "reason": "the embedding search failed", "code": "internal",
+	}
+	found := func(query string, merge *fusion.Merge) *fakeGraph {
+		return &fakeGraph{
+			seeds: map[string][]string{query: {seed.ID}}, entities: map[string]*fusion.Entity{seed.ID: seed},
+			merge: merge,
+		}
+	}
+
+	for name, tc := range map[string]struct {
+		g     *fakeGraph
+		shape string
+		want  map[string]any
+	}{
+		"nodes, not honoured": {found(nlQuery, failed), "nodes", wantFailed},
+		"nodes, honoured": {
+			found(nlQuery, &fusion.Merge{Honoured: true, Detail: "merged"}), "nodes",
+			map[string]any{"honoured": true, "detail": "merged"},
+		},
+		"miss":                 {&fakeGraph{names: []string{"OnEvent"}, merge: failed}, "miss", wantFailed},
+		"all seeds unhydrated": {&fakeGraph{seeds: map[string][]string{nlQuery: {seed.ID}}, merge: failed}, "deferred", wantFailed},
+		"batch not ready": {
+			&fakeGraph{seeds: map[string][]string{nlQuery: {seed.ID}}, entErr: indexNotReady(), merge: failed}, "deferred", wantFailed,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, keys := searchCountKeys(t, tc.g, nlQuery)
+			shape := "nodes"
+			switch {
+			case resp.Deferred:
+				shape = "deferred"
+			case len(resp.Misses) > 0:
+				shape = "miss"
+			case len(resp.Nodes) == 0:
+				shape = "empty"
+			}
+			if shape != tc.shape {
+				t.Fatalf("a %s, want a %s", shape, tc.shape)
+			}
+			got, ok := mergeKey(t, keys)
+			if !ok {
+				t.Fatalf("no merge key, want %v", tc.want)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("merge = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	failedResolve := &fakeGraph{resolveErr: indexNotReady(), merge: failed}
+	for name, tc := range map[string]struct {
+		query string
+		g     *fakeGraph
+		nodes int
+	}{
+		"nl resolve with no merge": {nlQuery, found(nlQuery, nil), 1},
+		"symbol resolve":           {"OnEvent", found("OnEvent", failed), 1},
+		"failed nl resolve":        {nlQuery, failedResolve, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, keys := searchCountKeys(t, tc.g, tc.query)
+			if len(resp.Nodes) != tc.nodes {
+				t.Fatalf("nodes = %d, want %d", len(resp.Nodes), tc.nodes)
+			}
+			if got, ok := mergeKey(t, keys); ok {
+				t.Errorf("merge = %v, want no key", got)
 			}
 		})
 	}

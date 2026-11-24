@@ -1,6 +1,6 @@
 # Proposal: fix-722-httpembedder-declared-width
 
-Approved-by:
+Approved-by: cglusky (2026-11-24) <https://github.com/C360Studio/semengine/issues/722#issuecomment-7129098841> sha256:e9870f38ddb9
 
 Track: `quick`. Capability: `embedding-index` (modified). Packages: `graph/embedding/httpembedder`; docs in
 `processor/graph-embedding`.

@@ -5,8 +5,7 @@ in `notes/<task>.md`. One pull request (#743), `Closes #722`.
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 The owner fills `Approved-by:`.
 
 ## 2. httpembedder: a declared width
 

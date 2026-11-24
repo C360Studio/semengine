@@ -2069,8 +2069,10 @@
     as at the pin, except: (1) Registry.Validate visits endpoints and capabilities in name order, so the first
     error for a registry is the same on every call (port-composition, #348); (2) RollingWindowBreaker.IsHealthy
     admits one half-open probe and refuses other callers until it reports or one Cooldown passes, and
-    EndpointStatus reserves no probe slot (breaker.go, #114); health.go's IsHealthy doc comment says so; every
-    other .go file matches the pin
+    EndpointStatus reserves no probe slot (breaker.go, #114); health.go's IsHealthy doc comment says so; (3)
+    EndpointConfig has Dimensions (`dimensions`), the vector width of an embedding endpoint's model, 0 when not
+    declared, and Registry.Validate refuses a negative one naming the endpoint (registry.go, #745); every other
+    .go file matches the pin
   dependencies_and_side_effects: >-
     golang.org/x/net (model/httpclient.go:7), entered at v0.59.0, the base's version (design P-2, task 3.1),
     now v0.60.0 for five HTTP/2 advisories govulncheck reports (074c800, task 5.3); stdlib; no in-module
@@ -2084,15 +2086,18 @@
     Changed from the pin: the first error Registry.Validate returns for several invalid entries is the first in
     name order, where the pin's depended on map order; half-open admits one probe (the pin admitted every caller
     past the cooldown), and a probe that has not reported within one Cooldown of being admitted counts as lost so
-    the next IsHealthy caller takes the slot (#114)
+    the next IsHealthy caller takes the slot (#114); EndpointConfig gains Dimensions, which the pin did not have
+    (#745)
   proving_tests: >-
     model/breaker_test.go, model/health_test.go, model/httpclient_test.go, model/registry_test.go
     (TestRegistryValidateNamesFirstInvalidEndpointByName), model/watch_test.go;
     TestBreaker_HalfOpenAdmitsOneProbe, TestBreaker_LostProbeFreesSlotAfterOneCooldown,
-    TestBreaker_StatusReadsReserveNothing, TestBreaker_ConcurrentProbeAdmitsExactlyOne (#114)
+    TestBreaker_StatusReadsReserveNothing, TestBreaker_ConcurrentProbeAdmitsExactlyOne (#114);
+    TestValidate ("endpoint negative dimensions"), TestResolveEndpointWithConfig_EmbeddingDimensions (#745)
   owner: >-
     setup-04a-02-ingest-kernel developer; port-composition developer (Registry.Validate order);
-    fix-114-breaker-half-open-probe developer (half-open probe)
+    fix-114-breaker-half-open-probe developer (half-open probe); feat-745-endpoint-dimensions developer
+    (Dimensions)
   disposition: adapt
 
 - source_path: storage

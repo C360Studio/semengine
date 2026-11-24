@@ -262,6 +262,12 @@ type EndpointConfig struct {
 	// passages: ". Documents are embedded raw. Ignored by non-embedding capabilities
 	// and by symmetric embedders. Empty = no prefix.
 	QueryPrefix string `json:"query_prefix,omitempty"`
+	// Dimensions is used ONLY by the embedding capability: the vector width of
+	// the endpoint's model, which a product passes to its embedder so vectors
+	// stored before a restart stay usable after it. 0 means not declared, and
+	// the embedder takes the width of its first reply. Ignored by
+	// non-embedding capabilities.
+	Dimensions int `json:"dimensions,omitempty"`
 	// MaxTokens is the context window size in tokens.
 	//
 	// For provider="ollama", this value is NOT forwarded to the server —
@@ -529,6 +535,9 @@ func validateEndpoint(name string, ep *EndpointConfig) error {
 	}
 	if ep.MaxOutputTokens < 0 {
 		return fmt.Errorf("endpoint %q: max_output_tokens must not be negative", name)
+	}
+	if ep.Dimensions < 0 {
+		return fmt.Errorf("endpoint %q: dimensions must not be negative", name)
 	}
 
 	validProviders := map[string]bool{

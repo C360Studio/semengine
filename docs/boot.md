@@ -51,8 +51,7 @@ client in step 2 with `natsclient` options.
 
 Create the client, call `Connect`, then `WaitForConnection`. `Connect` returns before the connection is up;
 `WaitForConnection` polls until the client reports it is connected or its context ends
-(`natsclient/client.go:379-396`). Every later step uses the connection. Both reference programs wait; I did not run a
-boot that skips the wait, so this page does not say what that looks like.
+(`natsclient/client.go:379-396`). Every later step uses the connection, so wait before going on.
 
 The client's defaults are to reconnect forever, two seconds apart (`natsclient/client.go:311-312`). After a broker
 restart, watches can take a while to resume. How long is up to nats.go and is not promised, so this page states no
@@ -95,7 +94,7 @@ A program that does not run `config.Manager`, such as a separate producer of ent
 `EnsureStreams(ctx, effective)` creates the JetStream streams the configuration declares. If you skip it, a component
 that consumes a stream waits for the stream and then fails its start: graph-ingest polls 30 times, with growing
 pauses, and returns `stream ... not available after N retries` (`processor/graph-ingest/consume.go:218`). By the
-constants that is about 49 seconds; I computed that and did not time it. A composition with no consuming component
+constants that adds up to about 49 seconds. A composition with no consuming component
 boots, and its health publishes to the missing stream fail quietly (a debug log line and a counter).
 
 ### 6. Register components, vocabulary and payload types

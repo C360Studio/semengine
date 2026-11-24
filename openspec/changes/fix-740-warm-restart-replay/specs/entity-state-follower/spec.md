@@ -4,18 +4,25 @@
 
 ### Requirement: The follower's watch runs on a connection of its own
 
-`Run` SHALL open a sibling of `Config.Client` for its watch, connecting it within the same startup wait `Open` uses
-for the bucket, and SHALL close it before it returns. A sibling that cannot be connected within that wait SHALL
-declare the feed lost, as a watch that cannot start does. The follower's status reads SHALL stay on `Config.Client`.
+`Run` SHALL open a sibling of `Config.Client` for its watch and SHALL close it before it returns. `Run` SHALL wait for
+the sibling to connect for at most `Config.StartupAttempts` attempts `Config.StartupInterval` apart, a wait of its
+own beside `Open`'s wait for the bucket. A sibling that does not connect within that wait SHALL declare the feed
+lost, as a watch that cannot start does. The follower's status reads SHALL stay on `Config.Client`.
 
-#### Scenario: Run closes its connection when it returns
+#### Scenario: A broker that is gone when Run starts is a lost feed
+
+- **WHEN** the broker stops after `Open` returned and before `Run` starts
+- **THEN** `Run`'s wait ends, the follower declares the feed lost, and `QueryReady` refuses
+- **AND** the test that verifies this is `TestFollowerDeclaresLostFeedWhenItsConnectionCannotOpen`
+
+### Requirement: A clean stop of Run leaves nothing behind
+
+When `Run` returns because its context ended, it SHALL return nil, log nothing at Error, close its sibling, and leave
+no goroutine of the sibling's running.
+
+#### Scenario: A clean stop closes the connection and leaves nothing
 
 - **WHEN** `Run` returns because its context ended
-- **THEN** the connection it opened is closed and the server lists no connection of the follower's
+- **THEN** it returns nil, nothing is logged at Error, the server lists no connection of the follower's beyond
+  `Config.Client`'s, and no natsclient goroutine is left running
 - **AND** the test that verifies this is `TestFollowerWatchHasItsOwnConnection`
-
-#### Scenario: A connection that cannot be opened is a lost feed
-
-- **WHEN** the sibling cannot connect within the startup wait
-- **THEN** the follower declares the feed lost and `QueryReady` refuses
-- **AND** the test that verifies this is `TestFollowerDeclaresLostFeedWhenItsConnectionCannotOpen`

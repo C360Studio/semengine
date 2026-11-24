@@ -5,32 +5,70 @@
 ### Requirement: A warm restart over a large store starts on default broker limits
 
 A composed stack restarted over a retained store SHALL start, and every graph reader SHALL report its snapshot
-applied, on a NATS server with its default `max_pending` of 64 MiB. No connection of the process SHALL be closed by
+applied, on a NATS server with its default `max_pending` of 64 MiB. No connection of the stack SHALL be closed by
 the server as a slow consumer during the boot.
 
 #### Scenario: Restart over 66 MB of entity state
 
 - **WHEN** the stack is seeded with at least 66 MB in `ENTITY_STATES`, stopped, and started again on the same server
   with default settings
-- **THEN** `Start` returns nil, every follower and the websocket view report the snapshot applied, and no connection
-  of the process is closed as a slow consumer
+- **THEN** `Start` returns nil, every follower and the websocket view report the snapshot applied, and the account's
+  slow-consumer count on the server is the same after the restart as before it
 - **AND** the test that verifies this is `TestSmoke_WarmRestartOverALargeStore`
 
-### Requirement: Each whole-bucket watch has a connection of its own
+### Requirement: Each boot-time whole-bucket reader has a connection of its own
 
-Every watch that replays a whole `ENTITY_STATES`, `EMBEDDING_INDEX` or `COMMUNITY_INDEX` bucket SHALL run on a NATS
-connection that carries no other such watch. The connection SHALL be opened when the watch starts and closed before
-the code that started it returns: the run that holds the watch (the follower's `Run`, a view's run, the embedding
-Worker's `Run`), or `Start` for graph-ingest's boot sweep and graph-embedding's failed-record scan.
+Each of these readers SHALL hold its whole-bucket watch on a NATS connection that carries no other watch: the
+`ENTITY_STATES` follower of graph-index, graph-lexical, graph-clustering and graph-embedding; the websocket output's
+`ENTITY_STATES` view; graph-query's `COMMUNITY_INDEX` view; graph-ingest's boot sweep; and graph-embedding's
+failed-record scan, Worker and vector cache over `EMBEDDING_INDEX`.
 
-#### Scenario: A follower's connection lives as long as its watch
+#### Scenario: A follower's watch adds one connection
 
-- **WHEN** a follower's `Run` is running, and then returns
-- **THEN** the server lists one connection more than before `Open` while it runs, and none more after it returns
+- **WHEN** a follower's `Run` is running
+- **THEN** the server lists one connection more than before `Open`
 - **AND** the test that verifies this is `TestFollowerWatchHasItsOwnConnection`
+
+### Requirement: A reader's connection lives as long as its watch
+
+Each reader named above SHALL open its connection when its watch starts and close it before the code that started it
+returns: the run that holds the watch, or `Start` for the boot sweep and the failed-record scan.
+
+#### Scenario: A view's connection lives as long as its run
+
+- **WHEN** the websocket output's view, or graph-query's community view, runs and then its component stops
+- **THEN** the view's connection is listed by the server while it runs and closed after `Stop`, and no natsclient
+  goroutine is left running
+- **AND** the tests that verify this are `TestWebsocketViewClosesItsConnection` and
+  `TestCommunityViewClosesItsConnection`
+
+### Requirement: Other watches stay on the main connection
+
+Watches outside the readers named above SHALL stay on the process's main connection: request-driven ones (the
+message logger's KV watch and key listings), small boot-time ones (configuration, storage report, a readiness key)
+and a product's own.
+
+#### Scenario: A request-driven watch uses the main connection
+
+- **WHEN** the message logger opens a KV watch on `ENTITY_STATES` for a request
+- **THEN** the server lists no connection beyond the stack's own for it
+- **AND** this is review-only: no test asserts it
+
+### Requirement: Closing a reader's connection leaves nothing behind
+
+A clean stop of each reader named above SHALL return what it returns today, log nothing at Error from the close, and
+leave no natsclient goroutine running; a failed `Start` SHALL return its cause and leave none either.
 
 #### Scenario: graph-ingest's boot sweep closes its connection inside Start
 
 - **WHEN** graph-ingest's `Start` returns, with or without an error
-- **THEN** the connection its boot sweep opened is closed
+- **THEN** the connection its boot sweep opened is closed, nothing from the close is logged at Error, and no
+  natsclient goroutine is left running
 - **AND** the test that verifies this is `TestEntityStateGuardClosesItsConnection`
+
+#### Scenario: graph-embedding's watches each close their connection
+
+- **WHEN** graph-embedding starts, runs, and stops
+- **THEN** its failed-record scan's connection is closed before `Start` returns, and the Worker's and the vector
+  cache's are closed before `Stop` returns, with no natsclient goroutine left running
+- **AND** the test that verifies this is `TestGraphEmbeddingWatchesCloseTheirConnections`

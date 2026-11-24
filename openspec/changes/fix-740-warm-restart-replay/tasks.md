@@ -6,8 +6,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 ## 1. Proposal
 
 - [x] 1.1 Inventory, probes P1 to P8, Fable read, owner ruling (#740 comments 7146176783, 7146268745).
-- [ ] 1.2 The owner re-fills `Approved-by:` for this proposal.
-  Hold: OPEN-Q proposal awaits owner re-approval
+- [x] 1.2 The owner re-fills `Approved-by:` for this proposal.
 
 ## 2. Code and test
 

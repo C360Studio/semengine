@@ -1,6 +1,6 @@
 # Proposal: fix-740-warm-restart-replay
 
-Approved-by:
+Approved-by: cglusky (2026-11-24) <https://github.com/C360Studio/semengine/issues/740#issuecomment-7146621360> sha256:2011f05ca40e
 
 Track: `design`. Capability: `composed-stack` (gains one Requirement). Packages: `internal/harness/natsfixture` (a
 broker option for tests), `internal/smoke` (the warm-restart test); docs in `docs/boot.md`. No production code.

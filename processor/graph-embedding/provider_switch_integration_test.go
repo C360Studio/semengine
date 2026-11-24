@@ -5,6 +5,8 @@ package graphembedding
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
+	"github.com/c360studio/semengine/graph/embedding/httpembedder"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -184,5 +187,60 @@ func providerRestart(t *testing.T, before, after provider) {
 	similar := awaitAnswer(t, second, "similar", `{"entity_id":"`+id+`"}`, func(graph.QueryResponse[graph.SimilarData]) bool { return true })
 	if len(similar.reply.Data.Results) != 0 {
 		t.Fatalf("similar to %s = %+v; want no hits (the only other vector is the old provider's)", id, similar.reply.Data.Results)
+	}
+}
+
+// TestDeclaredWidthRestartKeepsVectors: graph-embedding on the HTTP embedder with its width set in
+// the embedder's config restarts against the same NATS state and sends the provider no request for
+// an entity whose stored vector is unchanged. Each start builds a new embedder, so the restarted one
+// has had no reply to learn a width from: only the declared width lets it vouch for the stored
+// vector before the provider answers.
+func TestDeclaredWidthRestartKeepsVectors(t *testing.T) {
+	client := fixtureClient(t)
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		var req struct {
+			Model string   `json:"model"`
+			Input []string `json:"input"`
+		}
+		if r.URL.Path != "/v1/embeddings" || json.NewDecoder(r.Body).Decode(&req) != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		data := make([]map[string]any, len(req.Input))
+		for i := range req.Input {
+			data[i] = map[string]any{"object": "embedding", "embedding": []float32{1, 0}, "index": i}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "model": req.Model, "data": data})
+	}))
+	t.Cleanup(srv.Close)
+	factory := registeredFactory(t, func(r *component.Registry) error {
+		return RegisterWithEmbedder(r, "semembed", func() (embedding.Embedder, error) {
+			return httpembedder.New(httpembedder.Config{BaseURL: srv.URL + "/v1", Model: "m", Dimensions: 2})
+		})
+	})
+
+	first := startEmbeddingBy(t, client, `{}`, nil, factory)
+	id := entityID(1)
+	rev := first.put(t, id, entityValue(t, id, nil, "doc.meta.title", "widget"))
+	stored := first.awaitGenerated(t, id, rev)
+	stopComponent(t, first.c)
+	before := requests.Load()
+
+	second := startEmbeddingBy(t, client, `{}`, nil, factory)
+	// Readiness orders the reads after the Worker's terminal write for the replayed revision, which
+	// comes after any request it would have sent for the entity.
+	second.awaitIndexed(t, "replayed after the restart", rev)
+	if n := requests.Load() - before; n != 0 {
+		t.Fatalf("provider saw %d requests after the restart, want none: the stored vector is unchanged", n)
+	}
+	got, err := second.record(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Status != embedding.StatusGenerated || !got.GeneratedAt.Equal(stored.GeneratedAt) {
+		t.Fatalf("record after the restart = %+v; want the stored one, generated at %v", got, stored.GeneratedAt)
 	}
 }

@@ -9,6 +9,12 @@ URLs, credentials, timeouts and reconnect settings, and the parent's name, which
 `Close` has begun, `NewSibling` SHALL return an error matching `nats.ErrConnectionClosed`. The sibling SHALL promise
 nothing about timing beyond what any Client promises.
 
+#### Scenario: A sibling reaches the parent's server with the parent's credentials
+
+- **WHEN** a sibling of a Client built with credentials for a password-protected server calls `Connect`
+- **THEN** it connects, and the server's connection listing shows it under the parent's name
+- **AND** the test that verifies this is `TestSiblingCarriesTheClientSettings`
+
 #### Scenario: No sibling once Close has begun
 
 - **WHEN** `NewSibling` is called after the parent's `Close` has begun
@@ -21,12 +27,6 @@ The sibling SHALL have no metrics: no collector of its own, no metrics poller, a
 a permission refusal on the sibling SHALL be logged and not counted. The sibling SHALL have no connection-lost
 callback and no connection-loss timeout. The parent's `Close` SHALL NOT close a sibling; each sibling is closed by
 its own `Close`.
-
-#### Scenario: A sibling reaches the parent's server with the parent's credentials
-
-- **WHEN** a sibling of a Client built with credentials for a password-protected server calls `Connect`
-- **THEN** it connects, and the server's connection listing shows it under the parent's name
-- **AND** the test that verifies this is `TestSiblingCarriesTheClientSettings`
 
 #### Scenario: A sibling has no metrics and no exit policy
 

@@ -21,7 +21,8 @@ the server as a slow consumer during the boot.
 Each of these readers SHALL hold its whole-bucket watch on a NATS connection that carries no other watch: the
 `ENTITY_STATES` follower of graph-index, graph-lexical, graph-clustering and graph-embedding; the websocket output's
 `ENTITY_STATES` view; graph-query's `COMMUNITY_INDEX` view; graph-ingest's boot sweep; and graph-embedding's
-failed-record scan, Worker and vector cache over `EMBEDDING_INDEX`.
+failed-record scan, Worker and vector cache over `EMBEDDING_INDEX`. Watches outside this list (request-driven,
+small boot-time, or a product's own) are not covered.
 
 #### Scenario: A follower's watch adds one connection
 
@@ -31,8 +32,9 @@ failed-record scan, Worker and vector cache over `EMBEDDING_INDEX`.
 
 ### Requirement: A reader's connection lives as long as its watch
 
-Each reader named above SHALL open its connection when its watch starts and close it before the code that started it
-returns: the run that holds the watch, or `Start` for the boot sweep and the failed-record scan.
+Each reader named above SHALL close its connection before the code that started its watch returns: the run that
+holds the watch, or `Start` for the boot sweep and the failed-record scan. The followers and views connect theirs in
+their run; graph-embedding's Worker and vector cache connect theirs in `Start`, where they are built.
 
 #### Scenario: A view's connection lives as long as its run
 
@@ -41,18 +43,6 @@ returns: the run that holds the watch, or `Start` for the boot sweep and the fai
   goroutine is left running
 - **AND** the tests that verify this are `TestWebsocketViewClosesItsConnection` and
   `TestCommunityViewClosesItsConnection`
-
-### Requirement: Other watches stay on the main connection
-
-Watches outside the readers named above SHALL stay on the process's main connection: request-driven ones (the
-message logger's KV watch and key listings), small boot-time ones (configuration, storage report, a readiness key)
-and a product's own.
-
-#### Scenario: A request-driven watch uses the main connection
-
-- **WHEN** the message logger opens a KV watch on `ENTITY_STATES` for a request
-- **THEN** the server lists no connection beyond the stack's own for it
-- **AND** this is review-only: no test asserts it
 
 ### Requirement: Closing a reader's connection leaves nothing behind
 

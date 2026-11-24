@@ -3,7 +3,9 @@
 Tests come first. Each code task ends at a clean-tree local `task verify`. "Shown to fail" means failing-first output
 in `notes/<task>.md`. One pull request (#747): `Closes #740`, `Closes #741`. Every stop test below checks the same
 three things: the stop returns what it returns today, nothing is logged at Error, and no natsclient goroutine is
-left (`natsfixture.AwaitNoStacks` over natsclient's frames). Each task's notes record the context the sibling is
+left: `natsfixture.AwaitNoStacks` over the sibling's frames (`(*Client).join`, `awaitClosedHandler`, `runPoller`),
+compared with the count before the sibling was opened, since the test's own parent Client runs the same frames. Each
+task's notes record the context the sibling is
 closed under and why it meets the contract's rule on terminal, bounded detachment.
 
 ## 1. Proposal and design
@@ -52,7 +54,9 @@ closed under and why it meets the contract's rule on terminal, bounded detachmen
 - [ ] 4.1 `graph/follower`: tests first, shown failing: while `Run` runs, the server lists one connection more than
   before `Open`; a clean stop (the stop checks above) leaves none more and `Run` returns nil, so graph-index logs no
   Warn (`processor/graph-index/component.go:273-275`); a broker stopped after `Open` and before `Run` (an own
-  server, `// Own server: the test stops the broker`) ends `Run`'s connection wait in a lost feed. Implement: `Run`
+  server, `// Own server: the test stops the broker`) ends `Run`'s connection wait in a lost feed, asserted by the
+  lost-feed refusal (`follower.go:413`), not the
+  initial-build one (`:433`). Implement: `Run`
   waits for the sibling to connect with `Config.StartupAttempts` and `Config.StartupInterval`, a wait of its own
   beside `Open`'s bucket wait at `follower.go:163`; watches on it; closes it before returning. Status reads stay on
   `Config.Client`. Update the package doc's Limits (`follower.go:14-23`), naming nats.go v1.55.0 and saying the
@@ -70,10 +74,12 @@ closed under and why it meets the contract's rule on terminal, bounded detachmen
 - [ ] 4.4 `processor/graph-embedding`: for the failed-record scan (`component.go:346`), the Worker (`:389`) and the
   vector cache (`:420`), the component opens a sibling, opens `EMBEDDING_INDEX` on it, and builds that user's
   `embedding.NewStorage` over it (dedup stays on the main Client); the scan's sibling is closed before `Start`
-  returns, the Worker's and the cache's when their run ends. No exported signature in `graph/embedding` changes, so
+  returns; the Worker's and the cache's are connected in `Start`, where they are built, and closed when their run ends.
+  No exported signature in `graph/embedding` changes, so
   its unit tests over in-memory buckets keep running without a server. Test
   `TestGraphEmbeddingWatchesCloseTheirConnections`, with the stop checks. Accept: `task verify`.
-- [ ] 4.5 2.1 passes, locally and on CI. Accept: `task verify`; the PR's `Integration` job green.
+- [ ] 4.5 2.1 passes, locally and on CI. Accept: `task verify`; the URL of a green `Integration` run on a
+  named commit recorded in `notes/4.5.md`.
 
 ## 5. Docs and spec
 

@@ -30,8 +30,8 @@ Question: what PR 1 carries when it ports `processor/rule/expression` whole, and
   error; `[unclosed` -> error at evaluation; `in` with a non-list -> error; required `length_eq` 0 on a missing
   predicate -> true; `transition` through `Evaluate` -> false, no error.
 - Regex probe (stdlib, go1.26.4): `$` as an anchor before a letter (`a$b`, `(?m)a$b`) matches nothing; a literal `$`
-  matches: `[$a-z]+` on "$", `^\$USD` on "$USD", `\Q$now\E` and `[$]now` and `\x24now` on "$now", `(?i)\$Price` on
-  "$price" are all true. `a{1001}` is refused by `regexp.Compile`; `a{1000}`, `(a+)+$` compile.
+  matches. All true: `[$a-z]+` on the text `$`; `^\$USD` on `$USD`; `\Q$now\E`, `[$]now` and `\x24now` on `$now`;
+  `(?i)\$Price` on `$price`. `regexp.Compile` refuses `a{1001}` and compiles `a{1000}` and `(a+)+$`.
 - semteams' one regex pattern passes `validateRegexComplexity` and `regexp.Compile` and holds no substitution token.
 - Empty-logic probe: on the pin copy, making `""` mean AND (`evaluator.go:151`) and running
   `go test ./processor/rule/...` (unit): both packages ok.

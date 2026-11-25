@@ -6,7 +6,7 @@
 
 ## 2. Port
 
-- [ ] 2.1 Copy the pin's `processor/rule/expression` (8 files, 3,527 lines) to `processor/rule/expression`; rewrite
+- [x] 2.1 Copy the pin's `processor/rule/expression` (8 files, 3,527 lines) to `processor/rule/expression`; rewrite
   imports (module path; `internal/harness/semantictest` for `evaluator_test.go:11`); drop `Version` at
   `evaluator_test.go:608` and `:1167`. Add the ledger row `processor/rule/expression` (`adapt`). Check: `task
   ledger:check`.

@@ -5116,3 +5116,35 @@
   proving_tests: n/a
   owner: alpha4-output-websocket developer
   disposition: defer-exclude
+
+# Change rule-core-01-expression (PR #753, epic #9): processor/rule/expression ported whole as adapt, PR 1 of the
+# rule-core split plan (owner regex ruling, PR #752 comment 7162536253; D4 and D6 rulings, PR #753 comments
+# 7163712305 and 7163777239).
+
+- source_path: processor/rule/expression
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the one condition evaluator for rule conditions and action when guards (ADR-041), read by the rule core
+    (PRs 2-12 of the split plan) and by semteams tests (ConditionExpression, EvaluationError)
+  destination: processor/rule/expression
+  contract: >-
+    field resolution order, the operator set RegisteredOperators names, and/or logic with an empty list passing,
+    list operators over every triple of a predicate, transition against $prev.*, EnsureStatelessResolvable, as at
+    the pin; stated as the rule-conditions spec. Changed: Compile compiles each regex pattern of a condition slice
+    once and keeps it on the element, refusing a non-string value, a pattern holding a SubstitutionPrefixes token,
+    a pattern over 500 characters, or one regexp rejects (classified invalid, naming index and field); evaluation
+    never compiles and refuses an uncompiled or since-edited regex condition; empty logic means and
+  dependencies_and_side_effects: graph, message (tests), pkg/errs, encoding/json, regexp; no goroutine, no I/O, no
+    package state
+  known_risks: >-
+    not carried: the global regex cache, its init and the internal/cache import; validateRegexComplexity's fragment
+    list, repeat check, group and depth counts (only the 500-character limit stays); HasTriple, GetOutgoing,
+    Distance and their helpers; the TypeDetector interface, FieldType and DetectFieldType; OperatorFunc is
+    unexported; the cache tests and TestRegexCache_NoHang. A JSON copy of a compiled condition loses its pattern
+    and is refused at evaluation until compiled again
+  proving_tests: >-
+    processor/rule/expression evaluator_test.go, array_operators_test.go, compile_test.go, stateless_test.go,
+    coerce_test.go, property_test.go; notes/2.2.md and 2.6.md of the change record failing-first output, mutation
+    checks and the generated run
+  owner: rule-core-01-expression developer
+  disposition: adapt

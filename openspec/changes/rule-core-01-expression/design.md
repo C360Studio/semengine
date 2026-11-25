@@ -8,84 +8,84 @@ review items 5 and 9 (7162146299). Ledger row: `processor/rule/expression`, disp
 
 The package is the one condition evaluator for rule conditions and action `when` guards (ADR-041): 1,417 production
 and 2,110 test lines at the pin, no context, goroutine or configuration, and it builds on main after three fixes
-(inventory, "Compile drift"). After this design it is about 1,235 production and 2,015 test lines (estimates). One
-PR, one package. It retires no issue.
+(inventory, "Compile drift"). After this design it is about 1,235 production and 2,015 test lines (estimates). One PR,
+one package. It retires no issue.
 
-Merge order: independent of #754 (target-shape page) and #755 (deadline-timer probe). PR 1 does not wait for the
-shape page (ruling 7162536253); the page takes `ConditionExpression` and `Compile` as given.
+Merge order: independent of #754 (target-shape page) and #755 (deadline-timer probe). PR 1 does not wait for the shape
+page (ruling 7162536253); the page takes `ConditionExpression` and `Compile` as given.
 
 ## Decisions
 
 **D1. Destination `processor/rule/expression`.** It keeps the pin's path, the rule core lands beside it, and semteams
-expects it (`scripts/measure-semengine-port-ledger.go:226`). A top-level `rule/expression` gains nothing;
-`internal/` cannot work, because semteams tests and the rule definition's exported fields name the types.
+expects it (`scripts/measure-semengine-port-ledger.go:226`). A top-level `rule/expression` gains nothing; `internal/`
+cannot work, because semteams tests and the rule definition's exported fields name the types.
 
-**D2. A regex pattern is compiled where a rule is kept, never during evaluation (owner ruling).**
+**D2. A regex pattern is compiled once, by the one function that loads a rule (owner ruling).**
 
-- **A (recommended).** `ConditionExpression.Compile() error` compiles a `regex` pattern and keeps it on the condition.
-  It refuses a non-string value, a templated pattern (D3), a pattern over the limits (D4), or one `regexp` rejects.
-  It does nothing on other operators, or when the pattern is already compiled from the current value. Evaluation
-  refuses a `regex` condition with no compiled pattern, or whose value no longer matches it, with an
-  `*EvaluationError`; it never compiles. The global cache, `init` and `internal/cache` go. A copied condition keeps the
-  pattern; a JSON or map copy does not, which matters because the pin copies definitions several times after
-  loading. So `Compile` must run on the copy that fires (Seam), and since the pin's fire paths swallow evaluation
-  errors (`expression_factory.go:200-205`, `:224-230` at Debug; `stateful_evaluator.go:380-386` at Warn), a missed
-  compile would make a rule silently never fire. The two obligations below close that.
+- **A (recommended).** `expression.Compile(conds []ConditionExpression) error` compiles each `regex` pattern in the
+  slice and keeps it on the element, writing by index, so no caller can compile a loop copy and throw it away. It
+  refuses a non-string value, a templated pattern (D3), a pattern over the length limit (D4), or one `regexp` rejects,
+  naming the element's index. It does nothing on other operators, or when the pattern is already compiled from the
+  current value. Evaluation refuses a `regex` condition with no compiled pattern, or whose value no longer matches it,
+  with an `*EvaluationError`; it never compiles. The global cache, `init` and `internal/cache` go. A copied condition
+  keeps the pattern; a JSON copy does not, and evaluation then refuses it rather than compiling.
 - B. A compiled type (`Compile(expr) (Compiled, error)`) that the evaluator takes. Forgetting to compile is a build
-  error. Not recommended: the evaluator's signature and the substitution layer (PRs 3, 6, 7) must carry the
-  compiled form through every per-evaluation substitution, and the keepers still must call it, so this moves the
-  same obligation into three more designs.
-- C. Compiling inside `UnmarshalJSON`. Not recommended: a decoder's unknown-key refusal stops at a custom
-  unmarshaler (probe), and the pin's map path builds conditions without decoding (`config_validation.go:607`).
+  error. Not recommended: the evaluator's signature and the substitution layer (PRs 3, 6, 7) must carry the compiled
+  form through every per-evaluation substitution, for no gain once `Load` is the one caller (Seam).
+- C. Compiling inside `UnmarshalJSON`. Not recommended: a decoder's unknown-key refusal stops at a custom unmarshaler
+  (probe).
 - D. A cache, or compiling on first use: refused by the ruling.
 
 **D3. A regex is templated when it contains a substitution token.** The tokens are the seven prefixes the pin's
 substituter fills in anywhere in a value: `$now`, `$entity.`, `$related.`, `$state.`, `$schedule.`, `$caller.`,
 `$message.` (inventory). Any other `$` stays literal: `[$a-z]`, `^\$USD` and `\Q$x\E` are accepted. A pattern that
 must match a token's text writes its `$` as `[$]` (`[$]now`), which the substituter does not touch. Refusing on the
-prefix is slightly wider than the substituter (`$state.foo` is refused, though nothing replaces it), which is the
-safe reading of "templated". Cost: a second spelling of the token list, held in step by a PR 3 test that `Compile` refuses
-every token the substituter replaces. Not taken: "starts with `$`" misses mid-pattern tokens; "contains `$`" refuses
-every end-anchored pattern, including semteams' one regex.
+prefix is slightly wider than the substituter (`$state.foo` is refused, though nothing replaces it), which is the safe
+reading of "templated". The list is spelled once, here, as `expression.SubstitutionPrefixes()` (a function returning a
+fresh slice, so the package keeps no state); PR 3's substituter reads it rather than spelling its own. This package
+already owns the `$state.`, `$prev.` and `$message.` field prefixes, and the substituter imports it. Not taken:
+"starts with `$`" misses mid-pattern tokens; "contains `$`" refuses every end-anchored pattern, including semteams'
+one regex.
 
-**D4. Pattern limits are kept as authoring limits (owner: keep or drop).** Length 500, 20 groups, depth 5, the
-nested-repeat fragment list, repeats of 1000 and up, run inside `Compile`. The regexp package promises time linear in
-the input and nothing about pattern size, so the limits bound what an author can hand the engine; the ReDoS claim
-is removed. No product pattern comes near them. Recommended keep: loosening later breaks nobody.
+**D4. One pattern limit: 500 characters (owner ruling, PR #753 comment 7163712305).** `Compile` refuses a pattern
+longer than 500 characters, which bounds what an author hands the engine. The fragment list, the repeat check, the
+group count and the depth check are not carried: `regexp.Compile` already refuses a repeat above 1000, the fragment
+list refuses only patterns Go runs in linear time, and the counts miscount escaped and class parentheses. The ReDoS
+claim goes with them (`go doc regexp`: time linear in the input).
 
-**D5. Dead surface is dropped (surface audit (a); shape items 3, 4).** `HasTriple`, `GetOutgoing`, `Distance` and their
-helpers; the `TypeDetector` interface and `FieldType` with `DetectFieldType` (the two lookups the evaluator calls
-become unexported functions); `OperatorFunc` is unexported.
+**D5. Dead surface is dropped (surface audit (a); shape items 3, 4).** `HasTriple`, `GetOutgoing`, `Distance` and
+their helpers; the `TypeDetector` interface and `FieldType` with `DetectFieldType` (the two lookups the evaluator
+calls become unexported functions); `OperatorFunc` is unexported.
 
 **D6. Zero-use features are carried (item 9; owner bullets).** Twelve operators, `or`, `from`, `$prev.*`,
 `$entity.lifecycle.*` and deeper `$message.a.b` paths have no product user. Each has a code reader and a test; the
-package is admitted whole; dropping `transition` also drops PR 7's previous-value tracking.
+package is admitted whole. `transition`, `from` and `$prev.*` are carried by owner ruling (PR #753 comment
+7163777239): it is the one condition that says where a value came from. `conditions.md` states its three limits, each
+checked against the code first (task 3.2): entity rules only; "previous" is the value at this rule's last evaluation
+of the entity, so batched changes can read A to C; text and exact match only.
 
-**D7 (optional, owner's choice). Empty logic means AND.** Today `""` means OR (`evaluator.go:151`); the rule layer
-and both guides spell AND, no production caller passes `""`, and the pin's unit tests pass with the change (probe).
+**D7 (optional, owner's choice). Empty logic means AND.** Today `""` means OR (`evaluator.go:151`); the rule layer and
+both guides spell AND, no production caller passes `""`, and the pin's unit tests pass with the change (probe).
 
 **D8. Docs and ADR.** ADR-041 is ported to `docs/adr/` with a port note (deny/governance examples not carried;
-`$entity.lifecycle.*` was added later, ADR-047, PR 5; issue numbers are SemStreams'). `processor/rule/docs/conditions.md`
-is corrected to the code (inventory, advertised-absent) and gains the regex rules and limits. `syntax.md` waits for PR
-6, which ports what it describes.
+`$entity.lifecycle.*` was added later, ADR-047, PR 5; issue numbers are SemStreams').
+`processor/rule/docs/conditions.md` is corrected to the code (inventory, advertised-absent) and gains the regex rules
+and limits. `syntax.md` waits for PR 6, which ports what it describes.
 
-## Seam for PRs 2, 6, 7, 11, 12
+## Seam for PRs 2, 3, 6, 7
 
-- PR 2 owns one preparation step for a definition (validate, then `Compile` every condition and every action `when`
-  condition) that every keeper calls on the copy it keeps, after the last JSON or map copy: the boot store
-  (`rule_loader.go:215`, `:243`), `CreateRuleFromDefinition`, cron (PR 11), runtime and KV apply (PR 12).
-  `Compile` is deterministic, so a definition that passed once passes again. A pattern may therefore be compiled
-  more than once during a load (once on the file's copy to name the file, again on the copy that runs); it is
-  never compiled while a condition is checked. This departs from the ruling's word "once" and is put to the owner
-  (proposal). The alternative, carrying each definition's source through the copies so the step runs once, is PR 2's
-  to weigh.
-- A refusal fails the load, never a log-and-skip. It names the source: the file (run the step at the per-file decode,
-  `rule_loader.go:72`, before the merge), `inline_rules[i]` with the component name, or the KV key and revision, where
-  it is an ADR-094 `rejected` activation. PR 2 wraps `Compile`'s error, which is classified invalid and names field,
-  operator and reason, with the rule ID, the source and the position (`conditions[2]`, `on_enter[1].when[0]`).
-- PRs 6 and 7 report an evaluation error at Warn or above with the rule ID, never Debug, so a missed compile shows.
-- PR 2 settles the map path's `required` default of true (`config_validation.go:611`) against JSON's false; semboids
-  omits `required` on all 14 of its conditions.
+- The one caller is `Load(def, file, handlers) (*Rule, error)` (target-shape page, PR #754, § 1): the one decode feeds
+  it, the map round trip is not carried, and nothing can fire a rule `Load` did not return. `Load` calls `Compile`
+  once on the rule's conditions and once on each action's `when`, on the `Rule` it returns, and wraps the error with
+  rule ID, file and position (`conditions[2]`, `on_enter[1].when[0]`). The error is classified invalid and names
+  index, field, operator and reason. A refusal fails the load, never a log-and-skip. This design names no other
+  caller.
+- PR 3's substituter reads `SubstitutionPrefixes()` for its tokens.
+- PRs 6 and 7 report an evaluation error at Warn or above with the rule ID, never Debug, so a refused condition shows.
+- PR 7's design weighs a general previous-value field (any field a rule names as `$prev.<field>`, not only a
+  `transition`'s), carry as is or generalize with the cost of each, for the owner (comment 7163777239).
+- PR 2 settles the old map path's `required` default of true (`config_validation.go:611`) against JSON's false, if any
+  source still decodes through a map; semboids omits `required` on all 14 of its conditions.
 
 ## Invariants (spec: `specs/rule-conditions/spec.md`)
 
@@ -98,14 +98,16 @@ is corrected to the code (inventory, advertised-absent) and gains the regex rule
 
 ## Tests
 
-The carried tests keep their hand-written table oracles. Dropped: the dead-surface tests (`evaluator_test.go:429-697`),
-the cache tests and benchmark, and `TestRegexCache_NoHang` (own 100 ms deadline). Fixed: the `semantictest` path and
-the two `Version` lines. Added: `Compile` refusals and acceptance, the uncompiled and edited-value refusals,
-`EnsureStatelessResolvable` (0% in-package at the pin), and numeric strings, NaN and `json.Number` (`toFloat64` at
-28.6%). `processor/rule/expression` joins `scripts/cover-check.sh` at 80% (03B D10).
+The carried tests keep their hand-written table oracles. Dropped: the dead-surface tests
+(`evaluator_test.go:429-697`), the cache tests and benchmark, and `TestRegexCache_NoHang` (own 100 ms deadline).
+Fixed: the `semantictest` path and the two `Version` lines. Added: `Compile` refusals and acceptance, a slice compiled
+and each element evaluated, the uncompiled and edited-value refusals, `EnsureStatelessResolvable` (0% in-package at
+the pin), and numeric strings, NaN and `json.Number` (`toFloat64` at 28.6%). `processor/rule/expression` joins
+`scripts/cover-check.sh` at 80% (03B D10).
 
 ## Risks
 
-A keeper that skips the step leaves a rule that never fires, visible only through PRs 6 and 7's Warn line (HIGH
-until those PRs land; nothing fires before PR 8). Later tests comparing conditions with `assert.Equal` see the
+A JSON copy of a loaded rule loses its compiled patterns and its regex conditions are refused at evaluation; only
+`Load` returns a rule that runs (LOW). The seam rests on the target-shape page, reviewed but not yet approved; if it
+changes, PR 2's design re-checks the one caller (MEDIUM). Later tests comparing conditions with `assert.Equal` see the
 compiled pattern (MEDIUM, PRs 2, 6).

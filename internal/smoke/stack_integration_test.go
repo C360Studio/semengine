@@ -554,6 +554,16 @@ func newObserver(t *testing.T, url string) observer {
 // acknowledged it at.
 func (o observer) publish(t *testing.T, e entityInput) uint64 {
 	t.Helper()
+	ack, err := o.client.PublishToStreamWithAck(t.Context(), "entity."+e.id, encodeInput(t, e))
+	if err != nil {
+		t.Fatalf("publish %s: %v", e.id, err)
+	}
+	return ack.Sequence
+}
+
+// encodeInput is the producer's input for e: a smokeEntity inside a BaseMessage.
+func encodeInput(t *testing.T, e entityInput) []byte {
+	t.Helper()
 	payload := &smokeEntity{ID: e.id}
 	for _, s := range e.statements {
 		payload.Statements = append(payload.Statements, message.Triple{
@@ -565,11 +575,7 @@ func (o observer) publish(t *testing.T, e entityInput) uint64 {
 	if err != nil {
 		t.Fatalf("marshal %s: %v", e.id, err)
 	}
-	ack, err := o.client.PublishToStreamWithAck(t.Context(), "entity."+e.id, data)
-	if err != nil {
-		t.Fatalf("publish %s: %v", e.id, err)
-	}
-	return ack.Sequence
+	return data
 }
 
 // consumerState is what the broker reports of graph-ingest's durable consumer, in fields a failed

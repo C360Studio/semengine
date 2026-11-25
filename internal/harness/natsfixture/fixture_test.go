@@ -211,6 +211,39 @@ func TestNonPositiveMaxPayloadIsRefused(t *testing.T) {
 	}
 }
 
+// A max pending the broker cannot honour is refused the same way, before any Docker call.
+func TestNonPositiveMaxPendingIsRefused(t *testing.T) {
+	for _, n := range []int64{0, -1} {
+		f := New(t, WithMaxPending(n))
+		// The refusal must name its cause.
+		if err := f.Start(t.Context()); err == nil || !strings.Contains(err.Error(), "max pending") {
+			t.Errorf("Start with max pending %d = %v, want a refusal naming the max pending", n, err)
+		}
+		if f.used {
+			t.Errorf("max pending %d: the refusal consumed the fixture", n)
+		}
+	}
+}
+
+// Each option writes its own line to the broker's config file, and no option writes none, so a
+// broker without options keeps nats-server's defaults.
+func TestBrokerConfigFileHoldsEachOptionsLine(t *testing.T) {
+	cases := []struct {
+		opts []Option
+		want string
+	}{
+		{nil, ""},
+		{[]Option{WithMaxPayload(4096)}, "max_payload: 4096\n"},
+		{[]Option{WithMaxPending(536870912)}, "max_pending: 536870912\n"},
+		{[]Option{WithMaxPending(7), WithMaxPayload(9)}, "max_payload: 9\nmax_pending: 7\n"},
+	}
+	for _, c := range cases {
+		if got := New(t, c.opts...).brokerConfigFile(); got != c.want {
+			t.Errorf("config file = %q, want %q", got, c.want)
+		}
+	}
+}
+
 // harness-boundaries › "One image pin": the fixture takes its image from the pin file it embeds,
 // which must hold exactly one digest reference, and refuses any other before a Docker call. Image
 // strings are assembled so that this file spells no image (TestOneImagePin).

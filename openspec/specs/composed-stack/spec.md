@@ -5,7 +5,8 @@ The tier-0 graph stack (graph-ingest, graph-index, graph-clustering, graph-lexic
 applied-state websocket output) boots from one JSON configuration through the real startup path, answers fixed
 questions through the paths a consumer uses, and keeps those answers across four restarts: the whole stack, a process
 killed mid-ingest, NATS restarted between runs, and a quick NATS restart (about 0.2 s down) under the running stack.
-It composes no graph-embedding, since tier 0 has no embedder; word questions answer from graph-lexical. A longer outage is not yet covered (#574). The tests live in `internal/smoke`.
+It composes no graph-embedding, since tier 0 has no embedder; word questions answer from graph-lexical. It also keeps them with NATS held
+down under the running stack. The tests live in `internal/smoke`.
 
 ## Requirements
 
@@ -107,3 +108,17 @@ directly or through a package it imports.
 
 - **WHEN** a package `fusionnats` imports reaches `graph/embedding`
 - **THEN** `TestFusionNATSImportsNoEmbedding` fails naming the import path
+
+### Requirement: A warm restart over a large store starts with the documented max_pending
+
+A composed stack restarted over a retained store SHALL start, and every graph reader SHALL report its snapshot
+applied, on a NATS server with `max_pending` set to the value `docs/boot.md` requires (536870912). No connection of
+the stack SHALL be closed by the server as a slow consumer during the boot.
+
+#### Scenario: Restart over 132 MB of entity state
+
+- **WHEN** the stack is seeded with 132 MB in `ENTITY_STATES`, stopped, and started again on a server with
+  `max_pending: 536870912`
+- **THEN** `Start` returns nil, every follower and the websocket view report the snapshot applied, and the account's
+  slow-consumer count on the server is the same after the restart as before it
+- **AND** the test that verifies this is `TestSmoke_WarmRestartOverALargeStore`

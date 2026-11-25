@@ -4,16 +4,12 @@ import "strings"
 
 // Stateful field prefixes.
 //
-// This is the SINGLE SOURCE for "this field is resolved from the StateFields
-// carrier, not from entity triples". Both readers derive from it:
-// evaluateConditionWithStateAndMessage branches on it to decide where a field
-// comes from, and EnsureStatelessResolvable refuses on it so a caller that
-// cannot supply state is told rather than answered.
-//
-// Keeping one list is not tidiness. A stateless pre-scan carrying its own copy
-// of these prefixes would drift from the evaluator's, and a prefix present in
-// one list and absent from the other resolves to the exact defect gh#731 was
-// filed about: a confident `false` for a question nobody answered.
+// These name the fields read from StateFields rather than entity triples.
+// evaluateConditionWithStateAndMessage branches on them to decide where a
+// field comes from, and EnsureStatelessResolvable refuses on them so a caller
+// that cannot supply state is told rather than answered. A second copy of the
+// list would drift, and a prefix in one and not the other gives a confident
+// false for a question nobody answered.
 const (
 	statePrefix     = "$state."
 	prevPrefix      = "$prev."

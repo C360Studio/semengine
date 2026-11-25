@@ -1,4 +1,3 @@
-// Package expression - Expression evaluator implementation
 package expression
 
 import (
@@ -30,18 +29,17 @@ func NewExpressionEvaluator() *Evaluator {
 	evaluator.operators[OpNotIn] = operatorNotIn
 	evaluator.operators[OpBetween] = operatorBetween
 
-	// Note: OpTransition is handled specially in evaluateConditionWithStateAndMessage
-	// because it needs access to $prev.* state fields, not just fieldValue/compareValue.
+	// OpTransition and OpRegexMatch are dispatched outside this map: a
+	// transition reads $prev.* state, and a regex reads the pattern Compile
+	// kept on the condition.
 
 	// Register string operators
 	evaluator.operators[OpContains] = operatorContains
 	evaluator.operators[OpStartsWith] = operatorStartsWith
 	evaluator.operators[OpEndsWith] = operatorEndsWith
 
-	// Register array operators (#147 — closes the split-brain validator/
-	// runtime gap where these were listed by isValidOperator but never
-	// wired). Used by ADR-046 Phase 1 join pattern: length_eq counts
-	// per-child completion triples on the parent loop entity.
+	// Register list operators. A join counts the completion triples its
+	// children stamp on the parent with length_eq.
 	evaluator.operators[OpLengthEq] = operatorLengthEq
 	evaluator.operators[OpLengthGt] = operatorLengthGt
 	evaluator.operators[OpLengthGte] = operatorLengthGte
@@ -52,46 +50,25 @@ func NewExpressionEvaluator() *Evaluator {
 	return evaluator
 }
 
-// RegisteredOperators returns the set of operator names a freshly-
-// constructed Evaluator knows how to evaluate, INCLUDING the
-// special-cased OpTransition (which evaluateConditionWithStateAndMessage
-// dispatches outside the regular operator map). Intended for the
-// rule-config validator at load time so the validator's "is this
-// operator name supported" check derives from the evaluator's actual
-// wiring rather than a hardcoded list — #147 surfaced the
-// split-brain class where length_eq / length_gt / length_lt /
-// array_contains were validator-listed but evaluator-unregistered,
-// causing rules to pass config validation and fail at fire time
-// with "unsupported operator". Deriving the validator's set from
-// the same construction path the evaluator uses prevents the class
-// structurally.
-//
-// The set is computed by spinning up a throwaway evaluator and
-// reading its operator map. Cheap (no I/O); typical validator paths
-// call this at boot, not per-rule.
+// RegisteredOperators returns the names of every operator the evaluator
+// runs, including the two it dispatches outside its operator map (transition
+// and regex). A rule loader checks operator names against it, so a name the
+// loader accepts is one the evaluator can run.
 func RegisteredOperators() map[string]struct{} {
 	ev := NewExpressionEvaluator()
 	out := make(map[string]struct{}, len(ev.operators)+1)
 	for op := range ev.operators {
 		out[op] = struct{}{}
 	}
-	// OpTransition is dispatched specially in
-	// evaluateConditionWithStateAndMessage (uses $prev.* state
-	// fields outside the regular operator-func signature) so it's
-	// not in the operators map but IS a valid operator the
-	// evaluator recognises. Add it explicitly so the validator
-	// accepts it.
 	out[OpTransition] = struct{}{}
 	out[OpRegexMatch] = struct{}{}
 	return out
 }
 
-// isArrayOperator reports whether the named operator takes its
-// fieldValue as a collection (resolves via fieldValues) rather
-// than a scalar (fieldValue first-match). Array operators count
-// or check membership across the full set of triples carrying a
-// given predicate; scalar operators see only the first match.
-// #147 / ADR-046 Phase 1 counter pattern.
+// isArrayOperator reports whether the named operator reads every triple of
+// a predicate as a list (fieldValues) rather than the first one
+// (fieldValue). List operators count or search all the triples carrying a
+// predicate; the others see only the first.
 func isArrayOperator(op string) bool {
 	switch op {
 	case OpLengthEq, OpLengthGt, OpLengthGte, OpLengthLt, OpLengthLte, OpArrayContains:
@@ -173,17 +150,10 @@ func (e *Evaluator) EvaluateWithStateAndMessage(entityState *gtypes.EntityState,
 // the layered sources (stateFields, messageFields, entity triples) per
 // the precedence rule documented on EvaluateWithStateAndMessage.
 func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.EntityState, stateFields StateFields, messageFields MessageFields, condition ConditionExpression) (bool, error) {
-	// 1. `$state.*` / `$prev.*` / `$entity.lifecycle.*` — pseudo-fields
-	// from rule match state and the Lifecycle harness (ADR-047). The
-	// stateFields map is the shared carrier for caller-resolved values;
-	// the Lifecycle prefix is recognized here so callers can stuff
-	// `$entity.lifecycle.phase` etc. into the same map as `$state.*`
-	// and reuse one resolution path. Lifecycle values are pre-resolved
-	// at the caller against pkg/lifecycle.Manager — see
-	// stateful_evaluator.go's runEvaluation for the wire.
-	// Prefix set lives in stateless.go as the single source shared with
-	// EnsureStatelessResolvable — see the comment there for why two copies
-	// of this list is the defect, not the duplication.
+	// 1. `$state.*`, `$prev.*` and `$entity.lifecycle.*` come from
+	// stateFields, which the caller fills: rule match state, previous values
+	// and lifecycle values it resolved itself. The prefixes are in
+	// stateless.go, shared with EnsureStatelessResolvable.
 	if hasStatefulPrefix(condition.Field) {
 		fieldValue, exists := stateFields[condition.Field]
 		if !exists {
@@ -224,24 +194,17 @@ func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.Ent
 	//    Entity-path (entity non-nil): triples first, fall through to
 	//    messageFields if not present.
 	//    Message-path (entity nil): messageFields only.
-	//    Array operators (#147 — length_eq, length_gt, length_lt,
-	//    array_contains) resolve via fieldValues so they see
-	//    EVERY matching triple, not just the first. The counter
-	//    pattern stamps N triples with the same predicate keyed by
-	//    child ID; the join rule needs all N to count correctly.
+	//    List operators read every triple carrying the predicate, so a
+	//    join that counts N completion triples sees all N.
 	if entityState != nil {
 		if isArrayOperator(condition.Operator) {
 			if values, exists := fieldValues(entityState, condition.Field); exists {
 				return e.applyOperator(condition, values)
 			}
-			// Predicate carries zero matching triples — array
-			// operators get a zero-length array rather than
-			// "field missing." length_eq with value=0 is a legit
-			// match (no children completed yet); array_contains
-			// returns false on empty. Fall through to messageFields
-			// only when the entity entirely lacks the predicate AND
-			// the operator is non-array; for array ops we want the
-			// "empty list" semantic.
+			// No triple carries the predicate: a list operator sees an
+			// empty list, not a missing field, even when required, and
+			// does not read the message. length_eq 0 then matches (no
+			// child has completed yet).
 			return e.applyOperator(condition, []interface{}{})
 		}
 		if value, exists := fieldValue(entityState, condition.Field); exists {
@@ -669,31 +632,15 @@ func compareValuesWithError(a, b interface{}) (int, error) {
 	return 0, nil
 }
 
-// toFloat64 attempts to coerce v to a float64. Returns (value, true)
-// for any numeric Go type AND for strings that parse cleanly via
-// strconv.ParseFloat. (0, false) otherwise.
+// toFloat64 coerces v to a float64: any numeric Go type, a json.Number, or a
+// string strconv.ParseFloat accepts, except NaN and the infinities. It
+// returns false otherwise.
 //
-// gh#207 string-widening: before this widening, toFloat64 had no
-// `string` case, so a stringified-numeric Object (e.g. "0.83" produced
-// by the pre-fix substitution path before gh#207 also fixed the
-// stamping side) fell through to the lexicographic string compare in
-// compareValuesWithError. That silently misordered values whose
-// magnitudes crossed a power-of-10 boundary: lex "9.9" > "10.0", but
-// numeric 9.9 < 10.0. Same defect for any external producer that ever
-// stamped a numeric value as a string (e.g. a tool that emits its
-// payload through json.Marshal of a *string field).
-//
-// The widening means two strings that BOTH parse numerically will now
-// numeric-compare instead of lex-compare. Cross-repo survey (semstreams
-// + semteams rule packs) found zero current conditions that depend on
-// lex-of-numeric-shaped-strings, so this is observably additive. Worth
-// flagging in a feedback memo: authors writing string literals that
-// "happen to look numeric" (e.g. version strings "1.2", phone-number
-// fragments) will see them compared as floats — usually fine, but a
-// version literal "1.10" vs "1.9" now compares 1.10 < 1.9 (numerically
-// true; semantically "version 1.10 > 1.9" backward). Rule authors who
-// truly need string semantics should write `regex` / `contains`
-// against the field, not `lt`/`gt`.
+// Numeric strings compare as numbers because producers sometimes stamp a
+// number as text, and as text "9.9" sorts after "10.0". The cost: two strings
+// that both look numeric compare as numbers, so the version "1.10" is less
+// than "1.9". A rule that needs text order uses regex or contains, not lt or
+// gt.
 func toFloat64(v interface{}) (float64, bool) {
 	switch val := v.(type) {
 	case float64:
@@ -721,15 +668,8 @@ func toFloat64(v interface{}) (float64, bool) {
 	case uint64:
 		return float64(val), true
 	case json.Number:
-		// json.Number arrives when a decoder was configured with
-		// UseNumber() to preserve precision (avoiding float64's
-		// 15-digit limit on large integers). Used elsewhere in the
-		// codebase (for example, processor/agentic-loop). Forward-
-		// looking: no current rule pack stamps json.Number on a
-		// Triple Object, but the type is in circulation and a future
-		// producer could surface it. Treating it like a numeric Go
-		// type avoids a silent regression where compareValues falls
-		// to lex-compare on the underlying string representation.
+		// A decoder with UseNumber yields json.Number; without this case
+		// it would compare as text.
 		f, err := val.Float64()
 		if err != nil {
 			return 0, false

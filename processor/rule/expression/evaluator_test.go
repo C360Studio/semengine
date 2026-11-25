@@ -922,8 +922,7 @@ func createTestEntity(entityID string, triples []message.Triple) *gtypes.EntityS
 
 // TestEvaluateWithStateAndMessage_MessageFieldExplicit pins that explicit
 // $message.<path> tokens resolve from MessageFields and walk deep paths.
-// This is the recommended form (ADR-041) — operators writing rules should
-// reach for the explicit prefix when the resolution source matters.
+// The explicit prefix is the form to use when the resolution source matters.
 func TestEvaluateWithStateAndMessage_MessageFieldExplicit(t *testing.T) {
 	evaluator := NewExpressionEvaluator()
 
@@ -1004,10 +1003,8 @@ func TestEvaluateWithStateAndMessage_MessageFieldExplicit(t *testing.T) {
 }
 
 // TestEvaluateWithStateAndMessage_BareNameMessagePath pins that on message-path
-// rules (entity nil), bare field names resolve from MessageFields. This is
-// the asymmetry semspec hit on beta.71: action-When clauses on message-path
-// rules previously couldn't see the payload because the evaluator skipped
-// non-$state fields when entity was nil. ADR-041 closes this.
+// rules (entity nil), bare field names resolve from MessageFields, so an
+// action's when guard on such a rule can read the payload.
 func TestEvaluateWithStateAndMessage_BareNameMessagePath(t *testing.T) {
 	evaluator := NewExpressionEvaluator()
 
@@ -1069,11 +1066,9 @@ func TestEvaluateWithStateAndMessage_BareNameMessagePath(t *testing.T) {
 	}
 }
 
-// TestEvaluateWithStateAndMessage_EntityPathBareNameUnchanged pins the
-// backward-compat guarantee: entity-path rules with bare field names
-// resolve from entity triples, unchanged from the pre-ADR-041 behaviour.
-// This is the critical regression class — any existing rule that matches
-// on `field: "battery.level"` against entity state must keep working.
+// TestEvaluateWithStateAndMessage_EntityPathBareNameUnchanged pins that on
+// entity-path rules a bare field name such as "battery.level" resolves from
+// the entity's triples.
 func TestEvaluateWithStateAndMessage_EntityPathBareNameUnchanged(t *testing.T) {
 	evaluator := NewExpressionEvaluator()
 	entityID := semantictest.EntityID(t, "test", "rule", "expression", "entity-path", "entity", "001")
@@ -1177,10 +1172,8 @@ func TestEvaluateWithStateAndMessage_PrecedenceOrder(t *testing.T) {
 	assert.True(t, result2, "bare name with entity present must resolve from entity triple")
 }
 
-// TestEvaluateWithStateAndMessage_StatePlusMessage exercises the
-// canonical ADR-039 use case: action-When clauses that combine
-// $state.iteration with $message.command. semspec's consolidated-rule
-// pattern depends on this composition.
+// TestEvaluateWithStateAndMessage_StatePlusMessage exercises a when guard
+// that combines $state.iteration with $message.command.
 func TestEvaluateWithStateAndMessage_StatePlusMessage(t *testing.T) {
 	evaluator := NewExpressionEvaluator()
 

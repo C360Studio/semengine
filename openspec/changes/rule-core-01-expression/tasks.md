@@ -26,7 +26,7 @@
   their tests (`evaluator_test.go:429-697`); the `TypeDetector` interface, `FieldType`, `DetectFieldType`; unexport
   `OperatorFunc`. Zero-use features stay (D6). Check: `task build`.
 - [x] 2.5 Empty logic means AND (D7, approved): `evaluator.go:151`, with a test of two conditions, one false.
-- [ ] 2.6 Rewrite the carried tests to the harness rules: drop the cache tests and `TestRegexCache_NoHang`
+- [x] 2.6 Rewrite the carried tests to the harness rules: drop the cache tests and `TestRegexCache_NoHang`
   (`regex_cache_test.go:207-331`); add tests for `EnsureStatelessResolvable`, numeric strings, NaN and `json.Number`,
   and the spec's resolution exceptions (list operators, required `transition`); add one rapid property test for the
   design's invariants, recording the seed and completed checks. Replace port-history comments (`#147`, `gh#207`,

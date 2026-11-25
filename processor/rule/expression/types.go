@@ -1,4 +1,6 @@
-// Package expression - Simple DSL for rule condition evaluation
+// Package expression evaluates rule conditions and action when guards: a list
+// of field, operator and value conditions combined by and or or, read against
+// an entity's triples, the rule's state fields and the inbound message.
 package expression
 
 import (
@@ -16,17 +18,12 @@ type ConditionExpression struct {
 	// contains, ...) honour this strictly: missing predicate +
 	// Required=true → EvaluationError.
 	//
-	// Array operators (length_eq, length_gt, length_lt, array_contains
-	// — see isArrayOperator) DELIBERATELY DIVERGE: a missing predicate
-	// resolves to an empty array (`[]interface{}{}`) and the operator
-	// runs against it. length_eq with value=0 then matches; length_gt
-	// with value=N>0 doesn't; array_contains returns false. This is
-	// the intended semantic for the #147 / ADR-046 Phase 1 counter
-	// pattern, where a join rule wanting "fire before any children
-	// complete" is a legitimate authoring intent. Authors who want
-	// "this predicate MUST exist on the entity" should pair the array
-	// operator with a separate scalar eq/exists condition over the
-	// same field.
+	// List operators (length_*, array_contains; see isArrayOperator)
+	// differ on an entity: a missing predicate is an empty list and the
+	// operator runs against it, so length_eq 0 matches, length_gt N does
+	// not, and array_contains is false. A join rule can then fire before
+	// any child completes. To require the predicate, add a scalar
+	// condition on the same field.
 	Required bool        `json:"required"`
 	From     interface{} `json:"from,omitempty"` // For transition operator: allowed previous value(s)
 

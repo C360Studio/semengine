@@ -10,14 +10,8 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// #147 — these tests close the split-brain gap where length_eq /
-// length_gt / length_lt / array_contains were listed by
-// rule_factory.isValidOperator() but never registered in the
-// evaluator's operator map. A rule author writing length_eq passed
-// validation at config load and hit "unsupported operator" at
-// runtime. The four operators are now wired with array-aware field
-// resolution; tests assert each at unit-level and through an
-// end-to-end Evaluate path that mirrors how a real rule would arrive.
+// List operators (length_*, array_contains) are checked as truth tables and
+// through Evaluate, the path a rule's conditions take.
 
 // --- operator truth tables ---
 
@@ -93,21 +87,16 @@ func TestOperatorLengthEq_NonArrayShapeErrors(t *testing.T) {
 	assert.Error(t, err, "integer fieldValue is not array-shaped — must error")
 }
 
-// --- end-to-end via Evaluate (closes the split-brain regression) ---
+// --- end-to-end via Evaluate ---
 
-// TestEvaluator_LengthEqEndToEnd is the regression test for the
-// validator/runtime split-brain: feeds a rule shape through Evaluate
-// (the path a real rule fires through) and asserts a length_eq
-// condition actually matches. Pre-#147 this would have returned
-// "unsupported operator" at applyOperator. Locks the wiring in.
+// TestEvaluator_LengthEqEndToEnd runs a length_eq condition through Evaluate
+// and checks that it counts every triple of the predicate.
 func TestEvaluator_LengthEqEndToEnd(t *testing.T) {
 	t.Parallel()
 	ev := NewExpressionEvaluator()
 
-	// Trigger entity is a parent loop with 3 child-completion counter
-	// triples stamped via the #147 subject-override path. The join
-	// rule fires when the counter length matches the expected
-	// subtopic count.
+	// A parent entity with 3 child-completion triples. The join rule fires
+	// when their count matches the expected number of children.
 	entity := &gtypes.EntityState{
 		Triples: []message.Triple{
 			{Predicate: "test.gather.completed-subtopic", Object: "hydraulics"},
@@ -151,9 +140,8 @@ func TestEvaluator_LengthEqMissingPredicateIsZero(t *testing.T) {
 	assert.True(t, got, "missing predicate must resolve to zero-length array for length_eq")
 }
 
-// TestEvaluator_ArrayContainsEndToEnd mirrors the regression closure
-// for array_contains. Real rule shape: "did the gather phase complete
-// for THIS specific subtopic before I act on it?"
+// TestEvaluator_ArrayContainsEndToEnd runs array_contains through Evaluate:
+// "did the gather phase complete for this subtopic before I act on it?"
 func TestEvaluator_ArrayContainsEndToEnd(t *testing.T) {
 	t.Parallel()
 	ev := NewExpressionEvaluator()
@@ -185,20 +173,11 @@ func TestEvaluator_ArrayContainsEndToEnd(t *testing.T) {
 	assert.False(t, got)
 }
 
-// TestRegisteredOperators_NoSplitBrainBetweenDeclarationsAndWiring
-// is the structural anti-foot for the #147 split-brain class.
-// Iterates every Op* constant declared in expression/types.go and
-// asserts each is registered in the evaluator's operator map (or is
-// OpTransition, which is dispatched specially). A future contributor
-// adding a constant without wiring fails this test at PR time
-// instead of shipping a "validator accepts, evaluator rejects"
-// runtime surprise.
+// RegisteredOperators names exactly the declared operators, so a rule loader
+// checking names against it accepts only what the evaluator runs.
 func TestRegisteredOperators_NoSplitBrainBetweenDeclarationsAndWiring(t *testing.T) {
 	t.Parallel()
-	// Every Op* constant declared in types.go. When a new constant
-	// is added, this list must be extended in the same PR — that's
-	// the structural intent (additions don't ship until the wiring
-	// is verified).
+	// Every Op* constant declared in types.go, written out by hand.
 	declared := []string{
 		OpEqual, OpNotEqual,
 		OpLessThan, OpLessThanEqual, OpGreaterThan, OpGreaterThanEqual,
@@ -211,14 +190,12 @@ func TestRegisteredOperators_NoSplitBrainBetweenDeclarationsAndWiring(t *testing
 	for _, op := range declared {
 		_, ok := registered[op]
 		assert.True(t, ok,
-			"operator %q is declared in types.go but not registered in NewExpressionEvaluator — #147 split-brain class. Either add evaluator.operators[%s] = operator%sFunc OR remove the constant from types.go if it's not actually supported.",
-			op, op, op)
+			"operator %q is declared in types.go but the evaluator does not run it", op)
 	}
+	assert.Len(t, registered, len(declared), "RegisteredOperators names an operator not declared here")
 }
 
-// TestIsArrayOperator covers the resolver-dispatch predicate. Locked
-// in so a future operator addition can be reviewed against the
-// truth table.
+// TestIsArrayOperator pins which operators read every triple of a predicate.
 func TestIsArrayOperator(t *testing.T) {
 	t.Parallel()
 	for _, op := range []string{OpLengthEq, OpLengthGt, OpLengthGte, OpLengthLt, OpLengthLte, OpArrayContains} {
@@ -229,10 +206,9 @@ func TestIsArrayOperator(t *testing.T) {
 	}
 }
 
-// gh#568 — length_gte / length_lte complete the length family to match the
-// numeric family (lt/lte/gt/gte). The boundary case (length == N) is the
-// whole point: a "count >= budget B" escalate route needs len==B to fire,
-// which neither length_gt B nor length_eq B alone expresses in one condition.
+// length_gte and length_lte complete the length family. The boundary case
+// (length == N) is the point: a "count >= budget B" route needs len == B to
+// fire, which neither length_gt B nor length_eq B expresses alone.
 
 func TestOperatorLengthGte(t *testing.T) {
 	t.Parallel()
@@ -281,10 +257,9 @@ func TestOperatorLengthLte(t *testing.T) {
 	}
 }
 
-// TestEvaluator_LengthGteBudgetBoundaryEndToEnd mirrors the downstream
-// (semdev) attempt-budget shape that motivated gh#568: retry routes on
-// count < B (length_lt), escalate routes on count >= B (length_gte). At
-// exactly B attempts the escalate condition — and only it — matches.
+// TestEvaluator_LengthGteBudgetBoundaryEndToEnd is an attempt budget: retry
+// routes on count < B (length_lt), escalate on count >= B (length_gte). At
+// exactly B attempts the escalate condition, and only it, matches.
 func TestEvaluator_LengthGteBudgetBoundaryEndToEnd(t *testing.T) {
 	t.Parallel()
 	ev := NewExpressionEvaluator()

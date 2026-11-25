@@ -25,7 +25,7 @@ there, so those PRs' figures are estimates.
 
 ## The graph-event path: an owner decision
 
-#101's ruling did not port `graph/events.go` and left rule's use of it to this port: "moves to the mutation-request
+The ruling on #101 did not port `graph/events.go` and left rule's use of it to this port: "moves to the mutation-request
 protocol or is dropped" (#101 comment 6126673987). At the pin a matching message rule builds an update for its
 trigger entity and publishes it to `graph.events.*`, which nothing subscribes to (`inventory.md`, compile probe).
 The choice reaches PR 2 (the exported `Rule` interface's `ExecuteEvents`, `interfaces.go:41`), PR 4 (`publisher.go`,

@@ -63,6 +63,7 @@ var d11Targets = []struct{ dir, kind string }{
 	{"graph/lexical", "unit"},
 	{"graph/entitytext", "unit"},
 	{"processor/graph-lexical", "merged"},
+	{"processor/rule/expression", "unit"},
 }
 
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced

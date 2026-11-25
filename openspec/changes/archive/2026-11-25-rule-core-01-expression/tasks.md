@@ -49,7 +49,7 @@
   naming rule and file; PR 3's substituter reads `SubstitutionPrefixes()`; PRs 6 and 7 log evaluation errors at Warn
   or above with the rule ID; PR 7's design weighs a general previous-value field for the owner; PR 10 confirms the
   watcher's batching against `transition`'s guide text. Read back after posting.
-- [ ] 4.1 `task verify` passes on a clean tree at the PR head; the PR body records `implemented-by:` and
+- [x] 4.1 `task verify` passes on a clean tree at the PR head; the PR body records `implemented-by:` and
   `reviewed-by:`; it closes no issue.
-- [ ] 4.2 Sync `specs/rule-conditions/spec.md` to `openspec/specs/rule-conditions/spec.md`, checked against the code,
+- [x] 4.2 Sync `specs/rule-conditions/spec.md` to `openspec/specs/rule-conditions/spec.md`, checked against the code,
   and archive the change as the last content commit. Check: `task spec:check`.

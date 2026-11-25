@@ -172,7 +172,7 @@ func TestLoadRefuses(t *testing.T) {
 			rule: `{"id": "r1", "type": "expression",
 			  "conditions": [{"field": "test.status.level", "value": 2}]}`,
 			position: "conditions[0]",
-			cause:    "operator",
+			cause:    "no operator",
 		},
 		{
 			name: "a condition with no field",

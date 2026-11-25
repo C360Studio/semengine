@@ -117,19 +117,23 @@ func TestActionBody(t *testing.T) {
 	    {"type": "publish", "subject": "a.c", "max_iterations": 2,
 	     "when": [{"field": "$message.name", "operator": "regex", "value": "-7$"}]}]}`
 
+	// cause says which of the three refusals applies; each also says to
+	// build the action by decoding.
+	const differs = "differs from its body"
 	notDecoded := []struct {
 		name   string
 		change func(def *Definition)
+		cause  string
 	}{
-		{"a Go literal with no Body", func(def *Definition) { def.OnEnter[1] = Action{Type: ActionTypePublish} }},
+		{"a Go literal with no Body", func(def *Definition) { def.OnEnter[1] = Action{Type: ActionTypePublish} }, "no body"},
 		{"a Body that is not a JSON object", func(def *Definition) {
 			def.OnEnter[1] = Action{Type: ActionTypePublish, Body: json.RawMessage(`"publish"`)}
-		}},
-		{"a changed Type", func(def *Definition) { def.OnEnter[1].Type = ActionTypeRemoveTriple }},
-		{"a changed ID", func(def *Definition) { def.OnEnter[1].ID = "mine" }},
-		{"a changed MaxIterations", func(def *Definition) { five := 5; def.OnEnter[1].MaxIterations = &five }},
-		{"a removed When", func(def *Definition) { def.OnEnter[1].When = nil }},
-		{"a changed When value", func(def *Definition) { def.OnEnter[1].When[0].Value = "-8$" }},
+		}, "cannot unmarshal string"},
+		{"a changed Type", func(def *Definition) { def.OnEnter[1].Type = ActionTypeRemoveTriple }, differs},
+		{"a changed ID", func(def *Definition) { def.OnEnter[1].ID = "mine" }, differs},
+		{"a changed MaxIterations", func(def *Definition) { five := 5; def.OnEnter[1].MaxIterations = &five }, differs},
+		{"a removed When", func(def *Definition) { def.OnEnter[1].When = nil }, differs},
+		{"a changed When value", func(def *Definition) { def.OnEnter[1].When[0].Value = "-8$" }, differs},
 	}
 	for _, tc := range notDecoded {
 		t.Run("Load refuses "+tc.name, func(t *testing.T) {
@@ -139,7 +143,7 @@ func TestActionBody(t *testing.T) {
 			_, err = Load(def, decodeSource, h)
 			require.Error(t, err)
 			assert.True(t, errs.IsInvalid(err), "classified invalid: %v", err)
-			for _, want := range []string{`"r1"`, decodeSource, "on_enter[1]", "build the action by decoding"} {
+			for _, want := range []string{`"r1"`, decodeSource, "on_enter[1]", tc.cause, "build the action by decoding"} {
 				assert.Contains(t, err.Error(), want)
 			}
 		})

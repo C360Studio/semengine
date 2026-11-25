@@ -6,7 +6,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 - [ ] 1.1 The inventory review passes, the design review passes; the owner fills `Approved-by:`.
   Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Fable reads this design before any code (proposal, first decision: `design.md` D1, D7, D8, D9).
+- [ ] 1.2 Fable reads this design before any code, or the owner declines that read (proposal, first decision:
+  `design.md` D1, D7, D8, D9).
   Hold: Fable's read of the design on PR #759.
 - [ ] 1.3 Start implementation once PR #758 (`rule-core-02-definitions`) has merged; merge `origin/main` into this
   branch first.
@@ -27,7 +28,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
     every inserted value come out unchanged; a template with no `$` is returned as is; `.length` equals the length
     of `.triples` decoded.
   - `TestStateTracker` (D9), on the package's shared NATS server (natsfixture, integration tag): round trip;
-    `ErrStateNotFound`; a wildcard entity key and a dotted rule ID refused, classified invalid, with no bucket call;
+    `ErrStateNotFound`; a wildcard entity key and a dotted rule ID refused, classified invalid, no record written;
     a nil context refused; `DeleteAllForEntity` keeps other entities' records, returns nil on an empty bucket, and
     refuses `>` and an ID holding `*`, classified invalid, with every record kept.
 - [ ] 2.2 `ExecutionContext` and the substituter from `execution_context.go`, `typed_substitution.go`,

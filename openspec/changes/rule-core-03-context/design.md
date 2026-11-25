@@ -74,17 +74,17 @@ change. Other option: drop it.
 
 **D7. What a product handler gets (F11, F25).** The context's fields, `SubstituteVariables`, `SubstituteVariablesTyped`,
 `RuleID`. `SubstituteVariablesWithIterVar`, the overlay and `ResolveListValue` are dropped: only `publish_agent` reads
-them (#27), and `for_each` leaves the core with it; semteams' 2 `for_each` actions take their list from `.triples`;
-binding an item after `SubstituteVariables` rescans its inserted values (F19 again), before it substitutes the item's
-text; the doc comment a handler reads says so. The doc comment says an `ExecutionContext` is not safe for concurrent use
-(it stores the lifecycle lookup). Other option: keep both as framework API (66 lines).
+them (#27), and `for_each` leaves the core with it; semteams' 2 `for_each` actions take their list from `.triples`; both
+orders rescan: binding after `SubstituteVariables` re-reads inserted values (F19 again), binding before substitutes the
+item's own text; the doc comment a handler reads says so. The doc comment says an `ExecutionContext` is not safe for
+concurrent use (it stores the lifecycle lookup). Other option: keep both as framework API (66 lines).
 
 **D8. The record (F5, F18; target-shape § 4).** `MatchState` is the pin's less `ActionIterations` (PR 7's `FireState`)
 and less the pair meaning of `EntityKey`. `MaxIterations` stays as the rule's value at that evaluation, what
-`$state.max_iterations` reads, not a limit (PR 2 D5); its doc says so. `last_transition` and `transition_at` mean the
-last transition and when, kept through evaluations without one; `last_checked` is every evaluation. PR 7's writer keeps
-them (today it overwrites, `stateful_evaluator.go:200-203`). Other option: drop the three (operators read them,
-`docs/operations.md:128-137`).
+`$state.max_iterations` reads, not a limit (PR 2 D5), never read back; its doc says so. Other option: drop it and give
+the context a field for one number. `last_transition` and `transition_at` mean the last transition and when, kept
+through evaluations without one; `last_checked` is every evaluation. PR 7's writer keeps them (today it overwrites,
+`stateful_evaluator.go:200-203`). Other option: drop the three (operators read them, `docs/operations.md:128-137`).
 
 **D9. `StateTracker` over `natsclient.KVStore` (F13-F16; nearest shape `graph/embedding/storage.go:173-198`).**
 `NewStateTracker(kv *natsclient.KVStore)`; `Get`, `Set`, `DeleteAllForEntity`. Each key passes

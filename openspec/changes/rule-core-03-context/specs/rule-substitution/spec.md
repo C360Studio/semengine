@@ -36,10 +36,10 @@ The tokens SHALL be `$now` and those beginning with one of `expression.Substitut
 
 ### Requirement: An unresolved token stays and is reported
 
-A text that begins with `$now` or one of `expression.SubstitutionPrefixes()` and is not a token that resolves SHALL
-reach from that start through the longest run of `[A-Za-z0-9_-]` segments joined by single dots, not counting a final
-dot. It SHALL stay as written, and SHALL be reported in one warning naming each such text and the rule ID. Text
-beginning with any other `$` SHALL stay as written and SHALL NOT be reported.
+Text starting with `$now` or a prefix of `expression.SubstitutionPrefixes()` that does not resolve SHALL reach
+through the longest run of dot-joined `[A-Za-z0-9_-]` segments, a final dot excluded, SHALL stay as written, and SHALL
+be named, with the rule ID, in one warning. An absent predicate's `.value`, `.length` or `.triples` (`""`, `0`, `[]`)
+counts as resolved. Text starting with any other `$` SHALL stay and SHALL NOT be reported.
 
 #### Scenario: A longer predicate that is absent is not read as a shorter one
 

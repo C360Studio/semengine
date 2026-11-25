@@ -36,17 +36,16 @@ show today.
   uses it in 3 prompts. Whether it reads the clock or the firing's own time is settled in PR 7, which owns the clock.
 - **What a product's action type gets (recommended): the context's fields, the text filler, and the typed filler for a
   single name.** The helpers for `for_each` loops are dropped: only `publish_agent` used them, and it leaves the
-  engine. semteams' two `for_each` actions can get their list from `.triples`, a JSON array, and fill each item
-  themselves. The other way is to keep both helpers as supported API, with a contract and a test.
+  engine. semteams' two `for_each` actions can get their list from `.triples` and fill each item themselves, though
+  either order refills some text. The other way keeps both helpers as supported API.
 - **`.length` counts every value (recommended), as ADR-048 says; ADR-048 is carried into this repository.** Today it
-  reads only the first triple and gives an error marker for a value stamped once per iteration, which is how semteams
-  records finished experiments; its "plateau after N iterations" and final-rollup prompts get the marker instead of N.
-  The other way keeps that behaviour.
+  reads only the first triple and gives an error marker for a value stamped once per iteration, as semteams records
+  finished experiments, so two of its prompts get the marker instead of N. The other way keeps that.
 - **A value is never filled twice, and a name is read whole (recommended).** Text from a triple or message that looks
   like a name stays; a name naming a missing value stays visible with a warning, not half-filled. Every product
   rule is run through both engines before merge, and each difference is listed.
 - **The stored copy of a rule's `max_iterations` stays (recommended)**, as the value `$state.max_iterations` shows,
-  not a limit, as you approved in PR 2.
+  not a limit (PR 2), though it is never read back; the other way drops it and gives the context a field for one number.
 - **Three stored fields keep the meaning the operations guide gives them (recommended):** the last transition and
   when it happened survive later checks that change nothing; "last checked" is every check. Today they are
   overwritten each time and nothing reads them. PR 7 writes them. The other way drops them.

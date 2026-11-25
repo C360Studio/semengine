@@ -67,7 +67,7 @@ configs`, `git show <sha>:<path>`, read-only). Scope: the four types the owner n
   - the rule's triple writer, `newTripleMutator` (`triple_mutator.go:27`), which records the rule's own revisions so
     it does not re-fire on its own writes; `publish_agent` writes through it at `actions.go:2062-2073`;
   - the reserved-subject check after substitution (`actions.go:1159`, `:1768`, `:2170`).
-- `lifecycle_*` with no manager fails at fire, not at load (`actions_lifecycle.go:10-16`).
+- `lifecycle_*` with no manager fails at fire, not at load (`requireLifecycleManager`, `actions_lifecycle.go:166-171`).
 - Firing-cap identity: `action_id.go:36-41` `effectiveID`; `:63-67` the fingerprint; `:85-104` a per-type switch.
 - `for_each`/`for_each_var` have one reader, `publish_agent` (`actions.go:1707-1742`).
 - Product actions: 131.

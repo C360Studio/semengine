@@ -23,18 +23,20 @@ Question: what PR 1 carries when it ports `processor/rule/expression` whole, and
 - Lifecycle suite: not applicable (no service, no `Start`). Integration tests: none in the package.
 - Production `context`, goroutines, `sync`: none. Package state: `regex_cache.go:15` —
   `var globalRegexCache cache.Cache[*regexp.Regexp]`, filled in `init` at `:18`.
-- Behaviour probe (`zz_probe_test.go` in the scratch main copy, output recorded here):
-  required and missing -> `required field not found` error; `lt` "apple" < "banana" -> true, no error; `lt` 5 <
-  "banana" -> true, no error; `contains` on 12345 -> true; `eq` true vs "true" -> true; "9.9" `lt` "10.0" -> true;
-  "NaN" `eq` "NaN" -> true; empty logic with one true and one false condition -> true (OR); logic `xor` -> error;
-  unknown operator -> error; regex with a non-string value -> error; `[unclosed` -> error at evaluation; `in` with a
-  non-list -> error; `length_eq` 0 on a missing predicate -> true; `transition` through `Evaluate` -> false, no error.
-- Regex probe (stdlib, go1.26.4): `a$b`, `(?m)a$b`, `(?m)^x$y` match none of "a$b", "ab", "a\nb", "x\ny", "x$y",
-  "$now", "a\n$b"; `\$now`, `[$]now`, `\x24now` each match "$now". `a{1001}` is refused by `regexp.Compile` (invalid
-  repeat count); `a{1000}`, `a{1000,}`, `(a+)+$` compile.
-- semteams' one regex pattern passes `validateRegexComplexity` and `regexp.Compile`.
+- Behaviour probe (`zz_probe_test.go` in the scratch main copy): required and missing -> `required field not found`
+  error; `lt` "apple" < "banana" -> true, no error; `lt` 5 < "banana" -> true, no error; `contains` on 12345 -> true;
+  `eq` true vs "true" -> true; "9.9" `lt` "10.0" -> true; "NaN" `eq` "NaN" -> true; empty logic with one true and one
+  false condition -> true (OR); logic `xor` -> error; unknown operator -> error; regex with a non-string value ->
+  error; `[unclosed` -> error at evaluation; `in` with a non-list -> error; required `length_eq` 0 on a missing
+  predicate -> true; `transition` through `Evaluate` -> false, no error.
+- Regex probe (stdlib, go1.26.4): `$` as an anchor before a letter (`a$b`, `(?m)a$b`) matches nothing; a literal `$`
+  matches: `[$a-z]+` on "$", `^\$USD` on "$USD", `\Q$now\E` and `[$]now` and `\x24now` on "$now", `(?i)\$Price` on
+  "$price" are all true. `a{1001}` is refused by `regexp.Compile`; `a{1000}`, `(a+)+$` compile.
+- semteams' one regex pattern passes `validateRegexComplexity` and `regexp.Compile` and holds no substitution token.
 - Empty-logic probe: on the pin copy, making `""` mean AND (`evaluator.go:151`) and running
-  `go test ./processor/rule/...` (unit): both packages ok, so no pin unit test depends on empty meaning OR.
+  `go test ./processor/rule/...` (unit): both packages ok.
+- JSON probe (go1.26.4): an error returned by a custom `UnmarshalJSON` comes back from `json.Unmarshal` unchanged
+  (`errors.Is` holds); a decoder's `DisallowUnknownFields` does not reach keys a custom `UnmarshalJSON` decodes.
 
 ## Compile drift against main (production and test)
 
@@ -68,80 +70,94 @@ No reader anywhere (pin, semteams, semboids, semsource, semconnect):
   `func (e *Evaluator) Distance(` and the helpers `extractLatLonFromTriples`, `haversineDistance`, `isValidEntityID`
   (`:906-965`). Only `evaluator_test.go:429-697` reads them.
 - `types.go:51` — `type TypeDetector interface {` — one implementation (`evaluator.go:392`), held in an unexported
-  field with no setter. `DetectFieldType` (`evaluator.go:428`) is never called; `FieldType`, its five constants and
-  `String()` (`types.go:67-95`) are read only by it.
+  field with no setter; the evaluator calls its two lookup methods (`evaluator.go:236`, `:258`, `:340`).
+  `DetectFieldType` (`evaluator.go:428`) is never called; `FieldType`, its five constants and `String()`
+  (`types.go:67-95`) are read only by it.
 - `types.go:48` — `type OperatorFunc func(...)` — exported, read only inside the package.
 - Unexported, test-only: `clearCache`, `cacheSize`, `cacheStats` (`regex_cache.go:125-137`).
 
-Config fields: none (the package reads no configuration). Unknown keys: `ConditionExpression` has no
-`UnmarshalJSON`; how strictly a condition is decoded is the rule loader's (PR 2).
+Config fields: none (the package reads no configuration). `ConditionExpression` has no `UnmarshalJSON`.
 
 Advertised-absent (pin `processor/rule/docs/conditions.md`, which rides with PR 1):
 
-- `conditions.md:217-232` says a required field that is missing makes the condition return false; the code returns
-  an error (`evaluator.go:192-196`, `:278-288`; probe above).
+- `conditions.md:217-232` says a required field that is missing makes the condition false; the code returns an error
+  (`evaluator.go:192-196`, `:278-288`).
 - `conditions.md:29-38` says the evaluator detects a field's type and lists operators by type; nothing gates
   operators by type (`DetectFieldType` unread; probe: `contains` on a number is true).
-- `conditions.md:249-259` says a failed coercion returns false with an error, and `:378-385` lists "Type mismatch";
-  `compareValuesWithError` (`evaluator.go:718-742`) never returns an error.
-- `length_gte` and `length_lte` are registered (`evaluator.go:50`, `:52`) but not documented; `transition`'s `from` is
-  missing from the documented struct (`conditions.md:7-14`); links name `03-conditions.md`, `04-actions.md`.
-- Regex limits (`regex_cache.go:59-120`) are not documented.
+- `conditions.md:249-259` and `:378-385` say a failed coercion is an error; `compareValuesWithError`
+  (`evaluator.go:718-742`) never returns one.
+- `length_gte`, `length_lte` (`evaluator.go:50`, `:52`) are undocumented; `from` is missing from the documented
+  struct (`conditions.md:7-14`); links name `03-conditions.md`, `04-actions.md`; regex limits are undocumented.
 
 ## Shape sweep
 
 1. Second spelling: the default for empty logic. `evaluator.go:151` — `case LogicOr, "": // Default to OR if not
-   specified`, while the rule layer spells AND: `config_validation.go:464` —
-   `Logic:   getStringWithDefault(ruleMap, "logic", "and"),`; `expression_factory.go:104-106`; `matches.go:187-189`;
-   `stateful_evaluator.go:294-296`; `syntax.md:109`, `conditions.md:189`. Every production caller sets `Logic`
-   (`expression_factory.go:302`, `:324`, `stateful_evaluator.go:292`, `:558`). Also `$entity.lifecycle.` is spelled at
-   `stateless.go:20` and `lifecycle_substitution.go:92`, and `$prev.` at `evaluator.go:359` and
-   `stateful_evaluator.go:226`, `:278` (packages for PRs 3 and 7).
-2. Copied shell: none (no lifecycle code).
-3. Layered interface with one implementation: `TypeDetector` (above).
+   specified`; the rule layer spells AND at `config_validation.go:464` —
+   `Logic:   getStringWithDefault(ruleMap, "logic", "and"),`, `expression_factory.go:104-106`, `matches.go:187-189`,
+   `stateful_evaluator.go:294-296`, `syntax.md:109`, `conditions.md:189`. Every production caller sets `Logic`
+   (`expression_factory.go:302`, `:324`, `stateful_evaluator.go:292`, `:558`). Also `$entity.lifecycle.` at
+   `stateless.go:20` and `lifecycle_substitution.go:92`; `$prev.` at `evaluator.go:359` and
+   `stateful_evaluator.go:226`, `:278` (PRs 3 and 7).
+2. Copied shell: none.
+3. Layered interface with one implementation: `TypeDetector`.
 4. Exported surface with no reader: `HasTriple`, `GetOutgoing`, `Distance`, `TypeDetector`, `FieldType`,
-   `OperatorFunc` (above).
-5. Classification by error text: none in production (`grep 'Error()' *.go`); tests match error text.
+   `DetectFieldType`, `OperatorFunc`.
+5. Classification by error text: none in production; tests match error text.
 
 Other: 27 comment lines carry port history (`#147`, `gh#207`, `gh#731`, "Phase 1", "semteams rule packs"), e.g.
 `evaluator.go:44`, `:748-768`, `types.go:25`, `stateless.go:15`. `regex_cache.go:40` — `// Security check: validate
-pattern complexity to prevent ReDoS` — Go's regexp is "guaranteed to run in time linear in the size of the input"
-(`go doc regexp`, go1.26.4).
+pattern complexity to prevent ReDoS`; Go's regexp is "guaranteed to run in time linear in the size of the input"
+(`go doc regexp`) and promises nothing about cost as the pattern grows.
 
-## Every current spelling of "a regex pattern"
+## Every current spelling of "a regex pattern" and "a template"
 
-- Pin: compiled per evaluation through the global cache: `evaluator.go:703` — `re, err := compileRegex(pattern)`;
+- Pin compile per evaluation through the global cache: `evaluator.go:703` — `re, err := compileRegex(pattern)`;
   `regex_cache.go:46` — `re, err := regexp.Compile(pattern)`.
-- Pin substitution runs before evaluation on any string containing `$`: `execution_context.go:424-428` —
-  `if !ok || !strings.Contains(s, "$") {` ... `out[i].Value = ec.SubstituteVariables(ctx, s)`; it replaces tokens
-  anywhere in the string (`execution_context.go:288-322`, e.g. `strings.ReplaceAll(result, "$now", ...)`). Every
-  substitution token begins with `$` and a letter: `execution_context.go:35` —
-  ``regexp.MustCompile(`\$(?:entity|related|state|schedule|caller|message)\.[a-z0-9][a-z0-9_.-]*`)``, `$now` (`:288`),
-  `messageTokenRe` (`message_substitution.go:54`), the per-action iteration variable `$<name>` (`:263-268`, leaves with
-  `publish_agent`).
-- SemEngine main: no rule code. `git grep -n 'regexp\.Compile([a-z]'` over production: none. Other user-pattern
-  compiles at the pin are in non-admitted agentic packages only (`processor/agentic-dispatch`,
-  `processor/agentic-governance`).
+- Substitution runs before evaluation on any string value holding `$`: `execution_context.go:424-428` —
+  `if !ok || !strings.Contains(s, "$") {` ... `out[i].Value = ec.SubstituteVariables(ctx, s)` — and replaces known
+  tokens anywhere in the string (`:288-322`). The tokens: `$now` (`:288`), `$entity.` and `$related.` (`:291-298`,
+  triple forms `:55`, `:88`, `:114`), `$state.` (`:302-303`), `$schedule.` (`cron_substitution.go`), `$caller.`
+  (`caller_substitution.go`), `$message.` (`message_substitution.go:54`); the unresolved check
+  `execution_context.go:35` —
+  ``regexp.MustCompile(`\$(?:entity|related|state|schedule|caller|message)\.[a-z0-9][a-z0-9_.-]*`)``. The
+  iteration variable `$<name>` (`:263-268`) leaves with `publish_agent`.
+- SemEngine main: no rule code; `git grep -n 'regexp\.Compile([a-z]'` over production: none. Other user-pattern
+  compiles at the pin are in non-admitted agentic packages only.
+
+## Where the pin keeps and fires definitions
+
+- Decode: per file at `rule_loader.go:72` (the file is known there), then merged; inline rules
+  (`config.go:24` — `InlineRules []Definition `json:"inline_rules,omitempty"`); validation at `rule_loader.go:117`
+  (`ValidateDefinition`, reports the rule ID, no file).
+- JSON clones after validation: `rule_loader.go:111`, `:121`, `:170`, `processor.go:270`
+  (`cloneRuleDefinitions`, `:89-95`). Map round trip: `definitionToRuleMap` (`rule_loader.go:39`, `:216`, `:244`)
+  and back through `definitionFromMap` (`config_validation.go:129`, `:564`, `runtime_config.go:183`), which builds
+  conditions as struct literals (`config_validation.go:607-611`) and makes `required` default to **true**
+  (`getBoolWithDefault(condMap, "required", true)`), where JSON decode makes it false.
+- Kept for firing: `rp.ruleDefinitions[def.ID] = def` (`rule_loader.go:215`, `:243`) and
+  `CreateRuleFromDefinition` (`:226`).
+- Evaluation errors on the fire paths are silent: `expression_factory.go:200-205` and `:224-230` log at Debug and
+  return false; `stateful_evaluator.go:380-386` logs at Warn and skips the action.
+- KV rules: `kv_config_integration.go:348`, `:373`; `ListRules` logs and skips an entry it cannot decode (`:368-375`).
 
 ## Problem shape and closest instance
 
-Shape: admit-or-refuse at a load seam, keeping the prepared form. Closest instances: the pin's load-time operator
-check, `rule_factory.go:247-256` (refuses an unknown operator, naming rule and index) read through
-`RegisteredOperators`, and `ValidateDefinition` (`config_validation.go:273`, classified with `errs.WrapInvalid`);
-in SemEngine, `pkg/rulepack.ValidateID` (refuse at entry, classified). None keeps a compiled form. Adoption sweep: no
-admitted package compiles a user-supplied pattern (search above), so there is none to list.
+Admit-or-refuse at a load seam, keeping the prepared form. Closest: the pin's load-time operator check
+(`rule_factory.go:247-256`, through `RegisteredOperators`) and `ValidateDefinition` (`config_validation.go:273`,
+`errs.WrapInvalid`); in SemEngine `pkg/rulepack.ValidateID`. None keeps a compiled form. Adoption sweep: no admitted
+package compiles a user-supplied pattern.
 
 ## Open issues
 
 `gh issue list --state open --search <q>` for `expression`, `regex`, `regex_cache`, `evaluator`, `rule/expression`,
-`condition`, `operator` (2026-11-25). Naming the package: #9 (its ruling comment 5950725772 names
-`regex_cache.go:21` as a later port-refactor; no issue was filed for it). Naming the word only: #702 (names
-`expression_factory.go:31`, `processor/rule`), #25, #28, #703, #484, #641, #502, #155, #712, #647, #646, #350, #110.
+`condition`, `operator` (2026-11-25). Naming the package: #9 (ruling comment 5950725772 names `regex_cache.go:21`
+for a later port-refactor; no issue was filed). Naming the word only: #702 (`expression_factory.go:31`), #25, #28,
+#703, #484, #641, #502, #155, #712, #647, #646, #350, #110.
 
 ## Open PRs
 
-`gh pr list --state open`: #753 (this claim: `openspec/changes/rule-core-01-expression/{proposal,tasks}.md`); #754
-(target-shape page: `openspec/changes/design-rule-core-target-shape/` only). No file or capability overlap.
+`gh pr list --state open`: #753 (this claim); #754 (draft, `openspec/changes/design-rule-core-target-shape/`); #755
+(draft, `claude/probe-703-scheduled-messages`, one empty commit). No file or capability overlap.
 
 ## ADRs
 
@@ -150,28 +166,28 @@ Pin `docs/adr`, 85 records; grep for the package path and exported names, then b
 | ADR | Decides, for this code | Status here |
 | --- | --- | --- |
 | 041 Unified condition evaluator | one evaluator for rule conditions and action `when`; the field-resolution order | binding; not in `docs/adr` |
-| 046 Parallel fan-out | joins are done rule-side by counting triples with `length_eq`; array operators see every triple | its array-operator note is code here; `for_each` leaves (E3); PR 3 decides the rest |
+| 046 Parallel fan-out | joins count triples with `length_eq`; list operators see every triple | its list-operator note is code here; the rest PR 3 |
 | 047 Lifecycle harness | `$entity.lifecycle.*` condition fields | prefix recognized here (`stateless.go:20`); ADR with PR 5 |
-| 048 BoundedDispatcher and `.triples` | `.triples` composes with array operators | substitution, PR 3 |
-| 039 Tool-call governance | deny/approve; names `expression_factory.go` | not carried (E4) |
+| 048 BoundedDispatcher and `.triples` | `.triples` composes with list operators | substitution, PR 3 |
+| 094 Boot-only composition, observable rule activation | a KV rule candidate is accepted or `rejected`, observably | in `docs/adr`; governs how PR 12 reports a refusal |
+| 039 Tool-call governance | deny/approve | not carried (E4) |
 | 040 Retire boids | mentions the evaluator in passing | not governing |
 
 SemEngine: ADR-110 (no `EntityState.Version`) explains the test drift.
 
 ## Guidance at the pin
 
-`git grep -i 'rule/expression|regex|ConditionExpression'` over pin `.agents`, `.claude`: none. The rule contract
-sections return with PRs 3 and 13 (`split.md`). Docs: `processor/rule/docs/conditions.md` (393 lines) and
-`syntax.md` (330 lines; rule definition, actions, cooldown, templates).
+`git grep -i 'rule/expression|regex|ConditionExpression'` over pin `.agents`, `.claude`: none. Docs:
+`processor/rule/docs/conditions.md` (393 lines), `syntax.md` (330 lines; rule definitions, actions, templates).
 
-## Usage count (item 9; checked-in rule JSON at each product's HEAD, `git show HEAD:<file>`)
+## Usage count
 
-semteams: 84 files under `configs/rules/` with conditions (plus 3 under `test/fixtures/rule-family-consumer/`, `eq`
-only; `schemas/` excluded). semboids: 3 files (`configs/rules/zone-steering/`). Conditions (files):
+Checked-in rule JSON at each product's HEAD (`git show HEAD:<file>`). semteams: 84 files under `configs/rules/`;
+semboids: 3 under `configs/rules/zone-steering/`. Conditions (files):
 
-| Feature | semteams | semboids |
+| Feature | semteams `configs/rules/` | semboids |
 | --- | --- | --- |
-| `eq` / `ne` | 141 (73) / 20 (18) | 14 (3) / 0 |
+| `eq` / `ne` | 138 (73) / 20 (18) | 14 (3) / 0 |
 | `lt` / `lte` / `gt` / `gte` | 0 / 3 (3) / 6 (4) / 0 | 0 |
 | `between`, `contains`, `starts_with`, `ends_with` | 0 | 0 |
 | `regex` | 1 (`configs/rules/research/02-plan-to-gather.json:25`) | 0 |
@@ -179,26 +195,28 @@ only; `schemas/` excluded). semboids: 3 files (`configs/rules/zone-steering/`). 
 | `length_eq` / `length_gt` | 34 (27) / 9 (9) | 0 |
 | `length_gte`, `length_lt`, `length_lte`, `array_contains` | 0 | 0 |
 | `transition`, `from` | 0 | 0 |
-| logic `and` / `or` / omitted | 87 lists / 0 / 0 | 7 / 0 / 0 |
-| `required: true` / omitted | 233 / 7 | 0 / 14 |
+| logic `and` / `or` / omitted | 84 lists / 0 / 0 | 7 / 0 / 0 |
+| `required: true` / omitted | 230 / 7 | 0 / 14 |
 | `$state.*` field | 7 (3), all in action `when` guards | 0 |
 | `$prev.*`, `$entity.lifecycle.*` fields | 0 | 0 |
-| `$message.<field>` / deeper path `$message.a.b` | 0 / 0 | 14 (3) / 0 |
+| `$message.<field>` / deeper `$message.a.b` | 0 / 0 | 14 (3) / 0 |
 | `$`-templated value | 11 (7): `eq` 3, `gt` 4, `lte` 3, `length_eq` 1 | 0 |
 | `$`-templated regex value | 0 | 0 |
 
-Not countable from files: bare names that fall back to the message; rules built in Go, in tests, or at runtime.
+semteams `test/fixtures/rule-family-consumer/` adds 3 files: 3 `eq` conditions, 3 `and` lists, 3 `required: true`.
+Keys used in any condition: `field`, `operator`, `value`, `required` only. Not countable from files: bare names that
+fall back to the message; rules built in Go, in tests, or at runtime.
 
 ## Adopter seam
 
-Reached from outside: rule JSON authors (semteams, semboids), and Go code using the types (semteams tests:
+Reached from outside: rule JSON authors (semteams, semboids) and Go code using the types (semteams tests:
 `ConditionExpression`, `EvaluationError`; the rule core from PR 2 on).
 
-1. What must they know? (a) A regex value cannot hold a `$` template. (b) Go code that builds a regex condition must
-   prepare it before evaluating it.
-2. If they do nothing: (a) today no checked-in rule is affected; (b) depends on the design.
-3. Where do they find out: depends on the design (boot error through PR 2's loader at best).
+1. What must they know? (a) A regex value cannot hold a substitution token. (b) Code that keeps a rule for firing
+   must prepare its conditions first.
+2. If they do nothing: (a) no checked-in rule is affected; (b) at the pin's fire paths an evaluation error is a
+   Debug or Warn line and the rule or action silently does not run (above).
+3. Where do they find out: (a) at load; (b) depends on the design and on PRs 6 and 7.
 4. What should they have to know: nothing for (b).
 
-Collision table: not triggered (no durable, communication or runtime-coordination primitive).
-Intent check: no boundary moves; the port set is ruled (#8 Q15, D12).
+Collision table: not triggered. Intent check: no boundary moves; the port set is ruled (#8 Q15, D12).

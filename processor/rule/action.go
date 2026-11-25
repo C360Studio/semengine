@@ -80,9 +80,10 @@ type Action struct {
 	// one count between actions.
 	ID string
 
-	// MaxIterations is the `max_iterations` key: the action fires at most
-	// this many times for one rule and entity match. Absent (nil) means
-	// defaultActionMaxIterations, 0 means no cap.
+	// MaxIterations is the `max_iterations` key: the firing cap, the most
+	// times the rule processor that runs rules may fire the action for one
+	// rule and entity match. Absent (nil) means defaultActionMaxIterations,
+	// 0 means no cap. Load refuses a negative value.
 	MaxIterations *int
 
 	// Body is the action's JSON object as written.

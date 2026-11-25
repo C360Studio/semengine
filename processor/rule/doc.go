@@ -33,11 +33,12 @@
 // subject in the reserved `user.response.>` family, and a triple predicate
 // that is substituted or not declared.
 //
-// An action fires at most `max_iterations` times for one rule and entity
-// match (absent means 3, 0 means no cap). Its count is kept under its `id`,
-// or, without one, under a hash of the rule ID, the type and the body in
-// canonical form, so any edit to the action starts a fresh count while
-// reformatting its file does not.
+// An action's `max_iterations` is its firing cap: the most times the rule
+// processor that runs rules may fire it for one rule and entity match
+// (absent means 3, 0 means no cap). Load checks the value and works out the
+// key that count is kept under: the action's `id`, or, without one, a hash of
+// the rule ID, the type and the body in canonical form, so any edit to the
+// action gives a new key while reformatting its file does not.
 //
 // # Loading
 //

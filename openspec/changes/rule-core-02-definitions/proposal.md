@@ -1,6 +1,6 @@
 # Proposal: rule-core-02-definitions
 
-Approved-by:
+Approved-by: cglusky (2026-11-25) <https://github.com/C360Studio/semengine/pull/758#issuecomment-7168133081> sha256:de1b16366a1f
 
 Track: `design`. PR 2 of the rule-core split plan (`archive/2026-11-25-design-rule-core-split-plan/`). Adds the
 `rule-definitions` capability and edits two `harness-boundaries` requirements.

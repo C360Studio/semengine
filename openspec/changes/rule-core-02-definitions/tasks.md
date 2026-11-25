@@ -15,13 +15,15 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 - [ ] 2.1 Tests come before the code, each seen to fail first. After 2.5, run `task mutate:check` on each refusal and
   record detected or survived in `notes/2.1.md`.
-  - `TestDecodeDefinition` (D4): a file's bytes and the same rule marshalled and read back decode equal; an
-    undeclared key, `related_patterns` and an undeclared condition key are refused, naming key, rule and source;
-    absent `enabled`, `required` and `logic` mean true, false and `and`.
+  - `TestDecodeDefinition` (D4): a file's bytes and the same rule marshalled and read back decode equal; an undeclared
+    key, `related_patterns` and an undeclared condition key are refused, naming key, rule and source, and a misspelt key
+    in a `when` condition is refused naming `when[0]`; absent `enabled`, `required` and `logic` mean true, false and
+    `and`.
   - `TestLoadRefuses` (D3, D5, D7): an unknown action type; a bad or templated regex; a rule-opaque or undeclared
     condition field; a dotted ID; negative `fire_every_n_events` or `max_iterations`; `rerun_on_recovery` with nothing
-    to re-run; an enabled `type: "cron"`; a disabled rule with an unknown type. Each checks `errs.IsInvalid`, rule ID,
-    source, position and cause. A disabled cron rule loads.
+    to re-run; an enabled `type: "cron"`; a disabled rule with an unknown type; a watch bucket other than
+    `ENTITY_STATES`, whose error also carries the code `ErrorCodeEntityWatchBucketUnsupported` (`errors.As`). Each
+    checks `errs.IsInvalid`, rule ID, source, position and cause. A disabled cron rule loads.
   - `TestBuiltinCheck` (D6), `TestCapKey` (D8), `TestBodyKeepsBytes` (D9).
   - semboids' `configs/rules/zone-steering/{food,predator,wind}.json` (ab4e0fbc, MIT) are copied to
     `processor/rule/testdata/semboids-zone-steering/` with a README naming repository, commit and paths. They load

@@ -46,7 +46,7 @@ cause. A disabled rule SHALL be checked the same way. Nothing SHALL skip a refus
 
 - **WHEN** a rule's `entity.watch_buckets` names a bucket other than `ENTITY_STATES`
 - **THEN** `Load` fails with the classified code `entity_watch_bucket_unsupported`
-  (`ErrorCodeEntityWatchBucketUnsupported`), naming the bucket
+  (`ErrorCodeEntityWatchBucketUnsupported`), with the bucket in its detail
 
 #### Scenario: An enabled cron rule is refused until timers exist
 

@@ -23,7 +23,7 @@ a log line; a bad rule is skipped at boot with a log line; a typo in a key is ig
 ## Decisions you are making by approving
 
 - **Disabled rules are checked too (recommended), and a refusal names its source** (rule file, inline position, or
-  stored rule and revision). A broken rule cannot wait, switched off. The other way is the old engine's: enabled only.
+  stored rule and revision). A broken rule cannot wait, switched off. The old engine checked only part of a disabled rule.
 - **An unknown key in a rule is refused wherever the rule comes from (recommended).** No checked-in product rule has
   one. The other way, refusing only rules written inside the processor's configuration, leaves a typo in a rule file
   silent.

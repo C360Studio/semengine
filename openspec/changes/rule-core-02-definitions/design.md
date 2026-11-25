@@ -44,17 +44,17 @@ enabled rules, lets a broken rule wait. Sources: a rules file's configured path,
 `rules.<id>@<revision>`. PR 8 fails construction on a refusal; PR 12 rejects the candidate set (ADR-094). Proof:
 `TestLoadRefuses`, one case per spec refusal, asserting class, rule, source and position.
 
-**D4. One decode, strict.** `DecodeDefinition(data []byte, source string) (Definition, error)` decodes one rule
-object with `DisallowUnknownFields`, so a key `Definition` or a condition does not declare is refused naming key,
-rule and source. `Action` has its own unmarshaler, which keeps the object as `Body` and reads the four core keys; the
-decoder's refusal stops there (PR 1, D2 option C), so body keys are the handler's `Check` (D6). Absent keys: `enabled`
-true, `required` false (files' meaning today; semboids' 14 conditions rely on it), `logic` `and`, `name` empty.
-Callers: PR 8 reads a rules file (one object or an array, each element decoded with the file as source) and keeps
-`inline_rules` as raw elements, each decoded with `inline_rules[<index>]`; PR 12 decodes each stored value with
-`rules.<id>@<revision>`. Proof in PR 2: `TestDecodeDefinition`. A file's bytes and the same rule marshalled and read
-back (compacted, escaped) decode equal; undeclared keys refused; the absent-key meanings. The inline and bucket
-paths are proved by PRs 8 and 12. Other option: refuse undeclared keys in `inline_rules` only; typos elsewhere stay
-silent.
+**D4. One decode, strict.** `DecodeDefinition(data []byte, source string) (Definition, error)` decodes one rule object
+with `DisallowUnknownFields`, so a key `Definition` or a condition does not declare is refused naming key, rule and
+source. `Action` has its own unmarshaler, which keeps the object as `Body` and decodes the four core keys strictly
+itself, so a misspelt key in a `when` condition is refused naming `when[<i>]`; the decoder's refusal stops at the body
+(PR 1, D2 option C), so body keys are the handler's `Check` (D6). Absent keys: `enabled` true, `required` false
+(files' meaning today; semboids' 14 conditions rely on it), `logic` `and`, `name` empty. Callers: PR 8 reads a rules
+file (one object or an array, each element decoded with the file as source) and keeps `inline_rules` as raw elements,
+each decoded with `inline_rules[<index>]`; PR 12 decodes each stored value with `rules.<id>@<revision>`. Proof in PR
+2: `TestDecodeDefinition`. A file's bytes and the same rule marshalled and read back (compacted, escaped) decode
+equal; undeclared keys refused, a `when[0]` one included; the absent-key meanings. The inline and bucket paths are
+proved by PRs 8 and 12. Other option: refuse undeclared keys in `inline_rules` only; typos elsewhere stay silent.
 
 **D5. Fields with no engine behaviour.** `metadata` stays as author notes the engine never reads (85 semteams rules);
 the claim that it is substituted goes. Rule-level `max_iterations` stays as the value `$state.max_iterations` reads,

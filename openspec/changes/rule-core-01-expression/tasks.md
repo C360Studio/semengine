@@ -31,7 +31,7 @@
   and the spec's resolution exceptions (list operators, required `transition`); add one rapid property test for the
   design's invariants, recording the seed and completed checks. Replace port-history comments (`#147`, `gh#207`,
   `gh#731`, "Phase 1") with plain reasons. Check: `task test:unit`, `task test:repeat`.
-- [ ] 2.7 Add `"processor/rule/expression unit"` to `scripts/cover-check.sh`. Check: `task cover:check` at 80% or
+- [x] 2.7 Add `"processor/rule/expression unit"` to `scripts/cover-check.sh`. Check: `task cover:check` at 80% or
   more.
 
 ## 3. Docs

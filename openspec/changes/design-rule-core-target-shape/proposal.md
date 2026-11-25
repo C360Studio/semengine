@@ -1,6 +1,6 @@
 # Proposal: design-rule-core-target-shape
 
-Approved-by:
+Approved-by: cglusky (2026-11-25) <https://github.com/C360Studio/semengine/pull/754#issuecomment-7163886090> sha256:1bfe31896733
 
 Track: `design`. No spec Requirement changes; the PRs that build toward this page carry their own spec deltas.
 

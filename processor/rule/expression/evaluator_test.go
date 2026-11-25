@@ -261,6 +261,27 @@ func TestExpressionEvaluator_LogicOperators(t *testing.T) {
 			},
 			expected: false,
 		},
+		{
+			// No logic given means all conditions must hold.
+			name: "empty_logic_one_false",
+			expr: LogicalExpression{
+				Conditions: []ConditionExpression{
+					{Field: "robotics.battery.level", Operator: OpLessThan, Value: 50.0, Required: true},    // false
+					{Field: "robotics.system.status", Operator: OpContains, Value: "ARMED", Required: true}, // true
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "empty_logic_both_true",
+			expr: LogicalExpression{
+				Conditions: []ConditionExpression{
+					{Field: "robotics.battery.level", Operator: OpGreaterThan, Value: 80.0, Required: true},
+					{Field: "robotics.system.status", Operator: OpContains, Value: "ARMED", Required: true},
+				},
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {

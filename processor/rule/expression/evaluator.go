@@ -146,21 +146,21 @@ func (e *Evaluator) EvaluateWithStateAndMessage(entityState *gtypes.EntityState,
 
 	// Apply logic operator
 	switch expr.Logic {
-	case LogicOr, "": // Default to OR if not specified
-		for _, result := range results {
-			if result {
-				return true, nil
-			}
-		}
-		return false, nil
-
-	case LogicAnd:
+	case LogicAnd, "": // No logic given means all conditions must hold.
 		for _, result := range results {
 			if !result {
 				return false, nil
 			}
 		}
 		return true, nil
+
+	case LogicOr:
+		for _, result := range results {
+			if result {
+				return true, nil
+			}
+		}
+		return false, nil
 
 	default:
 		return false, &EvaluationError{

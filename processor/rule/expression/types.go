@@ -38,7 +38,7 @@ type ConditionExpression struct {
 // LogicalExpression combines multiple conditions with logic operators
 type LogicalExpression struct {
 	Conditions []ConditionExpression `json:"conditions"`
-	Logic      string                `json:"logic"` // "and", "or"
+	Logic      string                `json:"logic"` // "and" (also when empty) or "or"
 }
 
 // Evaluator processes expressions against entity state

@@ -297,8 +297,16 @@ func FuzzDecodeDefinition(f *testing.F) {
 		`{"id": "r"} 1`,
 		`[]`,
 		`not json`,
+		`{"id": "r", "type": "expression", "conditions": [{"field": "$message.name", "operator": "regex", "value": "^a"}],
+		  "on_enter": [{"type": "publish", "subject": "a.b",
+		    "when": [{"field": "$message.name", "operator": "regex", "value": "b$"}]}]}`,
+		`{"id": "r", "type": "cron", "enabled": false, "actions": [{"type": "lifecycle_fail", "workflow": "w"}]}`,
 	} {
 		f.Add([]byte(seed))
+	}
+	handlers, err := NewHandlers(nil)
+	if err != nil {
+		f.Fatal(err)
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		first, err := DecodeDefinition(data, decodeSource)
@@ -332,6 +340,22 @@ func FuzzDecodeDefinition(f *testing.F) {
 			if firstKey != secondKey {
 				t.Fatalf("action %d: firing-cap key changed in a round trip", i)
 			}
+		}
+
+		// Load either refuses, classified invalid and naming the source, or
+		// accepts; either way it leaves the definition as decoded. A second
+		// decode of the same bytes is the independent copy compared with.
+		want, err := DecodeDefinition(data, decodeSource)
+		if err != nil {
+			t.Fatalf("a second decode of the same bytes failed: %v", err)
+		}
+		if _, err := Load(first, decodeSource, handlers); err != nil {
+			if !errs.IsInvalid(err) || !strings.Contains(err.Error(), decodeSource) {
+				t.Fatalf("Load refusal is not classified invalid naming the source: %v", err)
+			}
+		}
+		if !reflect.DeepEqual(want, first) {
+			t.Fatalf("Load changed the definition:\n%#v\n%#v", want, first)
 		}
 	})
 }

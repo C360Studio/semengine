@@ -2,8 +2,7 @@
 
 ## 1. Design
 
-- [ ] 1.1 The inventory review passes and the design review passes; the owner fills `Approved-by:`. Hold: OPEN-Q
-  proposal awaits owner approval
+- [x] 1.1 The inventory review passes and the design review passes; the owner fills `Approved-by:`.
 
 ## 2. Port
 

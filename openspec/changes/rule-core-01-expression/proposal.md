@@ -1,6 +1,6 @@
 # Proposal: rule-core-01-expression
 
-Approved-by:
+Approved-by: cglusky (2026-11-25) <https://github.com/C360Studio/semengine/pull/753#issuecomment-7163918975> sha256:8579721b3f22
 
 Track: `design`. PR 1 of the rule-core split plan
 (`openspec/changes/archive/2026-11-25-design-rule-core-split-plan/`). Adds the `rule-conditions` capability.

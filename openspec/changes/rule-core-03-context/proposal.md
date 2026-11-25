@@ -21,7 +21,7 @@ show today.
 
 ## Decisions you are making by approving
 
-- **Fable reads this design before any code: done** (PR #759 comment 7170600126); its two changes are worked in.
+- **Fable reads this design before any code:** read (comment 7170600126); its changes are worked in; re-read pending.
 - **Drop `$caller.*` (recommended).** Meant to carry who made a request, but nothing ever fills it and no rule uses
   it; caller identity can come later with the code that fills it.
 - **Drop `$related.*` and two-entity ("pair") state (recommended).** Nothing fills the related entity, no rule uses

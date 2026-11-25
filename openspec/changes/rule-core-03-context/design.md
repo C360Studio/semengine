@@ -74,11 +74,11 @@ change. Other option: drop it.
 `SubstituteVariables`, `SubstituteVariablesTyped`, `RuleID`, and `SubstituteVariablesWith(ctx, template, names
 map[string]string) (string, error)`, which fills a handler's own names (a loop item) in D2's one scan under the
 fixed-name end rule, so neither filled text nor an item's own text is read for names. Named caller: semteams' 2
-`for_each` actions, which take their list from `.triples`. A name is one `[A-Za-z0-9_]` segment; one that collides with
-a framework name (`$<name>` begins with `$now`, or `$<name>.` is in `SubstitutionPrefixes()`) is refused, classified
-invalid, before any scan. `SubstituteVariablesWithIterVar`, the overlay and `ResolveListValue` are dropped. The type's
-doc comment says `Entity`, `State` and `MessageData` are read-only to a handler (Fable 2: `State` is the record saved
-after the actions) and that an `ExecutionContext` is not safe for concurrent use (it stores the lifecycle lookup).
+`for_each` actions, which take their list from `.triples`. A name is one non-empty `[A-Za-z0-9_]+` segment; one that
+collides with a framework name (`$<name>` begins with `$now`, or `$<name>.` is in `SubstitutionPrefixes()`) is refused,
+classified invalid, before any scan. `SubstituteVariablesWithIterVar`, the overlay and `ResolveListValue` are dropped.
+The type's doc comment says `Entity`, `State` and `MessageData` are read-only to a handler (Fable 2), in the PR body's
+adopter section too and that an `ExecutionContext` is not safe for concurrent use (it stores the lifecycle lookup).
 
 **D8. The record (F5, F18; target-shape § 4).** `MatchState` is the pin's less `ActionIterations` (PR 7's `FireState`)
 and less the pair meaning of `EntityKey`. `MaxIterations` stays (Fable accepted it): the rule's value at that

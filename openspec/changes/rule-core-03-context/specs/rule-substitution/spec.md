@@ -58,12 +58,21 @@ counts as resolved. Text starting with any other `$` SHALL stay and SHALL NOT be
 - **WHEN** the template is `$caller.id and $related.id`
 - **THEN** the result is the template unchanged, and nothing is reported
 
+### Requirement: RuleID names the rule that built the state
+
+`ExecutionContext.RuleID` SHALL return the rule ID of the context's `State`, and `""` when the context has no `State`.
+
+#### Scenario: A context with no state
+
+- **WHEN** `RuleID` is called on a context whose `State` is nil
+- **THEN** it returns `""`
+
 ### Requirement: A handler's own names are filled in the same read
 
 `ExecutionContext.SubstituteVariablesWith(ctx, template, names)` SHALL fill each `$<name>` of `names` in the same
 single read as the framework tokens, under the fixed-name end rule; a filled value SHALL NOT be read again. It SHALL
-refuse, classified invalid and before reading the template, a name that is not one `[A-Za-z0-9_]` segment, or whose
-`$<name>` begins with `$now`, or whose `$<name>.` is one of `expression.SubstitutionPrefixes()`.
+refuse, classified invalid and before reading the template, a name that is not one non-empty `[A-Za-z0-9_]+`
+segment, or whose `$<name>` begins with `$now`, or whose `$<name>.` is one of `expression.SubstitutionPrefixes()`.
 
 #### Scenario: A loop item holding a token comes out as written
 

@@ -8,7 +8,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   Hold: OPEN-Q proposal awaits owner approval
 - [ ] 1.2 Fable reads this design before any code, or the owner declines that read (proposal, first decision:
   `design.md` D1, D7, D8, D9).
-  Hold: Fable's read of the design on PR #759.
+  Hold: Fable's re-read of the revised design on PR #759 (first read: comment 7170600126, REQUEST CHANGES)
 - [ ] 1.3 Start implementation once PR #758 (`rule-core-02-definitions`) has merged; merge `origin/main` into this
   branch first.
   Hold: PR #758 not yet merged.
@@ -62,7 +62,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   pass's order claim (`entity_substitution.go:31-34`) goes (F26).
 - [ ] 2.8 Extend PR 2's ledger row `processor/rule` with what this PR adds; keep its `scripts/cover-check.sh` floor
   (80%). Check: `task ledger:check`, `task cover:check`.
-- [ ] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges.
+- [ ] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
+  adopter section says `Entity`, `State` and `MessageData` are read-only to a handler (D7).
 
 ## 3. Docs
 

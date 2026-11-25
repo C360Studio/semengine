@@ -48,18 +48,18 @@ derive from that set, so `Load` refuses a miss naming type, rule and file, and `
 built-in handlers `Load` gets are built from config, not live dependencies, so preflight, `Config.Validate` and
 `SaveRule` can check before the executor exists (`rule_loader.go:117`, `config.go:169`, `kv_config_integration.go:316`).
 With graph integration off, triple `Check` refuses ("no triple writer"). `publish`'s `Check` and `Run` refuse
-`user.response.>` as declared and after substitution, and the publisher handed to every handler refuses it (ADR-093).
-Built-ins refuse body keys their type does not read. The executor is built once in `Start`, after main injects the
-reconciler; the Processor keeps `SetPredicateReconciler`, which main's `service.ProjectionBinder` requires
-(`service/rule_pack_bind.go:16-20`). This replaces four constructors and six setters (`actions.go:760-913`) and the
-closed switch (`:916-945`).
+`user.response.>` as declared and after substitution, and so does the publisher handed to every handler (ADR-093; route:
+PRs 2 to 4). Built-ins refuse body keys neither the core nor their type reads. The executor is built once in `Start`,
+after main injects the reconciler; the Processor keeps `SetPredicateReconciler`, which main's `service.ProjectionBinder`
+requires (`service/rule_pack_bind.go:16-20`). This replaces four constructors and six setters (`actions.go:760-913`) and
+the closed switch (`:916-945`).
 
 The core never decodes a body, so `tool_choice` and `response_format` reach a product's `publish_agent` handler as
-written: the #26 proof (PR 2, which measures re-encode spacing). The cap key is `ID`, else a hash of rule ID, type and
-`Body` in canonical form, so re-encoding is not an edit (replaces `action_id.go:63-104`). A product adds its types from
-its own `main`, never an `init`: `rule.Register(registry)` registers the built-ins, and `rule.RegisterWith(registry,
-rule.Extensions{Handlers: map[string]rule.ActionHandler{"publish_agent": h}})` (Framework API) adds the product's, on
-the precedent of `processor/graph-embedding/component.go:220-240`. PR 2's Fable read settles the names.
+written: the #26 proof (PR 2 measures what a re-encode does to spacing and escapes). The cap key is `ID`, else a hash of
+rule ID, type and `Body` in canonical form (sorted keys, no spacing, no HTML escaping), so a store and reload is not an
+edit (replaces `action_id.go:63-104`). Products add types from `main`, never `init`: `rule.Register(registry)` registers
+the built-ins, and `rule.RegisterWith(registry, rule.Extensions{Handlers: map[string]rule.ActionHandler{"publish_agent":
+h}})` (Framework API) adds the product's, as in `processor/graph-embedding/component.go:220-240`. PR 2's Fable read names them.
 
 **#25, reworded:** "every action type, built-in or a product's, is one handler in one map; an unregistered type is
 refused at load, naming type and file." Its two tests stay: a fake handler passed to `RegisterWith` is checked at load

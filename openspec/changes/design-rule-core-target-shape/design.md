@@ -1,11 +1,10 @@
 # Design: design-rule-core-target-shape
 
-Base: `c729fecdb06596d83965c178210014a9430495a2`. Pin: SemStreams `8b99efe9`. Inventory: `inventory.md`. Bound by the
-owner's rulings on PR #752 (comment 7162146299, items 1, 2, 3, 6; comment 7162536253) and #9 (comment 7160955176). The
-four types the rule engine hangs on, the PR that builds each, and the pin code each replaces. Sketches show shape, not
-every field or final name; item 1 already chose this shape over a typed `Action` with a registry beside the switch.
-**Framework API** marks what a product calls, `ExecutionContext` included because `Run` names it. Every other name, the
-executor, `Load` and `Fire` included, may be unexported.
+Base: `c729fecd`. Pin: SemStreams `8b99efe9`. Inventory: `inventory.md`. Bound by the owner's rulings on PR #752
+(comment 7162146299, items 1, 2, 3, 6; comment 7162536253), #9 (comment 7160955176) and #703 (comment 7163514285, "a
+timer is a message"). The four types the rule engine hangs on, the PR that builds each, and the pin code each replaces;
+sketches show shape, not final names. **Framework API** marks what a product calls, `ExecutionContext` included because
+`Run` names it; every other name, the executor, `Load` and `Fire` included, may be unexported.
 
 ## 1. The rule definition (PR 2; expression arm PR 6, cron arm PR 11)
 
@@ -21,7 +20,8 @@ two kinds are a `switch def.Type`. `Load` keeps ADR-036's condition check (`conf
 factory's operator and condition checks (`rule_factory.go:240-290`). Not carried: `Factory`, `Dependencies`, `Schema`,
 the registry functions and `BaseRuleFactory` (`rule_factory.go:79-285`), the `init` registration
 (`expression_factory.go:443-449`), the `Rule`, `Event` and `EntityStateEvaluator` interfaces (`interfaces.go:14-50`),
-`docs/custom-rules.md`, and the map round trip (`rule_loader.go:39`, `config_validation.go:449`).
+`docs/custom-rules.md`, and the map round trip (`rule_loader.go:39`, `config_validation.go:449`). The cron arm checks
+`Schedule` and runs no scheduler of its own: the rule publishes it as one repeating NATS scheduled message.
 
 ## 2. An action and its handler (PRs 2, 4, 5)
 
@@ -57,14 +57,14 @@ the closed switch (`:916-945`).
 The core never decodes a body, so `tool_choice` and `response_format` reach a product's `publish_agent` handler as
 written: the #26 proof (PR 2 measures what a re-encode does to spacing and escapes). The cap key is `ID`, else a hash of
 rule ID, type and `Body` in canonical form (sorted keys, no spacing, no HTML escaping), so a store and reload is not an
-edit (replaces `action_id.go:63-104`). Products add types from `main`, never `init`: `rule.Register(registry)` registers
-the built-ins, and `rule.RegisterWith(registry, rule.Extensions{Handlers: map[string]rule.ActionHandler{"publish_agent":
-h}})` (Framework API) adds the product's, as in `processor/graph-embedding/component.go:220-240`. PR 2's Fable read names them.
+edit, nor is a formatting-only change to a rule file (replaces `action_id.go:63-104`). Products add types from `main`,
+never `init`: `rule.Register(registry)` registers the built-ins, and `rule.RegisterWith(registry,
+rule.Extensions{Handlers: map[string]rule.ActionHandler{"publish_agent": h}})` (Framework API) adds the product's, as in
+`processor/graph-embedding/component.go:220-240`. PR 2's Fable read settles names.
 
 **#25, reworded:** "every action type, built-in or a product's, is one handler in one map; an unregistered type is
-refused at load, naming type and file." Its two tests stay: a fake handler passed to `RegisterWith` is checked at load
-and run at fire, and an unregistered type is refused at load; semboids' core-only pack
-(`configs/rules/zone-steering/*.json`) loads and fires with no product handler.
+refused at load, naming type and file." Its two tests stay: a fake `RegisterWith` handler checks at load and runs at
+fire; semboids' core-only pack (`configs/rules/zone-steering/*.json`) loads and fires with none.
 
 ## 3. The one fire function (PR 7; called by PRs 9, 10, 11)
 
@@ -75,19 +75,18 @@ func (x *ActionExecutor) Fire(ctx context.Context, r *Rule, list []LoadedAction,
 
 `Fire` reads and writes only the `FireState` it is handed (the caller loads and saves state). It applies
 `fire_every_n_events`, cooldown, each action's `when` and the firing cap, then runs the action through its handler. A
-`*DenyVerdict` stops the list (#28). `FireResult` says whether a gate stopped the call and gives each action's outcome
-in order: run, skipped by `when` or cap, or the handler's error. The message, entity and cron paths all call it, and
-nothing else runs an action list. It replaces `runActions` (`stateful_evaluator.go:368-456`), cron's copy
-(`cron_scheduler.go:491-525`, `:608-644`), the message path's every-N counter (`message_handler.go:40-46`, `:183-196`)
-and the in-memory cooldown (`expression_factory.go:31`, `:161`, `:219`, `:363`). On cron no cap applies, as at the pin,
-and `when` now applies (the pin ignores it); an explicit `max_iterations` on a cron action is refused at load so it is
-not silently ignored. `Fire` takes `now` and touches no rule state store (handlers still do NATS I/O), so PR 7's
-generated check (item 10) can drive the gates against a reference model.
+`*DenyVerdict` stops the list (#28). `FireResult` says whether a gate stopped the call and gives each action's outcome:
+run, skipped (`when`, cap) or error. The message, entity and cron paths all call it, and nothing else runs an action
+list. It replaces `runActions` (`stateful_evaluator.go:368-456`), the message path's every-N counter
+(`message_handler.go:40-46`, `:183-196`) and the in-memory cooldown (`expression_factory.go:31`, `:161`, `:219`,
+`:363`). Cron's scheduler and its loop (`cron_scheduler.go:491-644`) are not carried: a due schedule arrives as a
+message and is fired like any other. On cron no cap applies, as at the pin, and `when` now applies (the pin ignores it);
+an explicit `max_iterations` on one is refused at load, not ignored. `Fire` takes `now` and no rule state store, so PR
+7's generated check (item 10) can drive the gates against a reference model.
 
 ## 4. The stored state record (PR 3 carries `MatchState`, PR 7 adds `FireState`)
 
 ```go
-// One rule's state for one entity or pair, in RULE_STATE under "<rule id>.<entity key>".
 type MatchState struct { /* the pin's fields, state_tracker.go:30-63, less ActionIterations */ ; FireState }
 type FireState struct {
     FiredAt          time.Time      // cooldown
@@ -96,25 +95,26 @@ type FireState struct {
 }
 ```
 
-`FiredAt` per rule and entity is #702's change: the window survives a restart. The evaluator saves the record after the
-actions run (`stateful_evaluator.go:247-249`; ADR-111 Decision 2). PR 7 picks per-rule or per-rule-and-entity counting
-for every-N, with a test that N matches give the ruled count. Cron's `FireState` is per rule; PR 11 picks its store. PR
-3 decides whether the stored `MaxIterations` copy stays.
+`MatchState` is one rule's state for one entity or pair, in `RULE_STATE` under `<rule id>.<entity key>`. `FiredAt` per
+rule and entity is #702's change: the window survives a restart. The evaluator saves the record after the actions run
+(`stateful_evaluator.go:247-249`; ADR-111 Decision 2). PR 7 picks per-rule or per-rule-and-entity counting for every-N,
+with a test that N matches give the ruled count. Cron's `FireState` is per rule, in the same record store as every other
+rule's, with no `RULE_SCHEDULES` bucket. PR 14 adds a deadline-fired field (a one-shot may fire twice). PR 3 decides
+whether the stored `MaxIterations` copy stays.
 
 ## Who carries it, and what the PR designs decide
 
-- semteams passes `publish_agent` and its own types to `RegisterWith` (doing nothing refuses those rules at load, naming
-  type, rule and file); its contract tests call their handler's `Check` and `Run` directly or drive the component; its
-  `ConfigManager`/`HotReloadTarget` seam changes in PR 12. semboids needs no handler.
+- semteams passes `publish_agent` and its own types to `RegisterWith` (else those rules are refused at load); its
+  contract tests call their handler's `Check` and `Run` or drive the component; its hot-reload seam changes in PR 12.
 - PR 7: gate order, stamp time, and whether cooldown gates the match or the list, against the pin's two orders
   (`inventory.md` § 3); every-N keying and whether an exit counts; item 7 (failed actions, ADR-111 Decision 3).
 - PR 5: pack-wide projection-contract derivation, where only `reconcile_predicates`' own code decodes its body.
-- PRs 2, 3, 4: what a product handler gets from the framework (`ExecutionContext`'s substitution methods, the triple
-  writer `triple_mutator.go:27`, a publisher).
-- PRs 2, 8: a refused rule either fails boot, or is skipped with a log line, a metric and a test; the pin's Error log
-  and skip (`rule_loader.go:228-233`) is a silent degrade.
-- PRs 8, 12: the handler set `SaveRule` and `Config.Validate` check against; `SaveRule` never accepts a rule `Load`
-  would refuse (semteams builds its `ConfigManager` in its own main, `cmd/semteams/main.go:142`, with no handler set).
-- PR 8: the lifecycle manager at registration; one `Processor` constructor (`processor.go:250-255`). Items 4, 8, 9
-  (which zero-use fields stay): PRs 7/8/10, 11/14, each. Spec homes (PRs 2, 7) for three invariants: a loaded rule has a
-  handler for every action; no action runs when a gate stops the call; no action runs more than its cap.
+- PRs 2, 3, 4: what a product handler gets (substitution, the triple writer `triple_mutator.go:27`, a publisher).
+- PRs 2, 8: a refused rule fails boot, or is skipped with a log, metric and test (the pin only logs).
+- PRs 8, 12: `SaveRule` and `Config.Validate` never accept a rule `Load` would refuse (semteams builds its
+  `ConfigManager` in its own main, `cmd/semteams/main.go:142`).
+- PR 11 builds the timer input, PR 14 its deadlines; PR 11's inventory first compares the cron syntaxes (NATS six
+  fields, seconds first; rules five) and missed ticks; a failure sends its design back to the owner.
+- PR 8: the lifecycle manager at registration; one `Processor` constructor (`processor.go:250-255`). Items 4, 9: PRs
+  7/8/10, each. Spec homes (PRs 2, 7): a loaded rule has a handler for every action; no action runs when a gate stops
+  the call; no action runs more than its cap.

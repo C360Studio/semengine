@@ -22,7 +22,8 @@ the stored state record. PRs 2 to 12 build toward it; PR 1 does not wait for it.
   and runs it at fire. A rule with an unknown type is refused when it loads, naming type, rule and file.
 - **An action's firing-cap counter is keyed by its `id`, or else by a hash of rule, type and body.** The body is
   hashed in canonical form (decoded, then re-encoded with sorted keys, no spacing and no HTML escaping), so storing
-  and reloading a rule does not reset its counts; a test stores and reloads a body containing `&` and keeps its count.
+  and reloading a rule, or a formatting-only edit to its file, does not reset its counts; a test stores and reloads a
+  body containing `&` and keeps its count.
   Any
   real edit to an action restarts its count; today only edits to its subject, predicate, object, bucket, key, reason
   or role do. The other way, each handler naming the fields that count, is one more method every product handler
@@ -33,6 +34,12 @@ the stored state record. PRs 2 to 12 build toward it; PR 1 does not wait for it.
   for their own types.
 - **Cron actions keep having no firing cap, but now honour `when`.** An explicit `max_iterations` on a cron action is
   refused at load. Today cron ignores both keys without a word. No product cron action sets either.
+- **A timer is a message (owner ruling on #703, comment 7163514285).** Cron rules run on NATS scheduled messages, with
+  no `robfig/cron` and no `RULE_SCHEDULES` bucket. A cron rule publishes one repeating schedule; a deadline (PR 14)
+  publishes a one-shot on the same input. When one comes due the server writes a message, and the rule processor reads
+  it like any other and calls `Fire`. Costs, from the probe: stream limits drop pending timers without an error, so
+  the timer stream has no age limit; clustered streams and power loss were not probed. PR 11's inventory first
+  compares the two cron syntaxes and missed-tick behaviour; if either fails, its design returns to you before code.
 - **A triple action with no triple writer is refused at load.** That happens when graph integration is off. Today it
   is logged and dropped. semboids runs with graph integration off and uses no triple action, so it is unaffected.
   semteams' contract tests that build executors with no writer need a writer or must use no triple action.

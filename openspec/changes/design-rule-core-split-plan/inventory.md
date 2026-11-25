@@ -1,6 +1,6 @@
 # Inventory: design-rule-core-split-plan
 
-base: 4ead6360978d008649e0eb5e869086dcac2b36f1 (revision 1 on f079a3735048ad643dbb5d2cb08b71c2224ecd14).
+base: 4ead6360978d008649e0eb5e869086dcac2b36f1 (revision 2 on 47c52a89b72b9ea0983a08d69a7bbed838c18604).
 Pin copy: `gh api repos/C360Studio/semstreams/tarball/8b99efe9`, unpacked to a scratch directory.
 Question: how to cut the `processor/rule` port into PRs. Repositories read: semengine, semstreams at the pin, and
 semteams, semboids, semsource and semconnect at symbol level (`docs/inventory-scope.md`).
@@ -76,7 +76,7 @@ errors. Each drift point, its home on main or the removal behind it:
 | `readiness.BucketGraphStatus` (`readiness.go:183`, `:197`), `readiness.EnsureBucket` (`:191`), `readiness.ProducerNames` (`:224`) | `graph.BucketGraphStatus` (`graph/constants.go:70`); no `EnsureBucket` or `ProducerNames` |
 | `readiness.NewPublisher` one result (`readiness.go:199`) | returns `(*Publisher, error)` (`graph/readiness/publisher.go:41`) |
 | `metric` `RegisterCounterVec`, `RegisterHistogramVec`, `RegisterGauge`, `RegisterGaugeVec` (`cron_metrics.go:173-179`) | gone; `metric.RegisterOrGet` (`metric/registry.go:29`) |
-| `cache.NewCoalescingSet` one result (`processor.go:930`); `CoalescingSet.Close` (`entity_watcher.go:980`) | returns an error; no `Close` (`internal/cache/coalescing_set.go:74`) |
+| `cache.NewCoalescingSet` one result (`processor.go:930`); `CoalescingSet.Close` (`entity_watcher.go:980`) | returns an error; no `Close`, it stops with `Shutdown(ctx)` (`internal/cache/coalescing_set.go:74`, `:195`) |
 | `cache.Config.StatsInterval` (`config.go:245`) | refused (`internal/cache/config_test.go:164`) |
 | `cache.WithEvictionCallback` (`expression/regex_cache.go:21`) | removed (owner, #9 comment 5950725772) |
 | `gtypes.NewEntityUpdateEvent`, `gtypes.EventMetadata` (`expression_factory.go:353`, `test_rule_factory.go:136`) | `graph/events.go` not ported (#101, comment 6126673987; ledger :2212): "rule mutates through the mutation-request protocol … or not at all" |
@@ -91,14 +91,37 @@ only). No consumer implements `ExecuteEvents` or calls `RegisterRuleFactory` (`g
 `enable_graph_integration` gates only the triple writer (`processor.go:669`); the `rule_events` port notification
 (`publisher.go:175-200`) is separate.
 
+What else rides on that path, `fireRuleActions` (`message_handler.go:174-232`):
+
+- The `fire_every_n_events` gate (`:188-196`) sits in front of only `ExecuteEvents`, the `rule_events` notification
+  and the `rulesTriggered` counter. A rule's `on_enter`, `on_exit` and `while_true` actions run earlier and ungated in
+  the stateful evaluator (`message_handler.go:135-150`, `stateful_evaluator.go:426`), on the entity path too. The
+  documented behaviour, "fire its action only every Nth matching event" (`rule_factory.go:44-56`), is not implemented
+  for actions. semteams records the miss (`configs/rules/ops/01-run-terminal-observe.json:59`, semstreams#1007) and
+  sets the key in no checked-in rule (`grep -rln fire_every_n_events` over semteams and semboids configs: that one
+  file, in a note).
+- `total_triggered` (`processor.go:1456`) counts only firings whose graph events published
+  (`message_handler.go:227-231`).
+- `events_published` (`processor.go:1457`) and `events_published_total` count graph events (`publisher.go:115-118`),
+  `publish` actions (`:58-61`) and `rule_events` notifications (`:226-229`).
+- `ExecuteEvents` is where the in-memory cooldown is stamped and `shouldTrigger` cleared
+  (`expression_factory.go:363-364`).
+- ADR-076 decision 4 (pack ID as producer identity) is already kept by `pkg/rulepack` (ledger :3044); decisions 1-3
+  and 5 govern the trigger and alert identities.
+
+Orderings the pin's owner-proof tests check that `openspec/specs/lifecycle-suite/spec.md` does not state: `Stop`
+drains the JetStream consumers before the run context is cancelled (`lifecycle_owner_test.go:118`); cron's `Stop`
+joins an admitted fire before the `Start` context is cancelled (`test_owner_proof_test.go:14`).
+
 ## Pin probe
 
 `go test -count=1 -race ./processor/rule/...`: ok. `go test -count=5 -cpu=1 -shuffle=on ./processor/rule/...`: ok
 (seeds 1795602496010215000, 1795602495775027000). Text: `time.Sleep` 53 lines in 12 files; `t.Skip` at
 `status_test.go:352`; 22 files `//go:build integration`, none with `t.Parallel`; production `context.Background|TODO`:
-0; `WithoutCancel`: `stateful_evaluator.go:247` (bounded persist). Not run: the lifecycle suite and the integration tests.
+0; `WithoutCancel`: `stateful_evaluator.go:247` (bounded persist). Not run: the lifecycle suite and the
+integration tests.
 
-## Shape sweep (findings; dispositions in design.md)
+## Shape sweep (findings; dispositions in split.md)
 
 - Global rule-factory map filled from `init`: `rule_factory.go:124-127`, `expression_factory.go:443-449`,
   `test_rule_factory.go:212-218`.
@@ -149,9 +172,9 @@ From `grep -o -h -E 'ADR-[0-9]{3}'` over the carried production files, plus reco
 | 055, 091 | Write-intent taxonomy; mutation authority | how rule triple writes enter graph-ingest | `actions.go`, `processor.go`, `metrics.go` | 4, 5 |
 | 056 | Authoritative semantic state (superseded by 091) | `$entity` substitution meaning | `actions.go`, `processor.go` | 3, 4 |
 | 066 | Honest graph-index readiness | readiness gauges | `processor.go:326` | 10 (ported) |
-| 067 | Read-only execution policy | filesystem policy on `publish_agent` | `actions.go:232`, `config_validation.go:407` | not carried (E3) |
+| 067 | Read-only execution policy | filesystem policy on `publish_agent` | `actions.go:232`, `config_validation.go:402` | not carried (E3) |
 | 068 | Graph retention, deletion and GC | a reader never creates `ENTITY_STATES` | `entity_watcher.go:90` | 10 (not in `docs/adr`) |
-| 076 | Framework-derived entity identity for rule events | the trigger and alert entity IDs | `graph_event_identity.go` | depends on the graph-event decision (design) |
+| 076 | Framework-derived entity identity for rule events | the trigger and alert entity IDs | `graph_event_identity.go` | decisions 1-3 and 5 depend on owner decision 1 (`design.md`); 4 kept in `pkg/rulepack` |
 | 083, 088 | Readiness as state; per producer | the rule's `GRAPH_STATUS` key | `processor.go:134` | 10 (ported) |
 | 093 | Typed user-response subject ownership | `publish` may not target `user.response.>` | `user_response_subject_reservation.go` | 2 |
 | 094 | Boot-only composition, observable rule activation | rule definitions are the one live exception | (by title) | 12 (ported) |
@@ -171,7 +194,7 @@ From `grep -o -h -E 'ADR-[0-9]{3}'` over the carried production files, plus reco
 - Pin reviewer contract "Rules and orchestration" (`.agents/contracts/semstreams-reviewer.md:254`, 8 lines) and the
   rule clauses of "Graph and state ownership" (`:241-244`), which SemEngine's reviewer contract says return with the
   rule processor (`.agents/contracts/semengine-reviewer.md:325-326`).
-- Pin developer contract "Orchestration" (`.agents/contracts/semstreams-developer.md:253`, 60 lines).
+- Pin developer contract "Orchestration" (`.agents/contracts/semstreams-developer.md:253-261`, 8 lines).
 - Skills: `orchestration-check` (106 lines); the rule half of the pin's `entity-or-bucket` (`SKILL.md:75-110`, "What
   rules evaluate today"), which SemEngine's copy defers (`.agents/skills/entity-or-bucket/SKILL.md:64`).
 

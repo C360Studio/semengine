@@ -4,11 +4,9 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 1. Design
 
-- [ ] 1.1 The inventory review passes, the design review passes; the owner fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Fable reads this design before any code, or the owner declines that read (proposal, first decision:
+- [x] 1.1 The inventory review passes, the design review passes; the owner fills `Approved-by:`.
+- [x] 1.2 Fable reads this design before any code, or the owner declines that read (proposal, first decision:
   `design.md` D1, D7, D8, D9).
-  Hold: Fable's re-read of the revised design on PR #759 (first read: comment 7170600126, REQUEST CHANGES)
 - [ ] 1.3 Start implementation once PR #758 (`rule-core-02-definitions`) has merged; merge `origin/main` into this
   branch first.
   Hold: PR #758 not yet merged.

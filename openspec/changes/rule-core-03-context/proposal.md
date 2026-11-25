@@ -1,6 +1,6 @@
 # Proposal: rule-core-03-context
 
-Approved-by:
+Approved-by: cglusky (2026-11-25) <https://github.com/C360Studio/semengine/pull/759#issuecomment-7171189562> sha256:24e06b11cae4
 
 Track: `design`. PR 3 of the rule-core split plan (`archive/2026-11-25-design-rule-core-split-plan/`). Adds the
 `rule-substitution` and `rule-state` capabilities and edits one `rule-conditions` requirement.
@@ -21,7 +21,8 @@ show today.
 
 ## Decisions you are making by approving
 
-- **Fable reads this design before any code:** read (comment 7170600126); its changes are worked in; re-read pending.
+- **Fable reads this design before any code:** read (comment 7170600126); its changes are worked in; re-read
+  APPROVE (comment 7171149725).
 - **Drop `$caller.*` (recommended).** Meant to carry who made a request, but nothing ever fills it and no rule uses
   it; caller identity can come later with the code that fills it.
 - **Drop `$related.*` and two-entity ("pair") state (recommended).** Nothing fills the related entity, no rule uses

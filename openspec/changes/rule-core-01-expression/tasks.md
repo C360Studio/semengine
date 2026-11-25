@@ -10,7 +10,7 @@
   imports (module path; `internal/harness/semantictest` for `evaluator_test.go:11`); drop `Version` at
   `evaluator_test.go:608` and `:1167`. Add the ledger row `processor/rule/expression` (`adapt`). Check: `task
   ledger:check`.
-- [ ] 2.2 Write the tests for D2 to D4 before the code. They are failing-first because the package does not build
+- [x] 2.2 Write the tests for D2 to D4 before the code. They are failing-first because the package does not build
   without `Compile`; after 2.3, run `task mutate:check` on each refusal and record each result as detected or
   survived. Cases: a compiled literal matches as `regexp.MatchString` does; a slice is compiled and each element
   evaluated; an uncompiled regex condition, and one whose value was edited after `Compile`, return `*EvaluationError`;
@@ -18,7 +18,7 @@
   `SubstitutionPrefixes()` (`$now`, `$entity.id`, `^x-$state.iteration`, ...), naming index and field; it accepts
   `[$]now`, `[$a-z]+`, `^\$USD`, an end-anchored pattern and semteams' list pattern; a second `Compile` changes
   nothing; every refusal is `errs.IsInvalid`.
-- [ ] 2.3 Implement D2 to D4: remove the global cache, `init` and the `internal/cache` import (`regex_cache.go:13-30`,
+- [x] 2.3 Implement D2 to D4: remove the global cache, `init` and the `internal/cache` import (`regex_cache.go:13-30`,
   `:122-137`); add `Compile` over a slice and `SubstitutionPrefixes()`; the regex operator uses the kept pattern;
   replace `validateRegexComplexity` with the 500-character limit only (D4). Check: 2.2 passes; `git grep -n 'func
   init\|internal/cache' processor/rule/expression` is empty.

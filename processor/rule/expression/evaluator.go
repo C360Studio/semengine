@@ -39,7 +39,6 @@ func NewExpressionEvaluator() *Evaluator {
 	evaluator.operators[OpContains] = operatorContains
 	evaluator.operators[OpStartsWith] = operatorStartsWith
 	evaluator.operators[OpEndsWith] = operatorEndsWith
-	evaluator.operators[OpRegexMatch] = operatorRegex
 
 	// Register array operators (#147 — closes the split-brain validator/
 	// runtime gap where these were listed by isValidOperator but never
@@ -85,6 +84,7 @@ func RegisteredOperators() map[string]struct{} {
 	// evaluator recognises. Add it explicitly so the validator
 	// accepts it.
 	out[OpTransition] = struct{}{}
+	out[OpRegexMatch] = struct{}{}
 	return out
 }
 
@@ -295,6 +295,9 @@ func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.Ent
 // resolution branch in evaluateConditionWithStateAndMessage so error
 // shapes stay uniform.
 func (e *Evaluator) applyOperator(condition ConditionExpression, fieldValue any) (bool, error) {
+	if condition.Operator == OpRegexMatch {
+		return matchRegex(condition, fieldValue)
+	}
 	opFunc, ok := e.operators[condition.Operator]
 	if !ok {
 		return false, &EvaluationError{
@@ -686,26 +689,6 @@ func operatorArrayContains(fieldValue, compareValue interface{}) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-func operatorRegex(fieldValue, compareValue interface{}) (bool, error) {
-	fieldStr, ok := fieldValue.(string)
-	if !ok {
-		fieldStr = fmt.Sprintf("%v", fieldValue)
-	}
-
-	pattern, ok := compareValue.(string)
-	if !ok {
-		return false, errs.WrapInvalid(errs.ErrInvalidData, "Evaluator", "operatorRegex", "regex pattern must be a string")
-	}
-
-	// Use cached regex compilation for better performance
-	re, err := compileRegex(pattern)
-	if err != nil {
-		return false, err
-	}
-
-	return re.MatchString(fieldStr), nil
 }
 
 // Helper functions for value comparison

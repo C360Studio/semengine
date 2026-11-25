@@ -3,6 +3,7 @@ package expression
 
 import (
 	"fmt"
+	"regexp"
 
 	gtypes "github.com/c360studio/semengine/graph"
 )
@@ -30,6 +31,10 @@ type ConditionExpression struct {
 	// same field.
 	Required bool        `json:"required"`
 	From     interface{} `json:"from,omitempty"` // For transition operator: allowed previous value(s)
+
+	// pattern is the regex Compile built from Value; evaluation reads it and
+	// never compiles.
+	pattern *regexp.Regexp
 }
 
 // LogicalExpression combines multiple conditions with logic operators

@@ -5,13 +5,14 @@ the owner's rulings on PR #752 (comment 7162146299, items 1, 2, 3, 6; comment 71
 7160955176).
 
 This page names the four types the rule engine hangs on, which PR builds each, and the pin code each replaces. The
-sketches show shape, not every field or final name. PRs 2 to 12 build toward it. What they still decide is listed at
-the end.
+sketches show shape, not every field or final name. Item 1 already chose between this shape and the split plan's
+typed `Action` with a registry beside the switch. **Framework API** marks a name a product calls; every other name
+may be unexported.
 
 ## 1. The rule definition (PR 2; the expression arm PR 6, the cron arm PR 11)
 
 ```go
-// Definition is one rule as written in a rules file or the rules KV bucket.
+// Definition is one rule as written in a rules file or the rules KV bucket. Framework API.
 type Definition struct {
     ID, Type, Name, Description, Logic, Cooldown, Schedule string
     Enabled                                         bool
@@ -24,91 +25,97 @@ type Definition struct {
     RelatedPatterns                                 []string
 }
 
-// DecodeDefinition is the one way bytes become a Definition: files, the KV bucket and hot reload all call it.
+// DecodeDefinition is the one way bytes become a Definition, for files, the KV bucket and hot reload alike.
 func DecodeDefinition(data []byte) (Definition, error)
 
-// Rule is a loaded rule: its conditions compiled and every action checked by its handler.
+// Rule is a loaded rule: conditions compiled, every action checked by its handler.
 type Rule struct {
     Def                                             Definition
     OnEnter, OnExit, WhileTrue, OnRecovery, Actions []LoadedAction
-    // plus each kind's loaded parts: compiled conditions (PR 6), parsed schedule (PR 11)
+    // plus each kind's loaded parts: compiled conditions (PR 6), the parsed schedule (PR 11)
 }
 
-// Load turns a Definition into a Rule, or refuses it naming rule, file and cause.
+// Load checks a Definition and returns a Rule, or refuses it naming rule, file and cause. It does no I/O.
 // switch def.Type { case "expression": … case "cron": … default: refuse }
-func Load(def Definition, file string, x *ActionExecutor) (*Rule, error)
+func Load(def Definition, file string, handlers map[string]ActionHandler) (*Rule, error)
 ```
 
 The fields are the pin's (`rule_factory.go:16-70`). Each PR's usage count decides whether a zero-use field stays
-(item 9). There are two kinds, and `Load` tells them apart with a `switch`. No interface exists for the kinds.
+(item 9). There are two kinds, told apart by a `switch`. `Load` keeps the pin's checks: ADR-036's condition check
+(`config_validation.go:294-310`) and the operator and condition checks the factory held (`rule_factory.go:240-290`).
 
 Not carried:
 
 - `Factory`, `Dependencies`, `Schema`, `Example`, the registry functions and `BaseRuleFactory`
-  (`rule_factory.go:79-290`); no product reads them.
-- The `init` registration (`expression_factory.go:443-449`) and the `Rule`, `Event` and `EntityStateEvaluator`
-  interfaces (`interfaces.go:14-50`; the graph-event path is dropped by ruling).
+  (`rule_factory.go:79-285`).
+- The `init` registration (`expression_factory.go:443-449`).
+- The `Rule`, `Event` and `EntityStateEvaluator` interfaces (`interfaces.go:14-50`).
 - `docs/custom-rules.md`, and the map round trip (`rule_loader.go:39`, `config_validation.go:449`).
 
 ## 2. An action and its handler (PRs 2, 4, 5)
 
-PR 2 builds the type and the map, PR 4 the `publish` and triple handlers, PR 5 the rest.
+PR 2 builds the type and the map. PR 4 builds `publish` and the triple actions. PR 5 builds `reconcile_predicates`,
+`update_kv` and `lifecycle_*`.
 
 ```go
-// Action is one entry in an action list. The core reads four keys; Body is the whole object, every byte as written.
+// Action is one entry in an action list. The core reads four keys. Body is the whole object as written.
+// Framework API.
 type Action struct {
     Type          string                           // the handler's name
-    When          []expression.ConditionExpression // guard, checked by Fire
+    When          []expression.ConditionExpression // guard
     ID            string                           // firing-cap key (optional)
-    MaxIterations *int                             // firing cap: nil = 3, 0 = no cap
+    MaxIterations *int                             // firing cap: nil means 3, 0 means no cap
     Body          json.RawMessage
 }
 
-// ActionHandler is one action type. Check runs at load and returns what runs at fire.
-type ActionHandler interface{ Check(a Action) (Runner, error) }
-type Runner interface{ Run(ctx context.Context, ec *ExecutionContext) error }
-
-// LoadedAction is what a Rule holds: the action, its cap key, and its handler's Runner.
-type LoadedAction struct {
-    Action
-    Key string
-    run Runner
+// ActionHandler is one action type. Framework API.
+type ActionHandler interface {
+    Check(a Action) error                                          // at load: no dependencies, no I/O
+    Run(ctx context.Context, a Action, ec *ExecutionContext) error // at fire
 }
 
-// NewActionExecutor is the one constructor: the built-in handlers, built from deps, plus the product's handlers.
+// LoadedAction is what a Rule holds.
+type LoadedAction struct {
+    Action
+    Key string // the cap key
+}
+
+// NewActionExecutor is the executor's one constructor: built-in handlers from deps, plus the product's. No setters.
 func NewActionExecutor(deps ExecutorDeps, product map[string]ActionHandler) (*ActionExecutor, error)
 ```
 
-**One map holds every type.** `publish`, the triple actions, `reconcile_predicates`, `update_kv` and `lifecycle_*`
-are handlers in the same map as a product's. Construction refuses a product handler that reuses a built-in name.
+**One map holds every type.** Built-in types are handlers in the same map as a product's. A product handler that
+reuses a built-in name is refused.
 
-**Unknown types are refused at load.** `Load` looks up `a.Type` in the map. A miss refuses the rule, naming type, rule
-and file. The same lookup returns the handler, so an action can never reach fire time with no handler.
+**Unknown types are refused at load.** `Load` looks up each `Type` in the map. A miss refuses the rule, naming type,
+rule and file. `Fire` dispatches through the same map, so no action reaches fire time without a handler.
 
-**The core never decodes the body.** `tool_choice` and `response_format` reach a product's `publish_agent` handler as
-the bytes the author wrote. That is the #26 proof (PR 2, against semteams' fixtures at `a331910e`). The page does not
-promise how a later re-encode spaces those bytes; PR 2's test measures it.
+**`Check` runs without dependencies, and `Run` runs with them.** Because `Check` needs nothing, preflight,
+`Config.Validate` and `SaveRule` can run it before the executor exists (`rule_loader.go:117`, `config.go:169`,
+`kv_config_integration.go:316`). The executor is built once, in `Start`, after main injects the reconciler. The
+Processor keeps `SetPredicateReconciler`, because main's `service.ProjectionBinder` requires it
+(`service/rule_pack_bind.go:16-20`). This replaces the executor's four constructors and six setters
+(`actions.go:760-913`) and the switch (`:916-945`).
 
-**Dependencies come at construction, with no setters.** This replaces the four constructors (`actions.go:803-913`)
-and the six setters (`:760-799`). A built-in handler whose dependency is absent refuses at load. Example: a triple
-action when graph integration is off, which the pin logs and drops (`processor.go:673-674`, `actions.go:538`).
+**The core never decodes a body.** `tool_choice` and `response_format` reach a product's `publish_agent` handler as
+written, which is the #26 proof (PR 2). The page does not promise how a re-encode spaces the bytes; PR 2's test
+measures it.
 
-**Firing-cap key.** The key is `ID` when set. Otherwise it is a hash of rule ID, type and `Body`. This replaces the
-per-type switch in `action_id.go:63-104`.
+**Firing-cap key.** The key is `ID` when set, otherwise a hash of rule ID, type and `Body`. This replaces
+`action_id.go:63-104`.
 
-**How a product adds a handler.** This follows the `graph-embedding` precedent (`component.go:220-240`). The exact
-names are for PR 2's Fable read.
+**How a product adds a type.** Exact names go to PR 2's Fable read. The precedent is
+`processor/graph-embedding/component.go:220-240`.
 
 ```go
-rule.Register(registry)                      // built-in handlers only
-rule.RegisterWith(registry, rule.Extensions{ // called from the product's main, never an init
-    Handlers: map[string]rule.ActionHandler{"publish_agent": agentaction.New(client, catalog)},
+rule.Register(registry) // built-in types only
+rule.RegisterWith(registry, rule.Extensions{ // Framework API; called from the product's main, never an init
+    Handlers: map[string]rule.ActionHandler{"publish_agent": agentaction.New(client)},
 })
 ```
 
 **#25, reworded.** Old: "core families stay compiled in". New: "every action type, built-in or a product's, is one
-handler in the map `NewActionExecutor` builds; an unregistered type is refused at load, naming type and file." The
-two proving tests stay:
+handler in one map; an unregistered type is refused at load, naming type and file." The two proving tests stay:
 
 - a fake handler a product passes to `RegisterWith` is checked at load and run at fire, and an unregistered type is
   refused at load;
@@ -117,8 +124,8 @@ two proving tests stay:
 ## 3. The one fire function (PR 7; called by PRs 9, 10, 11)
 
 ```go
-// Fire runs one action list of one rule under its gates and reports what happened.
-// It reads and writes no store: the caller loads st before and saves it after (actions first, state after).
+// Fire runs one action list of one rule under its gates and reports each action's outcome. It reads and writes
+// only the FireState it is handed. The caller loads the rule state before and saves it after.
 func (x *ActionExecutor) Fire(ctx context.Context, r *Rule, list []LoadedAction, st *FireState,
     ec *ExecutionContext, now time.Time) FireResult
 
@@ -130,40 +137,28 @@ type FireResult struct {
 type ActionOutcome struct {
     Key, Type string
     Skipped   string // "when" or "cap"
-    Err       error  // the handler's error; a *DenyVerdict stops the list (#28)
+    Err       error
 }
 ```
 
-**Order of the gates.** On each call `Fire`:
-
-1. counts the call;
-2. applies `fire_every_n_events`;
-3. applies cooldown;
-4. stamps the fire time;
-5. for each action, checks `when`, then the cap (a cap skip moves a metric), then counts and runs it.
-
-Steps 1 to 3 keep the pin's cron order (`cron_scheduler.go:491-525`), so a call stopped by cooldown still counts
-toward N. Step 5 keeps the evaluator's order (`stateful_evaluator.go:378-424`).
+**What `Fire` does.** It applies `fire_every_n_events`, cooldown, each action's `when`, and the firing cap. Then it
+runs the action through its handler. A `*DenyVerdict` error stops the list, as #28 keeps it.
 
 **Callers.** The message, entity and cron paths all call `Fire`, and nothing else runs an action list. This replaces
 `runActions` (`stateful_evaluator.go:368-456`), cron's copy (`cron_scheduler.go:491-525`, `:608-644`), the message
 path's every-N counter (`message_handler.go:40-46`, `:183-196`) and the in-memory cooldown
 (`expression_factory.go:31`, `:161`, `:219`, `:363`).
 
-| Gate | Expression rules (message, entity) | Cron rules |
-| --- | --- | --- |
-| every-N | yes (ruling on #9) | yes, as at the pin |
-| cooldown | yes, per rule and entity (#702) | yes, per rule |
-| `when` | yes | yes (the pin ignores it; no product cron action sets it) |
-| firing cap | yes | none: `max_iterations` on a cron action is refused at load (the pin ignores it) |
+**Cron.** On cron rules `when` applies, and `Fire` applies no firing cap, as at the pin. An explicit
+`max_iterations` on a cron action is refused at load, so it is not silently ignored.
 
-`Fire` takes `now` and touches no store. That lets PR 7's generated check (item 10) drive it against a reference
-model with no clock and no NATS.
+**Testing.** `Fire` takes `now` and touches no rule state store; its handlers still do their own NATS I/O. So PR 7's
+generated check (item 10) can drive the gates against a reference model.
 
 ## 4. The stored state record (PR 3 carries `MatchState`; PR 7 adds `FireState`)
 
 ```go
-// MatchState is one rule's stored state for one entity or entity pair, in RULE_STATE under "<rule id>.<entity key>".
+// MatchState is one rule's state for one entity or entity pair, in RULE_STATE under "<rule id>.<entity key>".
 type MatchState struct {
     RuleID, EntityKey         string
     IsMatching                bool
@@ -172,60 +167,52 @@ type MatchState struct {
     SourceRevision            uint64
     Iteration                 int
     FieldValues               map[string]string
-    FireState                 // embedded: the gate state, stored with the match state
+    FireState                 // embedded: gate state is stored with match state
 }
 
 // FireState is what Fire's gates read and write.
 type FireState struct {
-    FiredAt          time.Time      // cooldown: per rule and entity, survives a restart (#702)
+    FiredAt          time.Time      // cooldown
     MatchCount       int64          // fire_every_n_events
-    ActionIterations map[string]int // firing cap, by LoadedAction.Key; carried forward, never reset (#702 asks)
+    ActionIterations map[string]int // firing cap, by LoadedAction.Key
 }
 ```
 
-The fields are the pin's (`state_tracker.go:30-63`). `ActionIterations` moves into `FireState`, and `FiredAt` and
-`MatchCount` are new. PR 3 decides whether the stored `MaxIterations` copy stays. The evaluator loads the record,
-`Fire` changes it, and the evaluator saves it after the actions run (`stateful_evaluator.go:247-249`).
-
-**Every-N is left open.** PR 7 decides whether every-N counts per rule or per rule and entity, and the shape holds
-either answer. Per rule and entity: `MatchCount` lives in this record as shown. Per rule: the message and entity
-callers fill `st.MatchCount` from a per-rule record and save it back, and `Fire` does not change. Cron passes a
-per-rule `FireState`. PR 11 decides where cron stores it; the pin restores last fire from `RULE_SCHEDULES`
-(`cron_scheduler.go:332`) and keeps the tick count in memory (`:491`).
-
-## Options considered
-
-- **A, recommended (ruled by item 1).** Four keys plus a raw body, and one handler map.
-- **B, overruled by item 1.** The split plan's 35-field typed `Action` with a closed switch, plus a registry beside
-  it. That is two ways to run an action, and every new type adds a field to a shared struct.
-- **C.** Keep the 35-field struct and hand it to every handler. The agentic fields stay in core, so #8 Q15 and #26
-  fail.
+The fields are the pin's (`state_tracker.go:30-63`). `ActionIterations` moves into `FireState`; `FiredAt` and
+`MatchCount` are new. Storing `FiredAt` per rule and entity is #702's change: the window survives a restart. The
+evaluator loads the record and saves it after the actions run (`stateful_evaluator.go:247-249`; ADR-111 Decision 2).
+PR 7 decides whether every-N counts per rule or per rule and entity, with a test that N matches give the ruled count.
+Cron's `FireState` is per rule, and PR 11 decides where it is stored.
 
 ## Who carries it
 
-- **semteams** passes its `publish_agent` handler (and any type of its own, `replace_owned` included) to
-  `RegisterWith`. If it does nothing, a rule using that type is refused at boot, naming type, rule and file.
-- **semteams' contract tests** that call `NewActionExecutorFull` and `Execute` move to `NewActionExecutor` and `Load`
-  plus `Fire`.
-- **semboids** needs no handler: it uses only `publish` and `lifecycle_transition`, with no triple action while graph
-  integration is off.
-- What a product must know: the handler's name, and that `Run` gets an `*ExecutionContext`.
+- **semteams** passes `publish_agent`, and any type of its own, to `RegisterWith`. If it does nothing, a rule using
+  that type is refused when it loads, naming type, rule and file. Whether that stops boot is open (below).
+- **semteams' contract tests** that call `NewActionExecutorFull` and `Execute` move to `NewActionExecutor` and
+  `Fire`.
+- **semteams' `ConfigManager` and `HotReloadTarget` seam** (`rule_config_service.go:34-35`, `:92`) changes with the
+  map round trip, in PR 12.
+- **semboids** needs no handler: it uses only `publish` and `lifecycle_transition`.
 
-## Left to the PR designs (the page fixes none of these)
+## Left to the PR designs (one constraint each)
 
-- Item 4: the lane and the fence (PRs 7, 8, 10). They sit around load and save, not inside `Fire`.
-- Item 7: what a failed action means under ADR-111 Decision 3 (PR 7). `FireResult` reports every outcome, so any
-  answer fits.
-- Item 8: the deadline-timer probe (PR 11, PR 14).
-- Item 9: which zero-use fields stay (each PR).
-- Item 10: the generated check (PR 7).
-- Every-N keying, and whether an exit counts toward N (PR 7).
-- The cap fact a rule can read (PR 7).
-- `ExecutionContext`'s exported surface for product handlers (PRs 2, 3).
-- The lifecycle manager at registration and the one `Processor` constructor (PR 8; replaces `processor.go:250-255`).
-- Whether a refused rule stops boot or is skipped. The pin skips it (`rule_loader.go:228-233`); PR 2 proposes, PR 8
-  decides.
-- **Invariants** (PRs 2 and 7 give each a spec home):
+- **Gate order, stamp time, and what cooldown gates (PR 7).** The design states its order against the pin's two:
+  - message: cooldown inside the match, then every-N;
+  - cron: every-N, then cooldown, with the stamp after dispatch.
+
+  Rule count today: 0 rules set every-N and 2 set cooldown.
+- **Which state each gate keeps, and whether an exit counts toward N (PR 7).**
+- **Item 7: what a failed action means under ADR-111 Decision 3 (PR 7).** `FireResult` reports every outcome.
+- **Pack-wide projection-contract derivation (PR 5).** Only `reconcile_predicates`' own code decodes its body for
+  this.
+- **Which handler set `SaveRule` and `Config.Validate` check against (PRs 8, 12).** It includes the product's types.
+- **What a product handler gets from the framework (PRs 2, 3, 4).** `ExecutionContext`'s substitution methods, the
+  rule's triple writer (`triple_mutator.go:27`, which records the rule's own revisions), and a publisher.
+- **Whether a refused rule stops boot or is skipped (PRs 2, 8).** The pin skips it with a log
+  (`rule_loader.go:228-233`).
+- **Item 4 (PRs 7, 8, 10), item 8 (PRs 11, 14), item 9 (each PR).**
+- **The lifecycle manager at registration, and the one `Processor` constructor (PR 8; `processor.go:250-255`).**
+- **Invariants (PRs 2, 7 give each a spec home):**
   - a loaded rule has a handler for every action;
-  - `Fire` runs no action when a gate stops the call;
+  - no action runs when a gate stops the call;
   - no action runs more than its cap.

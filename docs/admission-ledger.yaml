@@ -5146,7 +5146,8 @@
     processor/rule/expression evaluator_test.go, array_operators_test.go (carried tables), compile_test.go
     (TestCompiledRegexMatchesAsStandardLibrary, TestCompileRefusals, TestCompileAccepts,
     TestEvaluateRefusesUncompiledRegex, TestEvaluateRefusesRegexEditedAfterCompile), resolution_test.go,
-    stateless_test.go, coerce_test.go, property_test.go (TestPropConditions); notes/2.2.md, 2.5.md and 2.6.md of the
+    stateless_test.go, coerce_test.go, property_test.go (TestPropConditions), compile_fuzz_test.go (FuzzCompile);
+    notes/2.2.md, 2.5.md and 2.6.md of the
     change record failing-first output, mutation checks and the generated run
   owner: rule-core-01-expression developer
   disposition: adapt

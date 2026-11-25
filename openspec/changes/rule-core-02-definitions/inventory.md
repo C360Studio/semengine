@@ -48,7 +48,8 @@ Two discrepancies between the plan documents, for the design to settle:
 
 - `split.md` puts the "file loader" in PR 2, but the split inventory lists `rule_loader.go` under PR 8.
 - `split.md` gives PR 2 "~1,741 + 1,254" lines. The measured file list is 4,082 + 1,035, and the ranges above sum to
-  1,969 production lines with `rule_loader.go:55-99` included.
+  2,025 production lines with `rule_loader.go:55-99` included (290 + 535 + 304 + 56 + 133 + 51 + 142 + 121 + 85 +
+  21 + 219 + 23 + 45).
 
 ## 2. Pin probe (the PR 2 test files on the pin copy)
 
@@ -79,9 +80,17 @@ Test-side compile drift (imports and helpers the PR 2 tests need that main or PR
 - `entity_pattern_contract_test.go:64` and `:83` build a `Processor` with `entityWatcherMap` (PR 10).
 - `user_response_subject_reservation_test.go:55` drives the `ActionExecutor` (PR 4).
 - `predicate_authoring_test.go:8` — `func init() {`: a test file registers vocabulary predicates in `init`.
-- `TestRuleFactory` and `NewTestRule` are named by 3 test files: `entity_watcher_atomic_bootstrap_test.go`,
-  `graph_event_identity_test.go` and `runtime_config_test.go` (`grep -l`). The split inventory said 11, probably
-  counting a string type name; not re-measured.
+- The rule type `"test_rule"` exists only through the production `init` at `test_rule_factory.go:212` (type name at
+  `:163`, `:196`). Two counts:
+  - Test files naming `TestRuleFactory` or `NewTestRule`: 3 — `entity_watcher_atomic_bootstrap_test.go`,
+    `graph_event_identity_test.go`, `runtime_config_test.go`.
+  - Test files using the string `test_rule` (`grep -l test_rule *_test.go`): 13 —
+    `action_failure_metrics_test.go`, `actions_reconcile_test.go`, `config_projection_test.go`,
+    `config_validation_test.go`, `actions_test.go`, `factory_integration_test.go`,
+    `entity_watcher_atomic_bootstrap_test.go`, `graph_event_identity_test.go`, `fire_every_n_events_test.go`,
+    `projection_derivation_test.go`, `runtime_config_test.go`, `runtime_config_lifecycle_test.go`,
+    `rule_integration_test.go`.
+  - Of the 13, only `config_validation_test.go` is a PR 2 test file. The rest belong to PRs 4, 5, 7, 8, 9, 10 and 12.
 
 ## 3. Category 1: the claimed gap
 
@@ -90,11 +99,38 @@ Test-side compile drift (imports and helpers the PR 2 tests need that main or PR
   - `actions.go:944` — `return fmt.Errorf("unknown action type: %s", action.Type)`
 
   Searched production files for `unknown action|unsupported action|DisallowUnknownFields`; the only hit is
-  `actions.go:944`. `ValidateDefinition` (`config_validation.go:273-292`) never reads `Type`. Consumer instance:
-  semteams' `replace_owned` type, 9 actions in 5 files under `configs/rules/dev-via-test/` (02c, 02d, 07a, 07c, 07d).
-  The pin has no Go symbol for it (`grep -rn replace_owned --include=*.go` over the pin: 0). None of those files is in
-  a checked-in flow's `rules_files`: the 49 listed paths cover agent-run 15, autoresearch 20, coordinator 2, ops 1 and
-  research 11. They are loaded only by semteams tests (`test/contract/dev_via_test_pack_test.go:531-539`).
+  `actions.go:944`. `ValidateDefinition` (`config_validation.go:273-292`) never reads `Type`.
+
+  Consumer instance: semteams' `replace_owned` type, 9 actions in 5 files under `configs/rules/dev-via-test/` (02c,
+  02d, 07a, 07c, 07d). The pin has no Go symbol for it (`grep -rn replace_owned --include=*.go` over the pin: 0). The
+  pin's ADRs record it as retired: ADR-046 `:15` ("its historical `replace_owned` claim/marker mechanism is retired"),
+  `:19`; ADR-059 `:21`.
+
+  None of the 5 files is in a checked-in flow's `rules_files`. The 49 listed paths cover agent-run 15, autoresearch
+  20, coordinator 2, ops 1 and research 11. semteams tests read them through a local JSON type, not through the rule
+  engine: `test/contract/dev_via_test_pack_test.go:31` — `const devViaTestPackDir = "../../configs/rules/dev-via-test"`;
+  type at `:1610-1615`; assertions at `:531-539`.
+- **"A refusal fails the load and is never logged and skipped"** (the ruling on epic 9, comment 7165028479). At the
+  pin these load sites log and skip. None increments a metric: `grep -n -i metric rule_loader.go
+  kv_config_integration.go` finds only the `activeRules` gauge set to the loaded count at `rule_loader.go:267-270`.
+  - `rule_loader.go:207-213`: `NewCronRule` fails; `rp.logger.Error("Failed to create cron rule from definition", …)`,
+    then `continue` (`:212`).
+  - `rule_loader.go:226-232`: `CreateRuleFromDefinition` fails; `rp.logger.Error("Failed to create rule from
+    definition", …)`, then `:232` — `continue // Skip invalid rules but continue loading others`. Refusals that reach
+    this site:
+    - `ValidateDefinition` (`rule_factory.go:196`) — but `prepareInitialRules` has already returned that error, which
+      fails the load (`rule_loader.go:116-119`);
+    - pack ID (`rule_factory.go:199` — `if err := validatePackID(deps.PackID); err != nil {`);
+    - unknown rule type (`:202-205` — `return nil, fmt.Errorf("no factory registered for rule type: %s", def.Type)`);
+    - `ExpressionRuleFactory.Validate` (`:208-210`; checks at `expression_factory.go:395-430`).
+  - `kv_config_integration.go:362-377` (`ListRules`): a KV entry that cannot be read (`:366-370`) or decoded
+    (`:372-376`) is logged at Warn ("…; skipping") and left out.
+  - `kv_config_integration.go:239-251` (`reconcile`'s round trip): a definition that cannot be marshalled or
+    unmarshalled is logged at Warn and left out.
+  - Consequence for both KV sites: `reconcile` passes the result as the complete rule set
+    (`kv_config_integration.go:228-229` — "applyRuleChanges removes any rule absent from the update map, so we always
+    pass the complete ruleset"). A KV rule skipped there is removed from the running processor, not refused.
+  - Disabled rules are skipped by design, not as a refusal: `rule_loader.go:185-188`, Debug log.
 - **"Name the file."** No pin refusal of a single rule names its file:
   - `rule_loader.go:117` — `if err := ValidateDefinition(definition); err != nil {` (message names the rule ID only,
     `:118`)
@@ -115,11 +151,11 @@ Test-side compile drift (imports and helpers the PR 2 tests need that main or PR
 
 | Spelling | Location | Members |
 | --- | --- | --- |
-| Constants | `actions.go:31-76` | 13 types |
+| Constants | `actions.go:31-76` | 12 types |
 | Dispatch switch | `actions.go:916-945` | 12 cases |
 | `isArbitrarySubjectPublisher` | `user_response_subject_reservation.go:16-23` | `publish`, `publish_agent`, `approve` |
 | `isTripleMutationAction` | `config_validation.go:436-443` | add, remove, update triple |
-| `actionDistinguisher` | `action_id.go:89-106` | 6 cases |
+| `actionDistinguisher` | `action_id.go:89-106` | 5 case clauses covering 8 types |
 | Reconcile selector | `projection_derivation.go:66`, `processor.go:1513` | `reconcile_predicates` |
 | Lifecycle actions | `actions_lifecycle.go:36`, `:101`, `:129` | the three `lifecycle_*` |
 | Metric label | `metrics.go:33-38` | the "closed set" `action_type` label |
@@ -153,11 +189,13 @@ actions.
 
 - `ValidateDefinition`, `config_validation.go:273-292`. Called from `rule_factory.go:196`, `config.go:169`,
   `rule_loader.go:117`, `config_validation.go:554` and `kv_config_integration.go:316`.
-- `BaseRuleFactory.ValidateExpression`, `rule_factory.go:240-271`. No production caller pin-wide (`grep -rn
-  'ValidateExpression(\|NewBaseRuleFactory\|BaseRuleFactory'` outside `rule_factory.go`: only `docs/custom-rules.md`
-  and `doc.go`). Holds the only `rerun_on_recovery` check: `rule_factory.go:266` — `if def.RerunOnRecovery &&
-  len(def.OnEnter) == 0 && len(def.OnRecovery) == 0 {`. The target-shape page § 1 cites this range as "the factory's
-  operator and condition checks".
+- `BaseRuleFactory.ValidateExpression`, `rule_factory.go:240-271`. No production caller pin-wide: `grep -rn -E
+  'ValidateExpression\(|NewBaseRuleFactory|BaseRuleFactory'` outside `rule_factory.go` finds only
+  `processor/rule/docs/custom-rules.md` (8 lines). It holds the only `rerun_on_recovery` check for non-cron rules:
+  `rule_factory.go:266` — `if def.RerunOnRecovery && len(def.OnEnter) == 0 && len(def.OnRecovery) == 0 {`. Cron
+  rules refuse the key outright: `cron_rule.go:176-177` — `if def.RerunOnRecovery {` /
+  `rejected = append(rejected, "rerun_on_recovery")`. The target-shape page § 1 cites `rule_factory.go:240-290` as
+  "the factory's operator and condition checks".
 - `ExpressionRuleFactory.Validate`, `expression_factory.go:395-430` (PR 6 file). The live operator, condition and logic
   check, plus cooldown parse (`:422` — `if def.Cooldown != "" {`).
 - `validateExpressionRule`, `config_validation.go:161-238`. The hot-reload map copy of the operator, logic and
@@ -172,10 +210,30 @@ actions.
 
 ### e. The firing-cap key
 
-`action_id.go:37-68` (`effectiveID`, `fingerprint`, over rule ID, type, distinguisher and role) and `:89-106`.
-`action_id_test.go:63` — `func TestFingerprint_StableAcrossUnrelatedFieldChanges(t *testing.T) {` asserts that a
-`Prompt` edit keeps the key. The target-shape page § 2 keys the cap on a canonical-form hash of the whole `Body`, so a
-`Prompt` edit changes it. The cap default is `action_id.go:17` — `const DefaultActionMaxIterations = 3`.
+The key is computed at `action_id.go:37-68` (`effectiveID` and `fingerprint`, over rule ID, type, distinguisher and
+role) and `:89-106`. The cap default is `action_id.go:17` — `const DefaultActionMaxIterations = 3`.
+
+Three production readers at the pin:
+
+1. The cap gate: `stateful_evaluator.go:406` — `actionID := action.effectiveID(ruleDef.ID)`; counts read at `:408`
+   and written at `:423`.
+2. Stored state: the count is kept in `RULE_STATE` as `MatchState.ActionIterations`. `state_tracker.go:53-62` —
+   "Keys are Action.effectiveID(rule_id)"; field `:62` —
+   ``ActionIterations map[string]int `json:"action_iterations,omitempty"` ``.
+3. The reconcile request ID: `actions.go:1394-1400` builds `requestID := fmt.Sprintf("rule:%s:%s:%d:%s", ruleID,
+   entityID, iteration, action.effectiveID(ruleID))`. `:1407` sends it as `MutationMetadata.RequestID`.
+
+On main, that request ID becomes each written statement's `Context`: `pkg/projection/mutation_client.go:377-378` —
+`if triple.Context == "" {` / `triple.Context = metadata.RequestID`. `:365-367` refuses a triple whose `Context`
+differs from it. Main requires a request ID only for Create and Append (`:343-347`; `mutation_types.go:21-22`:
+"Reconcile requires Source"). ADR-111 Decision 5 (`docs/adr/111-…md:114-122`) says a redelivered effect "must be
+idempotent or carry a stable key". So the reconcile request ID is built from the key PR 2 redefines.
+
+The pin keeps the key stable across edits that do not change an action's shape. `action_id_test.go:63` —
+`func TestFingerprint_StableAcrossUnrelatedFieldChanges(t *testing.T) {` asserts that a `Prompt` edit keeps the key.
+The target-shape page § 2 keys the cap on a canonical-form hash of the whole `Body`, so a `Prompt` edit changes it.
+The new key changes all three readers: the cap count, the stored `action_iterations` keys and the reconcile request
+ID. Pin ADR-045 relies on the per-action cap as its loop bound (`045-…md:26`, `:270-271`, `:355-356`).
 
 ### f. The ADR-093 reserved-subject check
 
@@ -199,13 +257,23 @@ code (`user_response_subject_reservation_test.go:55`).
 
 ### i. Who holds Platform and PackID for a rule
 
-- `rule_factory.go:101` — `Platform types.PlatformMeta` (field of `Dependencies`).
-- Read only by `ExpressionRuleFactory.Create` (`expression_factory.go:387`), which passes them to `NewExpressionRule`.
-- Inside, they are read only by `ruleTriggerEntityID` (`expression_factory.go:349`), which the graph-event drop
-  removes, and by `validatePackID` (`:87`).
+- `rule_factory.go:101` — `Platform types.PlatformMeta` (field of `Dependencies`, `:94-102`).
+- Writers of `Dependencies`: `rule_loader.go:176-181` (`ruleDeps := Dependencies{`) and `config_validation.go:570`
+  (`deps := Dependencies{`). Both fill `NATSClient`, `Logger`, `PackID` and `Platform`.
+- Readers:
+  - `rule_factory.go:199` reads `PackID` (`validatePackID(deps.PackID)`).
+  - `ExpressionRuleFactory.Create` (`expression_factory.go:387`) passes `Platform` and `PackID` to
+    `NewExpressionRule`. Inside, they are read by `validatePackID` (`:87`) and by `ruleTriggerEntityID` (`:349`),
+    which the graph-event drop removes.
+  - `TestRuleFactory.Create` (`test_rule_factory.go:184`) passes both to `NewTestRule`.
+  - `NATSClient` and `Logger` are read by no `Create`.
+- Pack ID is also checked independently of `Dependencies`: `config.go:162` — `if err := validatePackID(c.PackID); err
+  != nil {` in `Config.Validate` (PR 8).
 - Main's guard excepts the field by name: `internal/harness/contract/authority_test.go:232` —
   `"processor/rule.Dependencies.Platform": "the carrier deps.Platform",`; `openspec/specs/harness-boundaries/
-  spec.md:818-820`.
+  spec.md:818-820`. The guard only looks exceptions up (`authority_test.go:325`). Nothing checks that each exception
+  still names a declared field (`grep -n -i 'unused\|stale' authority_test.go`: 0), so the exception stays and passes
+  once the type is gone.
 
 ## 5. Category 3: adjacent claims
 
@@ -275,9 +343,9 @@ level, measured by import alias then `grep -o '<alias>\.[A-Z]\w*'` per file:
 
 | Symbol | Who uses it now |
 | --- | --- |
-| `Definition` | semteams: 9 test files, and production through `ConfigManager` (`cmd/semteams/main.go:142`, `rule_config_service.go:33-92`; PR 12); 6 `Definition{` literals in tests. semboids: none. |
-| `Action` with typed fields | semteams: 19 test files read typed fields (`Predicate` 49, `Subject` 40, `Role` 40, `Object` 21, `When` 8, `ProjectionContract` 8, `ToolChoice` 2, `ResponseFormat` 2, …). No semteams production file reads them; the one non-test hit, `tools/emitartifact/executor.go`, is an unrelated `a.` variable. 3 `[]rule.Action{` literals in tests (`research_loop_budget_integration_test.go:205`, `:272`; `research_loop_budget_test.go:428`). |
-| `ActionTypePublishAgent` | 7 semteams test references |
+| `Definition` | semteams: 10 test files, and production through `ConfigManager` (`cmd/semteams/main.go:142`, `rule_config_service.go:33-92`; PR 12); 6 `Definition{` literals in tests. Aliases: `rulepkg` in 9 files, `rule` in 6 (of the 15 importing files). semboids: none. |
+| `Action` with typed fields | semteams: 6 test files that import `processor/rule` match a typed-field selector (upper bound; the grep counts any `.Subject`, `.Role`, … in those files): `autoresearch_reply_integration_test.go` 16, `research_loop_budget_test.go` 13, `loop_runtime_integration_test.go` 13, `program_pulse_contract_test.go` 8, `research_loop_budget_integration_test.go` 6, `rule_family_consumer_test.go` 5. Other semteams pack tests read rule JSON through local types (e.g. `dev_via_test_pack_test.go:1610-1615`). No semteams production file reads them. 3 `[]rule.Action{` literals in tests (`research_loop_budget_integration_test.go:205`, `:272`; `research_loop_budget_test.go:428`). |
+| `ActionTypePublishAgent` | 9 semteams test references in 5 files |
 | `ActionTypeReconcilePredicates` | 1 semteams test reference |
 | `CronRuleType`, `NewCronRule` | semteams tests (PR 11) |
 | `NewActionExecutor*`, `ExecutionContext`, `LifecycleManager` | semteams tests (PRs 3, 4) |
@@ -354,6 +422,8 @@ file, plus records read by title.
 | 102, 104 | Entity-ID positions; unique platform authority (in SemEngine) | `Dependencies.Platform` is the carrier | `rule_factory.go:97-101`; `authority_test.go:232` |
 | 111 | Durable Execution Primitive (SemEngine) | Decision 5: recovery relies on `OnRecovery`/`RerunOnRecovery` | SemEngine `docs/adr/111-…md:114-122` |
 | 076 | Framework-derived identity for rule events | decisions 1-3 and 5 not ported (owner, #9 comment 7160955176) | `Dependencies.PackID`/`Platform` feed it |
+| 046, 059 | Parallel fan-out; Epistemic trust tier | record `replace_owned` as retired and superseded | ADR-046 `:15`, `:19`; ADR-059 `:21` |
+| 045 | Graph Search Decomp+Fusion via Rule-Chain | its loops rely on the per-action `MaxIterations` cap | ADR-045 `:26`, `:270-271`, `:355-356` |
 
 None found for `action_id.go`, `status.go`, `schema.go`, `entity_pattern_contract.go` or `rule_loader.go` beyond the
 rows above. `rule_loader.go` cites ADR-047 once (`:235`, PR 8 code).
@@ -394,8 +464,8 @@ Names the word, not the package (issue numbers): 730, 712, 141, 110, 109, 635, 1
   (an action list dropped on error) is also silent loss, an admission gate.
 - **F2.** **Five homes for definition checks** (§ 4c), one of them dead (`rule_factory.go:240-271`).
   *Required* where ruling 6 and the target-shape page § 1 put them in `Load`. Which copy is authoritative is a fact
-  for the design: the live one is `expression_factory.go:395-430`, and the `rerun_on_recovery` check is only in the
-  dead one.
+  for the design: the live one is `expression_factory.go:395-430`. The non-cron `rerun_on_recovery` check is only in
+  the dead one (`rule_factory.go:266`); cron refuses the key (`cron_rule.go:176-177`).
 - **F3.** **Nine spellings of the action type set** (§ 4a). *Required* for the dispatch switch, the type constants'
   closedness, and `isArbitrarySubjectPublisher`'s agentic members (ruling 1; the target-shape page § 2).
   `actionDistinguisher` is replaced by the page's canonical-body key. The metric label is PR 4/8's.
@@ -477,18 +547,25 @@ use `errs.WrapInvalid` and `errs.ClassifiedCodeDetail` (`entity_pattern_contract
   3. That the firing-cap key changes from shape-only to whole-body. 12 actions set `id`; 112 do not.
   4. That `metadata` (85 rules) and rule-level `max_iterations` (7 rules) do nothing in the engine (§ 4g, § 4h).
 - **If they do nothing:** at the pin, `replace_owned` passes load and fails at every fire with `unknown action type`
-  in a log line (`actions.go:944`). Under "refuse at load" the same files fail at load. 19 semteams test files that
-  read typed `Action` fields fail to compile.
+  in a log line (`actions.go:944`). Under "refuse at load", the same files fail at load. The 6 semteams test files
+  that read typed `Action` fields fail to compile. semteams' 230 rule conditions all set `required`, so a change of
+  its default does not reach them. Its 7 `when` conditions all omit it, and their behaviour follows whichever default
+  the one decode picks (§ 4b).
 - **Where they find out:** compile error for the typed-field tests; boot or load error for an unknown type; nowhere
-  for `metadata` and rule-level `max_iterations`.
+  for `metadata`, rule-level `max_iterations` and the default of `required` on `when` conditions.
 
 ### Person 2: a semboids operator
 
 7 rules: `publish` 6, `lifecycle_transition` 1.
 
-- **What they must know:** nothing beyond `rule.Register` (`componentregistry/register.go:23`). Their pack uses only
-  core types and keys (`publish`: `subject`, `properties`).
-- **If they do nothing:** the pack loads.
+- **What they must know:** `rule.Register` (`componentregistry/register.go:23`). Their pack uses only core types and
+  keys (`publish`: `subject`, `properties`). But all 14 of their conditions omit `required`. Decoded from a file
+  today, that is `false`: a missing field means no match. Decoded through the KV map path, it is `true`: a missing
+  field is an evaluation error (`config_validation.go:611`).
+- **If they do nothing:** the pack loads. How its 14 conditions treat a missing field depends on the default the one
+  decode picks. Under `true`, a message that lacks a field the rule names becomes an evaluation error where it is a
+  silent no-match today.
+- **Where they find out:** a log line of an evaluation error at fire, if the default changes; otherwise nowhere.
 
 ### Person 3: semsource
 
@@ -511,10 +588,17 @@ Both are framework facts that the surface would make the author hold.
 | `metadata` | 85 | 0 |
 | rule `max_iterations` | 7 | 0 |
 | `on_exit` key present | 84 (all empty) | 0 |
+| `logic` absent | 1 (the cron rule, `research/10-scheduled-program-pulse.json`) | 0 |
+| `enabled: false` | 1 (the same cron rule) | 0 |
+| `enabled` absent | 0 | 0 |
+| conditions | 230 | 14 |
+| conditions omitting `required` | 0 | 14 |
+| action `when` conditions | 7 | 0 |
+| `when` conditions omitting `required` | 7 | 0 |
 | `while_true`, `on_recovery`, `rerun_on_recovery`, `related_patterns`, `fire_every_n_events` | 0 each | 0 each |
 | action `id` | 12 | 0 |
 | action `max_iterations` | 6 | 0 |
-| action `when` | 7 | 0 |
+| action `when` lists | 7 | 0 |
 
 Not counted: rules built in Go, rules in tests, rules loaded at runtime.
 

@@ -62,10 +62,11 @@ calls become unexported functions); `OperatorFunc` is unexported.
 package is admitted whole. `transition`, `from` and `$prev.*` are carried by owner ruling (PR #753 comment
 7163777239): it is the one condition that says where a value came from. `conditions.md` states its three limits, each
 checked against the code first (task 3.2): entity rules only; "previous" is the value at this rule's last evaluation
-of the entity, so batched changes can read A to C; text and exact match only.
+of the entity, so batched changes can read A to C (unverified until PR 10 reads the watcher); text and exact match
+only.
 
-**D7 (optional, owner's choice). Empty logic means AND.** Today `""` means OR (`evaluator.go:151`); the rule layer and
-both guides spell AND, no production caller passes `""`, and the pin's unit tests pass with the change (probe).
+**D7 (approved). Empty logic means AND.** Today `""` means OR (`evaluator.go:151`); the rule layer and both guides
+spell AND, no production caller passes `""`, and the pin's unit tests pass with the change (probe).
 
 **D8. Docs and ADR.** ADR-041 is ported to `docs/adr/` with a port note (deny/governance examples not carried;
 `$entity.lifecycle.*` was added later, ADR-047, PR 5; issue numbers are SemStreams').
@@ -78,8 +79,9 @@ and limits. `syntax.md` waits for PR 6, which ports what it describes.
   it, the map round trip is not carried, and nothing can fire a rule `Load` did not return. `Load` calls `Compile`
   once on the rule's conditions and once on each action's `when`, on the `Rule` it returns, and wraps the error with
   rule ID, file and position (`conditions[2]`, `on_enter[1].when[0]`). The error is classified invalid and names
-  index, field, operator and reason. A refusal fails the load, never a log-and-skip. This design names no other
-  caller.
+  index, field, operator and reason. A refusal fails the load, never a log-and-skip. PR 2 decides what `file` names
+  for a rule from the KV bucket (key and revision), and a hot-reload refusal is ADR-094's `rejected` activation. This
+  design names no other caller.
 - PR 3's substituter reads `SubstitutionPrefixes()` for its tokens.
 - PRs 6 and 7 report an evaluation error at Warn or above with the rule ID, never Debug, so a refused condition shows.
 - PR 7's design weighs a general previous-value field (any field a rule names as `$prev.<field>`, not only a

@@ -5,9 +5,10 @@
 ### Requirement: A regex pattern is compiled before evaluation
 
 `Compile` SHALL compile each `regex` pattern in a condition slice and keep it on that element. It SHALL refuse a
-non-string value, a pattern holding one of `SubstitutionPrefixes()`, a pattern over 500 characters, and one `regexp`
-rejects; each refusal is classified invalid and names index and field. Evaluation SHALL never compile, and refuses a
-regex condition not compiled from its current value.
+non-string value, a pattern holding one of `SubstitutionPrefixes()` (`$now`, `$entity.`, `$related.`, `$state.`,
+`$schedule.`, `$caller.`, `$message.`), a pattern over 500 characters, and one `regexp` rejects; each refusal is
+classified invalid and names index and field. Evaluation SHALL never compile, and refuses a regex condition not
+compiled from its current value.
 
 #### Scenario: A literal pattern matches as the standard library does
 

@@ -32,8 +32,8 @@ when its rule loads, never while a message is checked, and a pattern built from 
   run (the target-shape page's `Load`). A bad pattern stops that load with an error naming the rule and its file.
   Nothing can run a rule that function did not return. Later PRs must still log evaluation errors as warnings, so a
   mistake shows.
-- **Keep only the 500-character pattern limit** (your ruling on the PR). Go's regex library already refuses what the
-  other old checks guarded against, and some of them refused safe patterns.
+- **Keep only the 500-character pattern limit** (your ruling on the PR). Go's regex library already refuses oversized
+  repeats and runs every pattern in time linear in its input; some of the old checks refused safe patterns.
 - **Twelve condition types no product uses yet: keep (recommended) or drop.** Less-than, at-least, between, contains,
   starts-with, ends-with, not-in, three list-length checks, list-contains, and "changed from X to Y". They are small
   and already tested. "Changed from X to Y" is kept by your ruling, and the guide states its three limits.

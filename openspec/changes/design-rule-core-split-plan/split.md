@@ -52,8 +52,8 @@ test files, 1,156 lines).
 - PR 2: rule types register into a global map from `init` (`rule_factory.go:124-142`, `expression_factory.go:443`)
   [AGENTS.md: imports register nothing]. `test_rule_factory.go` is production code only tests use, registered at
   `init` (`:212-218`) [no back doors]; it moves into a `_test.go` file. `gojsonschema` enters `go.mod` for
-  `schema_test.go`, or the test checks schemas another way. Under "refuse", `fire_every_n_events` is refused at load
-  [surface audit (c)].
+  `schema_test.go`, or the test checks schemas another way. Under "refuse", `fire_every_n_events` is refused at load on
+  every rule but `type: "cron"` [surface audit (c)].
 - PR 4: the core compiles with no `agentic*` or `governance` import [#27]. `graph.NewExactEntityReader`'s error is
   handled (`triple_mutator.go:31`) [build]. `ExecutionContext`'s substitution methods, read today only by
   `publish_agent` (`actions.go:1711`, `:1767`), become the family-facing contract, or are dropped; PR 2's design

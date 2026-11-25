@@ -28,9 +28,10 @@ each PR retires, and which designs Fable reads first.
   removes about 1,000 lines and the trigger-identity rules of ADR-076 (its pack-ID rule is already kept). Two
   counters change: `total_triggered` counts firings that ran their actions, and `events_published` stops counting
   graph events. Moving it makes every firing a graph write, and PR 6 then waits for PR 4. PR 2 waits for this.
-- **`fire_every_n_events` is refused at load (recommended), or made to work.** It says it fires a rule's actions every
-  Nth match, but it never gated actions, only the graph event and a counter. No checked-in rule sets it. Making it
-  work puts the gate in front of the actions on both inputs (PRs 9 and 10).
+- **`fire_every_n_events` on message and entity rules is refused at load (recommended), or made to work.** It says
+  it fires a rule's actions every Nth match, but on those rules it never gated actions, only the graph event and a
+  counter. On cron rules it works and stays (PR 11). No checked-in rule sets it. Making it work on the other rules
+  puts the gate in front of the actions on both inputs (PRs 9 and 10).
 - **Three accepted proofs change.** #25 closes at PR 7, when semboids' pack can actually fire. #26's check becomes
   "the `tool_choice` and `response_format` bytes survive unchanged", since SemEngine has no agentic types. #27's
   "semteams' 40 `publish_agent` actions dispatch" becomes semteams' own check at its switch; here, an import guard and

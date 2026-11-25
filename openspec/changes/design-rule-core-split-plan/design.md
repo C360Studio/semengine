@@ -49,11 +49,14 @@ moves the cooldown into stored state in PR 7. PR 2's design is not written befor
 The key is documented to fire a rule's actions only on every Nth match (`rule_factory.go:44-56`). At the pin it gates
 only the graph event, the `rule_events` notification and the counter (`message_handler.go:174-232`); `on_enter`,
 `on_exit` and `while_true` actions run earlier and ungated (`:135-150`, `stateful_evaluator.go:426`). semteams hit it
-(`configs/rules/ops/01-run-terminal-observe.json:59`) and sets the key in no checked-in rule. Carrying it as is would
-port a described behaviour nothing implements (surface audit (c)), so one of these is required:
+(`configs/rules/ops/01-run-terminal-observe.json:59`) and sets the key in no checked-in rule. Cron rules are the
+exception: there the key does skip the actions on all but every Nth tick (`cron_scheduler.go:496-504`, proved by
+`TestCronScheduler_FireFireEveryNGate`), and PR 11 carries that gate either way. On message and entity rules, carrying
+the key as is would port a described behaviour nothing implements (surface audit (c)), so one of these is required:
 
-- **Refuse the key (recommended).** PR 2 refuses `fire_every_n_events` at load, naming rule and file; PRs 9 and 10
-  carry no gate. Its counter is per rule, not per entity, the same flaw #702 fixes for cooldown.
+- **Refuse the key on message and entity rules (recommended).** PR 2 refuses `fire_every_n_events` at load on any
+  rule that is not `type: "cron"`, naming rule and file; PRs 9 and 10 carry no gate. Its counter is per rule, not per
+  entity, the same flaw #702 fixes for cooldown.
 - **Gate the actions as documented.** PR 9 and PR 10 apply the gate before the evaluator runs actions, and PR 7's
   design says whether the count is per rule or per rule and entity.
 

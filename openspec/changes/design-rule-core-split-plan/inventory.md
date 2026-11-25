@@ -99,7 +99,9 @@ What else rides on that path, `fireRuleActions` (`message_handler.go:174-232`):
   documented behaviour, "fire its action only every Nth matching event" (`rule_factory.go:44-56`), is not implemented
   for actions. semteams records the miss (`configs/rules/ops/01-run-terminal-observe.json:59`, semstreams#1007) and
   sets the key in no checked-in rule (`grep -rln fire_every_n_events` over semteams and semboids configs: that one
-  file, in a note).
+  file, in a note). Cron rules differ: `cron_rule.go:88` stores the key and `cron_scheduler.go:496-504` skips the
+  actions on all but every Nth tick (`TestCronScheduler_FireFireEveryNGate`, `cron_scheduler_test.go:405-426`: 2
+  executions over 6 ticks at N=3; `cron_rule_test.go:165-176` allows the key on cron rules).
 - `total_triggered` (`processor.go:1456`) counts only firings whose graph events published
   (`message_handler.go:227-231`).
 - `events_published` (`processor.go:1457`) and `events_published_total` count graph events (`publisher.go:115-118`),

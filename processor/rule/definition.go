@@ -1,5 +1,3 @@
-// Package rule holds rule definitions, their one strict decode, and the
-// action handlers that check each action of a rule.
 package rule
 
 import (
@@ -83,8 +81,9 @@ type EntityConfig struct {
 // `rules.<id>@<revision>`) and is named in every error.
 //
 // It refuses a key that Definition, its entity config, a condition or an
-// action's core keys do not declare, a rule key spelt with another case than
-// Definition's (`"ID"` for `"id"`), and any data after the object. An absent
+// action's core keys do not declare, a key of the rule, its entity config or
+// a condition spelt with another case than declared (`"ID"` for `"id"`,
+// `"Field"` for `"field"`), and any data after the object. An absent
 // `enabled` means enabled, an absent `logic` means `and`, and an absent
 // condition `required` means not required; an empty action list or metadata
 // object decodes as an absent one. Each error is classified invalid
@@ -124,34 +123,79 @@ func DecodeDefinition(data []byte, source string) (Definition, error) {
 	return def, nil
 }
 
-// definitionKeys is the set of keys Definition declares, read from its JSON
-// tags so that it cannot drift from the struct.
-var definitionKeys = func() map[string]bool {
+// The keys Definition, EntityConfig and a condition declare, read from their
+// JSON tags so that they cannot drift from the structs.
+var (
+	definitionKeys = jsonKeys(reflect.TypeOf(Definition{}))
+	entityKeys     = jsonKeys(reflect.TypeOf(EntityConfig{}))
+	conditionKeys  = jsonKeys(reflect.TypeOf(expression.ConditionExpression{}))
+)
+
+// jsonKeys returns the JSON key of every field of t that has one.
+func jsonKeys(t reflect.Type) map[string]bool {
 	keys := make(map[string]bool)
-	t := reflect.TypeOf(Definition{})
 	for i := 0; i < t.NumField(); i++ {
 		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
-		keys[name] = true
+		if name != "" && name != "-" {
+			keys[name] = true
+		}
 	}
 	return keys
-}()
+}
 
-// checkDefinitionKeys refuses a rule key that is not spelt exactly as
-// Definition declares it. encoding/json matches struct keys without regard
-// to case, so "ID" or "Enabled" passes DisallowUnknownFields; a rule source
-// that names a key two ways must not have one silently win.
+// checkDefinitionKeys refuses a key of the rule, its entity config or a
+// condition that is not spelt exactly as the struct declares it.
+// encoding/json matches struct keys without regard to case, so "ID" or
+// "Field" passes DisallowUnknownFields; a rule source that names a key two
+// ways must not have one silently win. data has already decoded strictly, so
+// each part has the shape the struct gives it.
 func checkDefinitionKeys(data []byte) error {
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(data, &keys); err != nil {
+	var rule map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rule); err != nil {
 		return err
 	}
-	names := make([]string, 0, len(keys))
-	for key := range keys {
+	if err := checkExactKeys(rule, definitionKeys); err != nil {
+		return err
+	}
+	if raw, ok := rule["entity"]; ok {
+		if err := checkObjectKeys(raw, entityKeys); err != nil {
+			return fmt.Errorf("entity: %w", err)
+		}
+	}
+	if raw, ok := rule["conditions"]; ok {
+		var conditions []json.RawMessage
+		if err := json.Unmarshal(raw, &conditions); err != nil {
+			return fmt.Errorf("conditions: %w", err)
+		}
+		for i, condition := range conditions {
+			if err := checkObjectKeys(condition, conditionKeys); err != nil {
+				return fmt.Errorf("conditions[%d]: %w", i, err)
+			}
+		}
+	}
+	return nil
+}
+
+// checkObjectKeys refuses a key of the JSON object raw that is not in
+// declared, matched exactly. A null object has no keys.
+func checkObjectKeys(raw json.RawMessage, declared map[string]bool) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return err
+	}
+	return checkExactKeys(object, declared)
+}
+
+// checkExactKeys refuses the first key of object, in sorted order, that is
+// not in declared, so the error is the same on every run.
+func checkExactKeys(object map[string]json.RawMessage, declared map[string]bool) error {
+	names := make([]string, 0, len(object))
+	for key := range object {
 		names = append(names, key)
 	}
 	sort.Strings(names)
 	for _, key := range names {
-		if !definitionKeys[key] {
+		if !declared[key] {
 			return fmt.Errorf("json: unknown field %q", key)
 		}
 	}

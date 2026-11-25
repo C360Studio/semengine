@@ -200,6 +200,23 @@ func TestDecodeDefinition(t *testing.T) {
 			contains: []string{`"Enabled"`},
 		},
 		{
+			name:     "an entity key spelt with another case",
+			rule:     `{"id": "r1", "entity": {"Pattern": "c360.test.rule.decode.drone.*"}}`,
+			contains: []string{`"Pattern"`, "entity"},
+		},
+		{
+			name: "a condition key spelt with another case",
+			rule: `{"id": "r1", "conditions": [{"field": "a.b.c", "operator": "eq", "value": 1},
+			  {"Field": "a.b.c", "operator": "eq", "value": 1}]}`,
+			contains: []string{`"Field"`, "conditions[1]"},
+		},
+		{
+			name: "a when condition key spelt with another case",
+			rule: `{"id": "r1", "on_enter": [{"type": "publish", "when": [{"field": "x", "operator": "eq"},
+			  {"field": "x", "Operator": "eq"}]}]}`,
+			contains: []string{`"Operator"`, "when[1]"},
+		},
+		{
 			name:     "data after the object",
 			rule:     `{"id": "r1"} {"id": "r2"}`,
 			contains: []string{"data after"},

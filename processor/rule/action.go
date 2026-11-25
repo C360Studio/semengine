@@ -99,8 +99,8 @@ type actionCore struct {
 
 // UnmarshalJSON keeps data as the action's Body and fills the four core
 // fields from it. A key in a `when` condition that a condition does not
-// declare is refused, naming `when[<i>]`; any other key is left to the
-// handler of the action's type.
+// declare, or declares with another case, is refused, naming `when[<i>]`;
+// any other key is left to the handler of the action's type.
 func (a *Action) UnmarshalJSON(data []byte) error {
 	decoded, err := decodeAction(data)
 	if err != nil {
@@ -121,7 +121,8 @@ func (a Action) MarshalJSON() ([]byte, error) {
 
 // decodeAction is the one reading of an action's body: it returns the action
 // whose core fields are what body says, with a copy of body as its Body.
-// Core keys are matched exactly as written.
+// Core keys, and the keys of each `when` condition, are matched exactly as
+// written.
 func decodeAction(body []byte) (Action, error) {
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal(body, &keys); err != nil {
@@ -157,6 +158,9 @@ func decodeAction(body []byte) (Action, error) {
 			decoder := json.NewDecoder(bytes.NewReader(condRaw))
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&cond); err != nil {
+				return Action{}, fmt.Errorf("when[%d]: %w", i, err)
+			}
+			if err := checkObjectKeys(condRaw, conditionKeys); err != nil {
 				return Action{}, fmt.Errorf("when[%d]: %w", i, err)
 			}
 			core.When = append(core.When, cond)

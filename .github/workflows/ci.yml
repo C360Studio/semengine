@@ -60,7 +60,7 @@ jobs:
       - name: Install ateam
         env:
           GOTOOLCHAIN: auto
-        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.5
 
       - run: task doctor
 
@@ -102,7 +102,7 @@ jobs:
       - name: Install ateam
         env:
           GOTOOLCHAIN: auto
-        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.5
 
       - run: task doctor
 

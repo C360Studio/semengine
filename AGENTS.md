@@ -155,7 +155,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | --- | --- | --- |
 | `spec:check+review` | OpenSpec changes and specs are well formed and truthful against code | "Where state lives" below |
 | `spec:check+review` | Every OpenSpec task can be ticked by the archive commit; a hold is `Hold:` inside the unticked task it stops | `protocol`; `spec-queue` spec; `rev` |
-| `review` | Clarify declares the track (`quick` or `design`); `proposal.md` stays one page with `Approved-by:` the owner fills; its first task holds `OPEN-Q` until then | `protocol`; `arch` |
+| `review` | Clarify declares the track (`quick` or `design`); `proposal.md` stays one page, lists the owner's decisions under `## Decisions you are making by approving`, with `Approved-by:` the owner fills; its first task holds `OPEN-Q` until then | `protocol`; `arch` |
 | `review` | After the squash merge the claimer removes its worktree and remote branch (`ateam state prune`); never another agent's, dirty or unpushed | `protocol` |
 | `review` | Conclusions/handoffs end with the skipped/residual-risk footer; a deliberate limit is marked `// shortcut: <limit>, <when to upgrade>` | `protocol`; ponytail skill |
 | `verify+review` | A step ends at a local clean-tree `task verify` pass; pushes batch at review/end; CI checked once before merge; reviewer `PASS` cites commit + local verify, never CI (#171) | `dev`, `rev`; `protocol` |

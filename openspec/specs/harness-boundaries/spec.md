@@ -1068,7 +1068,7 @@ method value) a policy entry point (`ConsumeInternalStreamWithConfig`, `ConsumeS
 
 `scripts/verify.sh` SHALL run `task ateam:doctor` first, and `task ateam:doctor` SHALL run `scripts/ateam doctor
 --check` with the session variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`, `CODEX_SESSION_ID`, `GEMINI_SESSION_ID`)
-unset so it never takes the writer lease. The ateam release is pinned as `v0.4.0` in `.github/workflows/ci.yml`,
+unset so it never takes the writer lease. The ateam release is pinned as `v0.4.5` in `.github/workflows/ci.yml`,
 `merge-check.yml`, `Taskfile.yml`, and `.agents/ateam.json`, compared by `scripts/doctor.sh` and `TestAteamPinParity`.
 
 #### Scenario: Doctor violation fails verify

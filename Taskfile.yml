@@ -10,7 +10,7 @@ vars:
   # Installed into the MAIN checkout's gitignored .tools/bin so every linked worktree shares one
   # install without colliding with sister repos on PATH. Hooks, MCP, and Task targets reach it
   # through scripts/ateam.
-  ATEAM_VERSION: v0.4.0
+  ATEAM_VERSION: v0.4.5
   ATEAM_BIN_DIR:
     sh: echo "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.tools/bin"
   ATEAM: "{{.ATEAM_BIN_DIR}}/ateam"

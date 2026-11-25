@@ -41,7 +41,9 @@ platform-neutral second opinion; they do not replace this role.
 6. Submit the design to independent pre-owner design review. Do not call it approved, create a runtime/spec delta, or
    hand it to implementation until the reviewer passes it and the owner explicitly accepts it: the owner fills
    `Approved-by:` on the proposal and removes the first task's `Hold: OPEN-Q proposal awaits owner approval` in the
-   same edit. The one hold covers proposal and design (owner ruling of 2026-10-28 on #447, items 1 and 2).
+   same edit. The one hold covers proposal and design (owner ruling of 2026-10-28 on #447, items 1 and 2). The
+   architect writes the bullets under the proposal's `## Decisions you are making by approving`: one per decision the
+   design asks the owner to make, in plain words, naming what triggers it and what changes for the user.
 7. Remain read-only. Return artifact text (proposal, design, spec deltas, ADR draft, and the inventory file itself)
    in the handoff for the caller to write through the OpenSpec flow. Do not edit code, specs, task truth, or memory.
 8. **Never run any git command that mutates or discards working-tree state**: no checkout/restore/stash/clean/reset

@@ -34,7 +34,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   or the owner's ruling). The queue reads every line of an unticked task and prints each hold from `Hold:` on. A hold
   in a heading or a paragraph outside every task does not show, and `task spec:check` fails on it. Proposal approval
   (owner ruling of 2026-10-28 on #447, items 1 to 3): `proposal.md` stays on one page (60 lines or fewer;
-  `task spec:check` warns past it) and carries `Approved-by:`, empty until the owner fills
+  `task spec:check` warns past it), lists under `## Decisions you are making by approving` one bullet per decision
+  the owner makes by approving, in plain words (`task spec:check` fails a change with a `design.md` and no bullet
+  there, and warns on one without), and carries `Approved-by:`, empty until the owner fills
   `<name> (<YYYY-MM-DD>) sha256:<12 hex>`, the digest of `proposal.md` and `design.md` that `task spec:queue` prints;
   a link to the issue comment where the owner ruled may sit before the digest, which ends the line.
   `task spec:check` fails once either file changes after approval, and warns on a line without a digest. The first

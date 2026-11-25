@@ -61,7 +61,7 @@ jobs:
       - name: Install ateam
         env:
           GOTOOLCHAIN: auto
-        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.5
 
       - name: Is the pull request awaiting its review record
         id: probe
@@ -104,7 +104,7 @@ jobs:
       - name: Install ateam
         env:
           GOTOOLCHAIN: auto
-        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.5
 
       - name: Check the up-to-date rule, the review and its strength, and known flakes
         env:

@@ -151,8 +151,8 @@ package compiles a user-supplied pattern.
 
 `gh issue list --state open --search <q>` for `expression`, `regex`, `regex_cache`, `evaluator`, `rule/expression`,
 `condition`, `operator` (2026-11-25). Naming the package: #9 (ruling comment 5950725772 names `regex_cache.go:21`
-for a later port-refactor; no issue was filed). Naming the word only: #702 (`expression_factory.go:31`), #25,
-#28, #703, #484, #641, #502, #155, #712, #647, #646, #350, #110.
+for a later port-refactor; no issue was filed). Naming the word only: #702 (`expression_factory.go:31`), #25, and
+also #28, #703, #484, #641, #502, #155, #712, #647, #646, #350, #110.
 
 ## Open PRs
 

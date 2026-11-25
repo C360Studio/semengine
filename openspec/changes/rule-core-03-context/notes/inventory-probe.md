@@ -7,15 +7,21 @@ the results are the reviewer's observations.
 
 ## PR 3's tests on the pin copy
 
-In `processor/rule` of the pin copy, with `R` the 92 `Test*` names from PR 3's ten test files joined by `|`
-(`grep -h -oE '^func (Test[A-Za-z0-9_]+)' <the ten files> | sed 's/func //' | paste -sd'|'`):
+In `processor/rule` of the pin copy, with `R` the 92 `Test*` names from PR 3's ten test files joined by `|`. The
+`wc -l` line guards against an empty list: `-run "^()$"` runs nothing and still prints `ok`.
 
 ```bash
-go test -count=1 -race -run "^($R)\$" .
-go test -count=5 -cpu=1 -shuffle=on -run "^($R)\$" .
+cd <pin copy>/processor/rule
+R=$(grep -h -oE '^func (Test[A-Za-z0-9_]+)' for_each_substitution_test.go lifecycle_substitution_test.go state_tracker_test.go typed_substitution_test.go entity_substitution_test.go message_substitution_test.go caller_substitution_test.go triple_length_substitution_test.go triple_triples_substitution_test.go triple_value_substitution_test.go | sed 's/func //' | paste -sd'|' -)
+echo "$R" | tr '|' '\n' | wc -l                                                     # 92
+go test -count=1 -race -run "^($R)\$" .                                              # ok
+go test -count=1 -race -v -run "^($R)\$" . 2>&1 | grep -c '^--- PASS: Test'          # 92
+go test -count=5 -cpu=1 -shuffle=on -v -run "^($R)\$" . 2>&1 | grep -E '^-test.shuffle|^ok|^FAIL'
 ```
 
-Observed: `-race` ok, 92 `--- PASS`; `-count=5 -cpu=1 -shuffle=on` ok.
+Observed (review round 2): 92 names; `-race` ok, 92 `--- PASS`; the shuffled run printed
+`-test.shuffle 1795626557990464000` and `ok`. The probe file below was run as written and gave the results under
+"Observed".
 
 ## Probe file
 

@@ -46,6 +46,9 @@
 
 ## 4. Land
 
+- [ ] 4.0 One comment on epic #9 recording what later PRs owe this design: PR 2's one preparation step on every
+  keeper and its refusal naming the source, and PRs 6 and 7 logging evaluation errors at Warn or above with the rule
+  ID. Read back after posting.
 - [ ] 4.1 `task verify` passes on a clean tree at the PR head; the PR body records `implemented-by:` and
   `reviewed-by:`; it closes no issue.
 - [ ] 4.2 Sync `specs/rule-conditions/spec.md` to `openspec/specs/rule-conditions/spec.md`, checked against the code,

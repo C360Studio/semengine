@@ -9,7 +9,7 @@ Adds the `rule-conditions` capability.
 
 Every rule condition and every action guard is checked by one small package. This PR brings it over from SemStreams
 whole, so the rule engine's later PRs have something to build on. It carries your regex ruling: a pattern is checked
-once when its rule loads, and a pattern built from a template is refused.
+when its rule loads, never while a message is checked, and a pattern built from a template is refused.
 
 ## What changes
 
@@ -26,12 +26,15 @@ once when its rule loads, and a pattern built from a template is refused.
 - **What counts as a template in a regex.** A pattern is refused only when it contains one of the template words the
   rule engine fills in (such as `$entity.` or `$now`). Every other dollar sign is left alone, so a pattern matching
   "$USD" still works. A pattern that must match a template word's text writes the dollar as `[$]`. This is your
-  ruling, applied exactly.
+  ruling, read on the safe side: a few patterns that start like a template word but that nothing would fill in
+  are refused too.
 - **Where patterns are prepared.** Recommended: each rule's conditions are prepared at the point the engine keeps the
   rule to run it, and a bad pattern stops that load with an error naming the rule and where it came from. If a later
   part of the engine skipped that step, the rule would not run, so those later PRs must also log evaluation
   errors as warnings. The stricter option, which catches a skipped step when the code is built, reshapes three
-  later PRs and still leaves them the same step to do.
+  later PRs and still leaves them the same step to do. One difference from your ruling's word "once": a pattern
+  may be compiled twice while a rule loads (once to name the file in an error, once on the copy that runs). It is
+  still never compiled while a message is checked, and nothing is cached.
 - **Keep the pattern limits** (length, groups, nesting, very large repeats). Recommended keep. They bound what a
   rule author can hand the engine; no product pattern comes near them, and loosening them later breaks no one.
 - **Twelve condition types no product uses yet: keep (recommended) or drop.** Less-than, at-least, between,

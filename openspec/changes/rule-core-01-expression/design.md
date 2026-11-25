@@ -39,11 +39,12 @@ expects it (`scripts/measure-semengine-port-ledger.go:226`). A top-level `rule/e
   unmarshaler (probe), and the pin's map path builds conditions without decoding (`config_validation.go:607`).
 - D. A cache, or compiling on first use: refused by the ruling.
 
-**D3. A regex is templated when it contains a substitution token.** The tokens are the seven strings the pin's
-substituter replaces anywhere in a value: `$now`, `$entity.`, `$related.`, `$state.`, `$schedule.`, `$caller.`,
+**D3. A regex is templated when it contains a substitution token.** The tokens are the seven prefixes the pin's
+substituter fills in anywhere in a value: `$now`, `$entity.`, `$related.`, `$state.`, `$schedule.`, `$caller.`,
 `$message.` (inventory). Any other `$` stays literal: `[$a-z]`, `^\$USD` and `\Q$x\E` are accepted. A pattern that
-must match a token's text writes its `$` as `[$]` (`[$]now`), which the substituter does not touch. This is exactly
-the ruling's refusal. Cost: a second spelling of the token list, held in step by a PR 3 test that `Compile` refuses
+must match a token's text writes its `$` as `[$]` (`[$]now`), which the substituter does not touch. Refusing on the
+prefix is slightly wider than the substituter (`$state.foo` is refused, though nothing replaces it), which is the
+safe reading of "templated". Cost: a second spelling of the token list, held in step by a PR 3 test that `Compile` refuses
 every token the substituter replaces. Not taken: "starts with `$`" misses mid-pattern tokens; "contains `$`" refuses
 every end-anchored pattern, including semteams' one regex.
 
@@ -73,7 +74,11 @@ is corrected to the code (inventory, advertised-absent) and gains the regex rule
 - PR 2 owns one preparation step for a definition (validate, then `Compile` every condition and every action `when`
   condition) that every keeper calls on the copy it keeps, after the last JSON or map copy: the boot store
   (`rule_loader.go:215`, `:243`), `CreateRuleFromDefinition`, cron (PR 11), runtime and KV apply (PR 12).
-  `Compile` is deterministic, so a definition that passed once passes again.
+  `Compile` is deterministic, so a definition that passed once passes again. A pattern may therefore be compiled
+  more than once during a load (once on the file's copy to name the file, again on the copy that runs); it is
+  never compiled while a condition is checked. This departs from the ruling's word "once" and is put to the owner
+  (proposal). The alternative, carrying each definition's source through the copies so the step runs once, is PR 2's
+  to weigh.
 - A refusal fails the load, never a log-and-skip. It names the source: the file (run the step at the per-file decode,
   `rule_loader.go:72`, before the merge), `inline_rules[i]` with the component name, or the KV key and revision, where
   it is an ADR-094 `rejected` activation. PR 2 wraps `Compile`'s error, which is classified invalid and names field,

@@ -134,7 +134,8 @@ pattern complexity to prevent ReDoS`; Go's regexp is "guaranteed to run in time 
   and back through `definitionFromMap` (`config_validation.go:129`, `:564`, `runtime_config.go:183`), which builds
   conditions as struct literals (`config_validation.go:607-611`) and makes `required` default to **true**
   (`getBoolWithDefault(condMap, "required", true)`), where JSON decode makes it false.
-- Kept for firing: `rp.ruleDefinitions[def.ID] = def` (`rule_loader.go:215`, `:243`) and
+- Kept for firing: `rp.ruleDefinitions[def.ID] = def` (`rule_loader.go:215`, `:243`; runtime and KV apply
+  `runtime_config.go:214`, `:271`) and
   `CreateRuleFromDefinition` (`:226`).
 - Evaluation errors on the fire paths are silent: `expression_factory.go:200-205` and `:224-230` log at Debug and
   return false; `stateful_evaluator.go:380-386` logs at Warn and skips the action.

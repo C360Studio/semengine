@@ -49,9 +49,10 @@ and `transition` requirements say otherwise.
 
 ### Requirement: Transition compares the current value with the previous one
 
-A `transition` condition SHALL be true when the entity's current value equals `value` and its `$prev.` value is in
-`from`, or differs from the current value when `from` is absent. With no current value or no previous value it SHALL
-be false without an error, even when required; with no entity it is an error only when required.
+A `transition` condition on a bare field name SHALL be true when the entity's current value equals `value` and its
+`$prev.` value is in `from`, or differs from the current value when `from` is absent. With no current value or no
+previous value it SHALL be false without an error, even when required; with no entity it is an error only when
+required.
 
 #### Scenario: A first evaluation is not a transition
 

@@ -9,14 +9,12 @@ import (
 	"strings"
 
 	gtypes "github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // NewExpressionEvaluator creates a new expression evaluator with all supported operators
 func NewExpressionEvaluator() *Evaluator {
 	evaluator := &Evaluator{
-		operators:    make(map[string]OperatorFunc),
-		typeDetector: &defaultTypeDetector{},
+		operators: make(map[string]operatorFunc),
 	}
 
 	// Register numeric operators
@@ -89,8 +87,8 @@ func RegisteredOperators() map[string]struct{} {
 }
 
 // isArrayOperator reports whether the named operator takes its
-// fieldValue as a collection (resolves via GetFieldValuesAll) rather
-// than a scalar (GetFieldValue first-match). Array operators count
+// fieldValue as a collection (resolves via fieldValues) rather
+// than a scalar (fieldValue first-match). Array operators count
 // or check membership across the full set of triples carrying a
 // given predicate; scalar operators see only the first match.
 // #147 / ADR-046 Phase 1 counter pattern.
@@ -227,22 +225,13 @@ func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.Ent
 	//    messageFields if not present.
 	//    Message-path (entity nil): messageFields only.
 	//    Array operators (#147 — length_eq, length_gt, length_lt,
-	//    array_contains) resolve via GetFieldValuesAll so they see
+	//    array_contains) resolve via fieldValues so they see
 	//    EVERY matching triple, not just the first. The counter
 	//    pattern stamps N triples with the same predicate keyed by
 	//    child ID; the join rule needs all N to count correctly.
 	if entityState != nil {
 		if isArrayOperator(condition.Operator) {
-			values, exists, err := e.typeDetector.GetFieldValuesAll(entityState, condition.Field)
-			if err != nil {
-				return false, &EvaluationError{
-					Field:    condition.Field,
-					Operator: condition.Operator,
-					Message:  "failed to get field values",
-					Err:      err,
-				}
-			}
-			if exists {
+			if values, exists := fieldValues(entityState, condition.Field); exists {
 				return e.applyOperator(condition, values)
 			}
 			// Predicate carries zero matching triples — array
@@ -255,16 +244,8 @@ func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.Ent
 			// "empty list" semantic.
 			return e.applyOperator(condition, []interface{}{})
 		}
-		fieldValue, exists, err := e.typeDetector.GetFieldValue(entityState, condition.Field)
-		if err != nil {
-			return false, &EvaluationError{
-				Field:   condition.Field,
-				Message: "failed to get field value",
-				Err:     err,
-			}
-		}
-		if exists {
-			return e.applyOperator(condition, fieldValue)
+		if value, exists := fieldValue(entityState, condition.Field); exists {
+			return e.applyOperator(condition, value)
 		}
 		// Fall through to messageFields below.
 	}
@@ -340,15 +321,7 @@ func (e *Evaluator) evaluateTransition(entityState *gtypes.EntityState, stateFie
 	}
 
 	// Get current field value from entity triples
-	currentValue, exists, err := e.typeDetector.GetFieldValue(entityState, condition.Field)
-	if err != nil {
-		return false, &EvaluationError{
-			Field:    condition.Field,
-			Operator: OpTransition,
-			Message:  "failed to get current field value",
-			Err:      err,
-		}
-	}
+	currentValue, exists := fieldValue(entityState, condition.Field)
 	if !exists {
 		return false, nil
 	}
@@ -391,56 +364,28 @@ func normalizeToSlice(v interface{}) []interface{} {
 	return []interface{}{v}
 }
 
-// defaultTypeDetector implements TypeDetector using existing triple access functions
-type defaultTypeDetector struct{}
-
-// GetFieldValue extracts a field value from entity state using existing helper functions
-func (d *defaultTypeDetector) GetFieldValue(entityState *gtypes.EntityState, field string) (interface{}, bool, error) {
-	// Import existing functions from entity_state_rule.go
-	// We'll need to make them accessible or recreate the logic here
+// fieldValue returns the object of the entity's first triple carrying the
+// predicate field.
+func fieldValue(entityState *gtypes.EntityState, field string) (interface{}, bool) {
 	for _, triple := range entityState.Triples {
 		if triple.Predicate == field {
-			return triple.Object, true, nil
+			return triple.Object, true
 		}
 	}
-	return nil, false, nil
+	return nil, false
 }
 
-// GetFieldValuesAll collects every triple Object matching the
-// predicate, in trigger-time order. #147 / ADR-046 Phase 1 counter
-// pattern: rule stamps N triples with the same predicate keyed by
-// child ID; the join rule's length_eq operator needs all N to count.
-// Returns (nil, false) when no triple matches.
-func (d *defaultTypeDetector) GetFieldValuesAll(entityState *gtypes.EntityState, field string) ([]interface{}, bool, error) {
-	if entityState == nil {
-		return nil, false, nil
-	}
+// fieldValues returns the objects of every triple carrying the predicate
+// field, in triple order, or false when none does. List operators read it:
+// they count or search all the triples of a predicate, not the first.
+func fieldValues(entityState *gtypes.EntityState, field string) ([]interface{}, bool) {
 	var values []interface{}
 	for _, triple := range entityState.Triples {
 		if triple.Predicate == field {
 			values = append(values, triple.Object)
 		}
 	}
-	if len(values) == 0 {
-		return nil, false, nil
-	}
-	return values, true, nil
-}
-
-// DetectFieldType determines the Go type of a field value
-func (d *defaultTypeDetector) DetectFieldType(value interface{}) FieldType {
-	switch value.(type) {
-	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return FieldTypeFloat64
-	case string:
-		return FieldTypeString
-	case bool:
-		return FieldTypeBool
-	case []interface{}:
-		return FieldTypeArray
-	default:
-		return FieldTypeUnknown
-	}
+	return values, len(values) > 0
 }
 
 // Operator implementations
@@ -592,7 +537,7 @@ func coerceToInt(v interface{}) (int, error) {
 }
 
 // arrayLen returns the length of a field value resolved via
-// GetFieldValuesAll. The resolver returns []interface{}, but
+// fieldValues. The resolver returns []interface{}, but
 // stateFields / messageFields paths may pass other shapes — handle
 // the common ones loudly.
 func arrayLen(fieldValue interface{}) (int, error) {
@@ -818,131 +763,4 @@ func toFloat64(v interface{}) (float64, bool) {
 	default:
 		return 0, false
 	}
-}
-
-// Expression helper functions for rule conditions
-
-// HasTriple checks if an entity has a triple with the given predicate.
-// Returns false if entity is nil or predicate not found.
-func (e *Evaluator) HasTriple(entity *gtypes.EntityState, predicate string) bool {
-	if entity == nil {
-		return false
-	}
-
-	for _, triple := range entity.Triples {
-		if triple.Predicate == predicate {
-			return true
-		}
-	}
-
-	return false
-}
-
-// GetOutgoing returns a list of entity IDs for outgoing relationships with the given predicate.
-// Only returns valid entity IDs (4-part dotted notation), not literal values.
-// Returns empty slice if entity is nil or no relationships found.
-func (e *Evaluator) GetOutgoing(entity *gtypes.EntityState, predicate string) []string {
-	// Always return non-nil slice for consistency
-	outgoing := []string{}
-
-	if entity == nil {
-		return outgoing
-	}
-
-	for _, triple := range entity.Triples {
-		if triple.Predicate == predicate {
-			// Check if Object is a valid entity ID (relationship)
-			if objStr, ok := triple.Object.(string); ok {
-				// Use message.IsValidEntityID to check for valid entity reference
-				if isValidEntityID(objStr) {
-					outgoing = append(outgoing, objStr)
-				}
-			}
-		}
-	}
-
-	return outgoing
-}
-
-// Distance calculates the great-circle distance between two entities in meters
-// using the Haversine formula. Returns error if either entity lacks position data.
-// Position is now extracted from geo.location.* triples (single source of truth).
-func (e *Evaluator) Distance(entity1, entity2 *gtypes.EntityState) (float64, error) {
-	if entity1 == nil || entity2 == nil {
-		return 0, errs.WrapInvalid(errs.ErrInvalidData, "Evaluator", "Distance", "both entities must be non-nil")
-	}
-
-	// Extract position from triples
-	lat1, lon1 := extractLatLonFromTriples(entity1)
-	lat2, lon2 := extractLatLonFromTriples(entity2)
-
-	if lat1 == 0 && lon1 == 0 {
-		return 0, errs.WrapInvalid(errs.ErrInvalidData, "Evaluator", "Distance", "entity1 must have position data in triples")
-	}
-	if lat2 == 0 && lon2 == 0 {
-		return 0, errs.WrapInvalid(errs.ErrInvalidData, "Evaluator", "Distance", "entity2 must have position data in triples")
-	}
-
-	return haversineDistance(lat1, lon1, lat2, lon2), nil
-}
-
-// extractLatLonFromTriples extracts latitude and longitude from entity triples
-func extractLatLonFromTriples(entity *gtypes.EntityState) (float64, float64) {
-	var lat, lon float64
-	for _, triple := range entity.Triples {
-		switch triple.Predicate {
-		case "geo.location.latitude":
-			if v, ok := triple.Object.(float64); ok {
-				lat = v
-			}
-		case "geo.location.longitude":
-			if v, ok := triple.Object.(float64); ok {
-				lon = v
-			}
-		}
-	}
-	return lat, lon
-}
-
-// haversineDistance calculates the great-circle distance between two points
-// on Earth given their latitude and longitude in degrees.
-// Returns distance in meters.
-func haversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
-	const earthRadiusMeters = 6371000 // Earth's radius in meters
-
-	// Convert degrees to radians
-	lat1Rad := lat1 * 3.14159265359 / 180
-	lat2Rad := lat2 * 3.14159265359 / 180
-	deltaLatRad := (lat2 - lat1) * 3.14159265359 / 180
-	deltaLonRad := (lon2 - lon1) * 3.14159265359 / 180
-
-	// Haversine formula
-	a := math.Sin(deltaLatRad/2)*math.Sin(deltaLatRad/2) +
-		math.Cos(lat1Rad)*math.Cos(lat2Rad)*
-			math.Sin(deltaLonRad/2)*math.Sin(deltaLonRad/2)
-
-	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-
-	return earthRadiusMeters * c
-}
-
-// isValidEntityID checks if a string is a valid 6-part entity ID
-// This is a local copy to avoid circular dependency with message package
-func isValidEntityID(s string) bool {
-	if s == "" {
-		return false
-	}
-
-	parts := strings.Split(s, ".")
-	if len(parts) != 6 {
-		return false
-	}
-
-	for _, part := range parts {
-		if part == "" {
-			return false
-		}
-	}
-
-	return true
 }

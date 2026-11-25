@@ -22,7 +22,7 @@
   `:122-137`); add `Compile` over a slice and `SubstitutionPrefixes()`; the regex operator uses the kept pattern;
   replace `validateRegexComplexity` with the 500-character limit only (D4). Check: 2.2 passes; `git grep -n 'func
   init\|internal/cache' processor/rule/expression` is empty.
-- [ ] 2.4 Drop the dead surface (D5): `HasTriple`, `GetOutgoing`, `Distance` and helpers (`evaluator.go:840-965`) and
+- [x] 2.4 Drop the dead surface (D5): `HasTriple`, `GetOutgoing`, `Distance` and helpers (`evaluator.go:840-965`) and
   their tests (`evaluator_test.go:429-697`); the `TypeDetector` interface, `FieldType`, `DetectFieldType`; unexport
   `OperatorFunc`. Zero-use features stay (D6). Check: `task build`.
 - [ ] 2.5 Empty logic means AND (D7, approved): `evaluator.go:151`, with a test of two conditions, one false.

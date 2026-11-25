@@ -4,8 +4,6 @@ package expression
 import (
 	"fmt"
 	"regexp"
-
-	gtypes "github.com/c360studio/semengine/graph"
 )
 
 // ConditionExpression represents a single field/operator/value condition
@@ -45,59 +43,11 @@ type LogicalExpression struct {
 
 // Evaluator processes expressions against entity state
 type Evaluator struct {
-	operators    map[string]OperatorFunc
-	typeDetector TypeDetector
+	operators map[string]operatorFunc
 }
 
-// OperatorFunc defines the signature for operator implementations
-type OperatorFunc func(fieldValue, compareValue interface{}) (bool, error)
-
-// TypeDetector determines field type and extracts values from entity state
-type TypeDetector interface {
-	GetFieldValue(entityState *gtypes.EntityState, field string) (value interface{}, exists bool, err error)
-	// GetFieldValuesAll returns every triple Object matching the given
-	// predicate as a []interface{}. Used by array operators (length_eq,
-	// length_gt, length_lt, array_contains — see isArrayOperator) where
-	// the natural semantics are "how many triples carry this predicate"
-	// rather than "what is the first triple's Object". Returns
-	// (nil, false) when no triple matches. #147 / ADR-046 Phase 1 join
-	// gap: the counter pattern stamps N triples with the same
-	// predicate keyed by child ID; the join rule counts them via
-	// length_eq on this multi-valued path.
-	GetFieldValuesAll(entityState *gtypes.EntityState, field string) (values []interface{}, exists bool, err error)
-	DetectFieldType(value interface{}) FieldType
-}
-
-// FieldType represents the detected type of a field
-type FieldType int
-
-const (
-	// FieldTypeUnknown represents an unknown or unsupported field type
-	FieldTypeUnknown FieldType = iota
-	// FieldTypeFloat64 represents a floating point number field
-	FieldTypeFloat64
-	// FieldTypeString represents a string field
-	FieldTypeString
-	// FieldTypeBool represents a boolean field
-	FieldTypeBool
-	// FieldTypeArray represents an array field
-	FieldTypeArray
-)
-
-func (f FieldType) String() string {
-	switch f {
-	case FieldTypeFloat64:
-		return "float64"
-	case FieldTypeString:
-		return "string"
-	case FieldTypeBool:
-		return "bool"
-	case FieldTypeArray:
-		return "array"
-	default:
-		return "unknown"
-	}
-}
+// operatorFunc compares a resolved field value with a condition's value.
+type operatorFunc func(fieldValue, compareValue interface{}) (bool, error)
 
 // EvaluationError represents an error during expression evaluation
 type EvaluationError struct {

@@ -45,7 +45,7 @@
 
 ## 4. Land
 
-- [ ] 4.0 One comment on epic #9 recording what later PRs owe this design: PR 2's `Load` compiles once and refuses
+- [x] 4.0 One comment on epic #9 recording what later PRs owe this design: PR 2's `Load` compiles once and refuses
   naming rule and file; PR 3's substituter reads `SubstitutionPrefixes()`; PRs 6 and 7 log evaluation errors at Warn
   or above with the rule ID; PR 7's design weighs a general previous-value field for the owner; PR 10 confirms the
   watcher's batching against `transition`'s guide text. Read back after posting.

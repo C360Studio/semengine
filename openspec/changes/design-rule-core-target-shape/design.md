@@ -117,4 +117,3 @@ for every-N, with a test that N matches give the ruled count. Cron's `FireState`
 - PR 8: the lifecycle manager at registration; one `Processor` constructor (`processor.go:250-255`). Items 4, 8, 9
   (which zero-use fields stay): PRs 7/8/10, 11/14, each. Spec homes (PRs 2, 7) for three invariants: a loaded rule has a
   handler for every action; no action runs when a gate stops the call; no action runs more than its cap.
-

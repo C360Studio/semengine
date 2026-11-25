@@ -5150,3 +5150,19 @@
     change record failing-first output, mutation checks and the generated run
   owner: rule-core-01-expression developer
   disposition: adapt
+
+- source_path: docs/adr/041-unified-condition-evaluator.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for the one condition evaluator and its field-resolution order, which
+    processor/rule/expression implements; ported with it (rule-core-01-expression design D8)
+  destination: docs/adr/041-unified-condition-evaluator.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    title shortened for markdownlint's heading length, one line rewrapped, and a port note under the title: the
+    deny/governance examples are not carried (ADR-039 is not ported), $entity.lifecycle.* came later (ADR-047),
+    issue and release names are SemStreams', and the port's changes (regex compiled at load, empty logic means and)
+  proving_tests: n/a (task docs:check lints it)
+  owner: rule-core-01-expression developer
+  disposition: adapt

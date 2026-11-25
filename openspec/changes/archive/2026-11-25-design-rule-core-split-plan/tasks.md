@@ -16,4 +16,4 @@ issues this plan maps are closed by the PRs it lists.
 
 ## 3. Land
 
-- [ ] 3.1 Archive the change (`openspec archive design-rule-core-split-plan`) as the PR's last content commit.
+- [x] 3.1 Archive the change (`openspec archive design-rule-core-split-plan`) as the PR's last content commit.

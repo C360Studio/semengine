@@ -40,7 +40,7 @@
 - [x] 3.2 Adapt `processor/rule/docs/conditions.md` to the code (D8), including the token refusal, `[$]`, the
   500-character limit, and `transition`'s three limits (D6), each checked against the code first (the batching limit
   is marked unverified until PR 10), with its ledger row. Check: `task docs:check`.
-- [ ] 3.3 In `docs/repository-map.md`: add `processor/rule/expression/`, update the cover-check count, and add
+- [x] 3.3 In `docs/repository-map.md`: add `processor/rule/expression/`, update the cover-check count, and add
   `rule-conditions` to the spec list (`:59`).
 
 ## 4. Land

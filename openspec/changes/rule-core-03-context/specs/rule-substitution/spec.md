@@ -19,8 +19,8 @@ template holding no `$` SHALL be returned as it is.
 The tokens SHALL be `$now` and those beginning with one of `expression.SubstitutionPrefixes()`. A fixed name (`$now`,
 `$entity.id`, the six `$entity.<segment>` names, the four `$entity.lifecycle.*` names, `$state.iteration`,
 `$state.max_iterations`) SHALL be a token only when the character after it is not a letter, digit or `_`.
-`$entity.triple.<path>` and `$message.<path>` SHALL take the longest run of path segments joined by single dots, not
-counting a final dot.
+`$entity.triple.<path>` SHALL take the longest run of segments of `[a-z0-9_-]` joined by single dots, and
+`$message.<path>` of `[A-Za-z0-9_]`, not counting a final dot.
 
 #### Scenario: Fixed names joined by dots
 
@@ -36,14 +36,27 @@ counting a final dot.
 
 ### Requirement: An unresolved token stays and is reported
 
-A token that does not resolve SHALL stay as written, and SHALL be reported in one warning naming each such token and
-the rule ID.
+A text that begins with `$now` or one of `expression.SubstitutionPrefixes()` and is not a token that resolves SHALL
+reach from that start through the longest run of `[A-Za-z0-9_-]` segments joined by single dots, not counting a final
+dot. It SHALL stay as written, and SHALL be reported in one warning naming each such text and the rule ID. Text
+beginning with any other `$` SHALL stay as written and SHALL NOT be reported.
 
 #### Scenario: A longer predicate that is absent is not read as a shorter one
 
 - **WHEN** the entity holds only `agent.lineage.researcher-plan` = `P` and the template is
   `$entity.triple.agent.lineage.researcher-plan-entity`
 - **THEN** the result is the template unchanged, and the token is reported unresolved
+
+#### Scenario: Names that extend or miss a fixed name
+
+- **WHEN** the template is `$nowhere $entity.idx $entity.lifecycle.x $state.last_transition $schedule.last_fired_at`
+  and the context has an entity ID, a state and a lifecycle manager knowing the entity
+- **THEN** the result is the template unchanged, and the warning names exactly those five
+
+#### Scenario: Names outside the namespaces
+
+- **WHEN** the template is `$caller.id and $related.id`
+- **THEN** the result is the template unchanged, and nothing is reported
 
 ### Requirement: The values of a predicate
 
@@ -61,6 +74,25 @@ triple's object.
 
 - **WHEN** the entity holds one triple on `coordinator.decision.subtopics` whose object is the list `["x","y"]`
 - **THEN** `.length` gives `2`
+
+### Requirement: The value of a 3-part predicate
+
+`$entity.triple.<predicate>.value` SHALL be the suffix form only when `<predicate>` is a valid 3-part predicate
+(`vocabulary.ParsePredicate`); it SHALL then give the first triple's object, and `""` with no report when the
+predicate is absent. Otherwise the whole path SHALL be read as the predicate.
+
+#### Scenario: An absent predicate gives an empty string
+
+- **WHEN** the entity has no triple on `gather.child.result` and the template is
+  `[$entity.triple.gather.child.result.value]`
+- **THEN** the result is `[]`, and nothing is reported
+
+#### Scenario: A predicate whose last part is value
+
+- **WHEN** the entity holds `autoresearch.best.value` = `0.82` and the template is
+  `$entity.triple.autoresearch.best.value`
+- **THEN** the result is `0.82`, read as the predicate `autoresearch.best.value`, since `autoresearch.best` is not a
+  3-part predicate
 
 ### Requirement: One token keeps its type
 

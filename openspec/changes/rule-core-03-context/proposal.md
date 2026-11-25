@@ -7,30 +7,31 @@ Track: `design`. PR 3 of the rule-core split plan (`archive/2026-11-25-design-ru
 
 ## Why
 
-An action needs to know what fired it (the entity, the rule's stored state, the message) and a way to fill names
-such as `$entity.id` into its text. Every later rule-core PR runs on this. Today the filling has three bugs: text it
-filled in is filled in again, so a triple holding `$message.secret` leaks the message's field; a name that extends a
-present one is half-filled (`P-entity`); and `.length` on a value stamped several times gives an error marker, which
-two of semteams' live prompts show today.
+An action needs what fired it (entity, stored state, message) and a way to fill names such as `$entity.id` into its
+text; every later rule-core PR runs on this. Today the filling has three bugs: text it filled in is filled in again, so
+a triple holding `$message.secret` leaks the message's field; a name that extends a present one is half-filled
+(`P-entity`); and `.length` on a value stamped several times gives an error marker, which two of semteams' live prompts
+show today.
 
 ## What changes
 
 - Text is filled once, left to right; a name either resolves whole or stays as written with a warning.
 - `.length` counts every value of a predicate, the same values `.triples` lists.
-- The stored state record and its store come over, with keys checked before they reach NATS. Nothing runs this
-  code until PR 4.
+- The stored state record and its store come over, keys checked before NATS. Nothing runs this until PR 4.
 
 ## Decisions you are making by approving
 
-- **Drop `$caller.*` (recommended).** It was meant to carry who made a request, but nothing anywhere ever fills it
-  and no rule uses it. If a product needs caller identity later, it comes with the code that fills it.
+- **Fable reads this design before any code (recommended).** The split plan skipped PR 3 as a straight carry, but
+  this design sets what every product action type receives, changes how semteams builds the state store (two of its
+  tests), and decides what the stored record's fields mean.
+- **Drop `$caller.*` (recommended).** Meant to carry who made a request, but nothing ever fills it and no rule uses
+  it; caller identity can come later with the code that fills it.
 - **Drop `$related.*` and two-entity ("pair") state (recommended).** Nothing fills the related entity, no rule uses
   it, and you already dropped the list that would have named it (PR 2). This corrects one line of the approved
   target-shape page: the stored record is one rule's state for one entity, not "one entity or pair". With both drops,
   `$caller.` and `$related.` become plain text in a rule, and a regex holding them is accepted.
-- **Keep `$entity.lifecycle.*` (recommended)** though no rule uses it yet. You kept the condition side in PR 1;
-  dropping the text side would make the same name work in a condition and not in a message. Workflow phases are part
-  of durable execution.
+- **Keep `$entity.lifecycle.*` (recommended)** though no rule uses it yet: you kept the condition side in PR 1, and
+  dropping the text side would make one name work in a condition and not in a message.
 - **Keep `$now` (recommended), against the old decision record ADR-047, which said there is no `$now`.** semteams
   uses it in 3 prompts. Whether it reads the clock or the firing's own time is settled in PR 7, which owns the clock.
 - **What a product's action type gets (recommended): the context's fields, the text filler, and the typed filler for a
@@ -42,10 +43,10 @@ two of semteams' live prompts show today.
   records finished experiments; its "plateau after N iterations" and final-rollup prompts get the marker instead of N.
   The other way keeps that behaviour.
 - **A value is never filled twice, and a name is read whole (recommended).** Text from a triple or message that looks
-  like a name stays as written; a name naming a missing value stays visible with a warning instead of being
-  half-filled. Existing rules are checked against both engines before merge, and every difference is listed.
+  like a name stays; a name naming a missing value stays visible with a warning, not half-filled. Every product
+  rule is run through both engines before merge, and each difference is listed.
 - **The stored copy of a rule's `max_iterations` stays (recommended)**, as the value `$state.max_iterations` shows,
-  not a limit, as you approved in PR 2. The other way gives the context a new field for one number.
+  not a limit, as you approved in PR 2.
 - **Three stored fields keep the meaning the operations guide gives them (recommended):** the last transition and
   when it happened survive later checks that change nothing; "last checked" is every check. Today they are
   overwritten each time and nothing reads them. PR 7 writes them. The other way drops them.
@@ -56,5 +57,4 @@ two of semteams' live prompts show today.
 ## Impact
 
 `processor/rule` (extends PR 2's package), `processor/rule/expression` (`SubstitutionPrefixes` loses two names), its
-ledger row, `docs/adr/048`, the reviewer contract's substitution clause. Waits for PR #758. Not on the split plan's
-list of designs Fable reads first.
+ledger row, `docs/adr/048`, the reviewer contract's substitution clause. Waits for PR #758.

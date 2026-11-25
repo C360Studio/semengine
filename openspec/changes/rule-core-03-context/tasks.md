@@ -6,7 +6,9 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 - [ ] 1.1 The inventory review passes, the design review passes; the owner fills `Approved-by:`.
   Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Start implementation once PR #758 (`rule-core-02-definitions`) has merged; merge `origin/main` into this
+- [ ] 1.2 Fable reads this design before any code (proposal, first decision: `design.md` D1, D7, D8, D9).
+  Hold: Fable's read of the design on PR #759.
+- [ ] 1.3 Start implementation once PR #758 (`rule-core-02-definitions`) has merged; merge `origin/main` into this
   branch first.
   Hold: PR #758 not yet merged.
 
@@ -16,14 +18,18 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   record detected or survived in `notes/2.1.md`.
   - `TestSubstituteOnce` (D2): the probe's F19 case gives `note: see $message.secret` and reports nothing.
   - `TestTokenEnds` (D2): the probe's F20 case stays unchanged and is reported; `$entity.org.$entity.platform.chain`
-    and a token before a sentence's full stop resolve; `$entity.idx` and `$nowhere` stay.
+    and a token before a sentence's full stop resolve; `$nowhere`, `$entity.idx`, `$entity.lifecycle.x`,
+    `$state.last_transition` and `$schedule.last_fired_at` stay and are reported; `$caller.id` and `$related.id` stay
+    and are not reported; `.value` after a missing 3-part predicate gives `""` unreported, and
+    `$entity.triple.autoresearch.best.value` reads the predicate `autoresearch.best.value`.
   - `TestTripleLength` (D3): three scalar triples give `3`, a two-element list `2`, absent `0`.
   - Generated checks with `pgregory.net/rapid` (D2, D3), recording seed and completed checks: text outside tokens and
     every inserted value come out unchanged; a template with no `$` is returned as is; `.length` equals the length
     of `.triples` decoded.
   - `TestStateTracker` (D9), on the package's shared NATS server (natsfixture, integration tag): round trip;
     `ErrStateNotFound`; a wildcard entity key and a dotted rule ID refused, classified invalid, with no bucket call;
-    a nil context refused; `DeleteAllForEntity` keeps other entities' records and returns nil on an empty bucket.
+    a nil context refused; `DeleteAllForEntity` keeps other entities' records, returns nil on an empty bucket, and
+    refuses `>` and an ID holding `*`, classified invalid, with every record kept.
 - [ ] 2.2 `ExecutionContext` and the substituter from `execution_context.go`, `typed_substitution.go`,
   `entity_substitution.go`, `message_substitution.go`, `lifecycle_substitution.go` (D1, D2, D3, D5, D6), reading
   `expression.SubstitutionPrefixes()`. Not carried: `Schedule` and the `$schedule.*` pass (D1),
@@ -37,9 +43,11 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   `ActionIterations`, no pair key, no `Delete`, no nil-bucket branches; `NewStateTracker(kv *natsclient.KVStore)`;
   doc comments give D8's field meanings.
 - [ ] 2.5 Remove `$related.` and `$caller.` from `expression.SubstitutionPrefixes()` and its doc comment (D4); add a
-  `Compile` case accepting `$caller.id` and `$related.id`. Check: `go test ./processor/rule/expression/`.
+  `Compile` case accepting `$caller.id` and `$related.id`; update the token lists in
+  `expression/compile_fuzz_test.go:33`, `:45` and `compile_test.go:132`. Check: `go test ./processor/rule/expression/`.
 - [ ] 2.6 Carry the tests of PR 3's code, rewritten to the harness rules (`internal/harness/semantictest`,
-  `t.Context()`): the ten test files of inventory § 1 less the 11 tests that drive PRs 4, 6 and 7 (left for those PRs),
+  `t.Context()`): the ten test files of inventory § 1 less the 11 tests that drive PRs 4, 6 and 7 (left for those PRs:
+  `typed_substitution_test.go:60`, `:109`, `:154`, `:191`, `:221` to PR 4, `:273` to PR 6, five lifecycle tests),
   the 7 `SubstituteVariablesWithIterVar`/`ResolveListValue` tests and `caller_substitution_test.go`; tests asserting
   `[ERROR_LENGTH_NOT_LIST` change to D3.
 - [ ] 2.7 Comments: the 35 port-history lines of inventory F28 keep their reason and lose the history; the segment

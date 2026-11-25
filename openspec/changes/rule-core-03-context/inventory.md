@@ -1,7 +1,8 @@
 # Inventory: rule-core-03-context
 
-base: 97e1f5d75196292e49fa12009ebaa13b79577d47 (claim commit on origin/main 27023729b82ff42c292bbef45f1f51cf2b26222f;
-draft PR #759). Pin copy: `gh api repos/C360Studio/semstreams/tarball/8b99efe9`, unpacked to a scratch directory
+base: 97e1f5d75196292e49fa12009ebaa13b79577d47 (claim commit on `claude/rule-core-03-context`, parent origin/main
+27023729b82ff42c292bbef45f1f51cf2b26222f; adds only `proposal.md` and `tasks.md`; draft PR #759). Probe evidence:
+`notes/inventory-probe.md`. Pin copy: `gh api repos/C360Studio/semstreams/tarball/8b99efe9`, unpacked to a scratch directory
 (local only). PR 2 read at `origin/claude/rule-core-02-definitions` 11bcabaa (PR #758, draft). Consumers read by
 `gh api …/tarball/<sha>` at the commits PR 2's inventory used: semteams 4df44ae877d0c711f769ec6b48b88100dbb267d1,
 semboids ab4e0fbc1b382c4fda10bae988662ae0e0bc1e5c. semsource: no `processor/rule` import (PR 2 inventory § 6, at
@@ -51,11 +52,11 @@ Test functions in PR 3's files that drive code other PRs carry (counted in the t
 
 ## 2. Pin probe
 
-- **Not run in this session.** The run of PR 3's 92 tests on the pin copy (`go test -race -run '^(…)$'
-  ./processor/rule/`, then `-count=5 -cpu=1 -shuffle=on`) was refused by the session's permission system. The
-  evidence on record is the split plan's whole-package probe, which includes these files: `go test -count=1 -race
-  ./processor/rule/...` ok, `-count=5 -cpu=1 -shuffle=on` ok, seeds 1795602496010215000 and 1795602495775027000
-  (archived split `inventory.md:119-123`). A PR-3-only run is owed before the design cites a pin test result.
+- PR 3's 92 tests alone on the pin copy (commands in `notes/inventory-probe.md`): `-race` ok, 92 `--- PASS`;
+  `-count=5 -cpu=1 -shuffle=on` ok. Run by the inventory reviewer (PR #759 comment 7168964321); the author's own run
+  was refused by the session's permission system. The split plan's whole-package probe agrees: `-race` ok, five
+  shuffled runs ok, seeds 1795602496010215000 and 1795602495775027000 (archived split `inventory.md:119-123`).
+- Substitution probe (same notes file): F3, F19 and F20 (§ 10) each observed as stated.
 - Test-text rules over the 10 PR 3 test files (`grep -n -E 'time\.Sleep|\.Skip|//go:build'`): 0 sleeps, 0 skips, 0
   build tags. `t.Parallel` appears in 9 files; none is integration-tagged, so the rule against `t.Parallel` in
   integration files does not apply.
@@ -149,17 +150,20 @@ PR 3 claims no gap; it carries pin code. The claims the upstream documents make 
    carrying the predicate".
 
 So for a predicate stamped as N scalar triples (the pin's "Pattern A", e.g. `gather.child.completed`, `:518-520`),
-`.triples` gives N values, a `length_eq` condition counts N, and `.length` gives the error sentinel (read, not run).
+`.triples` gives N values, a `length_eq` condition counts N, and `.length` gives the error sentinel (probed, § 10 F3).
 ADR-048 says `.length` "resolves to the COUNT of values" (`048-…md:264`).
 
 ### e. Rule-level `max_iterations` and the iteration count
 
-- Stored copy: `state_tracker.go:43-45` — "MaxIterations is the configured limit from the rule Definition. 0 means no
-  limit." Written from the rule every evaluation: `stateful_evaluator.go:205` — `MaxIterations:
-  ev.Rule.MaxIterations,`.
-- Readers of the stored copy: `execution_context.go:303` (string) and `typed_substitution.go:160-164` (typed).
-- Conditions read the rule, not the copy: `stateful_evaluator.go:222` — `"$state.max_iterations":
-  ev.Rule.MaxIterations,`.
+- The field: `state_tracker.go:43-45` — "MaxIterations is the configured limit from the rule Definition. 0 means no
+  limit." Each evaluation builds a new record from the rule (`stateful_evaluator.go:197-208`; `:205` —
+  `MaxIterations: ev.Rule.MaxIterations,`) and hands it to the `ExecutionContext` (`:210-215`).
+- Templates read that record, built in the same evaluation, not a stored one: `execution_context.go:303` (string),
+  `typed_substitution.go:160-164` (typed), both through `ec.State`. Conditions read the rule: `stateful_evaluator.go:222`
+  — `"$state.max_iterations": ev.Rule.MaxIterations,`. Both give the rule's current value.
+- The persisted field is written (`stateful_evaluator.go:249`) and never read: `grep -n 'prevState.MaxIterations'` over
+  the pin: 0; the previous record supplies only `IsMatching`, `SourceRevision`, `Iteration`, `ActionIterations` and
+  `FieldValues` (`:144`, `:155`, `:183`, `:192`, `:225`).
 - Nothing compares an iteration against it (PR 2 inventory § 4g; PR 2 design D5 keeps the field "as the value
   `$state.max_iterations` reads, documented as not a limit").
 - `$state.iteration`: `state_tracker.go:41` (`Iteration`), incremented on entry at `stateful_evaluator.go:183-186`;
@@ -240,6 +244,20 @@ holding a bare `$` (e.g. `foo$`) is re-assigned an equal string, and `compiledFr
   (`docs/adr/111-durable-execution-primitive.md:76-77`); the `SourceRevision` guard as the applied-sequence shape
   (`:110-111`); "a TTL is already forbidden on a bucket that must not be evicted … reclaim is an explicit step"
   (`:184-186`).
+- ADR-110 Decision 2 (`docs/adr/110-write-seam.md:79-85`): a read-modify-write on a bucket the framework owns uses
+  `natsclient.KVStore.UpdateWithRetryRead`; Decision 7 (`:143-149`) binds it to every catalog row with
+  `WriteOwnerOnly`, at that package's port, and lists the sites (#141). The evaluator's use of `RULE_STATE` is a
+  read-modify-write: `Get` (`stateful_evaluator.go:136`), then a new record carrying the read `Iteration` and
+  `ActionIterations` (`:183-195`), written with `Set`, a plain `Put` (`:249`; `state_tracker.go:157`). Today
+  `RULE_STATE` is not a catalog row (above), so Decision 7 reaches it only if PR 8 catalogues it as `WriteOwnerOnly`;
+  #141's list does not name it. ADR-111 Decision 2 allows `Put` for a record one process writes (`:76-77`).
+- ADR-111 Question 2, "Where execution state lives" (`111-…md:153-160`), ruled as recommended (`:5`): "(b) for
+  attempt records, (a) for anything a rule must match on, decided per execution kind in the epic", left to #24
+  (`:184`). (b) names "rule state" among the pin's buckets (`:157-158`) and costs "an ADR per bucket on the rubric …,
+  a catalog row, and a cleanup path". `RULE_STATE` has none of the three on main. Which PR answers: PR 3 owns the
+  record and the `StateTracker` surface (whether it offers `Get`/`Set` or one read-modify-write call); PR 8 creates the
+  bucket (`processor.go:637-655`) and so owns the catalog row, the bucket ADR and the cleanup path. `$state.iteration`
+  is matched by rules (7 condition fields, § 12), which is Question 2's (a) side.
 - Ledger on main: no `processor/rule` row; PR 2 adds it.
 
 ### Owed to PR 3 by earlier designs
@@ -315,7 +333,7 @@ each read at the hit); `grep -o -E 'ADR-[0-9]{3}'` per carried file (`execution_
 
 | ADR | Title | What it decides for PR 3's code | Cited at | In SemEngine `docs/adr` |
 | --- | --- | --- | --- | --- |
-| 048 | BoundedDispatcher and `.triples` substrate | `.triples` renders a JSON array; bare `$entity.triple.P` is the first value; `.length` is "the COUNT of values" | `048-…md:253-268`; `execution_context.go:58-88` | no |
+| 048 | BoundedDispatcher and `.triples` substrate | `.triples` renders a JSON array; bare `$entity.triple.P` is the first value; `.length` is "the COUNT of values" | `048-…md:253-268`; `execution_context.go:58-88` | no; the split gives its port to PR 3 (archived split `inventory.md:173`), so the design ports it or says why not |
 | 047 | Lifecycle harness substrate | the four `$entity.lifecycle.*` tokens (`:342-347`); "No `$now` substitution" (`:373`) | `lifecycle_substitution.go:1-22` | no (PR 5 per split) |
 | 039 | Tool-call governance is rule-driven | adds `$message.*` (`:94`, `:221-226`, `:413`) for verdict templates; deny/approve not carried (E4) | `message_substitution.go:1-8`; `execution_context.go:161-164` | no |
 | 046 | Parallel fan-out | the `for_each` overlay and `ResolveListValue` (`:107-111`, `:505-506`) | `execution_context.go:256-283`, `:718-742` | no; E3 removes `for_each` from the core |
@@ -327,9 +345,10 @@ each read at the hit); `grep -o -E 'ADR-[0-9]{3}'` per carried file (`execution_
 | 031 | Time-trigger primitive | `$schedule.*` substitution and `lastFiredNanos` (`:277`) | `cron_substitution.go` (PR 11) | no (PR 11) |
 | 102, 104 | Entity-ID positions; unique platform authority | segment tokens resolve by named field (`entity_substitution.go:37-58`) | `pkg/types/entity_id.go:90-99` | yes |
 | 111 (SemEngine) | Durable execution primitive | `RULE_STATE` single writer with `Put` (`:76-77`); `SourceRevision` guard shape (`:110-111`); no TTL, explicit reclaim (`:184-186`) | `state_tracker.go:136-163` | yes |
-| 110 (SemEngine) | The write seam | no `EntityState.Version`; `SourceRevision` is the watch entry's revision, not a version field | (by subject) | yes |
+| 110 (SemEngine) | The write seam | no `EntityState.Version`; `SourceRevision` is the watch entry's revision, not a version field; Decisions 2 and 7, one read-modify-write primitive per framework-owned bucket (§ 5) | `110-write-seam.md:79-85`, `:143-149` | yes |
 
-Records searched with no PR 3 decision: 040 (retired boid subsystem, history), 043 (unrelated use of
+Records searched with no PR 3 decision: 093 (`093-…md:20-22`: `publish` refuses `user.response.>` "after runtime
+substitution"; the check is PR 4's, PR 2 D6), 040 (retired boid subsystem, history), 043 (unrelated use of
 "substitution"), 045 and 053 (agentic; `LifecycleManager.Get`/`Create` cite ADR-053 D4), 055 (`MessageData` feeds
 `executeDeny`, not carried).
 
@@ -350,10 +369,12 @@ of every hit's body and comments for the carried file names and types (one hit: 
 | #294 | `config_validation.go:382-385` | stays; PR 5 |
 | #702 | `action_id.go:17`; "cooldown is kept per rule and entity, in the rule's stored state" (body `:18`) | stays; PR 7 adds `FireState` to the record PR 3 carries |
 | #703 | `cron_rule.go`; "the stored state records that the deadline has fired" (comment, `:79`) | stays; PR 14 adds the field |
-| #714, #196, #195, #350, #704, #24 | skill; adoption lists; constraint model; decisions; durable-execution epic (ADR-111) | stay; no PR 3 work |
+| #141 | adoption list for `KVStore.UpdateWithRetryRead` (ADR-110 Decision 7) | stays; does not name `RULE_STATE`. Whether `StateTracker`'s read-modify-write adopts it is PR 3's design question (§ 5); binding follows PR 8's catalog row |
+| #24 | durable-execution epic; ADR-111 Question 2, store per execution kind | stays; `RULE_STATE` is the "rule state" kind. PR 3 states the record; PR 8 the bucket's ADR, catalog row and cleanup (§ 5) |
+| #714, #196, #195, #350, #704 | skill; adoption lists; constraint model; decisions | stay; no PR 3 work |
 | #756, #757 | `processor/rule/expression` (PR 1's package, which PR 3 imports) | stay; #757 names list values Go code builds (`[]string`), the shape `coerceTripleObjectToStrings` also accepts (`execution_context.go:789-790`) |
 
-Names the word, not the package: 60, 84, 109, 110, 111, 134, 141, 155, 284, 300, 484, 535, 554, 576, 614, 635, 665,
+Names the word, not the package: 60, 84, 109, 110, 111, 134, 155, 284, 300, 484, 535, 554, 576, 614, 635, 665,
 683, 712, 730, 734. PR 3 retires none (`split.md`, Issues).
 
 ## 10. Shape sweep (pin copy, with the disposition each finding's basis supports)
@@ -367,13 +388,16 @@ Names the word, not the package: 60, 84, 109, 110, 111, 134, 141, 155, 284, 300,
   duplication) except as F1 binds it.
 - **F3.** Three meanings of "the values of a predicate" (§ 4d): `.length` stops at the first triple and errors on a
   scalar; `.triples` and the condition list operators read every triple; ADR-048 calls `.length` "the COUNT of
-  values". Read, not run. *Required:* the design keeps or changes ADR-048's decision and says so (architect contract,
+  values". Probed (`notes/inventory-probe.md`): three scalar triples on `gather.child.completed` give `.length` =
+  `"[ERROR_LENGTH_NOT_LIST:gather.child.completed]"`, `.triples` = `["a","b","c"]`.
+  *Required:* the design keeps or changes ADR-048's decision and says so (architect contract,
   "Cite the pin's decision records"); semteams' 4 `.length` uses (§ 12) read one list-valued triple
   (`coordinator.decision.subtopics`), so they do not show which.
 - **F4.** Two lifecycle resolvers (§ 4f) with different key sets and caching. *Optional* (inherited); ruling 9:
   `$entity.lifecycle.*` is used by 0 rules (§ 12), so carry or drop goes to the owner.
-- **F5.** `$state.max_iterations` comes from the stored copy in templates and from the rule in conditions (§ 4e).
-  *Required to decide:* target-shape page § 4 ("PR 3 decides whether the stored `MaxIterations` copy stays").
+- **F5.** The persisted `MaxIterations` is written and never read; templates read the record of the current
+  evaluation, conditions the rule, both the rule's value (§ 4e). *Required to decide:* target-shape page § 4 ("PR 3
+  decides whether the stored `MaxIterations` copy stays").
 - **F6.** The `$state` namespace differs between conditions (`last_transition`, `$prev.*`) and templates
   (`iteration`, `max_iterations` only). *Optional.*
 - **F7.** `Transition` and `LastTransition string` spell one set twice (§ 4h). *Optional.*
@@ -400,7 +424,9 @@ None: PR 3 carries no `Start`, `Stop`, `Health` or watch loop.
   (`:292`, `:298`, `:469-470`, `:561-562`, `:669-670`, `:753-755`; `typed_substitution.go:83`, `:144-146`),
   `buildPairKey` (`state_tracker.go:258-263`), and the pair-key reasoning in `stateKeyBelongsToEntity`
   (`:245-250`). No production code sets either field (§ 6); 0 rules use `$related.` (§ 12); PR 2 drops
-  `related_patterns` (D5). *Required:* surface audit (a)/(b); ruling 9, owner.
+  `related_patterns` (D5). *Required:* surface audit (a)/(b); ruling 9, owner. A drop amends the target-shape page:
+  `archive/2026-11-25-design-rule-core-target-shape/design.md:98` — "`MatchState` is one rule's state for one entity or
+  pair".
 - **F11.** `SubstituteVariablesWithIterVar` (`execution_context.go:263`), the overlay (`:377-379`), `ResolveListValue`
   (`:743`): read only by `publish_agent`, which leaves the core (#27, E3). semteams has 2 `for_each` actions, which
   its own `publish_agent` handler will run. *Required to decide* (surface audit (a)): kept as what a product handler
@@ -441,15 +467,17 @@ None: no `strings.Contains(err…` or `err.Error()` comparison in the carried fi
   or drop); the writer is PR 7's.
 - **F19.** A substituted value is substituted again. Bare triple values are written at `:344`, then the lifecycle,
   schedule, caller and message passes run over the result (`:353-368`), so a triple object holding `$message.x`
-  becomes the message's field, and one holding any namespace text trips the unresolved warning (`:381`). Read, not
-  run. *Required if a probe shows it:* metadata or content preservation (Bounded port scope). Real-world trigger:
-  triple objects carrying agent-written text, which ADR-028 `:119-122` warns rules against substituting; unmeasured.
+  becomes the message's field, and one holding any namespace text trips the unresolved warning (`:381`). Probed:
+  object `"see $message.secret"` with `MessageData{"secret":"LEAK"}` gives `"note: see LEAK"`. *Required:* metadata or
+  content preservation (Bounded port scope). Real-world trigger: triple objects carrying agent-written text, which
+  ADR-028 `:119-122` warns rules against substituting.
 - **F20.** No token boundary. `strings.ReplaceAll` of `$entity.triple.<p>` (`:343-344`), `$entity.id` (`:291`),
   `$state.iteration` (`:302`) and `$caller.id` (`caller_substitution.go:66`) also matches a longer token, so a
   reference to an absent predicate that extends a present one becomes `<value><rest>` with no warning. The sort at
   `:338-341` covers only the case where both are present; the pin's comment names the real pair
-  (`agent.lineage.researcher-plan` and `…-plan-entity`, `:330-334`). Read, not run. *Required:* integrity (Bounded port
-  scope), named trigger.
+  (`agent.lineage.researcher-plan` and `…-plan-entity`, `:330-334`). Probed: with `agent.lineage.researcher-plan` =
+  `P`, `$entity.triple.agent.lineage.researcher-plan-entity` gives `"P-entity"` and logs no warning. *Required:*
+  integrity (Bounded port scope), named trigger.
 - **F21.** `$now` reads the wall clock inside substitution (`:288`); ADR-047 says "No `$now` substitution" (`:373`);
   semteams uses `$now` 3 times (§ 12); the target-shape page's `Fire` takes `now` (§ 3). *Optional* here; the ADR
   conflict is named for the design, the clock for PR 7.
@@ -473,6 +501,16 @@ None: no `strings.Contains(err…` or `err.Error()` comparison in the carried fi
   `cron_substitution.go` (PR 11), named at `execution_context.go:141` and `:358`; `LifecycleManager` (F8).
   *Required:* build. The target-shape page replaces the cron scheduler with a NATS scheduled message (§ 3), so what
   feeds `$schedule.last_fired_at` later is PR 11's.
+
+- **F28.** Comments that narrate port history (AGENTS.md § 5, "never port history", #606). Lines holding an issue,
+  PR or release-tag reference, 19: `execution_context.go:38`, `:91`, `:146` ("Tag 2+"), `:237`, `:278`, `:306`,
+  `:320`, `:329`, `:394`, `:438`, `:447`, `:504`, `:514`, `:598`, `:605`; `state_tracker.go:191`, `:249` (both
+  `gh#358`); `typed_substitution.go:3`, `:114` (`gh#207`). Measured: `grep -n -E '#[0-9]+|Tag [0-9]'` over the seven
+  files, each hit read. Further history narration without a number, 16 lines: `execution_context.go:58` ("PR 4 of the
+  lifecycle bundle"), `:258`, `:279`, `:282`, `:370`, `:719`, `:734`, `:784` ("Phase 1", "Phase 2");
+  `lifecycle_substitution.go:96-97` ("S4 reviewer rec"), `:102`, `:282` (`[[feedback_no_clean_except_handwave]]`, a
+  private memory note); `typed_substitution.go:33`, `:38`, `:44`, `:51` ("pre-fix"). *Required:* the AGENTS.md § 5
+  rule (review gate) holds for every comment the port carries; the reason stays, the history goes.
 
 ## 11. Same-class collision table: the per-rule, per-entity record (`RULE_STATE`)
 
@@ -560,6 +598,6 @@ Whether a predicate will be present at fire time (unresolved literal, F22) and w
 Intent check: no boundary moves; the port set is ruled (#8 Q15, D12). Dropping a namespace (F9, F10) removes surface
 inside an admitted package, which ruling 9 sends to the owner.
 
-Not checked: the PR-3-only pin probe (§ 2, refused); F3, F19 and F20 are read from code, not run; nats.go's
+Not checked by the author: the pin runs (§ 2; made by the reviewer, recorded in `notes/inventory-probe.md`); nats.go's
 `ErrNoKeysFound` is a source read; semsource was not re-read; usage counts miss rules built in Go, in tests or loaded at
 runtime.

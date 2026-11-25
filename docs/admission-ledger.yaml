@@ -5187,3 +5187,47 @@
   proving_tests: n/a (task docs:check lints it; claims checked against the code, notes/3.2.md of the change)
   owner: rule-core-01-expression developer
   disposition: adapt
+
+# Change rule-core-02-definitions (PR #758, epic #9): processor/rule ported in part as adapt, PR 2 of the rule-core
+# split plan (owner approval PR #758 comment 7168133081; watch-bucket ruling on PR #758; Fable APPROVE 7168081578).
+
+- source_path: processor/rule
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the rule definition and its one load step, read by the rule core (PRs 3-12 of the split plan) and by a
+    product that checks its rule packs with its own action handlers (semteams, semboids)
+  destination: >-
+    processor/rule (partial: definition.go, action.go, action_id.go, builtin.go, load.go, doc.go). PRs 3-12 add
+    the execution context and substitution (3), the action executor and graph actions (4), state and lifecycle
+    actions (5), the expression rule and its matching (6), the stateful evaluator and firing caps (7), the
+    processor, its registration and file loader (8), the message input (9), the entity watch (10), cron (11) and
+    hot reload (12)
+  contract: >-
+    the rule-definitions spec. DecodeDefinition is the one strict decode: it refuses an undeclared key (related_patterns
+    and entity.watch_buckets included) and a key of the rule, its entity config or a condition spelt with another case,
+    naming rule and source; absent enabled, required and logic mean true, false and and. An Action's Body is the
+    action as written; its four core fields are copies the decode fills. NewHandlers builds the one handler set (the
+    nine built-ins and a product's). Load checks every rule, disabled ones included, and refuses, classified invalid
+    and naming rule ID, source, position and cause: an unknown action type, a key a built-in does not read, a reserved
+    user.response.> publish subject, an undeclared or substituted triple predicate, a rule-opaque or undeclared condition
+    field, a bad or templated regex, an ID that is not one KV literal token, a bad entity pattern, negative counts,
+    rerun_on_recovery with nothing to re-run, and an enabled cron rule. The firing-cap key is the action's id or a
+    SHA-256 over rule ID, type and the canonical body
+  dependencies_and_side_effects: >-
+    natsclient (key validators), pkg/errs, pkg/types (pattern validator), processor/rule/expression, vocabulary,
+    crypto/sha256, encoding/json, reflect; no goroutine, no I/O, no package state beyond the declared-key sets
+  known_risks: >-
+    not carried, by ruling: Factory, Dependencies, Schema and the registry functions, interfaces.go,
+    test_rule_factory.go, docs/custom-rules.md, the map round trip, the agentic action types and fields, deny and
+    approve, related_patterns, entity watch_buckets with ErrorCodeEntityWatchBucketUnsupported, and the pin's
+    shape-only fingerprint (an edit to any body key now starts a fresh count; stored counts are not migrated).
+    effectiveMaxIterations and isUnlimited wait for the fire path (PR 7). Moved to PR 8: rule_loader.go, schema.go,
+    status.go. Enabled cron rules are refused until PR 11 (shortcut in load.go)
+  proving_tests: >-
+    processor/rule definition_test.go (TestDecodeDefinition, FuzzDecodeDefinition), action_test.go
+    (TestNewHandlers, TestActionBody, TestBodyKeepsBytes), action_id_test.go (TestCapKey), builtin_test.go
+    (TestBuiltinCheck), load_test.go (TestLoadRefuses, TestLoadAccepts, TestLoadRefusesReservedSubject,
+    TestSemboidsPackLoads); notes/2.1.md, 2.5.md and 2.6.md of the change record failing-first output and mutation
+    checks
+  owner: rule-core-02-definitions developer
+  disposition: adapt

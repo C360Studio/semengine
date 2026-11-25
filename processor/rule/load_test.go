@@ -418,3 +418,71 @@ func TestSemboidsPackLoads(t *testing.T) {
 		"food-attract", "food-clear", "predator-flee", "predator-clear", "predator-cull", "wind-bias", "wind-clear",
 	}, loaded)
 }
+
+// TestLoadChecksWhenFields puts an action with a two-condition `when` in each
+// action list, enabled and disabled. The first condition is permitted; the
+// second is the one under test, so a refusal must name `when[1]`. A `when`
+// field gets the same check as a rule condition: a rule-opaque or undeclared
+// predicate is refused, a declared structural predicate and a `$message.` or
+// `$state.` field are not.
+func TestLoadChecksWhenFields(t *testing.T) {
+	declareTestPredicates()
+	h := builtinHandlers(t)
+
+	const expressionRule = `{"id": "when-rule", "type": "expression",
+	  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}], %q: [%s]}`
+	// A cron rule's list is "actions"; an enabled cron rule is refused before
+	// its actions are checked, so the cron rule runs disabled only.
+	const cronRule = `{"id": "when-rule", "type": "cron", "enabled": false, "schedule": "@daily", %q: [%s]}`
+	lists := []struct {
+		name   string
+		rule   string
+		states []bool
+	}{
+		{"on_enter", expressionRule, []bool{true, false}},
+		{"on_exit", expressionRule, []bool{true, false}},
+		{"while_true", expressionRule, []bool{true, false}},
+		{"on_recovery", expressionRule, []bool{true, false}},
+		{"actions", cronRule, []bool{false}},
+	}
+	action := func(field string) string {
+		return `{"type": "publish", "subject": "alerts.x", "when": [
+		  {"field": "$state.iteration", "operator": "lt", "value": 3},
+		  {"field": "` + field + `", "operator": "eq", "value": "secret"}]}`
+	}
+	refused := []struct{ field, cause string }{
+		{ruleOpaquePredicate, "rule-opaque"},
+		{undeclaredPredicate, "not declared"},
+		{"status", "$message."},
+	}
+	accepted := []string{structuralPredicate, "$message.name", "$state.iteration"}
+
+	for _, list := range lists {
+		for _, enabled := range list.states {
+			suffix := ""
+			if !enabled {
+				suffix = ", disabled"
+			}
+			load := func(t *testing.T, field string) (*Rule, error) {
+				def := decodeTestRule(t, fmt.Sprintf(list.rule, list.name, action(field)))
+				def.Enabled = enabled
+				return Load(def, loadSource, h)
+			}
+			for _, tc := range refused {
+				t.Run(list.name+"/refuses "+tc.field+suffix, func(t *testing.T) {
+					rule, err := load(t, tc.field)
+					require.Error(t, err)
+					assert.Nil(t, rule)
+					assertLoadRefusal(t, err, "when-rule", list.name+"[0].when[1]", tc.cause)
+				})
+			}
+			for _, field := range accepted {
+				t.Run(list.name+"/accepts "+field+suffix, func(t *testing.T) {
+					rule, err := load(t, field)
+					require.NoError(t, err)
+					assert.NotNil(t, rule)
+				})
+			}
+		}
+	}
+}

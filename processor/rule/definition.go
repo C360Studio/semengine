@@ -83,7 +83,8 @@ type EntityConfig struct {
 // It refuses a key that Definition, its entity config, a condition or an
 // action's core keys do not declare, a key of the rule, its entity config or
 // a condition spelt with another case than declared (`"ID"` for `"id"`,
-// `"Field"` for `"field"`), and any data after the object. An absent
+// `"Field"` for `"field"`), a key repeated in any object at any depth, and
+// any data after the object. An absent
 // `enabled` means enabled, an absent `logic` means `and`, and an absent
 // condition `required` means not required; an empty action list or metadata
 // object decodes as an absent one. Each error is classified invalid
@@ -95,6 +96,11 @@ func DecodeDefinition(data []byte, source string) (Definition, error) {
 	}
 	_ = json.NewDecoder(bytes.NewReader(data)).Decode(&head)
 
+	// Checked before the struct decode, so that a repeated key inside an
+	// action is named by the action's position in the rule.
+	if err := checkNoDuplicateKeys(data, "rule"); err != nil {
+		return Definition{}, decodeError(head.ID, source, err)
+	}
 	def := Definition{Enabled: true}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -204,4 +210,70 @@ func checkExactKeys(object map[string]json.RawMessage, declared map[string]bool)
 
 func decodeError(ruleID, source string, err error) error {
 	return errs.Classified(errs.ErrorInvalid, fmt.Errorf("rule %q (source %s): %w", ruleID, source, err))
+}
+
+// checkNoDuplicateKeys refuses a JSON object, at any depth in data, that
+// names one key twice, naming the key and the path of the object holding it
+// (root, then `.key` and `[index]` steps). encoding/json keeps the last of
+// two equal keys when it decodes into a map and merges them when it decodes
+// into a struct, so a repeated key would let two bodies a handler reads
+// differently share one canonical form and one firing-cap key. Keys compare
+// as decoded, so an escaped spelling of a key repeats it. Malformed JSON is
+// left for the decode that follows to report.
+func checkNoDuplicateKeys(data []byte, root string) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	err := checkValueKeys(decoder, root)
+	var dup duplicateKeyError
+	if errors.As(err, &dup) {
+		return dup
+	}
+	return nil
+}
+
+// duplicateKeyError is a repeated key that checkNoDuplicateKeys found.
+type duplicateKeyError struct {
+	path, key string
+}
+
+func (e duplicateKeyError) Error() string {
+	return fmt.Sprintf("%s: duplicate key %q", e.path, e.key)
+}
+
+// checkValueKeys reads one JSON value from decoder and checks every object in
+// it for a repeated key. path names the value.
+func checkValueKeys(decoder *json.Decoder, path string) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	switch token {
+	case json.Delim('{'):
+		seen := make(map[string]bool)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, _ := keyToken.(string)
+			if seen[key] {
+				return duplicateKeyError{path: path, key: key}
+			}
+			seen[key] = true
+			if err := checkValueKeys(decoder, path+"."+key); err != nil {
+				return err
+			}
+		}
+		_, err := decoder.Token()
+		return err
+	case json.Delim('['):
+		for i := 0; decoder.More(); i++ {
+			if err := checkValueKeys(decoder, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+		_, err := decoder.Token()
+		return err
+	}
+	return nil
 }

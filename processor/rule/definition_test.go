@@ -155,6 +155,27 @@ func TestDecodeDefinition(t *testing.T) {
 			contains: []string{`"watch_buckets"`},
 		},
 		{
+			name:     "a repeated rule key",
+			rule:     `{"id": "r1", "type": "expression", "type": "cron"}`,
+			contains: []string{"duplicate key", `"type"`},
+		},
+		{
+			name: "a repeated key in an action, named by its position",
+			rule: `{"id": "r1", "type": "expression", "on_exit": [{"type": "publish"},
+			  {"type": "publish", "properties": {"secret": 1}, "properties": {"other": 2}}]}`,
+			contains: []string{"duplicate key", `"properties"`, "on_exit[1]"},
+		},
+		{
+			name:     "a repeated key in a condition",
+			rule:     `{"id": "r1", "conditions": [{"field": "a.b.c", "operator": "eq", "value": 1, "value": 2}]}`,
+			contains: []string{"duplicate key", `"value"`, "conditions[0]"},
+		},
+		{
+			name:     "a repeated key in metadata",
+			rule:     `{"id": "r1", "metadata": {"owner": {"team": "a", "team": "b"}}}`,
+			contains: []string{"duplicate key", `"team"`, "metadata.owner"},
+		},
+		{
 			name:     "misspelt rule key",
 			rule:     `{"id": "r1", "type": "expression", "on_entr": []}`,
 			contains: []string{`"on_entr"`},
@@ -294,6 +315,7 @@ func FuzzDecodeDefinition(f *testing.F) {
 		`{"id": "r", "related_patterns": []}`,
 		`{"id": "r", "on_enter": [{"type": "x", "when": [{"fild": 1}]}]}`,
 		`{"id": "r", "on_enter": [null]}`,
+		`{"id": "r", "on_enter": [{"type": "publish", "properties": {"a": 1}, "properties": {"a": 2}}]}`,
 		`{"id": "r"} 1`,
 		`[]`,
 		`not json`,

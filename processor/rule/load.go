@@ -21,7 +21,8 @@ const (
 )
 
 // Rule is a definition that Load has checked: every condition and every
-// action `when` compiled, and every action passed its handler's check.
+// action `when` passed the field check and compiled, and every action passed
+// its handler's check.
 type Rule struct {
 	// def is the definition with its conditions compiled. Its action lists
 	// are empty: the checked actions are in the lists below.
@@ -166,10 +167,11 @@ func checkExpressionRule(def Definition) (string, error) {
 	return "", nil
 }
 
-// checkConditionField refuses a rule condition on a predicate that is not
-// declared, or that is rule-opaque: such a predicate holds an agent's private
-// content and no rule may match on it (ADR-036). A field starting with `$`
-// reads the message or the rule's state, not a predicate.
+// checkConditionField refuses a condition, of the rule or of an action's
+// `when`, on a predicate that is not declared, or that is rule-opaque: such a
+// predicate holds an agent's private content and no rule may match on it
+// (ADR-036). A field starting with `$` reads the message or the rule's state,
+// not a predicate.
 func checkConditionField(field string) error {
 	if field == "" || strings.HasPrefix(field, "$") {
 		return nil
@@ -178,7 +180,7 @@ func checkConditionField(field string) error {
 		return fmt.Errorf("field: %w; a message or state field needs an explicit $message. or $state. prefix", err)
 	}
 	if vocabulary.IsRuleOpaque(field) {
-		return fmt.Errorf("field %q is a rule-opaque predicate, which no rule condition may match", field)
+		return fmt.Errorf("field %q is a rule-opaque predicate, which no rule condition or action guard may match", field)
 	}
 	return nil
 }
@@ -219,6 +221,9 @@ func loadAction(ruleID string, a Action, handlers Handlers) (loadedAction, strin
 		return loadedAction{}, "", err
 	}
 	for i := range decoded.When {
+		if err := checkConditionField(decoded.When[i].Field); err != nil {
+			return loadedAction{}, fmt.Sprintf(".when[%d]", i), err
+		}
 		if err := expression.Compile(decoded.When[i : i+1]); err != nil {
 			return loadedAction{}, fmt.Sprintf(".when[%d]", i), err
 		}

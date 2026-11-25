@@ -226,8 +226,9 @@ Evaluation returns an `*expression.EvaluationError` naming the field and operato
 | the field has the wrong shape | `length_eq` on a number |
 | a regex condition is not compiled from its current value | evaluating a condition that skipped `Compile` |
 
-Problems the load catches (an invalid or templated regex pattern) are refused when the rule loads, before any
-evaluation. What the rule engine does with an evaluation error at run time is the engine's to say; it is not yet in
+Problems the load catches are refused when the rule loads, before any evaluation: an invalid or templated regex
+pattern, and a field that does not start with `$` and is not a declared predicate, or is a rule-opaque one. The field
+check is the same for a rule's `conditions` and an action's `when`. What the rule engine does with an evaluation error at run time is the engine's to say; it is not yet in
 this repository.
 
 ## Telling a stateless caller what it cannot answer

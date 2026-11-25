@@ -43,7 +43,8 @@ func capKey(ruleID string, a Action) (string, error) {
 
 // canonicalBody writes body with numbers as written, object keys sorted, no
 // spacing and no HTML escaping, so that compacting, escaping or reformatting
-// the same object gives the same bytes.
+// the same object gives the same bytes. It loses nothing only because the
+// decode refuses a repeated key, which decoding into a map would collapse.
 func canonicalBody(body json.RawMessage) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()

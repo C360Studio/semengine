@@ -89,3 +89,60 @@ func TestCapKey(t *testing.T) {
 		}
 	})
 }
+
+// TestDuplicateBodyKeysRefused decodes action bodies that repeat a key. A
+// repeated key would let two bodies a handler reads differently share one
+// firing-cap key, so each is refused, naming the key, at every depth.
+func TestDuplicateBodyKeysRefused(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "a repeated top-level object",
+			body: `{"type":"publish","properties":{"secret":1},"properties":{"other":2}}`,
+			want: []string{`"properties"`, "action"},
+		},
+		{
+			name: "the same with an earlier member edited",
+			body: `{"type":"publish","properties":{"secret":9},"properties":{"other":2}}`,
+			want: []string{`"properties"`, "action"},
+		},
+		{
+			name: "a repeated key in a nested object",
+			body: `{"type":"publish","properties":{"outer":{"a":1,"a":2}}}`,
+			want: []string{`"a"`, "action.properties.outer"},
+		},
+		{
+			name: "a repeated key in an object inside an array",
+			body: `{"type":"update_kv","value":[{"k":1},{"k":1,"k":2}]}`,
+			want: []string{`"k"`, "action.value[1]"},
+		},
+		{
+			name: "a repeated core key",
+			body: `{"type":"publish","type":"update_kv"}`,
+			want: []string{`"type"`, "action"},
+		},
+		{
+			name: "a key repeated through an escape",
+			body: `{"type":"publish","subject":"a","subject":"b"}`,
+			want: []string{`"subject"`, "action"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var a Action
+			err := json.Unmarshal([]byte(tc.body), &a)
+			require.Error(t, err)
+			for _, want := range append([]string{"duplicate key"}, tc.want...) {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
+
+	t.Run("the same key in sibling objects is not a duplicate", func(t *testing.T) {
+		a := decodeTestAction(t, `{"type":"publish","properties":{"k":1,"inner":{"k":2}},"list":[{"k":1},{"k":2}]}`)
+		assert.Equal(t, ActionTypePublish, a.Type)
+	})
+}

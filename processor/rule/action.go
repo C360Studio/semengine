@@ -71,7 +71,8 @@ type Action struct {
 	// field resolves as in the rule's own conditions: `$state.<field>` and
 	// `$prev.<field>` read the rule's match state, `$message.<path>` the
 	// inbound message, and a bare name the entity's triples first, then the
-	// message.
+	// message. As in the rule's conditions, Load refuses a bare name that is
+	// not a declared predicate, or is a rule-opaque one.
 	When []expression.ConditionExpression
 
 	// ID is the `id` key: an optional firing-cap key. Without it the key is a
@@ -99,9 +100,10 @@ type actionCore struct {
 }
 
 // UnmarshalJSON keeps data as the action's Body and fills the four core
-// fields from it. A key in a `when` condition that a condition does not
-// declare, or declares with another case, is refused, naming `when[<i>]`;
-// any other key is left to the handler of the action's type.
+// fields from it. A key repeated in any object of the body is refused, naming
+// the key and its object's path. A key in a `when` condition that a condition
+// does not declare, or declares with another case, is refused, naming
+// `when[<i>]`; any other key is left to the handler of the action's type.
 func (a *Action) UnmarshalJSON(data []byte) error {
 	decoded, err := decodeAction(data)
 	if err != nil {
@@ -125,6 +127,9 @@ func (a Action) MarshalJSON() ([]byte, error) {
 // Core keys, and the keys of each `when` condition, are matched exactly as
 // written.
 func decodeAction(body []byte) (Action, error) {
+	if err := checkNoDuplicateKeys(body, "action"); err != nil {
+		return Action{}, err
+	}
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal(body, &keys); err != nil {
 		return Action{}, fmt.Errorf("action: %w", err)

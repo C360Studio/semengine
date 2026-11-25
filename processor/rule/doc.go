@@ -13,8 +13,9 @@
 // DecodeDefinition is the one decode of a rule's JSON, used for every source:
 // a rules file, an inline rule in a processor's configuration, a stored rule.
 // It refuses a key the rule, its entity config or a condition does not
-// declare, and a declared key spelt with another case (`"Field"` for
-// `"field"`), so a typo fails instead of being ignored. An absent `enabled`
+// declare, a declared key spelt with another case (`"Field"` for
+// `"field"`), and a key repeated in any object, so a typo or a stray copy
+// fails instead of being ignored or silently winning. An absent `enabled`
 // means enabled, an absent `logic` means `and`, and an absent condition
 // `required` means not required.
 //
@@ -44,7 +45,11 @@
 //
 // Load checks a definition against a handler set and returns the Rule ready
 // to run, or refuses it. It checks disabled rules the same way, so a broken
-// rule cannot wait, switched off, until someone enables it. A refusal is
+// rule cannot wait, switched off, until someone enables it. A field in a
+// rule condition and in an action's `when` gets the same check: it starts
+// with `$` (`$message.`, `$state.` and the like) or is a declared predicate
+// that is not rule-opaque, as a rule-opaque predicate holds private content
+// no rule may match on. A refusal is
 // classified invalid and names the rule ID, the source, the position (such as
 // `on_enter[1].when[0]`) and the cause:
 //

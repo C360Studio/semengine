@@ -4,7 +4,8 @@ Docs only. Gates per task: `task spec:check`, `task docs:check`. One pull reques
 
 ## 1. Design
 
-- [ ] 1.1 OPEN-Q: the design review passes, Fable reads the page, and the owner fills `Approved-by:`.
+- [ ] 1.1 Hold: OPEN-Q proposal awaits owner approval. Independent inventory review passes `inventory.md`, the design
+  review passes `design.md`, Fable reads the page, and the owner fills `Approved-by:`.
 
 ## 2. Land
 

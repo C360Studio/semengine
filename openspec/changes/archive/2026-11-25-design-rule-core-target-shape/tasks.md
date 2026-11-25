@@ -9,4 +9,4 @@ Docs only. Gates per task: `task spec:check`, `task docs:check`. One pull reques
 
 ## 2. Land
 
-- [ ] 2.1 Archive the change (`openspec archive design-rule-core-target-shape`) as the PR's last content commit.
+- [x] 2.1 Archive the change (`openspec archive design-rule-core-target-shape`) as the PR's last content commit.

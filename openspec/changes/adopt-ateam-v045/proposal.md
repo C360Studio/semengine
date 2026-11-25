@@ -16,7 +16,7 @@ against `main`). The only breaking change is in v0.4.5: `ateam state spec-check`
 `design.md` and a proposal without a bullet under `## Decisions you are making by approving`. `main` has no open change
 today, so nothing turns red on merge. The owner asked for the upgrade on 2026-11-24 in Enjoy ("Start on #748").
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-11-24) sha256:bbd98de91532
 
 ## What Changes
 

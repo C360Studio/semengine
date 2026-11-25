@@ -4,7 +4,7 @@ Each step ends when `task verify` passes on a clean tree at its commit, with ate
 
 ## 0. Approval
 
-- [ ] 0.1 The owner approves the proposal. Hold: OPEN-Q proposal awaits owner approval
+- [x] 0.1 The owner approves the proposal (Enjoy, 2026-11-24: "Approve as drafted; fill in the approval line for me").
 
 ## 1. Pin and templates
 

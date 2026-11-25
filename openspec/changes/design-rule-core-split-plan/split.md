@@ -11,7 +11,7 @@ tested and passes `task verify`; its own design re-measures what it carries.
 | 1 | package `processor/rule/expression` whole | 1,417 + 2,110 |
 | 2 | `Definition`, `Action` and the action types; the action-family registry; load-time validation, refusing an unknown action type naming type and file; rule-type registry without `init`; file loader | ~1,741 + 1,254 |
 | 3 | `ExecutionContext`, the substitution files, `MatchState` and `StateTracker` | 1,850 + 2,890 |
-| 4 | `ActionExecutor` and `Execute` dispatching core types and registered families; `publish`, `add_triple`, `remove_triple`, `update_triple`; `DenyVerdict`; the graph-event path as decided | ~899 + 2,498 |
+| 4 | `ActionExecutor` and `Execute` dispatching core types and registered families; `publish`, `add_triple`, `remove_triple`, `update_triple`; `DenyVerdict` | ~899 + 2,498 |
 | 5 | `reconcile_predicates` and projection contracts; `update_kv` with its load check and write guard; `lifecycle_transition`, `_complete`, `_fail` | ~1,310 + 2,918 |
 | 6 | `ExpressionRule` and its factory, `Matches`, payload projection | 747 + 2,291 |
 | 7 | `StatefulEvaluator`, entity evaluation fence, owner lane; cooldown per rule and entity in stored state; firing cap with a metric and a readable fact | 955 + 3,164 |
@@ -24,8 +24,8 @@ tested and passes `task verify`; its own design re-measures what it carries.
 | 14 | probe of NATS scheduled messages, then the deadline timer | own design |
 
 Nine of the twelve port PRs run over the 3,000-line guide: 1 (3,527), 3 (4,740), 4 (3,397), 5 (4,228), 6 (3,038),
-7 (4,119), 8 (4,653), 10 (5,363) and 11 (4,488). Most of each is tests of one owner. Under "drop", PRs 2, 4, 6 and 9
-shrink by about 1,000 lines between them.
+7 (4,119), 8 (4,653), 10 (5,363) and 11 (4,488). Most of each is tests of one owner. Dropping the graph-event path
+(decision 1) shrinks PRs 2, 4, 6 and 9 by about 1,000 lines between them.
 
 Carried: about 15,874 production and 28,752 test lines. Not carried: about 1,150 production lines (`publish_agent`,
 `deny`/`approve`, the auditor, the agentic `Action` fields) and 5,690 test lines (their tests, and the owner-proof
@@ -52,8 +52,7 @@ test files, 1,156 lines).
 - PR 2: rule types register into a global map from `init` (`rule_factory.go:124-142`, `expression_factory.go:443`)
   [AGENTS.md: imports register nothing]. `test_rule_factory.go` is production code only tests use, registered at
   `init` (`:212-218`) [no back doors]; it moves into a `_test.go` file. `gojsonschema` enters `go.mod` for
-  `schema_test.go`, or the test checks schemas another way. Under "refuse", `fire_every_n_events` is refused at load on
-  every rule but `type: "cron"` [surface audit (c)].
+  `schema_test.go`, or the test checks schemas another way.
 - PR 4: the core compiles with no `agentic*` or `governance` import [#27]. `graph.NewExactEntityReader`'s error is
   handled (`triple_mutator.go:31`) [build]. `ExecutionContext`'s substitution methods, read today only by
   `publish_agent` (`actions.go:1711`, `:1767`), become the family-facing contract, or are dropped; PR 2's design
@@ -74,16 +73,17 @@ test files, 1,156 lines).
   to decode is acknowledged after a log line (`message_handler.go:67-71`, `processor.go:1141`): it is settled
   explicitly or declared as a drop [fail closed]. `recordError` labels errors by searching their text
   (`message_handler.go:465-495`); it gets typed labels at each call site [classification by error text].
-  `total_triggered` counts what decision 1 says (`processor.go:1456`, `message_handler.go:227-231`) [a metric that
-  stops moving without a cause is a silent degrade]. `fire_every_n_events` per decision 2. `vocabulary/rulepacks`
-  (test-only, `rule_integration_test.go:820`) is replaced.
+  `total_triggered` counts each firing that runs its actions (`processor.go:1456`, `message_handler.go:227-231`) [a
+  metric that stops moving without a cause is a silent degrade]. `fire_every_n_events` gates the actions on the
+  message path [surface audit (c); decision 2]. `vocabulary/rulepacks` (test-only, `rule_integration_test.go:820`)
+  is replaced.
 - PR 10: `entityStateToMinimalMessage` builds a `GenericJSON` carrying `time.Time` and `EntityState.Version`
   (`message_handler.go:376-384`); it moves to a registered payload with no version [#9 ruling; ADR-110]. Readiness
   uses main's API: `graph.BucketGraphStatus`, `NewPublisher`'s error, no `EnsureBucket`, `ProducerNames` or
   `reset_required` state (`readiness.go:83-224`). The watch uses `kvcatalog.OpenCatalogReader` and the keyed
   `UnmarshalEntityState` (`entity_watcher.go:113`, `:767`). The debounce set's constructor error is handled and it
   stops with `Shutdown(ctx)`, not `Close` (`processor.go:930`, `entity_watcher.go:980`) [build].
-  `fire_every_n_events` per decision 2.
+  `fire_every_n_events` gates the actions on the entity path [surface audit (c); decision 2].
 - PR 11: cron metrics go through `metric.RegisterOrGet` (`cron_metrics.go:173-179`) [build]. `robfig/cron/v3` v3.0.1
   enters `go.mod` with a ledger dependency line and a clean `task vuln`. `CronScheduler` keeps lifecycle state in
   `internal/lifecycleguard`. Its `Stop` joins an admitted fire before the `Start` context ends, proved through the
@@ -99,7 +99,7 @@ two `NewProcessor*` (`processor.go:250-255`).
 ## ADRs and guidance each PR carries
 
 The owning PR for each ADR is in `inventory.md` § ADRs. Records not yet in `docs/adr` that a PR may port: 031 (11),
-036 (2), 041 (1), 047 and 049 (5), 048 (3), 068 (10), and 076 decisions 1-3 and 5 (4, only under "move"). The rest,
+036 (2), 041 (1), 047 and 049 (5), 048 (3), 068 (10), The rest, including ADR-076's decisions 1-3 and 5 (decision 1),
 which leave with `publish_agent` and deny/approve, are not ported, citing Q15.
 
 - `processor/rule/docs/syntax.md` and `conditions.md` with PRs 1 and 6; `custom-rules.md` with PR 2; `actions.md`

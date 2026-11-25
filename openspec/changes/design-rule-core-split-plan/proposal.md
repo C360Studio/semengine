@@ -23,15 +23,15 @@ each PR retires, and which designs Fable reads first.
 
 - **The order and the cut:** twelve PRs from the bottom up. semboids can run on SemEngine's rule engine after PR 9;
   semteams after PR 12, once it registers its own `publish_agent`.
-- **Rule firings stop sending graph events (recommended), or each becomes a graph write.** The old engine sends a
-  "rule triggered" update to `graph.events.*`, where nothing listens, here or in our four products. Dropping it
-  removes about 1,000 lines and the trigger-identity rules of ADR-076 (its pack-ID rule is already kept). Two
-  counters change: `total_triggered` counts firings that ran their actions, and `events_published` stops counting
-  graph events. Moving it makes every firing a graph write, and PR 6 then waits for PR 4. PR 2 waits for this.
-- **`fire_every_n_events` on message and entity rules is refused at load (recommended), or made to work.** It says
-  it fires a rule's actions every Nth match, but on those rules it never gated actions, only the graph event and a
-  counter. On cron rules it works and stays (PR 11). No checked-in rule sets it. Making it work on the other rules
-  puts the gate in front of the actions on both inputs (PRs 9 and 10).
+- **Rule firings stop sending graph events** (owner, 2026-11-25). The old engine sends a "rule triggered" update to
+  `graph.events.*`, where nothing listens, here or in our four products. Dropping it removes about 1,000 lines and
+  the trigger-identity rules of ADR-076 (its pack-ID rule is already kept). Two counters change: `total_triggered`
+  counts firings that ran their actions, and `events_published` stops counting graph events. The gate below does
+  not need the event: at the pin the event is what the gate throttles, not how it counts.
+- **`fire_every_n_events` works as documented** (owner, 2026-11-25). It says it fires a rule's actions every Nth
+  match, but on message and entity rules it never gated actions, only the graph event and a counter. PRs 9 and 10
+  put the gate in front of the actions on both inputs; PR 7's design says whether the count is per rule or per rule
+  and entity. On cron rules it already works and stays (PR 11).
 - **Three accepted proofs change.** #25 closes at PR 7, when semboids' pack can actually fire. #26's check becomes
   "the `tool_choice` and `response_format` bytes survive unchanged", since SemEngine has no agentic types. #27's
   "semteams' 40 `publish_agent` actions dispatch" becomes semteams' own check at its switch; here, an import guard and

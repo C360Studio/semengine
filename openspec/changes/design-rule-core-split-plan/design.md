@@ -22,7 +22,7 @@ the lifecycle suite for its owner, ADRs, the test-side compile drift) and a desi
   lines, which the guide exists to avoid.
 - **D. Defer.** Epic #9's order ranks this next; deferring keeps semteams and semboids on SemStreams.
 
-## Owner decision 1: the graph-event path
+## Owner decision 1: the graph-event path (ruled: drop)
 
 The ruling on #101 did not port `graph/events.go` and left rule's use of it to this port: "moves to the
 mutation-request protocol or is dropped" (#101 comment 6126673987; the change 2 design D16 leaves both open). When a
@@ -30,21 +30,24 @@ message rule fires, the pin builds an update for the rule's trigger entity and p
 which nothing subscribes to. It reaches PR 2 (`Rule.ExecuteEvents`, `interfaces.go:41`), PR 4 (`publisher.go`,
 `graph_event_identity.go`), PR 6 (`expression_factory.go:329-366`) and PR 9 (`message_handler.go:207-231`).
 
-- **Drop (recommended).** `ExecuteEvents`, the `Event` type, the graph-event publisher and the trigger identity are
+Ruled by the owner on 2026-11-25: drop, since decision 2 does not need the event (the gate's counter is separate
+from the event, which sits behind the gate at `message_handler.go:188-231`).
+
+- **Drop (ruled).** `ExecuteEvents`, the `Event` type, the graph-event publisher and the trigger identity are
   not carried (about 200 production and 800 test lines). ADR-076's decisions 1-3 and 5 (trigger and alert identity)
   are not ported; its decision 4, the pack ID as producer identity, is already kept by `pkg/rulepack` (ledger :3044).
   What a reader sees change: `total_triggered` (`processor.go:1456`) counted only firings whose graph events
   published, so PR 9 counts each firing that runs its actions instead; `events_published` keeps counting `publish`
   actions and `rule_events` notifications, and stops counting graph events; the `rule_events` notification stays.
-- **Move.** Each firing becomes an entity update through graph-ingest's mutation requests, on the ADR-076 identity,
+- **Move (not taken).** Each firing becomes an entity update through graph-ingest's mutation requests, on the ADR-076 identity,
   which PR 4 ports. Every firing is then a graph write, which nothing at the pin applied; PR 4's design names its
   write budget. PR 6 then waits for PR 4 (`expression_factory.go:349` calls `graph_event_identity.go:22`), and
   `total_triggered` counts applied mutations.
 
 Either way the in-memory cooldown stamp in `ExecuteEvents` (`expression_factory.go:363-364`) does not survive: #702
-moves the cooldown into stored state in PR 7. PR 2's design is not written before this is answered.
+moves the cooldown into stored state in PR 7.
 
-## Owner decision 2: `fire_every_n_events`
+## Owner decision 2: `fire_every_n_events` (ruled: gate the actions)
 
 The key is documented to fire a rule's actions only on every Nth match (`rule_factory.go:44-56`). At the pin it gates
 only the graph event, the `rule_events` notification and the counter (`message_handler.go:174-232`); `on_enter`,
@@ -54,10 +57,12 @@ exception: there the key does skip the actions on all but every Nth tick (`cron_
 `TestCronScheduler_FireFireEveryNGate`), and PR 11 carries that gate either way. On message and entity rules, carrying
 the key as is would port a described behaviour nothing implements (surface audit (c)), so one of these is required:
 
-- **Refuse the key on message and entity rules (recommended).** PR 2 refuses `fire_every_n_events` at load on any
+Ruled by the owner on 2026-11-25: gate the actions as documented.
+
+- **Refuse the key on message and entity rules (not taken).** PR 2 refuses `fire_every_n_events` at load on any
   rule that is not `type: "cron"`, naming rule and file; PRs 9 and 10 carry no gate. Its counter is per rule, not per
   entity, the same flaw #702 fixes for cooldown.
-- **Gate the actions as documented.** PR 9 and PR 10 apply the gate before the evaluator runs actions, and PR 7's
+- **Gate the actions as documented (ruled).** PR 9 and PR 10 apply the gate before the evaluator runs actions, and PR 7's
   design says whether the count is per rule or per rule and entity.
 
 ## The PRs (detail in `split.md`)
@@ -65,11 +70,11 @@ the key as is would port a described behaviour nothing implements (surface audit
 | PR | Change id | Retires | Waits for | Fable first |
 | --- | --- | --- | --- | --- |
 | 1 | `rule-core-01-expression` | none | none | no |
-| 2 | `rule-core-02-definitions` | #26 | 1; decisions 1 and 2 | **yes**: new exported framework surface (#25) |
+| 2 | `rule-core-02-definitions` | #26 | 1 | **yes**: new exported framework surface (#25) |
 | 3 | `rule-core-03-context` | none | 2 | no |
 | 4 | `rule-core-04-graph-actions` | #27 | 3 | **yes**: dispatch surface; graph writes |
 | 5 | `rule-core-05-state-actions` | #294 | 4 | **yes**: framework-owned buckets; lifecycle state |
-| 6 | `rule-core-06-expression-rules` | none | 3 (and 4 under "move") | no |
+| 6 | `rule-core-06-expression-rules` | none | 3 | no |
 | 7 | `rule-core-07-evaluator` | #25, #28, #702 | 5, 6 | **yes**: durability |
 | 8 | `rule-core-08-processor` | none | 7 | **yes**: boot path; connection ownership; registration |
 | 9 | `rule-core-09-message-input` | none | 8 | **yes**: acknowledgement and durability |
@@ -81,7 +86,7 @@ the key as is would port a described behaviour nothing implements (surface audit
 
 ## Merge order
 
-1, 2, 3; then 4 and 6 in parallel (5 follows 4; under "move", 6 follows 4); 7; 8; then 9 and 11 in parallel; 10
+1, 2, 3; then 4 and 6 in parallel (5 follows 4); 7; 8; then 9 and 11 in parallel; 10
 after 9; 12 after 10; 14 (its probe at any time); 13 last, so its worked examples are real code, the deadline timer
 included. PRs from 8 on all edit `processor.go`; the later one merges `origin/main`. semboids qualifies after 9.
 semteams qualifies after 12, once it registers `publish_agent` and migrates its five `replace_owned` files.
@@ -105,6 +110,6 @@ semteams qualifies after 12, once it registers `publish_agent` and migrates its 
 semboids calls `rule.Register` and sets `Dependencies.LifecycleManager` (`cmd/semboids/main.go:200`). semteams calls
 `rule.Register`, `NewConfigManager`, `ConfigManager` and `HotReloadTarget` in production. After the port they must
 register any family their packs use (`publish_agent` for semteams), hand the lifecycle manager to the rule
-registration, and drop the four dead keys (and `fire_every_n_events` under "refuse"). Doing nothing gives a boot
+registration, and drop the four dead keys. Doing nothing gives a boot
 error naming the cause for each; none fails silently. PR 2's Fable read decides the registration surface for
 families and the manager, so PR 8 implements an approved shape.

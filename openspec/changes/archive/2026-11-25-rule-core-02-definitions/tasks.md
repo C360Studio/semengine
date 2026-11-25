@@ -94,5 +94,5 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 4. Land
 
-- [ ] 4.1 Sync `openspec/specs/rule-definitions/` and `harness-boundaries/` and archive the change as the PR's last
+- [x] 4.1 Sync `openspec/specs/rule-definitions/` and `harness-boundaries/` and archive the change as the PR's last
   content commit. Check: `task spec:check`.

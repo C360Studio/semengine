@@ -228,8 +228,8 @@ Evaluation returns an `*expression.EvaluationError` naming the field and operato
 
 Problems the load catches are refused when the rule loads, before any evaluation: an invalid or templated regex
 pattern, and a field that does not start with `$` and is not a declared predicate, or is a rule-opaque one. The field
-check is the same for a rule's `conditions` and an action's `when`. What the rule engine does with an evaluation error at run time is the engine's to say; it is not yet in
-this repository.
+check is the same for a rule's `conditions` and an action's `when`. What the rule engine does with an evaluation
+error at run time is the engine's to say; it is not yet in this repository.
 
 ## Telling a stateless caller what it cannot answer
 

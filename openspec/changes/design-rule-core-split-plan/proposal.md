@@ -28,20 +28,24 @@ how the port is cut into PRs, in what order, which issue each retires, and which
 - **The order and the cut.** Twelve PRs, built from the bottom up: expressions, definitions, state and substitution,
   actions, rules, then the processor and its three inputs, cron and hot reload. Changes for you: semboids can run
   on SemEngine's rule engine after PR 9; semteams after PR 12, and only once it registers its own `publish_agent`.
+- **Rule firings stop sending graph events (recommended), or each one becomes a graph write.** When a message rule
+  fires, the old engine also sends a "this rule triggered" update to `graph.events.*`. Nothing listens there, at the
+  source or in any of our four products. Dropping it removes about 1,000 lines and changes nothing anyone reads.
+  The other choice sends it through graph-ingest, so every firing writes to the graph. PR 2 waits for this answer.
 - **Fable reads nine designs before their code** (PRs 2, 4, 5, 7, 8, 9, 10, 11, 12), because each touches the boot
   path, connection ownership, durability or acknowledgement, cross-plane writes, or new exported surface (#740).
   PR 2 carries #25's registry. PRs 1, 3, 6 and 13 do not go to Fable.
 - **What is not carried.** `publish_agent`, `deny`, `approve`, the verdict auditor and their tests (already ruled);
-  also the pin's hand-written "owner proof" tests (1,184 lines), which SemEngine's lifecycle suite replaces.
+  also the pin's hand-written "owner proof" tests (1,156 lines), which SemEngine's lifecycle suite replaces.
 - **Four config keys are dropped and then refused at boot:** `message_cache`, `buffer_window_size`,
   `alert_cooldown_period` and `consumer`. At the pin they are read and then ignored. None of semboids', semteams',
   semsource's or semconnect's checked-in rule configs sets them (measured).
-- **Some PRs run over the 3,000-line guide.** PRs 3, 7, 8, 10 and 11 are 4,100 to 5,400 pin lines, mostly tests that
-  cannot be split from the one owner they test. Each design states its count; a developer may split further.
+- **Some PRs run over the 3,000-line guide.** PRs 3, 5, 7, 8, 10 and 11 are 4,100 to 5,400 pin lines, mostly tests
+  that cannot be split from the one owner they test. Each design states its count; a developer may split further.
 - **The deadline-timer probe (#703) may start at any time.** It reads only nats-server and nats.go, not rule code.
   The timer itself merges after PR 12.
 
 ## Impact
 
-Docs only. Twelve later PRs, each with its own approval. Consumers: semteams' five `replace_owned` files are
-refused at load until migrated (owner, #8, task 4.9).
+Docs only. Twelve later PRs, each with its own approval. New modules later: `robfig/cron/v3` (PR 11).
+Consumers: semteams' five `replace_owned` files are refused at load until migrated (owner, #8, task 4.9).

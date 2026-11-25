@@ -15,13 +15,21 @@ const (
 	declaredPredicate   = "test.alert.active"
 	conditionPredicate  = "test.status.level"
 	ruleOpaquePredicate = "test.private.note"
+	// structuralPredicate shares ruleOpaquePredicate's domain and category
+	// but is not rule-opaque, so a rule may match on it.
+	structuralPredicate = "test.private.status"
 	undeclaredPredicate = "test.status.undeclared"
+	// hyphenPredicate has a hyphen in its last segment, which the grammar
+	// allows; the same name with an underscore is refused.
+	hyphenPredicate = "workflow.state.next-phase"
 )
 
 func declareTestPredicates() {
 	vocabulary.Register(declaredPredicate)
 	vocabulary.Register(conditionPredicate)
 	vocabulary.Register(ruleOpaquePredicate, vocabulary.WithRuleOpaque(true))
+	vocabulary.Register(structuralPredicate)
+	vocabulary.Register(hyphenPredicate)
 }
 
 func TestBuiltinCheck(t *testing.T) {

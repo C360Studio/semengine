@@ -3,6 +3,7 @@ package rule
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/internal/harness/semantictest"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -201,6 +203,22 @@ func TestLoadRefuses(t *testing.T) {
 			cause:    "c360.test.*",
 		},
 		{
+			name: "an entity pattern ending in a terminal wildcard",
+			rule: `{"id": "r1", "type": "expression", "entity": {"pattern": "*.robotics.>"},
+			  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}]}`,
+			position: "entity.pattern",
+			cause:    "*.robotics.>",
+		},
+		{
+			name: "an action predicate with an underscore",
+			rule: `{"id": "r1", "type": "expression",
+			  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}],
+			  "on_enter": [{"type": "add_triple", "subject": "$entity.id",
+			    "predicate": "workflow.state.next_phase", "object": "done"}]}`, // predicate-audit:invalid {"kind":"stored-predicate","value":"workflow.state.next_phase","reason":"segment_character"}
+			position: "on_enter[0]",
+			cause:    "segment_character",
+		},
+		{
 			name: "an unknown rule type",
 			rule: `{"id": "r1", "type": "state_machine",
 			  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}]}`,
@@ -273,6 +291,91 @@ func TestLoadRefuses(t *testing.T) {
 		require.Error(t, err)
 		assertLoadRefusal(t, err, "r1", "on_enter[0]", "no rota named")
 	})
+}
+
+// TestLoadAccepts loads rules that sit next to a refusal: each differs from
+// a TestLoadRefuses case only in the value that case refuses.
+func TestLoadAccepts(t *testing.T) {
+	declareTestPredicates()
+	h := builtinHandlers(t)
+
+	cases := []struct {
+		name string
+		rule string
+	}{
+		{
+			name: "an ID with a hyphen",
+			rule: `{"id": "a-b", "type": "expression",
+			  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}]}`,
+		},
+		{
+			name: "a six-position entity pattern with wildcards",
+			rule: `{"id": "r1", "type": "expression", "entity": {"pattern": "*.*.robotics.*.drone.*"},
+			  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}]}`,
+		},
+		{
+			name: "a condition on a predicate beside a rule-opaque one",
+			rule: `{"id": "r1", "type": "expression",
+			  "conditions": [{"field": "` + semantictest.Predicate(t, "test", "private", "status") + `",
+			    "operator": "eq", "value": "completed"}]}`,
+		},
+		{
+			name: "an action predicate with a hyphen",
+			rule: `{"id": "r1", "type": "expression",
+			  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}],
+			  "on_enter": [{"type": "add_triple", "subject": "$entity.id",
+			    "predicate": "` + semantictest.Predicate(t, "workflow", "state", "next-phase") + `", "object": "done"}]}`,
+		},
+	}
+	for _, tc := range cases {
+		for _, enabled := range []bool{true, false} {
+			name := tc.name
+			if !enabled {
+				name += ", disabled"
+			}
+			t.Run(name, func(t *testing.T) {
+				def := decodeTestRule(t, tc.rule)
+				def.Enabled = enabled
+				rule, err := Load(def, loadSource, h)
+				require.NoError(t, err)
+				assert.NotNil(t, rule)
+			})
+		}
+	}
+}
+
+// TestLoadRefusesReservedSubject puts a publish action with a subject in
+// user.response.> in each action list, and expects each refused at its
+// position.
+func TestLoadRefusesReservedSubject(t *testing.T) {
+	declareTestPredicates()
+	h := builtinHandlers(t)
+
+	const expressionRule = `{"id": "reserved-subject-rule", "type": "expression",
+	  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2}], %q: [%s]}`
+	// A cron rule's list is "actions"; the rule is disabled, as an enabled
+	// cron rule is refused before its actions are checked.
+	const cronRule = `{"id": "reserved-subject-rule", "type": "cron", "enabled": false, "schedule": "@daily",
+	  %q: [%s]}`
+	lists := map[string]string{
+		"on_enter":    expressionRule,
+		"on_exit":     expressionRule,
+		"while_true":  expressionRule,
+		"on_recovery": expressionRule,
+		"actions":     cronRule,
+	}
+	for list, rule := range lists {
+		for _, subject := range []string{"user.response.cli.channel-1", "user.response.$entity.instance"} {
+			t.Run(list+"/"+subject, func(t *testing.T) {
+				action := `{"type": "publish", "subject": "` + subject + `"}`
+				def := decodeTestRule(t, fmt.Sprintf(rule, list, action))
+				_, err := Load(def, loadSource, h)
+				require.Error(t, err)
+				assertLoadRefusal(t, err, "reserved-subject-rule", list+"[0]", "user.response.>")
+				assert.Contains(t, err.Error(), ActionTypePublish)
+			})
+		}
+	}
 }
 
 // refusingHandler is a product handler that refuses every action.

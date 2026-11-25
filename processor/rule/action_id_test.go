@@ -63,6 +63,8 @@ func TestCapKey(t *testing.T) {
 			"a when guard":      `{"type":"publish","subject":"alerts.a&b","properties":{"weight":1.50,"html":"<b>"},"max_iterations":3,"when":[{"field":"x","operator":"eq","value":1}]}`,
 			"subject":           `{"type":"publish","subject":"alerts.c","properties":{"weight":1.50,"html":"<b>"},"max_iterations":3}`,
 			"type":              `{"type":"update_kv","subject":"alerts.a&b","properties":{"weight":1.50,"html":"<b>"},"max_iterations":3}`,
+			"a setting":         `{"type":"publish","subject":"alerts.a&b","properties":{"weight":1.50,"html":"<i>"},"max_iterations":3}`,
+			"an added key":      `{"type":"publish","subject":"alerts.a&b","properties":{"weight":1.50,"html":"<b>"},"max_iterations":3,"prompt":"p"}`,
 		} {
 			assert.NotEqual(t, key, testCapKey(t, "rule_a", edited), name)
 		}
@@ -74,5 +76,16 @@ func TestCapKey(t *testing.T) {
 			`{"type":"publish","subject":"x","id":"my-key","max_iterations":5}`))
 		assert.Equal(t, "my-key", testCapKey(t, "rule_b",
 			`{"type":"update_kv","id":"my-key"}`))
+	})
+
+	t.Run("max_iterations absent, zero and set", func(t *testing.T) {
+		// Absent means the default cap and 0 means no cap, so the decode
+		// must keep the two apart.
+		assert.Nil(t, decodeTestAction(t, `{"type":"publish"}`).MaxIterations)
+		for _, n := range []int{0, 7} {
+			got := decodeTestAction(t, fmt.Sprintf(`{"type":"publish","max_iterations":%d}`, n)).MaxIterations
+			require.NotNil(t, got, n)
+			assert.Equal(t, n, *got)
+		}
 	})
 }

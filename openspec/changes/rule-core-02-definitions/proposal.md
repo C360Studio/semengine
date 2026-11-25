@@ -2,9 +2,8 @@
 
 Approved-by:
 
-Track: `design`. PR 2 of the rule-core split plan
-(`openspec/changes/archive/2026-11-25-design-rule-core-split-plan/`). Adds the `rule-definitions` capability and
-edits two `harness-boundaries` requirements.
+Track: `design`. PR 2 of the rule-core split plan (`archive/2026-11-25-design-rule-core-split-plan/`). Adds the
+`rule-definitions` capability and edits two `harness-boundaries` requirements.
 
 ## Why
 

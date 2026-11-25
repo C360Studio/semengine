@@ -21,9 +21,7 @@ show today.
 
 ## Decisions you are making by approving
 
-- **Fable reads this design before any code (recommended).** The split plan skipped PR 3 as a straight carry, but
-  this design sets what every product action type receives, changes how semteams builds the state store (two of its
-  tests), and decides what the stored record's fields mean.
+- **Fable reads this design before any code: done** (PR #759 comment 7170600126); its two changes are worked in.
 - **Drop `$caller.*` (recommended).** Meant to carry who made a request, but nothing ever fills it and no rule uses
   it; caller identity can come later with the code that fills it.
 - **Drop `$related.*` and two-entity ("pair") state (recommended).** Nothing fills the related entity, no rule uses
@@ -34,10 +32,9 @@ show today.
   dropping the text side would make one name work in a condition and not in a message.
 - **Keep `$now` (recommended), against the old decision record ADR-047, which said there is no `$now`.** semteams
   uses it in 3 prompts. Whether it reads the clock or the firing's own time is settled in PR 7, which owns the clock.
-- **What a product's action type gets (recommended): the context's fields, the text filler, and the typed filler for a
-  single name.** The helpers for `for_each` loops are dropped: only `publish_agent` used them, and it leaves the
-  engine. semteams' two `for_each` actions can get their list from `.triples` and fill each item themselves, though
-  either order refills some text. The other way keeps both helpers as supported API.
+- **What a product's action type gets: ruled by you** (PR #759 comment 7170655515): the
+  context's fields, read-only, the text filler, the typed filler, and one filler that also takes the handler's own
+  names, such as a loop item, in the same single read, so neither its value nor filled text is read again.
 - **`.length` counts every value (recommended), as ADR-048 says; ADR-048 is carried into this repository.** Today it
   reads only the first triple and gives an error marker for a value stamped once per iteration, as semteams records
   finished experiments, so two of its prompts get the marker instead of N. The other way keeps that.

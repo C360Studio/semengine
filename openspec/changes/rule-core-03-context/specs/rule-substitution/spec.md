@@ -58,6 +58,24 @@ counts as resolved. Text starting with any other `$` SHALL stay and SHALL NOT be
 - **WHEN** the template is `$caller.id and $related.id`
 - **THEN** the result is the template unchanged, and nothing is reported
 
+### Requirement: A handler's own names are filled in the same read
+
+`ExecutionContext.SubstituteVariablesWith(ctx, template, names)` SHALL fill each `$<name>` of `names` in the same
+single read as the framework tokens, under the fixed-name end rule; a filled value SHALL NOT be read again. It SHALL
+refuse, classified invalid and before reading the template, a name that is not one `[A-Za-z0-9_]` segment, or whose
+`$<name>` begins with `$now`, or whose `$<name>.` is one of `expression.SubstitutionPrefixes()`.
+
+#### Scenario: A loop item holding a token comes out as written
+
+- **WHEN** the entity ID is `c360.platform1.robotics.mav1.drone.001`, `names` holds `subtopic` = `see $entity.id`,
+  and the template is `$entity.instance: $subtopic`
+- **THEN** the result is `001: see $entity.id`, and nothing is reported
+
+#### Scenario: A name that collides with a framework name
+
+- **WHEN** `names` holds `entity` or `nowx`
+- **THEN** it returns an error classified invalid naming the name, and no text
+
 ### Requirement: The values of a predicate
 
 `$entity.triple.<predicate>.triples` SHALL be a JSON array of every value of the predicate on the entity: each scalar

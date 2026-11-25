@@ -23,6 +23,9 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
     `$state.last_transition` and `$schedule.last_fired_at` stay and are reported; `$caller.id` and `$related.id` stay
     and are not reported; `.value` after a missing 3-part predicate gives `""` unreported, and
     `$entity.triple.autoresearch.best.value` reads the predicate `autoresearch.best.value`.
+  - `TestSubstituteWithNames` (D7): a loop item `subtopic` holding `$entity.id` comes out as written; `$subtopic.`
+    and `$subtopic-x` resolve, `$subtopics` does not; a name `now`, `nowx`, `entity` or `message` is refused,
+    classified invalid, before any scan.
   - `TestTripleLength` (D3): three scalar triples give `3`, a two-element list `2`, absent `0`.
   - Generated checks with `pgregory.net/rapid` (D2, D3), recording seed and completed checks: text outside tokens and
     every inserted value come out unchanged; a template with no `$` is returned as is; `.length` equals the length
@@ -35,14 +38,18 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   `entity_substitution.go`, `message_substitution.go`, `lifecycle_substitution.go` (D1, D2, D3, D5, D6), reading
   `expression.SubstitutionPrefixes()`. Not carried: `Schedule` and the `$schedule.*` pass (D1),
   `caller_substitution.go`, `RelatedID`, `Related` and every `$related` branch (D4), `:256-268`, `:377-379`,
-  `:718-767` (D7). The doc comment says an `ExecutionContext` is not safe for concurrent use and prefers
+  `:718-767` (D7); `SubstituteVariablesWith` rebuilt on the one scan (D7). The doc comment says `Entity`, `State`
+  and `MessageData` are read-only to a handler, that an `ExecutionContext` is not safe for concurrent use, and prefers
   `$entity.id` to `$entity.instance` for an identity (ADR-056). Record in `notes/2.2.md` a one-off run of every
   template string in semteams' rules (4df44ae8) and semboids' (ab4e0fbc) through the pin copy and the port, each
   referenced predicate present: list every difference, each one an F19 or F20 case or `.length` (D3).
 - [ ] 2.3 `LifecycleManager` with `LookupByEntityID` and `GetWorkflowDefinition` only (D5, `actions.go:513-514`).
-- [ ] 2.4 `MatchState`, `Transition`, `DetectTransition`, `StateTracker` from `state_tracker.go` (D8, D9): no
+- [ ] 2.4 `MatchState`, the transition type and `detectTransition` (unexported), `StateTracker` from `state_tracker.go`
+  (D8, D9): no
   `ActionIterations`, no pair key, no `Delete`, no nil-bucket branches; `NewStateTracker(kv *natsclient.KVStore)`;
-  doc comments give D8's field meanings.
+  doc comments give D8's field meanings. Unexport `substituteConditionValues` (one function, no twin) and
+  `populateLifecycleStateFields` (D1). Check: `go doc ./processor/rule` lists no name without a reader outside the
+  package or a spec line.
 - [ ] 2.5 Remove `$related.` and `$caller.` from `expression.SubstitutionPrefixes()` and its doc comment (D4); add a
   `Compile` case accepting `$caller.id` and `$related.id`; update the token lists in
   `expression/compile_fuzz_test.go:33`, `:45` and `compile_test.go:132`. Check: `go test ./processor/rule/expression/`.

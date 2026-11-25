@@ -1,0 +1,47 @@
+{
+  "required-live.json": {
+    "subject": "agent.task.researcher-research-plan",
+    "role": "researcher-research-plan",
+    "model": "research",
+    "tool_choice": { "mode": "required" },
+    "response_format": null
+  },
+  "forced-function.json": {
+    "subject": "agent.task.fixture-function",
+    "role": "fixture-function",
+    "model": "fixture-model",
+    "tool_choice": { "mode": "function", "function_name": "decide" },
+    "response_format": null
+  },
+  "response-format.json": {
+    "subject": "agent.task.fixture-format",
+    "role": "fixture-format",
+    "model": "fixture-model",
+    "tool_choice": null,
+    "response_format": {
+      "type": "json_schema",
+      "name": "decision_with_evidence",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "decision": { "type": "string", "enum": ["proceed", "hold"] },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "entity_id": { "type": "string" },
+                "accepted": { "type": "boolean" }
+              },
+              "required": ["entity_id", "accepted"]
+            }
+          }
+        },
+        "required": ["decision", "evidence"]
+      }
+    }
+  }
+}

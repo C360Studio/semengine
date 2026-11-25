@@ -124,3 +124,17 @@ func nestedMessage(path string, value any) MessageFields {
 	}
 	return MessageFields{parts[0]: current}
 }
+
+// transition compares an entity triple with its previous value; on a state or
+// message field it has nothing to compare and is refused.
+func TestTransitionOnStateOrMessageFieldIsRefused(t *testing.T) {
+	for _, field := range []string{"$message.status", "$state.status", "$entity.lifecycle.phase"} {
+		t.Run(field, func(t *testing.T) {
+			_, err := evaluateWith(t, nil, StateFields{field: "done"}, nestedMessage(strings.TrimPrefix(field, "$message."), "done"),
+				ConditionExpression{Field: field, Operator: OpTransition, Value: "done"})
+			var evalErr *EvaluationError
+			require.ErrorAs(t, err, &evalErr)
+			assert.Equal(t, "unsupported operator", evalErr.Message)
+		})
+	}
+}

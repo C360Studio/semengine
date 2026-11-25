@@ -5166,3 +5166,23 @@
   proving_tests: n/a (task docs:check lints it)
   owner: rule-core-01-expression developer
   disposition: adapt
+
+- source_path: processor/rule/docs/conditions.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the rule-author guide to conditions, for rule JSON authors in semteams and semboids; carried with
+    processor/rule/expression (rule-core-01-expression design D8)
+  destination: processor/rule/docs/conditions.md
+  contract: >-
+    describes the evaluator as processor/rule/expression implements it: field resolution order, required and the
+    list-operator and transition exceptions, value comparison, every operator, regex compiling and refusals, logic,
+    evaluation errors, and transition's three limits (the batching limit marked not yet checked)
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    rewritten where the pin's text and code disagreed: a missing required field is an error, not false; there is no
+    type detection or per-type operator set; comparison never fails; length_gte, length_lte and from are documented;
+    links to guides not yet ported are dropped; examples use three-part predicates. Limit 2 of transition (batched
+    changes) is not checked until the entity watcher is ported
+  proving_tests: n/a (task docs:check lints it; claims checked against the code, notes/3.2.md of the change)
+  owner: rule-core-01-expression developer
+  disposition: adapt

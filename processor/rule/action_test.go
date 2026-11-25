@@ -106,6 +106,60 @@ func TestActionBody(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "build an action by decoding")
 	})
+
+	declareTestPredicates()
+	h, err := NewHandlers(nil)
+	require.NoError(t, err)
+	const rule = `{"id": "r1", "type": "expression",
+	  "conditions": [{"field": "test.status.level", "operator": "gte", "value": 2},
+	                 {"field": "$message.name", "operator": "regex", "value": "^drone-"}],
+	  "on_enter": [{"type": "publish", "subject": "a.b"},
+	    {"type": "publish", "subject": "a.c", "max_iterations": 2,
+	     "when": [{"field": "$message.name", "operator": "regex", "value": "-7$"}]}]}`
+
+	notDecoded := []struct {
+		name   string
+		change func(def *Definition)
+	}{
+		{"a Go literal with no Body", func(def *Definition) { def.OnEnter[1] = Action{Type: ActionTypePublish} }},
+		{"a Body that is not a JSON object", func(def *Definition) {
+			def.OnEnter[1] = Action{Type: ActionTypePublish, Body: json.RawMessage(`"publish"`)}
+		}},
+		{"a changed Type", func(def *Definition) { def.OnEnter[1].Type = ActionTypeRemoveTriple }},
+		{"a changed ID", func(def *Definition) { def.OnEnter[1].ID = "mine" }},
+		{"a changed MaxIterations", func(def *Definition) { five := 5; def.OnEnter[1].MaxIterations = &five }},
+		{"a removed When", func(def *Definition) { def.OnEnter[1].When = nil }},
+		{"a changed When value", func(def *Definition) { def.OnEnter[1].When[0].Value = "-8$" }},
+	}
+	for _, tc := range notDecoded {
+		t.Run("Load refuses "+tc.name, func(t *testing.T) {
+			def, err := DecodeDefinition([]byte(rule), decodeSource)
+			require.NoError(t, err)
+			tc.change(&def)
+			_, err = Load(def, decodeSource, h)
+			require.Error(t, err)
+			assert.True(t, errs.IsInvalid(err), "classified invalid: %v", err)
+			for _, want := range []string{`"r1"`, decodeSource, "on_enter[1]", "build the action by decoding"} {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
+
+	t.Run("Load twice leaves the definition unchanged", func(t *testing.T) {
+		def, err := DecodeDefinition([]byte(rule), decodeSource)
+		require.NoError(t, err)
+		// A second decode of the same bytes is the oracle: regex conditions
+		// are compiled only on the rule Load returns, never on def.
+		want, err := DecodeDefinition([]byte(rule), decodeSource)
+		require.NoError(t, err)
+
+		for i := 0; i < 2; i++ {
+			loaded, err := Load(def, decodeSource, h)
+			require.NoError(t, err, "load %d", i+1)
+			require.NotNil(t, loaded)
+			assert.True(t, reflect.DeepEqual(want, def), "load %d changed the definition", i+1)
+		}
+	})
 }
 
 // TestBodyKeepsBytes decodes semteams' rule-family fixtures. Each action's

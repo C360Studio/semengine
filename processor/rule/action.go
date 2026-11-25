@@ -192,7 +192,7 @@ type Handlers struct {
 func NewHandlers(product map[string]ActionHandler) (Handlers, error) {
 	byType := make(map[string]ActionHandler, len(builtinActionTypes)+len(product))
 	for _, name := range builtinActionTypes {
-		byType[name] = builtinHandler{}
+		byType[name] = builtinHandler{actionType: name}
 	}
 	names := make([]string, 0, len(product))
 	for name := range product {
@@ -217,8 +217,3 @@ func NewHandlers(product map[string]ActionHandler) (Handlers, error) {
 	}
 	return Handlers{byType: byType}, nil
 }
-
-// builtinHandler checks a built-in action type. Check accepts every body.
-type builtinHandler struct{}
-
-func (builtinHandler) Check(Action) error { return nil }

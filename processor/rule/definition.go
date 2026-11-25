@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/processor/rule/expression"
@@ -80,7 +83,8 @@ type EntityConfig struct {
 // `rules.<id>@<revision>`) and is named in every error.
 //
 // It refuses a key that Definition, its entity config, a condition or an
-// action's core keys do not declare, and any data after the object. An absent
+// action's core keys do not declare, a rule key spelt with another case than
+// Definition's (`"ID"` for `"id"`), and any data after the object. An absent
 // `enabled` means enabled, an absent `logic` means `and`, and an absent
 // condition `required` means not required; an empty action list or metadata
 // object decodes as an absent one. Each error is classified invalid
@@ -101,6 +105,9 @@ func DecodeDefinition(data []byte, source string) (Definition, error) {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return Definition{}, decodeError(head.ID, source, errors.New("data after the rule object"))
 	}
+	if err := checkDefinitionKeys(data); err != nil {
+		return Definition{}, decodeError(head.ID, source, err)
+	}
 	if def.Logic == "" {
 		def.Logic = "and"
 	}
@@ -115,6 +122,40 @@ func DecodeDefinition(data []byte, source string) (Definition, error) {
 		def.Metadata = nil
 	}
 	return def, nil
+}
+
+// definitionKeys is the set of keys Definition declares, read from its JSON
+// tags so that it cannot drift from the struct.
+var definitionKeys = func() map[string]bool {
+	keys := make(map[string]bool)
+	t := reflect.TypeOf(Definition{})
+	for i := 0; i < t.NumField(); i++ {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		keys[name] = true
+	}
+	return keys
+}()
+
+// checkDefinitionKeys refuses a rule key that is not spelt exactly as
+// Definition declares it. encoding/json matches struct keys without regard
+// to case, so "ID" or "Enabled" passes DisallowUnknownFields; a rule source
+// that names a key two ways must not have one silently win.
+func checkDefinitionKeys(data []byte) error {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return err
+	}
+	names := make([]string, 0, len(keys))
+	for key := range keys {
+		names = append(names, key)
+	}
+	sort.Strings(names)
+	for _, key := range names {
+		if !definitionKeys[key] {
+			return fmt.Errorf("json: unknown field %q", key)
+		}
+	}
+	return nil
 }
 
 func decodeError(ruleID, source string, err error) error {

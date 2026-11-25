@@ -190,6 +190,16 @@ func TestDecodeDefinition(t *testing.T) {
 			contains: []string{`"max_iterations"`},
 		},
 		{
+			name:     "a rule key spelt with another case",
+			rule:     `{"id": "r1", "ID": "r1", "type": "expression"}`,
+			contains: []string{`"ID"`},
+		},
+		{
+			name:     "a rule key spelt only with another case",
+			rule:     `{"id": "r1", "type": "expression", "Enabled": false}`,
+			contains: []string{`"Enabled"`},
+		},
+		{
 			name:     "data after the object",
 			rule:     `{"id": "r1"} {"id": "r2"}`,
 			contains: []string{"data after"},

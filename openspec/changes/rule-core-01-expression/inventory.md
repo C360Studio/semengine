@@ -127,7 +127,7 @@ pattern complexity to prevent ReDoS`; Go's regexp is "guaranteed to run in time 
 ## Where the pin keeps and fires definitions
 
 - Decode: per file at `rule_loader.go:72` (the file is known there), then merged; inline rules
-  (`config.go:24` — `InlineRules []Definition `json:"inline_rules,omitempty"`); validation at `rule_loader.go:117`
+  (`config.go:24` — ``InlineRules []Definition `json:"inline_rules,omitempty"` ``); validation at `rule_loader.go:117`
   (`ValidateDefinition`, reports the rule ID, no file).
 - JSON clones after validation: `rule_loader.go:111`, `:121`, `:170`, `processor.go:270`
   (`cloneRuleDefinitions`, `:89-95`). Map round trip: `definitionToRuleMap` (`rule_loader.go:39`, `:216`, `:244`)
@@ -151,8 +151,8 @@ package compiles a user-supplied pattern.
 
 `gh issue list --state open --search <q>` for `expression`, `regex`, `regex_cache`, `evaluator`, `rule/expression`,
 `condition`, `operator` (2026-11-25). Naming the package: #9 (ruling comment 5950725772 names `regex_cache.go:21`
-for a later port-refactor; no issue was filed). Naming the word only: #702 (`expression_factory.go:31`), #25, #28,
-#703, #484, #641, #502, #155, #712, #647, #646, #350, #110.
+for a later port-refactor; no issue was filed). Naming the word only: #702 (`expression_factory.go:31`), #25,
+#28, #703, #484, #641, #502, #155, #712, #647, #646, #350, #110.
 
 ## Open PRs
 

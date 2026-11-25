@@ -2,22 +2,21 @@
 
 ## ADDED Requirements
 
-### Requirement: A rule definition has one decode
+### Requirement: A rule definition has one strict decode
 
-`DecodeDefinition` SHALL decode a rule from a rules file, an inline rule and a stored rule-bucket value by the same
-code, giving equal definitions for equal JSON. It SHALL refuse a key `Definition` does not declare, naming the key,
-the rule and the source. An absent `enabled` SHALL mean enabled, an absent condition `required` SHALL mean not
-required, and an absent `logic` SHALL mean `and`.
+`DecodeDefinition(data, source)` SHALL decode one rule object, and every source of rules SHALL call it. It SHALL
+refuse a key that `Definition` or a condition does not declare, naming the key, the rule and the source. An absent
+`enabled` SHALL mean enabled, an absent condition `required` SHALL mean not required, and an absent `logic` SHALL mean
+`and`. A definition marshalled and decoded again SHALL equal the one decoded from the original bytes.
 
-#### Scenario: Three sources decode alike
+#### Scenario: Stored form decodes equal
 
-- **WHEN** one rule's JSON is decoded from file bytes, from a processor configuration's `inline_rules`, and from the
-  value a rule-bucket write stored
-- **THEN** the three definitions are equal
+- **WHEN** a rule's file bytes are decoded, and the resulting definition is marshalled and decoded again
+- **THEN** the two definitions are equal, though the marshalled bytes are compacted and HTML-escaped
 
 #### Scenario: An undeclared key is refused
 
-- **WHEN** a rule carries `related_patterns` or a misspelt key such as `on_entr`
+- **WHEN** a rule carries `related_patterns`, a misspelt key such as `on_entr`, or a condition carries `requried`
 - **THEN** the decode fails, classified invalid, naming the key, the rule ID and the source
 
 #### Scenario: Absent keys
@@ -41,12 +40,23 @@ cause. A disabled rule SHALL be checked the same way. Nothing SHALL skip a refus
 
 - **WHEN** a rule has a dotted ID, a negative `fire_every_n_events`, a condition on an undeclared or rule-opaque
   predicate, a refused regex pattern, or `rerun_on_recovery` with neither `on_enter` nor `on_recovery`
-- **THEN** `Load` fails naming the rule, the source and the cause
+- **THEN** `Load` fails naming the rule, the source and the cause, whether the rule is enabled or not
 
-#### Scenario: A cron rule is refused until timers exist
+#### Scenario: An entity watch bucket other than ENTITY_STATES
 
-- **WHEN** a rule has `type: "cron"`, enabled or not
+- **WHEN** a rule's `entity.watch_buckets` names a bucket other than `ENTITY_STATES`
+- **THEN** `Load` fails with the classified code `entity_watch_bucket_unsupported`
+  (`ErrorCodeEntityWatchBucketUnsupported`), naming the bucket
+
+#### Scenario: An enabled cron rule is refused until timers exist
+
+- **WHEN** an enabled rule has `type: "cron"`
 - **THEN** `Load` fails naming the rule and the source, and saying cron rules are not yet supported
+
+#### Scenario: A disabled cron rule gets the common checks
+
+- **WHEN** a disabled rule has `type: "cron"` and passes the checks every rule gets
+- **THEN** `Load` returns it
 
 #### Scenario: A core-only pack loads with no product handler
 
@@ -82,8 +92,9 @@ triple types SHALL refuse a predicate that is not a declared literal; and `max_i
 
 ### Requirement: The firing-cap key is the action's id or its canonical body
 
-An action's firing-cap key SHALL be its `id` when set, and otherwise a hash of the rule ID, the type and the body in
-canonical form (numbers as written, keys sorted, no spacing, no HTML escaping).
+An action's firing-cap key SHALL be its `id` when set, and otherwise a hash of the rule ID, the type and the whole
+body in canonical form (numbers as written, keys sorted, no spacing, no HTML escaping), `max_iterations` and `when`
+included.
 
 #### Scenario: Storing and reformatting keep the key
 
@@ -92,5 +103,5 @@ canonical form (numbers as written, keys sorted, no spacing, no HTML escaping).
 
 #### Scenario: An edit changes the key
 
-- **WHEN** any value in the body changes, and no `id` is set
+- **WHEN** any value in the body changes, `max_iterations` included, and no `id` is set
 - **THEN** its key changes; with `id` set, the key is the `id`

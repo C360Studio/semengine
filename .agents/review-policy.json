@@ -10,7 +10,7 @@
       "codex:gpt-6-astra",
       "codex:gpt-6-sol",
       "codex:gpt-6.1-sol",
-      "gemini:gemini-4-argon",
+      "gemini:gemini-4-carbon",
       "gemini:pro"
     ],
     "workhorse": [
@@ -18,13 +18,15 @@
       "claude:claude-sonnet-4-6",
       "claude:claude-sonnet-4-5",
       "gemini:gemini-3.8-flash",
-      "gemini:gemini-3.1-pro",
+      "gemini:gemini-4-argon",
+      "gemini:gemini-4-neon",
       "gemini:flash"
     ],
     "light": [
       "claude:haiku",
       "claude:claude-haiku-4-5",
       "codex:gpt-5.4",
+      "gemini:gemini-4-hydrogen",
       "gemini:flash_lite"
     ]
   },
@@ -42,7 +44,7 @@
     "gemini": {
       "low": ["minimal", "low"],
       "mid": ["medium"],
-      "high": ["high"]
+      "high": ["high", "xhigh"]
     }
   },
   "cross_provider": true,

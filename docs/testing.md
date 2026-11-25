@@ -24,7 +24,8 @@ round-trip test can pass against a parser that accepts invalid input consistentl
 
 The expected value in an assertion must come from a source independent of the code under test: the requirement, an
 external specification, or a small model written in the test. If the test computes its expectation with the same
-algorithm as the implementation, it repeats the implementation's mistakes and cannot fail.
+algorithm as the implementation, it repeats the implementation's mistakes and cannot fail. A helper that mirrors the
+code under test is not an oracle, however many mutants it kills: it cannot show that the design is wrong.
 
 `FuzzKVValidatorsNeverPanic` in `natsclient/kv_key_contract_test.go` shows the pattern. Its oracle (the independent
 source of the expected answer) is the key and filter grammar, written as regular expressions in the test file, and it

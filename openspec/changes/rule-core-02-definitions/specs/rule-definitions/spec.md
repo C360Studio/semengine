@@ -69,8 +69,9 @@ skip a refused rule and continue.
 ### Requirement: The action handler set is built once
 
 `NewHandlers(product)` SHALL be the one way to build the handler set `Load` takes: the nine built-in types plus the
-product's map. It SHALL refuse a product type name that reuses a built-in name, an empty name or a nil handler,
-classified invalid and naming the type. `Load` SHALL refuse a handler set that `NewHandlers` did not build.
+product's map. It SHALL refuse a product type name that is exactly a built-in name (compared as written), an empty
+name or a nil handler, classified invalid and naming the type. `Load` SHALL refuse a handler set that `NewHandlers`
+did not build.
 
 #### Scenario: A product name reuses a built-in one
 
@@ -97,13 +98,18 @@ four keys. Marshalling an action SHALL write its `Body`. A rule stored and read 
 ### Requirement: Load refuses an action not built by decoding
 
 `Load` SHALL refuse an action with no `Body`, or whose four core fields differ from what its `Body` decodes to,
-saying to build the action by decoding its JSON.
+saying to build the action by decoding its JSON. `Load` SHALL leave the definition it is given unchanged.
 
 #### Scenario: An action not built by decoding is refused
 
 - **WHEN** a rule given to `Load` holds an action written as a Go literal with `Type` set and no `Body`, or an action
   whose `Type` was changed after decode
 - **THEN** `Load` fails naming the position, the rule and the source, and saying to build the action by decoding
+
+#### Scenario: Loading one definition twice
+
+- **WHEN** `Load` is called twice on the same decoded definition
+- **THEN** both calls succeed, and the definition is deep-equal before and after
 
 ### Requirement: Built-in actions refuse settings they do not read
 

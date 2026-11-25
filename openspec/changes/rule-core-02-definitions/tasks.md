@@ -27,7 +27,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   - `TestNewHandlers` (D3): with no product handlers the set holds the nine built-ins; a product handler named
     `publish`, an empty name and a nil handler are refused, classified invalid, naming the type.
   - `TestActionBody` (D4): an action written as a Go literal with `Type` set and no `Body` is refused by `Load`, and so
-    is a decoded action whose `Type` was changed, each saying to build it by decoding; marshalling writes `Body`.
+    is a decoded action whose `Type` was changed, each saying to build it by decoding; marshalling writes `Body`;
+    `Load` twice on one decoded definition succeeds both times and leaves it deep-equal.
   - `TestBuiltinCheck` (D6), `TestCapKey` (D8), `TestBodyKeepsBytes` (D9).
   - semboids' `configs/rules/zone-steering/{food,predator,wind}.json` (ab4e0fbc, MIT) are copied to
     `processor/rule/testdata/semboids-zone-steering/` with a README naming repository, commit and paths. They load

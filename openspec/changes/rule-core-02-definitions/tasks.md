@@ -78,7 +78,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   `scripts/cover-check.sh`. Add a `docs/repository-map.md` row. Check: `task ledger:check`, `task cover:check` at 80%
   or more.
 - [ ] 2.9 The PR body states the carried pin lines, which reproduce with `sed -n a,bp | wc -l`:
-  - production 906: `rule_factory.go:15-76`, `actions.go:31-76` and `:89-444`, `action_id.go:1-133`,
+  - production 879: `rule_factory.go:15-76`, `actions.go:31-76` and `:89-444`, `action_id.go:1-106`,
     `config_validation.go:256-443` less `:330-335`, `:346-367`, `:382-387` and `:394-412`,
     `entity_pattern_contract.go:49-65` less `:50-54` and `:56-58`, `user_response_subject_reservation.go:1-23`,
     `doc.go:1-142`;

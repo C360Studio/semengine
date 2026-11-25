@@ -11,7 +11,7 @@ read 7166853645 finding 4 (D3, D4, D9 answer 1-3). Spec delta: `specs/rule-defin
 PR 2 lands the rule definition and the one load step every later PR calls. Measured premises (inventory sections): no
 pin load path refuses an unknown action type (`actions.go:943-944`, § 3); six decode paths disagree on absent keys (§
 4b); four load sites log and skip (§ 3), which the epic-9 ruling forbids. Pin probe: PR 2's 34 tests pass (§ 2);
-`json.Marshal` compacts and escapes raw JSON (§ 7). Size: 906 production and 388 test pin lines carried and rewritten
+`json.Marshal` compacts and escapes raw JSON (§ 7). Size: 879 production and 388 test pin lines carried and rewritten
 (`tasks.md` 2.9), plus new tests; until PR 8 only its own tests call `processor/rule`.
 
 ## Decisions

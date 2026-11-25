@@ -150,6 +150,13 @@ func (e *Evaluator) EvaluateWithStateAndMessage(entityState *gtypes.EntityState,
 // the layered sources (stateFields, messageFields, entity triples) per
 // the precedence rule documented on EvaluateWithStateAndMessage.
 func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.EntityState, stateFields StateFields, messageFields MessageFields, condition ConditionExpression) (bool, error) {
+	// A regex condition not compiled from its current value is refused
+	// before its field is looked up, so an absent field cannot turn the
+	// refusal into a quiet false.
+	if err := checkCompiled(condition); err != nil {
+		return false, err
+	}
+
 	// 1. `$state.*`, `$prev.*` and `$entity.lifecycle.*` come from
 	// stateFields, which the caller fills: rule match state, previous values
 	// and lifecycle values it resolved itself. The prefixes are in
@@ -633,8 +640,9 @@ func compareValuesWithError(a, b interface{}) (int, error) {
 }
 
 // toFloat64 coerces v to a float64: any numeric Go type, a json.Number, or a
-// string strconv.ParseFloat accepts, except NaN and the infinities. It
-// returns false otherwise.
+// string strconv.ParseFloat accepts. A json.Number or string spelling NaN or
+// an infinity is not a number; a float32 or float64 NaN or infinity is
+// returned as it is. It returns false otherwise.
 //
 // Numeric strings compare as numbers because producers sometimes stamp a
 // number as text, and as text "9.9" sorts after "10.0". The cost: two strings

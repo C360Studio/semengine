@@ -265,3 +265,62 @@ func TestCopiesOfACompiledCondition(t *testing.T) {
 	var evalErr *EvaluationError
 	assert.ErrorAs(t, err, &evalErr)
 }
+
+// A regex condition not compiled from its current value is refused before
+// its field is looked up, so an absent optional field cannot turn the refusal
+// into a quiet false, and an or with a true condition cannot hide it.
+func TestUnpreparedRegexRefusedWhenFieldAbsent(t *testing.T) {
+	compiled := func(t *testing.T, field string) ConditionExpression {
+		conds := []ConditionExpression{{Field: field, Operator: OpRegexMatch, Value: `^ARMED_`}}
+		require.NoError(t, Compile(conds))
+		return conds[0]
+	}
+	unprepared := map[string]func(t *testing.T, field string) ConditionExpression{
+		"uncompiled": func(_ *testing.T, field string) ConditionExpression {
+			return ConditionExpression{Field: field, Operator: OpRegexMatch, Value: `^ARMED_`}
+		},
+		"json copy": func(t *testing.T, field string) ConditionExpression {
+			raw, err := json.Marshal(compiled(t, field))
+			require.NoError(t, err)
+			var c ConditionExpression
+			require.NoError(t, json.Unmarshal(raw, &c))
+			return c
+		},
+		"edited": func(t *testing.T, field string) ConditionExpression {
+			c := compiled(t, field)
+			c.Value = `^DISARMED`
+			return c
+		},
+	}
+	// The entity and message hold regexField, never the absent fields.
+	entity := regexEntity(t, "ARMED_READY")
+	msg := MessageFields{"present": "yes"}
+	state := StateFields{"$state.present": "yes"}
+	truthy := ConditionExpression{Field: regexField, Operator: OpEqual, Value: "ARMED_READY"}
+
+	for _, field := range []string{"a.b.missing", "$state.missing", "$message.missing"} {
+		for name, build := range unprepared {
+			t.Run(field+"/"+name, func(t *testing.T) {
+				cond := build(t, field)
+				for logic, conds := range map[string][]ConditionExpression{
+					LogicAnd: {cond},
+					LogicOr:  {truthy, cond},
+				} {
+					got, err := NewExpressionEvaluator().EvaluateWithStateAndMessage(entity, state, msg,
+						LogicalExpression{Conditions: conds, Logic: logic})
+					assert.False(t, got, logic)
+					var evalErr *EvaluationError
+					require.ErrorAs(t, err, &evalErr, logic)
+					assert.Equal(t, field, evalErr.Field, logic)
+					assert.Equal(t, OpRegexMatch, evalErr.Operator, logic)
+				}
+			})
+		}
+		t.Run(field+"/compiled", func(t *testing.T) {
+			got, err := NewExpressionEvaluator().EvaluateWithStateAndMessage(entity, state, msg,
+				LogicalExpression{Conditions: []ConditionExpression{compiled(t, field)}, Logic: LogicAnd})
+			require.NoError(t, err)
+			assert.False(t, got, "a compiled optional regex on an absent field is false")
+		})
+	}
+}

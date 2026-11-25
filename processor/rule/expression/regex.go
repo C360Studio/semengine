@@ -85,15 +85,22 @@ func (c ConditionExpression) compiledFromValue() bool {
 	return ok && c.pattern != nil && c.pattern.String() == pattern
 }
 
-// matchRegex runs a compiled regex condition against the field's string form.
-func matchRegex(condition ConditionExpression, fieldValue any) (bool, error) {
-	if !condition.compiledFromValue() {
-		return false, &EvaluationError{
-			Field:    condition.Field,
-			Operator: condition.Operator,
-			Message:  "regex pattern is not compiled from the condition's current value: prepare the conditions with Compile before evaluating",
-		}
+// checkCompiled refuses a regex condition whose pattern Compile did not
+// prepare from the condition's current value; other operators pass.
+func checkCompiled(condition ConditionExpression) error {
+	if condition.Operator != OpRegexMatch || condition.compiledFromValue() {
+		return nil
 	}
+	return &EvaluationError{
+		Field:    condition.Field,
+		Operator: condition.Operator,
+		Message:  "regex pattern is not compiled from the condition's current value: prepare the conditions with Compile before evaluating",
+	}
+}
+
+// matchRegex runs a compiled regex condition against the field's string
+// form. The evaluator has already refused an unprepared one (checkCompiled).
+func matchRegex(condition ConditionExpression, fieldValue any) (bool, error) {
 	fieldStr, ok := fieldValue.(string)
 	if !ok {
 		fieldStr = fmt.Sprintf("%v", fieldValue)

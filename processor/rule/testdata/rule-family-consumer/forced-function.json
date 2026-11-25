@@ -1,0 +1,31 @@
+{
+  "id": "consumer_forced_function",
+  "type": "expression",
+  "name": "consumer_forced_function",
+  "enabled": true,
+  "entity": {
+    "pattern": "c360.fixture.rule.fixture.entity.*"
+  },
+  "conditions": [
+    {
+      "field": "fixture.input.ready",
+      "operator": "eq",
+      "value": true,
+      "required": true
+    }
+  ],
+  "logic": "and",
+  "on_enter": [
+    {
+      "type": "publish_agent",
+      "subject": "agent.task.fixture-function",
+      "role": "fixture-function",
+      "model": "fixture-model",
+      "prompt": "Select the decide function. Supplemental rule-family fixture.",
+      "tool_choice": {
+        "mode": "function",
+        "function_name": "decide"
+      }
+    }
+  ]
+}

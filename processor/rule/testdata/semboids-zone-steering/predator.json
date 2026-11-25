@@ -1,0 +1,69 @@
+[
+  {
+    "id": "predator-flee",
+    "type": "expression",
+    "name": "Predator zone entry → flee modifier",
+    "description": "Boid enters a predator zone: push it away from the zone center for ~2s of ticks.",
+    "enabled": true,
+    "conditions": [
+      {"field": "$message.zone_type", "operator": "eq", "value": "predator"},
+      {"field": "$message.event", "operator": "eq", "value": "entered"}
+    ],
+    "logic": "and",
+    "on_enter": [
+      {
+        "type": "publish",
+        "subject": "boids.steering",
+        "properties": {
+          "boid_id": "$message.boid_id",
+          "zone_id": "$message.zone_id",
+          "kind": "flee",
+          "ttl_ticks": 60
+        }
+      }
+    ]
+  },
+  {
+    "id": "predator-clear",
+    "type": "expression",
+    "name": "Predator zone exit → cancel modifier",
+    "description": "Boid leaves a predator zone: cancel its flee modifier (TTL also self-heals).",
+    "enabled": true,
+    "conditions": [
+      {"field": "$message.zone_type", "operator": "eq", "value": "predator"},
+      {"field": "$message.event", "operator": "eq", "value": "exited"}
+    ],
+    "logic": "and",
+    "on_enter": [
+      {
+        "type": "publish",
+        "subject": "boids.steering",
+        "properties": {
+          "boid_id": "$message.boid_id",
+          "zone_id": "$message.zone_id",
+          "kind": "cancel"
+        }
+      }
+    ]
+  },
+  {
+    "id": "predator-cull",
+    "type": "expression",
+    "name": "Predator zone overstay → cull",
+    "description": "A boid that lingers in a predator zone past the grace window is culled: the sim observes phase=culled, removes it from physics, and reclaims its graph entity. Enabled (the rule engine skips disabled rules at load, so it must load to be toggleable) — but the flee modifier usually pushes boids out before the grace window, so a cull is the exception. Toggle this rule off, or set cull_grace_ticks=0, to disable culling.",
+    "enabled": true,
+    "conditions": [
+      {"field": "$message.zone_type", "operator": "eq", "value": "predator"},
+      {"field": "$message.event", "operator": "eq", "value": "lingered"}
+    ],
+    "logic": "and",
+    "on_enter": [
+      {
+        "type": "lifecycle_transition",
+        "workflow": "flock.boid",
+        "phase": "culled",
+        "reason": "lingered in predator zone"
+      }
+    ]
+  }
+]

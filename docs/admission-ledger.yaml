@@ -5116,3 +5116,74 @@
   proving_tests: n/a
   owner: alpha4-output-websocket developer
   disposition: defer-exclude
+
+# Change rule-core-01-expression (PR #753, epic #9): processor/rule/expression ported whole as adapt, PR 1 of the
+# rule-core split plan (owner regex ruling, PR #752 comment 7162536253; D4 and D6 rulings, PR #753 comments
+# 7163712305 and 7163777239).
+
+- source_path: processor/rule/expression
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the one condition evaluator for rule conditions and action when guards (ADR-041), read by the rule core
+    (PRs 2-12 of the split plan) and by semteams tests (ConditionExpression, EvaluationError)
+  destination: processor/rule/expression
+  contract: >-
+    field resolution order, the operator set RegisteredOperators names, and/or logic with an empty list passing,
+    list operators over every triple of a predicate, transition against $prev.*, EnsureStatelessResolvable, as at
+    the pin; stated as the rule-conditions spec. Changed: Compile compiles each regex pattern of a condition slice
+    once and keeps it on the element, refusing a non-string value, a pattern holding a SubstitutionPrefixes token,
+    a pattern over 500 characters, or one regexp rejects (classified invalid, naming index and field); evaluation
+    never compiles and refuses an uncompiled or since-edited regex condition; empty logic means and
+  dependencies_and_side_effects: graph, message (tests), pkg/errs, encoding/json, regexp; no goroutine, no I/O, no
+    package state
+  known_risks: >-
+    not carried: the global regex cache, its init and the internal/cache import; validateRegexComplexity's fragment
+    list, repeat check, group and depth counts (only the 500-character limit stays); HasTriple, GetOutgoing,
+    Distance and their helpers; the TypeDetector interface, FieldType and DetectFieldType; OperatorFunc is
+    unexported; the cache tests and TestRegexCache_NoHang. A JSON copy of a compiled condition loses its pattern
+    and is refused at evaluation until compiled again
+  proving_tests: >-
+    processor/rule/expression evaluator_test.go, array_operators_test.go (carried tables), compile_test.go
+    (TestCompiledRegexMatchesAsStandardLibrary, TestCompileRefusals, TestCompileAccepts,
+    TestEvaluateRefusesUncompiledRegex, TestEvaluateRefusesRegexEditedAfterCompile), resolution_test.go,
+    stateless_test.go, coerce_test.go, property_test.go (TestPropConditions), compile_fuzz_test.go (FuzzCompile);
+    notes/2.2.md, 2.5.md and 2.6.md of the
+    change record failing-first output, mutation checks and the generated run
+  owner: rule-core-01-expression developer
+  disposition: adapt
+
+- source_path: docs/adr/041-unified-condition-evaluator.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for the one condition evaluator and its field-resolution order, which
+    processor/rule/expression implements; ported with it (rule-core-01-expression design D8)
+  destination: docs/adr/041-unified-condition-evaluator.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    title shortened for markdownlint's heading length, one line rewrapped, and a port note under the title: the
+    deny/governance examples are not carried (ADR-039 is not ported), $entity.lifecycle.* came later (ADR-047),
+    issue and release names are SemStreams', and the port's changes (regex compiled at load, empty logic means and)
+  proving_tests: n/a (task docs:check lints it)
+  owner: rule-core-01-expression developer
+  disposition: adapt
+
+- source_path: processor/rule/docs/conditions.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the rule-author guide to conditions, for rule JSON authors in semteams and semboids; carried with
+    processor/rule/expression (rule-core-01-expression design D8)
+  destination: processor/rule/docs/conditions.md
+  contract: >-
+    describes the evaluator as processor/rule/expression implements it: field resolution order, required and the
+    list-operator and transition exceptions, value comparison, every operator, regex compiling and refusals, logic,
+    evaluation errors, and transition's three limits (the batching limit marked not yet checked)
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    rewritten where the pin's text and code disagreed: a missing required field is an error, not false; there is no
+    type detection or per-type operator set; comparison never fails; length_gte, length_lte and from are documented;
+    links to guides not yet ported are dropped; examples use three-part predicates. Limit 2 of transition (batched
+    changes) is not checked until the entity watcher is ported
+  proving_tests: n/a (task docs:check lints it; claims checked against the code, notes/3.2.md of the change)
+  owner: rule-core-01-expression developer
+  disposition: adapt

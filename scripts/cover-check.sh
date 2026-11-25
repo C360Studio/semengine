@@ -71,6 +71,8 @@ readonly targets=(
   # integration lane (real NATS and an object store) test different code.
   "graph/entitytext unit"
   "processor/graph-lexical merged"
+  # processor/rule/expression is in-memory only: its unit lane is the whole of its tests.
+  "processor/rule/expression unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

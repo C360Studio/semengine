@@ -99,8 +99,9 @@ two `NewProcessor*` (`processor.go:250-255`).
 ## ADRs and guidance each PR carries
 
 The owning PR for each ADR is in `inventory.md` § ADRs. Records not yet in `docs/adr` that a PR may port: 031 (11),
-036 (2), 041 (1), 047 and 049 (5), 048 (3), 068 (10), The rest, including ADR-076's decisions 1-3 and 5 (decision 1),
-which leave with `publish_agent` and deny/approve, are not ported, citing Q15.
+036 (2), 041 (1), 047 and 049 (5), 048 (3), 068 (10). ADR-076's
+decisions 1-3 and 5 are not ported (owner, 2026-11-25, #9 comment 7160955176). The rest leave with `publish_agent`
+and deny/approve and are not ported, citing Q15.
 
 - `processor/rule/docs/syntax.md` and `conditions.md` with PRs 1 and 6; `custom-rules.md` with PR 2; `actions.md`
   with PRs 4 and 5; `state-tracking.md` with PR 7; `configuration.md`, `operations.md` and the package `README.md`

@@ -1,6 +1,6 @@
 # Proposal: design-rule-core-split-plan
 
-Approved-by:
+Approved-by: cglusky (2026-11-25) <https://github.com/C360Studio/semengine/issues/9#issuecomment-7160955176> sha256:224c6b834b23
 
 Track: `design` (the owner's choice for this lane). No spec Requirement changes; each porting PR is its own change.
 

@@ -30,8 +30,8 @@ message rule fires, the pin builds an update for the rule's trigger entity and p
 which nothing subscribes to. It reaches PR 2 (`Rule.ExecuteEvents`, `interfaces.go:41`), PR 4 (`publisher.go`,
 `graph_event_identity.go`), PR 6 (`expression_factory.go:329-366`) and PR 9 (`message_handler.go:207-231`).
 
-Ruled by the owner on 2026-11-25: drop, since decision 2 does not need the event (the gate's counter is separate
-from the event, which sits behind the gate at `message_handler.go:188-231`).
+Ruled by the owner on 2026-11-25: drop (#9 comment 7160955176). Design note: decision 2 does not need the event;
+the gate's counter is separate from it, and the event sits behind the gate (`message_handler.go:188-231`).
 
 - **Drop (ruled).** `ExecuteEvents`, the `Event` type, the graph-event publisher and the trigger identity are
   not carried (about 200 production and 800 test lines). ADR-076's decisions 1-3 and 5 (trigger and alert identity)

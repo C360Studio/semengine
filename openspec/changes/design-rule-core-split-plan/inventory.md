@@ -176,7 +176,7 @@ From `grep -o -h -E 'ADR-[0-9]{3}'` over the carried production files, plus reco
 | 066 | Honest graph-index readiness | readiness gauges | `processor.go:326` | 10 (ported) |
 | 067 | Read-only execution policy | filesystem policy on `publish_agent` | `actions.go:232`, `config_validation.go:402` | not carried (E3) |
 | 068 | Graph retention, deletion and GC | a reader never creates `ENTITY_STATES` | `entity_watcher.go:90` | 10 (not in `docs/adr`) |
-| 076 | Framework-derived entity identity for rule events | the trigger and alert entity IDs | `graph_event_identity.go` | decisions 1-3 and 5 depend on owner decision 1 (`design.md`); 4 kept in `pkg/rulepack` |
+| 076 | Framework-derived entity identity for rule events | the trigger and alert entity IDs | `graph_event_identity.go` | decisions 1-3 and 5 not ported (owner decision 1, `design.md`); 4 kept in `pkg/rulepack` |
 | 083, 088 | Readiness as state; per producer | the rule's `GRAPH_STATUS` key | `processor.go:134` | 10 (ported) |
 | 093 | Typed user-response subject ownership | `publish` may not target `user.response.>` | `user_response_subject_reservation.go` | 2 |
 | 094 | Boot-only composition, observable rule activation | rule definitions are the one live exception | (by title) | 12 (ported) |

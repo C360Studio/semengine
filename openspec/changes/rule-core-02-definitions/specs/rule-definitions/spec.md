@@ -1,0 +1,96 @@
+# rule-definitions Specification
+
+## ADDED Requirements
+
+### Requirement: A rule definition has one decode
+
+`DecodeDefinition` SHALL decode a rule from a rules file, an inline rule and a stored rule-bucket value by the same
+code, giving equal definitions for equal JSON. It SHALL refuse a key `Definition` does not declare, naming the key,
+the rule and the source. An absent `enabled` SHALL mean enabled, an absent condition `required` SHALL mean not
+required, and an absent `logic` SHALL mean `and`.
+
+#### Scenario: Three sources decode alike
+
+- **WHEN** one rule's JSON is decoded from file bytes, from a processor configuration's `inline_rules`, and from the
+  value a rule-bucket write stored
+- **THEN** the three definitions are equal
+
+#### Scenario: An undeclared key is refused
+
+- **WHEN** a rule carries `related_patterns` or a misspelt key such as `on_entr`
+- **THEN** the decode fails, classified invalid, naming the key, the rule ID and the source
+
+#### Scenario: Absent keys
+
+- **WHEN** a rule omits `enabled` and `logic`, and a condition omits `required`
+- **THEN** the rule is enabled, its conditions combine by `and`, and a missing field is not an evaluation error
+
+### Requirement: Load returns a ready rule or refuses it
+
+`Load` SHALL return a rule only when every condition and every action `when` has compiled and every action has passed
+its handler's check. Otherwise it SHALL return an error classified invalid that names the rule ID, the source (a file
+path, `inline_rules[<index>]`, or `rules.<id>@<revision>`), the position (such as `on_enter[1].when[0]`) and the
+cause. A disabled rule SHALL be checked the same way. Nothing SHALL skip a refused rule and continue.
+
+#### Scenario: An unregistered action type is refused at load
+
+- **WHEN** a rule's `on_enter[0]` has a type that is neither built in nor in the handlers given to `Load`
+- **THEN** `Load` fails naming the type, the rule, the source and `on_enter[0]`
+
+#### Scenario: Rule-level checks
+
+- **WHEN** a rule has a dotted ID, a negative `fire_every_n_events`, a condition on an undeclared or rule-opaque
+  predicate, a refused regex pattern, or `rerun_on_recovery` with neither `on_enter` nor `on_recovery`
+- **THEN** `Load` fails naming the rule, the source and the cause
+
+#### Scenario: A cron rule is refused until timers exist
+
+- **WHEN** a rule has `type: "cron"`, enabled or not
+- **THEN** `Load` fails naming the rule and the source, and saying cron rules are not yet supported
+
+#### Scenario: A core-only pack loads with no product handler
+
+- **WHEN** semboids' zone-steering rules are loaded with no product handler
+- **THEN** every rule loads
+
+### Requirement: An action keeps its body as written
+
+An action's `Body` SHALL hold the action's JSON object byte for byte as decoded. The core SHALL read only `type`,
+`when`, `id` and `max_iterations` from it.
+
+#### Scenario: A product's settings pass through untouched
+
+- **WHEN** semteams' rule-family fixtures (commit `a331910e`) are decoded
+- **THEN** each `on_enter[0]` body equals its bytes in the file, and its `tool_choice` and `response_format` decode
+  equal to the fixtures' expected values
+
+### Requirement: Built-in actions refuse settings they do not read
+
+Each built-in action type SHALL refuse at load a body key that neither the core nor that type reads, naming the key,
+the action's position, the rule and the source. `publish` SHALL refuse a declared subject in `user.response.>`; the
+triple types SHALL refuse a predicate that is not a declared literal; and `max_iterations` SHALL be 0 or more.
+
+#### Scenario: A misspelt setting
+
+- **WHEN** an `add_triple` action carries `predicat`
+- **THEN** `Load` fails naming `predicat`, the position, the rule and the source
+
+#### Scenario: Reserved subject and dynamic predicate
+
+- **WHEN** a `publish` action declares `user.response.x`, or an `add_triple` predicate holds `$`
+- **THEN** `Load` fails naming the cause
+
+### Requirement: The firing-cap key is the action's id or its canonical body
+
+An action's firing-cap key SHALL be its `id` when set, and otherwise a hash of the rule ID, the type and the body in
+canonical form (numbers as written, keys sorted, no spacing, no HTML escaping).
+
+#### Scenario: Storing and reformatting keep the key
+
+- **WHEN** an action body holding `&` is stored and read back compacted and escaped, or its file is reformatted
+- **THEN** its key is unchanged
+
+#### Scenario: An edit changes the key
+
+- **WHEN** any value in the body changes, and no `id` is set
+- **THEN** its key changes; with `id` set, the key is the `id`

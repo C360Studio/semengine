@@ -126,7 +126,7 @@ func TestDuplicateBodyKeysRefused(t *testing.T) {
 		},
 		{
 			name: "a key repeated through an escape",
-			body: `{"type":"publish","subject":"a","subject":"b"}`,
+			body: `{"type":"publish","subject":"a","subj\u0065ct":"b"}`,
 			want: []string{`"subject"`, "action"},
 		},
 	}

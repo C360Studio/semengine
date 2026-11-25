@@ -20,12 +20,13 @@ the stored state record. PRs 2 to 12 build toward it; PR 1 does not wait for it.
 - **An action is its type, `when`, `id` and `max_iterations`, with the rest kept as written.** Every action type,
   built-in ones included, is one handler in one map. Each handler checks its action at load (needing no connection)
   and runs it at fire. A rule with an unknown type is refused when it loads, naming type, rule and file.
-- **An action's firing-cap counter is keyed by its `id`, or else by a hash of rule, type and body.** The body is
-  hashed in canonical form (decoded with `UseNumber`, then re-encoded with sorted keys, no spacing and no HTML
-  escaping), so storing and reloading a rule, or a formatting-only edit to its file, does not reset its counts; a test
-  stores and reloads a body containing `&` and keeps its count. Any real edit to an action restarts its count; today
-  only edits to its subject, predicate, object, bucket, key, reason or role do. The other way, each handler naming the
-  fields that count, is one more method every product handler must get right. An author who wants a count to survive edits sets `id`, as 12 of semteams' 124 actions do.
+- **An action's firing-cap counter is keyed by its `id`, or else by a hash of rule, type and body.** The body is hashed
+  in canonical form (decoded with `UseNumber`, then re-encoded with sorted keys, no spacing and no HTML escaping), so
+  storing and reloading a rule, or a formatting-only edit to its file, does not reset its counts; a test stores and
+  reloads a body containing `&` and keeps its count. Any real edit to an action restarts its count; today only edits to
+  its subject, predicate, object, bucket, key, reason or role do. The other way, each handler naming the fields that
+  count, is one more method every product handler must get right. An author who wants a count to survive edits sets
+  `id`, as 12 of semteams' 124 actions do.
 - **Built-in actions refuse body keys that neither the core (`type`, `when`, `id`, `max_iterations`) nor their type
   reads, naming key, rule and file.** Today a misspelt key (`predicat`) is ignored without a word. Every key in the
   products' checked-in built-in actions is read by the core or its type, so none is refused. Product handlers choose

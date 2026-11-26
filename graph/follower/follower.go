@@ -55,8 +55,9 @@ type Entry struct {
 	Key      string
 	Revision uint64
 	Deleted  bool // a delete or purge marker
-	Bytes    int  // the delivered value's length; 0 for a delete or purge marker
-	// Value is the value the watch delivered for Revision; nil for a delete or purge marker. It is
+	Bytes    int  // the delivered value's length; 0 for a delete or purge marker, and under Config.KeysOnly
+	// Value is the value the watch delivered for Revision; nil for a delete or purge marker, and for
+	// every entry under Config.KeysOnly. It is
 	// valid only for the duration of Deliver: a plug-in that keeps it copies it. A plug-in that
 	// re-reads current truth at apply time does not apply Value (ADR-108 Decision 4); one that applies
 	// it ignores a delivery at or below the revision it last applied for the key, since the watch's
@@ -91,6 +92,13 @@ type Config struct {
 	// returns above 0. Before the first build the gate reads the envelope, and the envelope and
 	// Stuck always read Failed, so a failure Withhold leaves out still reads degraded.
 	Withhold func() int64
+	// KeysOnly, when set, has the watch deliver each write's key, revision and operation without
+	// its value, so a replay of a large store does not carry every stored value to this process.
+	// Every Entry then has Value nil and Bytes 0, and the plug-in reads the entity itself when it
+	// applies it. A plug-in that sets KeysOnly and still applies Value sees every entity as empty.
+	// TestKeysOnlyEntriesCarryNoValue drives the pinned nats.go and server: deletes and purges still
+	// arrive marked, revisions still ascend, and the end-of-replay marker still arrives.
+	KeysOnly bool
 }
 
 // degradedStuckAfter is how long the follower may go without a Complete call while behind before
@@ -113,6 +121,7 @@ type Follower struct {
 	gauges    *readiness.Gauges
 	watermark *revlag.Watermark
 	created   time.Time // the backing stream's creation time when Open bound it: its generation
+	keysOnly  bool      // the watch carries no values (Config.KeysOnly)
 
 	damaged         damage.Record // the damaged entities the plug-in reported
 	feedLost        atomic.Bool
@@ -132,6 +141,7 @@ type Follower struct {
 	statusMu sync.Mutex
 
 	completions atomic.Uint64 // Complete calls, the stuck detector's progress signal
+	delivered   atomic.Uint64 // entries handed to Deliver, for the initial build's progress line
 
 	mu                  sync.Mutex // guards the stuck detector's progress record
 	lastCompletionsSeen uint64
@@ -204,6 +214,7 @@ func Open(ctx context.Context, cfg Config) (*Follower, error) {
 		gauges:    gauges,
 		watermark: revlag.New(),
 		created:   created,
+		keysOnly:  cfg.KeysOnly,
 	}, nil
 }
 
@@ -233,7 +244,11 @@ func (f *Follower) Run(ctx context.Context) error {
 
 // follow holds the watch until ctx ends or the feed is lost. Its error is stopWatch's.
 func (f *Follower) follow(ctx context.Context) error {
-	watcher, err := f.reader.WatchAll(ctx)
+	var opts []jetstream.WatchOpt
+	if f.keysOnly {
+		opts = append(opts, jetstream.MetaOnly())
+	}
+	watcher, err := f.reader.WatchAll(ctx, opts...)
 	if err != nil {
 		if ctx.Err() == nil {
 			f.loseFeed(fmt.Sprintf("the watch could not start: %v", err))
@@ -302,10 +317,11 @@ func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry) {
 	if e.Deleted {
 		// The damaged value is gone, so nothing of it can be missing from a reply.
 		f.clearDamaged(e.Key, e.Revision)
-	} else {
-		e.Value = entry.Value()
-		e.Bytes = len(e.Value)
+	} else if v := entry.Value(); len(v) > 0 {
+		// A keys-only watch delivers no value, and an empty value is none: Value stays nil.
+		e.Value, e.Bytes = v, len(v)
 	}
+	f.delivered.Add(1)
 	f.deliver(ctx, e)
 }
 
@@ -333,10 +349,19 @@ func (f *Follower) heartbeat(ctx context.Context) {
 }
 
 // publish computes the envelope once and gives it to both the gauges and GRAPH_STATUS, so the two
-// never disagree. A failed write is counted and logged; the next heartbeat is the recovery.
+// never disagree. A failed write is counted and logged; the next heartbeat is the recovery. Until
+// the initial build is complete it also logs the build's progress at Info.
 func (f *Follower) publish(ctx context.Context) {
 	status := f.compute(ctx)
 	f.gauges.Set(status)
+	if !status.BootstrapComplete {
+		// A replay of a large store can run for minutes; this line shows it moving. It is written
+		// before the envelope, and stops once an envelope reads the build complete.
+		f.logger.Info("initial build in progress", slog.String("key", f.key),
+			slog.Uint64("delivered", f.delivered.Load()),
+			slog.Uint64("observed_revision", f.watermark.Observed()),
+			slog.Uint64("indexed_revision", status.IndexedRevision))
+	}
 	if err := f.publisher.Publish(ctx, status); err != nil {
 		if ctx.Err() != nil {
 			return // Run is ending

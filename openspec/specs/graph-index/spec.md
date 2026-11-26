@@ -77,11 +77,13 @@ stored, a required index write unresolved, or the feed lost. `ErrorCount` SHALL 
 - **THEN** `Healthy` is false while the failure holds and true after the repair
 - **AND** the test that verifies this is `TestHealthIgnoresErrorCountAndTracksStuckStates`
 
-### Requirement: DataFlow counts deliveries
+### Requirement: DataFlow counts entity reads
 
-graph-index's `DataFlow` SHALL count one input per delivered `ENTITY_STATES` entry, update or delete, with the
-delivered value's byte length, counted before coalescing, and SHALL not count index writes. The apply SHALL still read
-the key's current authoritative state.
+graph-index's follower SHALL watch `ENTITY_STATES` keys only (`follower.Config` keys-only field), and graph-index's
+`DataFlow` SHALL count one input per entity it reads from `ENTITY_STATES` to apply it, with the byte length of the
+value it read, and SHALL not count index writes. Writes the coalescer folds into one apply SHALL count as one read; a
+delete, whose read finds no entity, SHALL count none. `watch_events_total` SHALL still count each delivered entry by
+kind.
 
 #### Scenario: One entity with three relationships
 
@@ -91,10 +93,16 @@ the key's current authoritative state.
 #### Scenario: Coalesced updates are each counted
 
 - **GIVEN** `coalesce_ms` above zero
-- **WHEN** graph-index receives three delivered updates of one entity, with values of different sizes, inside one
-  coalescing window
-- **THEN** `DataFlow().Messages` rises by three and `DataFlow().Bytes` by the sum of the three delivered values' lengths
-- **AND** the test that verifies this is `TestDataFlowCountsEachDeliveryBeforeCoalescing`
+- **WHEN** one entity is written three times with values of different sizes, each write read before the next
+- **THEN** `DataFlow().Messages` rises by three and `DataFlow().Bytes` by the sum of the three values' lengths
+- **AND** the test that verifies this is `TestDataFlowCountsEachEntityRead`
+
+#### Scenario: A replay counts the stored bytes
+
+- **WHEN** graph-index starts over stored entities, one written twice, and the replay is applied
+- **THEN** `DataFlow().Messages` is the number of stored entities and `DataFlow().Bytes` the summed lengths of the
+  values stored last
+- **AND** the test that verifies this is `TestDataFlowCountsReplayedBytes`
 
 ### Requirement: One Start per instance
 

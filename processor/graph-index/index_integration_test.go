@@ -345,11 +345,11 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	}
 }
 
-// TestDataFlowCountsEachDeliveryBeforeCoalescing writes one entity three times with values of
-// different sizes, waiting before each next write until DataFlow has counted the last one, so each
-// write is its own delivery and none is superseded in the stream before the follower reads it.
-// DataFlow counts all three and the sum of their lengths, though the coalescer may apply fewer.
-func TestDataFlowCountsEachDeliveryBeforeCoalescing(t *testing.T) {
+// TestDataFlowCountsEachEntityRead writes one entity three times with values of different sizes,
+// with the coalescer on, waiting before each next write until DataFlow has counted the last one.
+// So each write is read on its own, and DataFlow counts three inputs of the three lengths: one
+// input is one entity graph-index reads, of the bytes it read.
+func TestDataFlowCountsEachEntityRead(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{"coalesce_ms": 200}`)
 	id, target := entityID(1), entityID(9)
 	values := [][]byte{
@@ -363,7 +363,7 @@ func TestDataFlowCountsEachDeliveryBeforeCoalescing(t *testing.T) {
 	for i, value := range values {
 		last = h.put(t, id, value)
 		wantBytes += int64(len(value))
-		await(t, fmt.Sprintf("delivery %d counted", i+1),
+		await(t, fmt.Sprintf("read %d counted", i+1),
 			func(context.Context) (component.FlowMetrics, error) { return h.c.DataFlow(), nil },
 			func(got component.FlowMetrics) bool { return got.Messages >= before.Messages+int64(i+1) })
 	}
@@ -377,6 +377,75 @@ func TestDataFlowCountsEachDeliveryBeforeCoalescing(t *testing.T) {
 	}
 	if got, want := h.value(t, graph.BucketOutgoingIndex, id), `[{"to_entity_id":"`+target+`","predicate":"`+linkTo+`"}]`; got != want {
 		t.Errorf("outgoing %s = %s, want the last value's %s", id, got, want)
+	}
+}
+
+// TestDataFlowCountsReplayedBytes stores entities before graph-index starts, one of them written
+// twice, so the startup replay delivers each key once. The watch carries no values, so the input
+// bytes come from graph-index's own reads: once the floor reaches the last write, DataFlow has
+// counted one input per stored entity and the summed lengths of the values stored last.
+func TestDataFlowCountsReplayedBytes(t *testing.T) {
+	client := fixtureClient(t)
+	states := ensureEntityStates(t, client)
+	stored := map[string][]byte{}
+	var last uint64
+	write := func(id string, value []byte) {
+		rev, err := states.Put(t.Context(), id, value)
+		if err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+		stored[id], last = value, rev
+	}
+	write(entityID(1), entityValue(t, entityID(1), stmt{armed, true}))
+	write(entityID(2), entityValue(t, entityID(2), stmt{armed, true}, stmt{disarmed, false}))
+	write(entityID(3), entityValue(t, entityID(3), stmt{linkTo, entityID(1)}))
+	write(entityID(1), entityValue(t, entityID(1), stmt{armed, true}, stmt{linkTo, entityID(2)}, stmt{disarmed, false}))
+	var wantBytes int64
+	for _, value := range stored {
+		wantBytes += int64(len(value))
+	}
+
+	h := startIndex(t, client, `{}`)
+	// A lane counts the read before it completes the revision, so the floor orders the read below.
+	h.awaitIndexed(t, last)
+	flow := h.c.DataFlow()
+	if flow.Messages != int64(len(stored)) {
+		t.Errorf("DataFlow messages = %d, want %d, one per stored entity", flow.Messages, len(stored))
+	}
+	if flow.Bytes != wantBytes {
+		t.Errorf("DataFlow bytes = %d, want %d, the stored values' total length", flow.Bytes, wantBytes)
+	}
+}
+
+// TestWatchCarriesKeysOnly starts graph-index as a deployment does and reads its ENTITY_STATES
+// watch's consumer from the server: it is the only consumer on the bucket's stream, and it
+// delivers headers only, so a replay carries no stored values. The entity's apply orders the read
+// after the watch has started and delivered.
+func TestWatchCarriesKeysOnly(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	h.awaitIndexed(t, h.put(t, entityID(1), entityValue(t, entityID(1), stmt{armed, true})))
+
+	js, err := h.client.JetStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := js.Stream(t.Context(), "KV_"+graph.BucketEntityStates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumers := stream.ListConsumers(t.Context())
+	var seen int
+	for info := range consumers.Info() {
+		seen++
+		if !info.Config.HeadersOnly {
+			t.Errorf("consumer %s on %s delivers values (HeadersOnly false); want headers only", info.Name, graph.BucketEntityStates)
+		}
+	}
+	if err := consumers.Err(); err != nil {
+		t.Fatalf("list consumers: %v", err)
+	}
+	if seen != 1 {
+		t.Errorf("%d consumers on %s, want 1, the follower's watch", seen, graph.BucketEntityStates)
 	}
 }
 

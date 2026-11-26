@@ -202,6 +202,17 @@ below the revision it last applied for that key.
 - **WHEN** a key is written twice and both revisions are delivered
 - **THEN** each entry's `Value` is the bytes written at its revision (`TestEntryCarriesDeliveredValue`)
 
+### Requirement: A keys-only follower delivers no values
+
+A plug-in that sets the `Config` keys-only field SHALL receive every entry with `Value` nil and `Bytes` 0, while `Key`,
+`Revision` and `Deleted` stay as they are without it, and SHALL read the entity itself.
+
+#### Scenario: Keys only
+
+- **WHEN** the keys-only field is set, and a key is written, deleted and purged
+- **THEN** each entry has `Value` nil and `Bytes` 0, the delete and the purge arrive with `Deleted` true, revisions
+  ascend, and the initial build completes (`TestKeysOnlyEntriesCarryNoValue`)
+
 ### Requirement: The follower checks delivery order
 
 Delivery order is what the watch delivers: nats.go does not promise ascending revisions across keys. The follower

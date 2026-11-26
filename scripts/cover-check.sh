@@ -73,6 +73,8 @@ readonly targets=(
   "processor/graph-lexical merged"
   # processor/rule/expression is in-memory only: its unit lane is the whole of its tests.
   "processor/rule/expression unit"
+  # processor/rule is in-memory only: its unit lane is the whole of its tests.
+  "processor/rule unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

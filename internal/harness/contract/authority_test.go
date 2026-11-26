@@ -176,6 +176,7 @@ type Claim struct {
 		{"internal/store/store.go:4: field Platform on example.com/fixture/internal/store.Record "},
 		{"cmd/tool/main.go:4: field Platform on example.com/fixture/cmd/tool.options "},
 		{"component/dependencies.go:12: field Platform on example.com/fixture/component.Registry "},
+		{"processor/rule/rule.go:6: field Platform on example.com/fixture/processor/rule.Dependencies "},
 		{"processor/rule/rule.go:14: field Org on example.com/fixture/processor/rule.Claim "},
 		{"types/component.go:9: field Org on example.com/fixture/types.Other "},
 		{"graph/inference/deps.go:6: field Platform on example.com/fixture/graph/inference.Dependencies "},
@@ -191,7 +192,7 @@ type Claim struct {
 	silent := []string{
 		"graph/inference/hierarchy.go:9:", "graph/inference/hierarchy.go:10:", "hierarchy_test.go",
 		"pkg/types/", "pkg/platform/", "config/", "types/component.go:4:", "types/component.go:5:",
-		"component/dependencies.go:8:", "service/", "processor/rule/rule.go:6:", "processor/rule/rule.go:10:",
+		"component/dependencies.go:8:", "service/", "processor/rule/rule.go:10:",
 	}
 	for _, line := range v {
 		for _, s := range silent {
@@ -225,12 +226,11 @@ var authorityOwnerPackages = map[string]string{
 }
 
 var authorityOwnerFields = map[string]string{
-	"types.PlatformMeta.Org":               "the carrier's own field",
-	"types.PlatformMeta.Platform":          "the carrier's own field",
-	"component.Dependencies.Platform":      "the carrier deps.Platform",
-	"service.Dependencies.Platform":        "the carrier deps.Platform",
-	"processor/rule.Dependencies.Platform": "the carrier deps.Platform",
-	"processor/rule.CallerContext.Org":     "a caller's organization claim, not the deployment authority",
+	"types.PlatformMeta.Org":           "the carrier's own field",
+	"types.PlatformMeta.Platform":      "the carrier's own field",
+	"component.Dependencies.Platform":  "the carrier deps.Platform",
+	"service.Dependencies.Platform":    "the carrier deps.Platform",
+	"processor/rule.CallerContext.Org": "a caller's organization claim, not the deployment authority",
 }
 
 // TestNoSecondAuthorityField fails on an exported struct field named Org or Platform outside the

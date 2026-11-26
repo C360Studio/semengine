@@ -1,0 +1,41 @@
+{
+  "id": "consumer_required_live",
+  "type": "expression",
+  "name": "consumer_required_live",
+  "enabled": true,
+  "entity": {
+    "pattern": "c360.fixture.rule.fixture.entity.*"
+  },
+  "conditions": [
+    {
+      "field": "fixture.input.ready",
+      "operator": "eq",
+      "value": true,
+      "required": true
+    }
+  ],
+  "logic": "and",
+  "on_enter": [
+    {
+      "type": "publish_agent",
+      "subject": "agent.task.researcher-research-plan",
+      "role": "researcher-research-plan",
+      "model": "research",
+      "prompt": "A coordinator classified the user's message as a research ask and delegated to you (parent loop $entity.instance).\n\nIteration 1 — call read_loop_result with loop_id=$entity.instance. The result is the coordinator's structured decide-tool terminal (JSON with action + reason + subtopics + retry_hint). The coordinator's `reason` field captures the user's intent and the rationale for routing to the research category — that is your grounding for what to plan.\n\nIteration 2+ — emit a research plan per researcher-research-plan/10-plan-rules.md. The research category terminates at reviewer-research after synthesize emits the research artifact (no architect / spec / build phases). Keep the plan focused on evidence gathering and synthesis.\n\nTerminal: decide(action=\"gather\") to forward into the gather phase, decide(action=\"emit\") only if the question is genuinely answerable from the plan itself without gather work, or decide(action=\"needs_clarification\") if the coordinator's reason is too thin to plan from.",
+      "tools": [
+        "read_loop_result",
+        "emit_plan",
+        "scratchpad",
+        "decide"
+      ],
+      "tool_choice": {
+        "mode": "required"
+      },
+      "action_allowlist": [
+        "gather",
+        "emit",
+        "needs_clarification"
+      ]
+    }
+  ]
+}

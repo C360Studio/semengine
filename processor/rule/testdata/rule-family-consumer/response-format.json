@@ -1,0 +1,68 @@
+{
+  "id": "consumer_response_format",
+  "type": "expression",
+  "name": "consumer_response_format",
+  "enabled": true,
+  "entity": {
+    "pattern": "c360.fixture.rule.fixture.entity.*"
+  },
+  "conditions": [
+    {
+      "field": "fixture.input.ready",
+      "operator": "eq",
+      "value": true,
+      "required": true
+    }
+  ],
+  "logic": "and",
+  "on_enter": [
+    {
+      "type": "publish_agent",
+      "subject": "agent.task.fixture-format",
+      "role": "fixture-format",
+      "model": "fixture-model",
+      "prompt": "Return the decision and its evidence. Supplemental rule-family fixture.",
+      "response_format": {
+        "type": "json_schema",
+        "name": "decision_with_evidence",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "type": "string",
+              "enum": [
+                "proceed",
+                "hold"
+              ]
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "entity_id": {
+                    "type": "string"
+                  },
+                  "accepted": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "entity_id",
+                  "accepted"
+                ]
+              }
+            }
+          },
+          "required": [
+            "decision",
+            "evidence"
+          ]
+        }
+      }
+    }
+  ]
+}

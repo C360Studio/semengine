@@ -2,7 +2,7 @@
 
 Approved-by:
 
-Track: `quick`. Capability: `graph-index` (no Requirement added or changed). Package: `processor/graph-index`.
+Track: `quick`. Capability: `graph-index` (one Requirement modified: "Stop writes accepted work"). Package: `processor/graph-index`.
 
 ## Why
 
@@ -33,6 +33,9 @@ contract: every accepted item still reaches `Process` (`keyed-dispatch` spec unc
 
 - On stop, graph-index drops index work that has not started, instead of finishing it. Work that has started
   finishes.
+- The `graph-index` spec's "Stop writes accepted work" changes to say so. `TestStopWritesAcceptedWork` and
+  `TestStopInterruptedThenRetriedWritesAcceptedWork`, which prove the old wording, are rewritten or removed, and
+  their admission-ledger line follows.
 
 ## Non-goals
 

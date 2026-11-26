@@ -15,7 +15,9 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
   started are neither marked failed nor completed, and no `readiness withheld` warning is logged. Record the red run
   in `notes/2.1.md`.
 - [ ] 2.2 The stopping flag: set in `cleanup` before `pool.Shutdown`; `processWork` returns first when it is set.
-  The write in flight when the flag is set finishes. Accept: the 2.1 test and the graph-index tests pass.
+  The write in flight when the flag is set finishes. Rewrite or remove `TestStopWritesAcceptedWork` and
+  `TestStopInterruptedThenRetriedWritesAcceptedWork` to the modified requirement, and update their line in
+  `docs/admission-ledger.yaml`. Accept: the 2.1 test and the graph-index tests pass.
 - [ ] 2.3 graph-embedding: read what its queued items record at stop. File an issue if they log false failures or
   complete revisions they did not apply; otherwise say so in `notes/2.3.md`.
 

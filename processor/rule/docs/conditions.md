@@ -111,7 +111,7 @@ A pattern uses Go's regular expression syntax (RE2). It is checked and compiled 
 (`expression.Compile`), never while a message is checked. The load refuses the rule when a pattern:
 
 - is not a string;
-- holds a substitution token: `$now`, `$entity.`, `$related.`, `$state.`, `$schedule.`, `$caller.` or `$message.`
+- holds a substitution token: `$now`, `$entity.`, `$state.`, `$schedule.` or `$message.`
   anywhere in the pattern. The rule engine replaces these tokens in a value before it is evaluated, so the pattern
   that ran would not be the one that was checked;
 - is longer than 500 characters;

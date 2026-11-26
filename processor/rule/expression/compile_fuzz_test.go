@@ -18,10 +18,12 @@ import (
 // and names the condition; an accepted pattern matches as regexp.MatchString
 // does.
 func FuzzCompile(f *testing.F) {
-	// Accepted classes: literals, anchors, other dollar signs, the bracketed
-	// token, 500 characters, the semteams list pattern.
+	// Accepted classes: literals, anchors, other dollar signs, names no
+	// substituter fills, the bracketed token, 500 characters, the semteams list
+	// pattern.
 	for _, seed := range []string{
 		"", "drone", `^drone-[0-9]+$`, `[$]now`, `[$a-z]+`, `^\$USD`, `\Q$x\E`, `^[a-z]+$`, `(a+)+$`,
+		`$caller.id`, `^x-$related.a`,
 		`(?i)\$price`, `^a{1000}$`, strings.Repeat("a", 500), strings.Repeat("é", 500),
 		`^\[(?:\s*"(?:[^"\\]|\\.)*"\s*)(?:,\s*"(?:[^"\\]|\\.)*"\s*){0,3}\]$`,
 	} {
@@ -30,8 +32,7 @@ func FuzzCompile(f *testing.F) {
 	// Refused classes: each token, a token mid-pattern or escaped, too long,
 	// invalid syntax, a repeat over 1000, invalid UTF-8.
 	for _, seed := range []string{
-		"$now", `$entity.id`, `^x-$related.a`, `^x-$state.iteration`, `$schedule.next`, `$caller.id`,
-		`$message.kind`, `^\$now`, strings.Repeat("a", 501), `[unclosed`, `a{1001}`, "(", "\xff",
+		"$now", `$entity.id`, `^x-$state.iteration`, `$schedule.next`, `$message.kind`, `^\$now`, strings.Repeat("a", 501), `[unclosed`, `a{1001}`, "(", "\xff",
 	} {
 		f.Add(seed, "$now")
 	}
@@ -42,7 +43,7 @@ func FuzzCompile(f *testing.F) {
 
 		_, stdErr := regexp.Compile(pattern)
 		wantRefused := stdErr != nil || utf8.RuneCountInString(pattern) > 500
-		for _, token := range []string{"$now", "$entity.", "$related.", "$state.", "$schedule.", "$caller.", "$message."} {
+		for _, token := range []string{"$now", "$entity.", "$state.", "$schedule.", "$message."} {
 			wantRefused = wantRefused || strings.Contains(pattern, token)
 		}
 

@@ -322,13 +322,15 @@ Carried with `message`, `payloadregistry` and graph-ingest from SemStreams' revi
 
 ### Graph and state ownership
 
-Carried with graph-ingest from SemStreams' reviewer contract at the pin (§ Graph and state ownership). Its rules on
-`$entity.triple.*` substitution and on what rules carry return with the rule processor (change 6).
+Carried with graph-ingest and the rule substitution code from SemStreams' reviewer contract at the pin (§ Graph and
+state ownership). Its rule on what rules carry returns with the rule processor.
 
 - Only graph-ingest writes domain entities to `ENTITY_STATES`. Operational state belongs in a bucket its owner
   declares (`graph/kvcatalog` for a bucket whose ownership or retention the framework guarantees).
 - A lifecycle phase or other single-valued predicate replaces the old triple. An append is a finding: a reader may
   pick the first value or the last.
+- A rule's `$entity.triple.*` and other reference substitutions are checked against the production stamper. An
+  unresolved token may warn without failing.
 - State carried in a `context` value (`context.WithValue`, `ctx.Value`) is `BLOCKING` (owner ruling, #91 comment
   6124130342). The sole exception is natsclient's trace context (`ContextWithTrace`, `TraceContextFromContext`),
   which crosses consumer handler code (#605); any other value added to it, or a second context key, is `BLOCKING`.

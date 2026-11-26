@@ -5197,8 +5197,10 @@
     the rule definition and its one load step, read by the rule core (PRs 3-12 of the split plan) and by a
     product that checks its rule packs with its own action handlers (semteams, semboids)
   destination: >-
-    processor/rule (partial: definition.go, action.go, action_id.go, builtin.go, load.go, doc.go). PRs 3-12 add
-    the execution context and substitution (3), the action executor and graph actions (4), state and lifecycle
+    processor/rule (partial: definition.go, action.go, action_id.go, builtin.go, load.go, doc.go from PR 2;
+    execution_context.go, entity_substitution.go, message_substitution.go, typed_substitution.go,
+    lifecycle_substitution.go, state_tracker.go from PR 3, rewritten, with a pin-order scan in place of the pin's
+    nine passes). PRs 4-12 add the action executor and graph actions (4), state and lifecycle
     actions (5), the expression rule and its matching (6), the stateful evaluator and firing caps (7), the
     processor, its registration and file loader (8), the message input (9), the entity watch (10), cron (11) and
     hot reload (12)
@@ -5212,22 +5214,66 @@
     user.response.> publish subject, an undeclared or substituted triple predicate, a rule-opaque or undeclared condition
     field, a bad or templated regex, an ID that is not one KV literal token, a bad entity pattern, negative counts,
     rerun_on_recovery with nothing to re-run, and an enabled cron rule. The firing-cap key is the action's id or a
-    SHA-256 over rule ID, type and the canonical body
+    SHA-256 over rule ID, type and the canonical body. Added by rule-core-03-context (the rule-substitution and
+    rule-state specs): ExecutionContext (EntityID, Entity, State, MessageData, Lifecycle) with RuleID,
+    SubstituteVariables, SubstituteVariablesTyped and SubstituteVariablesWith, which fills a handler's own names in
+    the same scan. A template is read once, token by token, and inserted text is never read again; a token nothing
+    fills stays and is reported in one warning. Fixed names end where the name ends; $entity.triple.<path> is the
+    first value, .triples every value as JSON array text (the typed path returns no list; a caller decodes the text),
+    .length the count of every value;
+    $state.*, $now, $message.<path> and the four $entity.lifecycle.* fields read from the context, the lifecycle
+    ones through LifecycleManager with one lookup per context. MatchState is the stored evaluation record and
+    StateTracker (NewStateTracker over natsclient.KVStore, Get, Set, DeleteAllForEntity) keeps it, each key checked
+    by ValidateKVLiteralKey, an absent record ErrStateNotFound. The expression change: SubstitutionPrefixes() drops
+    $related. and $caller., which nothing fills, so a regex or template holding them is literal text
   dependencies_and_side_effects: >-
-    natsclient (key validators), pkg/errs, pkg/types (pattern validator), processor/rule/expression, vocabulary,
-    crypto/sha256, encoding/json, reflect; no goroutine, no I/O, no package state beyond the declared-key sets
+    natsclient (key validators; KVStore for StateTracker), pkg/errs, pkg/types (pattern validator),
+    pkg/lifecycle (phase constants), processor/rule/expression, vocabulary, crypto/sha256, encoding/json, reflect;
+    StateTracker reads and writes the rule-state records in its bucket; substitution has no goroutine and no I/O
+    beyond one LifecycleManager lookup per context; no package state beyond the declared-key sets
   known_risks: >-
     not carried, by ruling: Factory, Dependencies, Schema and the registry functions, interfaces.go,
     test_rule_factory.go, docs/custom-rules.md, the map round trip, the agentic action types and fields, deny and
     approve, related_patterns, entity watch_buckets with ErrorCodeEntityWatchBucketUnsupported, and the pin's
     shape-only fingerprint (an edit to any body key now starts a fresh count; stored counts are not migrated).
     effectiveMaxIterations and isUnlimited wait for the fire path (PR 7). Moved to PR 8: rule_loader.go, schema.go,
-    status.go. Enabled cron rules are refused until PR 11 (shortcut in load.go)
+    status.go. Enabled cron rules are refused until PR 11 (shortcut in load.go). Not carried from the pin's
+    execution context and state files: the $caller.* and $related.* namespaces, RelatedID, Related and pair keys,
+    $schedule.* and Schedule (PR 11), SubstituteVariablesWithIterVar, the iteration overlay and ResolveListValue,
+    ActionIterations (PR 7), StateTracker.Delete, the nil-bucket branches, the nine-regex substitution passes and
+    the pin's mock bucket. Changed: .length counts every value (it returned an error marker for a scalar); a
+    template is read once; StateTracker takes natsclient.KVStore, not jetstream.KeyValue. The record's writer, the
+    RULE_STATE bucket and its catalog row are PR 8's. The cover floor (80%) is unchanged
   proving_tests: >-
     processor/rule definition_test.go (TestDecodeDefinition, FuzzDecodeDefinition), action_test.go
     (TestNewHandlers, TestActionBody, TestBodyKeepsBytes), action_id_test.go (TestCapKey), builtin_test.go
     (TestBuiltinCheck), load_test.go (TestLoadRefuses, TestLoadAccepts, TestLoadRefusesReservedSubject,
-    TestSemboidsPackLoads); notes/2.1.md, 2.5.md and 2.6.md of the change record failing-first output and mutation
-    checks
-  owner: rule-core-02-definitions developer
+    TestSemboidsPackLoads); PR 3: execution_context_test.go (TestRuleID, TestStateTokens, TestNowToken,
+    TestSubstituteConditionValues, TestSubstituteWithNames), entity_substitution_test.go (TestSubstituteOnce,
+    TestTokenEnds, TestTripleLength), triple_length_substitution_test.go, triple_triples_substitution_test.go,
+    triple_value_substitution_test.go, message_substitution_test.go, lifecycle_substitution_test.go,
+    typed_substitution_test.go, state_tracker_test.go and state_tracker_integration_test.go (TestStateTracker),
+    substitution_prop_test.go (TestSubstitutionProperties); notes/2.1.md, 2.5.md and 2.6.md of change
+    rule-core-02-definitions and notes/2.1.md, 2.2.md and 2.4.md of change rule-core-03-context record
+    failing-first output and mutation checks
+  owner: rule-core-02-definitions developer; rule-core-03-context developer
+  disposition: adapt
+
+# Change rule-core-03-context (PR #759, epic #9): ADR-048 carried with the substitution code.
+
+- source_path: docs/adr/048-bounded-dispatcher-and-triples-substrate.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for the `.triples` substitution and `.length`, which processor/rule's entity substitution
+    implements; ported with it (rule-core-03-context design D3)
+  destination: docs/adr/048-bounded-dispatcher-and-triples-substrate.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    title shortened for markdownlint's heading length and a port note under the title: Decision 2 binds, Decision 1
+    (pkg/dispatch, the bounded dispatcher) is not carried, $related.* is not carried, `.length` counts every value
+    as the ADR says where the pin's code did not, and issue, release and sister-repository names are not this
+    repository's
+  proving_tests: n/a (task docs:check lints it)
+  owner: rule-core-03-context technical writer
   disposition: adapt

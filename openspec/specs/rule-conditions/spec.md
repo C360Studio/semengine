@@ -11,10 +11,9 @@ It decides whether a rule's conditions hold for an entity, its stored state and 
 ### Requirement: A regex pattern is compiled before evaluation
 
 `Compile` SHALL compile each `regex` pattern in a condition slice and keep it on that element. It SHALL refuse a
-non-string value, a pattern holding one of `SubstitutionPrefixes()` (`$now`, `$entity.`, `$related.`, `$state.`,
-`$schedule.`, `$caller.`, `$message.`), a pattern over 500 characters, and one `regexp` rejects; each refusal is
-classified invalid and names index and field. Evaluation SHALL never compile, and refuses a regex condition not
-compiled from its current value.
+non-string value, a pattern holding one of `SubstitutionPrefixes()` (`$now`, `$entity.`, `$state.`, `$schedule.`,
+`$message.`), a pattern over 500 characters, and one `regexp` rejects; each refusal is classified invalid and names
+index and field. Evaluation SHALL never compile, and refuses a regex condition not compiled from its current value.
 
 #### Scenario: A literal pattern matches as the standard library does
 
@@ -28,7 +27,8 @@ compiled from its current value.
 
 #### Scenario: Other dollar signs are literal
 
-- **WHEN** `Compile` receives `[$]now`, `[$a-z]+`, `^\$USD`, or an end-anchored pattern such as `^[a-z]+$`
+- **WHEN** `Compile` receives `[$]now`, `[$a-z]+`, `^\$USD`, `$caller.id`, `$related.id`, or an end-anchored
+  pattern such as `^[a-z]+$`
 - **THEN** it compiles without error
 
 #### Scenario: An uncompiled or edited regex condition is refused at evaluation

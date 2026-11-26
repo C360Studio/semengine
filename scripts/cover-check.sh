@@ -73,8 +73,9 @@ readonly targets=(
   "processor/graph-lexical merged"
   # processor/rule/expression is in-memory only: its unit lane is the whole of its tests.
   "processor/rule/expression unit"
-  # processor/rule is in-memory only: its unit lane is the whole of its tests.
-  "processor/rule unit"
+  # processor/rule's rule state is tested only against real NATS (integration lane); the rest of the package is
+  # in-memory (unit lane), so the floor holds over both lanes merged.
+  "processor/rule merged"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

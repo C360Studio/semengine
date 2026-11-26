@@ -57,17 +57,17 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   `[ERROR_LENGTH_NOT_LIST` change to D3.
 - [x] 2.7 Comments: the 35 port-history lines of inventory F28 keep their reason and lose the history; the segment
   pass's order claim (`entity_substitution.go:31-34`) goes (F26).
-- [ ] 2.8 Extend PR 2's ledger row `processor/rule` with what this PR adds; keep its `scripts/cover-check.sh` floor
+- [x] 2.8 Extend PR 2's ledger row `processor/rule` with what this PR adds; keep its `scripts/cover-check.sh` floor
   (80%). Check: `task ledger:check`, `task cover:check`.
 - [ ] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
   adopter section says `Entity`, `State` and `MessageData` are read-only to a handler (D7).
 
 ## 3. Docs
 
-- [ ] 3.1 Port ADR-048 to `docs/adr/048-bounded-dispatcher-and-triples-substrate.md` with a port note (D3: Decision
+- [x] 3.1 Port ADR-048 to `docs/adr/048-bounded-dispatcher-and-triples-substrate.md` with a port note (D3: Decision
   2 binds; the dispatcher half is not carried with it; `.length` now counts every value) and its ledger row.
   Check: `task docs:check`, `task ledger:check`.
-- [ ] 3.2 Add the `$entity.triple.*` clause (pin `.agents/contracts/semstreams-reviewer.md:241-242`) to
+- [x] 3.2 Add the `$entity.triple.*` clause (pin `.agents/contracts/semstreams-reviewer.md:241-242`) to
   `.agents/contracts/semengine-reviewer.md` § Graph and state ownership, replacing the deferral at `:325-326`.
 
 ## 4. Land

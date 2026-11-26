@@ -5,8 +5,9 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 1. Proposal
 
-- [x] 1.1 The owner fills `Approved-by:` in `proposal.md`: re-approval after the graph-index count change
-  (first approval: PR #772 comment 7197671217, sha256:da8362268350).
+- [ ] 1.1 The owner fills `Approved-by:` in `proposal.md`. OPEN-Q: third approval, after correcting what
+  graph-embedding does. Earlier approvals: PR #772 comments 7197671217 (sha256:da8362268350) and 7202436636
+  (sha256:e16c41266dd3).
 
 ## 2. Code and test
 

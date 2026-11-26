@@ -6,9 +6,10 @@
   the watch's client-side buffer passes nats.go's 64 MiB subscription limit, messages are dropped, and nats.go resets
   the watch without a log line (#750, #765 inventory comment 7196643617).
 - graph-index never applies the delivered value: it reads the entity again before it writes
-  (`processor/graph-index/index.go:211`). graph-lexical, graph-embedding and graph-clustering apply it
-  (`processor/graph-lexical/apply.go:156`, `processor/graph-embedding/hop1.go:80`,
-  `processor/graph-clustering/component.go:281`).
+  (`processor/graph-index/index.go:211`). graph-lexical and graph-clustering apply it
+  (`processor/graph-lexical/apply.go:156`, `processor/graph-clustering/component.go:281`). graph-embedding re-reads
+  current state too (`processor/graph-embedding/hop1.go:26-31`; `:80` passes its own read's value), but counts its
+  input from the delivered `Entry.Bytes` (`hop1.go:34`), and its watch still carries values.
 - With `jetstream.MetaOnly()` the watch still delivers a delete and a purge with their operation, delivers revisions
   in order, and sends the end-of-replay marker, at nats.go v1.55.0 and the pinned nats-server
   (`notes/2.1.md`, from the follower's integration tests in both modes).

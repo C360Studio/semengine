@@ -1,6 +1,6 @@
 # Proposal: fix-765-follower-keys-only
 
-Approved-by: cglusky (2026-11-26) <https://github.com/C360Studio/semengine/pull/772#issuecomment-7202436636> sha256:e16c41266dd3
+Approved-by:
 
 Track: `design` (two capabilities). Capabilities: `entity-state-follower` (modified: "An entry carries the delivered
 value") and `graph-index` (renamed and modified: "DataFlow counts deliveries" becomes "DataFlow counts entity
@@ -11,9 +11,10 @@ reads"). Packages: `graph/follower`, `processor/graph-index`. Design: `design.md
 After a warm restart over a large store, graph-index's follower watch replays every stored entity with its full
 value. The watch's client-side buffer passes nats.go's 64 MiB subscription limit, messages are dropped, and nats.go
 resets the watch, with nothing logged (#750, #765). graph-index never uses the delivered value: it reads each entity
-again when it applies it (`processor/graph-index/index.go:211`). The other three users of `graph/follower` do apply
-the value (`processor/graph-lexical/apply.go:156`, `processor/graph-embedding/hop1.go:80`,
-`processor/graph-clustering/component.go:281`).
+again when it applies it (`processor/graph-index/index.go:211`). graph-lexical and graph-clustering apply the value
+(`processor/graph-lexical/apply.go:156`, `processor/graph-clustering/component.go:281`). graph-embedding re-reads too
+(`processor/graph-embedding/hop1.go:26-31`) but counts its input from the delivered bytes (`hop1.go:34`); its watch
+is left as it is here.
 
 This is step 1 of the order the owner ruled on #765 (comment 7196901233): small fix, then measure, then design. Its
 shape was confirmed in a Fable read (comment 7197615534).

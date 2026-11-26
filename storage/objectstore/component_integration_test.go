@@ -126,14 +126,12 @@ func clientJetStream(t *testing.T, client *natsclient.Client) jetstream.JetStrea
 	return js
 }
 
-// awaitHealth waits, up to 30 seconds, for done to accept the Component's Health. The input check
-// that writes what Health reads runs every five seconds on its own goroutine; the wait orders the
+// awaitHealth waits under ctx for done to accept the Component's Health. The input check that
+// writes what Health reads runs every five seconds on its own goroutine; the wait orders the
 // assertion after that write.
 func awaitHealth(ctx context.Context, t *testing.T, c *Component, done func(component.HealthStatus) bool) (component.HealthStatus, error) {
 	t.Helper()
-	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	return probe.Await(waitCtx, func(context.Context) (component.HealthStatus, error) {
+	return probe.Await(ctx, func(context.Context) (component.HealthStatus, error) {
 		return c.Health(), nil
 	}, done)
 }
@@ -351,8 +349,7 @@ func TestLostJetStreamInputReportsUnhealthy(t *testing.T) {
 // created again, Health is unhealthy naming the consumer, before and after a message is published
 // to it, while the loop still runs.
 func TestMemoryInputLostAtBrokerRestartStaysUnhealthy(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
-	defer cancel()
+	ctx := t.Context()
 
 	// Own server: restarts the server mid-test.
 	f := natsfixture.New(t)
@@ -378,12 +375,12 @@ func TestMemoryInputLostAtBrokerRestartStaysUnhealthy(t *testing.T) {
 	createInputStream(ctx, t, f.JetStream(), jetstream.MemoryStorage)
 	// The Component's own client sees the stream again, so the check's next lookup reaches the
 	// broker and fails on the consumer, not on the connection.
+	// The lookup's error is kept, so a wait that never ends says which step failed: no connection,
+	// a timed-out request, or a stream the broker does not have.
 	js := clientJetStream(t, client)
-	visibleCtx, cancelVisible := context.WithTimeout(ctx, 20*time.Second)
-	defer cancelVisible()
-	if _, err := probe.Await(visibleCtx, func(ctx context.Context) (bool, error) {
+	if _, err := probe.Await(ctx, func(ctx context.Context) (bool, error) {
 		_, err := js.Stream(ctx, inputStream)
-		return err == nil, nil
+		return err == nil, err
 	}, func(found bool) bool { return found }); err != nil {
 		t.Fatalf("the Component's client must reach %s after the restart: %v", inputStream, err)
 	}

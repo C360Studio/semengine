@@ -10,7 +10,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 2. Code and test
 
-- [ ] 2.1 A test, shown red on the current code first: graph-index started with a backlog it cannot finish quickly
+- [x] 2.1 A test, shown red on the current code first: graph-index started with a backlog it cannot finish quickly
   (one lane, many queued entities), then `Stop` under a short context returns nil, the queued entities not yet
   started are neither marked failed nor completed, and no `readiness withheld` warning is logged. Record the red run
   in `notes/2.1.md`.

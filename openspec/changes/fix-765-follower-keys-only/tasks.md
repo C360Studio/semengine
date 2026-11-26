@@ -5,7 +5,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:` in `proposal.md`.
+- [x] 1.1 The owner fills `Approved-by:` in `proposal.md`.
 
 ## 2. Code and test
 

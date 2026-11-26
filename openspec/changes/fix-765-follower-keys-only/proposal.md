@@ -1,6 +1,6 @@
 # Proposal: fix-765-follower-keys-only
 
-Approved-by:
+Approved-by: cglusky (2026-11-26) <https://github.com/C360Studio/semengine/pull/772#issuecomment-7197671217> sha256:da8362268350
 
 Track: `quick`. Capability: `entity-state-follower` (one Requirement modified: "An entry carries the delivered
 value"). Packages: `graph/follower`, `processor/graph-index`.

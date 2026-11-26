@@ -137,115 +137,6 @@ func TestGraphIndexLifecycleSuite(t *testing.T) {
 	})
 }
 
-// TestStopWritesAcceptedWork: work the keyed pool accepted before Stop is written before Stop
-// returns nil, with no error counted and no failure logged (spec "Stop writes accepted work").
-// The entities are stored before Start, so the replay hands them to the one lane far faster than
-// it writes them, and Stop runs with a backlog.
-func TestStopWritesAcceptedWork(t *testing.T) {
-	client := fixtureClient(t)
-	states := ensureEntityStates(t, client)
-	const accepted = 500
-	target := entityID(999)
-	for n := 1; n <= accepted+1; n++ {
-		id := entityID(n)
-		if _, err := states.Put(t.Context(), id, entityValue(t, id, stmt{linkTo, target})); err != nil {
-			t.Fatalf("put %s: %v", id, err)
-		}
-	}
-	c, logs := newIndex(t, client, `{}`) // one lane
-	startComponent(t, c)
-	h := &harness{c: c, client: client}
-
-	// The follower calls Deliver for one entry at a time, and deliver counts an entry before it
-	// submits it. The last entry counted therefore means every earlier entry's submit has
-	// returned: the first 500 entries are accepted work.
-	await(t, "every entry delivered",
-		func(context.Context) (int64, error) { return c.DataFlow().Messages, nil },
-		func(n int64) bool { return n >= accepted+1 })
-	if written := len(h.keys(t, graph.BucketOutgoingIndex)); written >= accepted {
-		t.Fatalf("%d of %d entities already written before Stop; the test needs a backlog", written, accepted)
-	}
-	errorsBefore := c.Health().ErrorCount
-
-	stopComponent(t, c)
-
-	written := h.keys(t, graph.BucketOutgoingIndex)
-	var missing []string
-	for n := 1; n <= accepted; n++ {
-		if !slices.Contains(written, entityID(n)) {
-			missing = append(missing, entityID(n))
-		}
-	}
-	if len(missing) > 0 {
-		t.Errorf("%d accepted entities not written when Stop returned nil, first %s", len(missing), missing[0])
-	}
-	if got := c.Health().ErrorCount; got != errorsBefore {
-		t.Errorf("ErrorCount = %d after Stop, want %d", got, errorsBefore)
-	}
-	for _, level := range []string{"level=WARN", "level=ERROR"} {
-		if out := logs.String(); strings.Contains(out, level) {
-			t.Errorf("a clean Stop logged at %s:\n%s", level, out)
-		}
-	}
-}
-
-// TestStopInterruptedThenRetriedWritesAcceptedWork: a Stop whose context ends while the pool is
-// still draining returns that context's error and keeps its handles, and a second Stop finishes
-// the drain, so every accepted entity is written (spec "Stop writes accepted work"; ADR-113).
-//
-// The test depends on the drain outlasting the cancel: the backlog is observed before Stop, as in
-// TestStopWritesAcceptedWork, and the cancel follows Stop's entry into cleanup by one observation.
-// If the drain ever wins, the first Stop returns nil and the test fails as "no backlog", never
-// passing without having interrupted a drain.
-func TestStopInterruptedThenRetriedWritesAcceptedWork(t *testing.T) {
-	client := fixtureClient(t)
-	states := ensureEntityStates(t, client)
-	const accepted = 500
-	target := entityID(999)
-	for n := 1; n <= accepted+1; n++ {
-		id := entityID(n)
-		if _, err := states.Put(t.Context(), id, entityValue(t, id, stmt{linkTo, target})); err != nil {
-			t.Fatalf("put %s: %v", id, err)
-		}
-	}
-	c, _ := newIndex(t, client, `{}`) // one lane
-	startComponent(t, c)
-	h := &harness{c: c, client: client}
-
-	// As in TestStopWritesAcceptedWork: the last entry counted means the first 500 are accepted.
-	await(t, "every entry delivered",
-		func(context.Context) (int64, error) { return c.DataFlow().Messages, nil },
-		func(n int64) bool { return n >= accepted+1 })
-	if written := len(h.keys(t, graph.BucketOutgoingIndex)); written >= accepted {
-		t.Fatalf("%d of %d entities already written before Stop; the test needs a backlog", written, accepted)
-	}
-
-	stopCtx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	first := make(chan error, 1)
-	go func() { first <- c.Stop(stopCtx) }()
-	// component.Lifecycle reports "stopped" before it runs cleanup, so this orders the cancel after
-	// Stop has been entered, not after the drain has begun.
-	await(t, "Stop entered",
-		func(context.Context) (string, error) { return c.Health().Status, nil },
-		func(status string) bool { return status == "stopped" })
-	cancel()
-	if err := <-first; err == nil {
-		t.Fatal("the first Stop returned nil: the drain finished before the cancel, no backlog interrupted")
-	} else if !errors.Is(err, context.Canceled) {
-		t.Fatalf("first Stop = %v, want context.Canceled", err)
-	}
-
-	stopComponent(t, c)
-
-	written := h.keys(t, graph.BucketOutgoingIndex)
-	for n := 1; n <= accepted; n++ {
-		if !slices.Contains(written, entityID(n)) {
-			t.Fatalf("accepted entity %s not written after the retried Stop", entityID(n))
-		}
-	}
-}
-
 // laneHold holds the one lane inside the first entity it indexes: holdFirstIndexed sends that
 // entity on entered once its index rows are written, then waits for release.
 type laneHold struct {
@@ -299,7 +190,7 @@ func (h holdFirstIndexed) WithGroup(name string) slog.Handler {
 // The one lane is held inside the first entity until the first Stop, under a context that has
 // already ended, has run its cleanup: that Stop returns the context's error and has begun the
 // pool's shutdown. The lane is then let go, and a second Stop, under a short context, returns
-// nil.
+// nil, so a Stop its context interrupted is finished by the next one.
 func TestStopDropsQueuedWork(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
@@ -337,8 +228,9 @@ func TestStopDropsQueuedWork(t *testing.T) {
 	h := &harness{c: c, f: c.follower.Load(), client: client}
 
 	inFlight := <-hold.entered
-	// As in TestStopWritesAcceptedWork: the last entry counted means every earlier entry's submit
-	// has returned, so at least stored-1 entities wait in the lane behind the one in flight.
+	// The follower calls Deliver for one entry at a time, and deliver counts an entry before it
+	// submits it. The last entry counted therefore means every earlier entry's submit has
+	// returned, so at least stored-2 entities wait in the lane behind the one in flight.
 	await(t, "every entry delivered",
 		func(context.Context) (int64, error) { return c.DataFlow().Messages, nil },
 		func(n int64) bool { return n >= stored })

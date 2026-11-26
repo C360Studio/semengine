@@ -173,8 +173,11 @@ four outputs must be exactly the four index buckets above; an input or output th
 `Health` is `Healthy` once started, and unhealthy while any of these holds: a stored value could not be decoded (a
 damaged entity), index writes are unresolved, or the `ENTITY_STATES` feed is lost. Its `Stuck` text names the count, up
 to 10 damaged entity IDs with the reason for each, and the repair: write a valid value for the key or delete it. The
-error count is reported and never lowers `Healthy` by itself (ADR-109). `DataFlow` counts one input per delivered
-`ENTITY_STATES` entry, update or delete, before merging.
+error count is reported and never lowers `Healthy` by itself (ADR-109). The `ENTITY_STATES` watch carries keys only,
+and graph-index reads each entity itself to apply it. `DataFlow` counts one input per successful entity read, with the
+byte length of the value read: writes merged into one apply count once, and a delete, whose read finds nothing,
+counts none. A key the KV key check refuses is never read and counts none; a key that passes it but is not a literal
+entity ID is read, counted, and then reported damaged. `watch_events_total` counts every delivered entry by kind.
 
 The follower publishes the readiness record to `GRAPH_STATUS` at once and then every heartbeat, with `indexed_revision`,
 `target_revision` and `failed_count`. The state reads `degraded` when index writes are unresolved, a damaged entity is

@@ -417,6 +417,38 @@ func TestDataFlowCountsReplayedBytes(t *testing.T) {
 	}
 }
 
+// TestWatchCarriesKeysOnly starts graph-index as a deployment does and reads its ENTITY_STATES
+// watch's consumer from the server: it is the only consumer on the bucket's stream, and it
+// delivers headers only, so a replay carries no stored values. The entity's apply orders the read
+// after the watch has started and delivered.
+func TestWatchCarriesKeysOnly(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	h.awaitIndexed(t, h.put(t, entityID(1), entityValue(t, entityID(1), stmt{armed, true})))
+
+	js, err := h.client.JetStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := js.Stream(t.Context(), "KV_"+graph.BucketEntityStates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumers := stream.ListConsumers(t.Context())
+	var seen int
+	for info := range consumers.Info() {
+		seen++
+		if !info.Config.HeadersOnly {
+			t.Errorf("consumer %s on %s delivers values (HeadersOnly false); want headers only", info.Name, graph.BucketEntityStates)
+		}
+	}
+	if err := consumers.Err(); err != nil {
+		t.Fatalf("list consumers: %v", err)
+	}
+	if seen != 1 {
+		t.Errorf("%d consumers on %s, want 1, the follower's watch", seen, graph.BucketEntityStates)
+	}
+}
+
 // TestFailedWriteWithholdsReadinessAndRepairClearsIt deletes INCOMING_INDEX under the running
 // index, as an operator wiping it would, and writes an entity with an edge. Its required write
 // fails: the entity is counted unresolved, the follower names it and refuses queries, and the

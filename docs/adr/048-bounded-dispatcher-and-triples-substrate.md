@@ -7,7 +7,8 @@
 > Read it with these facts about this repository:
 >
 > - Binding here: Decision 2, the `.triples` substitution. `$entity.triple.P` is the first value, `.triples` is every
->   value as a JSON array in text and as a list in a condition, and `.length` is the number of values `.triples`
+>   value as JSON array text in a template (the ADR below also promises a typed list; here typed substitution returns
+>   none, and a caller decodes the text), a condition's list operators read every value, and `.length` is the number of values `.triples`
 >   lists: a scalar triple counts one, a list value counts its elements, an absent predicate counts zero. The ADR
 >   states `.length` as "the COUNT of values"; the SemStreams code counted only the first triple's list
 >   elements and returned an error marker for a scalar, and this repository's code follows the ADR.

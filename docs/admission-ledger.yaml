@@ -5219,7 +5219,8 @@
     SubstituteVariables, SubstituteVariablesTyped and SubstituteVariablesWith, which fills a handler's own names in
     the same scan. A template is read once, token by token, and inserted text is never read again; a token nothing
     fills stays and is reported in one warning. Fixed names end where the name ends; $entity.triple.<path> is the
-    first value, .triples every value as a JSON array (a list in the typed path), .length the count of every value;
+    first value, .triples every value as JSON array text (the typed path returns no list; a caller decodes the text),
+    .length the count of every value;
     $state.*, $now, $message.<path> and the four $entity.lifecycle.* fields read from the context, the lifecycle
     ones through LifecycleManager with one lookup per context. MatchState is the stored evaluation record and
     StateTracker (NewStateTracker over natsclient.KVStore, Get, Set, DeleteAllForEntity) keeps it, each key checked

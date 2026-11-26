@@ -127,9 +127,9 @@ func TestEvaluateRefusesRegexEditedAfterCompile(t *testing.T) {
 	}
 }
 
-// The seven tokens the substituter fills in anywhere in a value.
+// The five tokens the substituter fills in anywhere in a value.
 var wantSubstitutionPrefixes = []string{
-	"$now", "$entity.", "$related.", "$state.", "$schedule.", "$caller.", "$message.",
+	"$now", "$entity.", "$state.", "$schedule.", "$message.",
 }
 
 func TestSubstitutionPrefixes(t *testing.T) {
@@ -220,6 +220,21 @@ func TestCompileAccepts(t *testing.T) {
 			got, err := evaluateOne(t, regexEntity(t, tc.match), conds[0])
 			require.NoError(t, err)
 			assert.True(t, got, "%q matches %q", tc.pattern, tc.match)
+		})
+	}
+}
+
+// No substituter fills $caller. or $related., so a pattern holding either is an
+// ordinary pattern: an end anchor followed by literal text.
+func TestCompileAcceptsNamesOutsideNamespaces(t *testing.T) {
+	for _, pattern := range []string{`$caller.id`, `$related.id`, `^x-$caller.role`} {
+		t.Run(pattern, func(t *testing.T) {
+			conds := []ConditionExpression{regexCondition(pattern)}
+			require.NoError(t, Compile(conds))
+
+			got, err := evaluateOne(t, regexEntity(t, "x-caller.role"), conds[0])
+			require.NoError(t, err)
+			assert.False(t, got, "text after an end anchor never matches")
 		})
 	}
 }

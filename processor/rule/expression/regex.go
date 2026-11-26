@@ -14,12 +14,12 @@ import (
 const maxPatternLength = 500
 
 // SubstitutionPrefixes returns the tokens the rule engine's substituter fills in
-// anywhere in a condition value: "$now", "$entity.", "$related.", "$state.",
-// "$schedule.", "$caller." and "$message.". Compile refuses a regex pattern
+// anywhere in a condition value: "$now", "$entity.", "$state.", "$schedule."
+// and "$message.". Compile refuses a regex pattern
 // holding any of them, since a pattern rewritten after it was checked is not
 // the pattern that was checked. Each call returns a fresh slice.
 func SubstitutionPrefixes() []string {
-	return []string{"$now", "$entity.", "$related.", "$state.", "$schedule.", "$caller.", "$message."}
+	return []string{"$now", "$entity.", "$state.", "$schedule.", "$message."}
 }
 
 // Compile prepares every regex condition in conds for evaluation: it compiles

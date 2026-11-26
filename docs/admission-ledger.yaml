@@ -3627,7 +3627,8 @@
     query_test.go, revision_coalescer_test.go, index_integration_test.go (TestIndexReplacementThroughEveryIndex,
     TestFailedWriteWithholdsReadinessAndRepairClearsIt, TestDamagedEntityLeftOutAndNamed (damaged_integration_test.go),
     TestRepairedEntityReturns (damaged_integration_test.go), TestKVUnsafeAliasIsIndexed), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
-    TestStopDropsQueuedWork, TestSecondStartIsRefused, TestStartContextEndStopsNothing,
+    TestStopDropsQueuedWork, TestStopDropsQueuedWorkFromItsStart, TestSecondStartIsRefused,
+    TestStartContextEndStopsNothing,
     TestHealthIgnoresErrorCountAndTracksStuckStates, TestLatchBootstrap_ContinuousWrite), query_integration_test.go
     (TestGraphIndexServesExactlyTheDeclaredVerbs, TestQueryDuringStartupReplayIsIndexNotReady,
     TestQueryResponseCarriesIndexedRevisionAndProducer, TestQueriesAreRefusedWhileTheFeedIsLost,

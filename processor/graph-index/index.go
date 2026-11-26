@@ -187,8 +187,8 @@ func (c *Component) submit(ctx context.Context, work indexWork) {
 // processWork is the one mutation entry for deliveries, coalesced batches and repair; the
 // pool keeps each key's work in submit order. Each item applies current authoritative
 // state, not the event it came from, so a repair that read R2 before the follower
-// submitted R1 cannot be undone by R1. Once Stop has begun it does nothing: the work is
-// neither applied nor completed, and the next start's replay re-indexes the entity.
+// submitted R1 cannot be undone by R1. From the moment Stop begins it does nothing: the work
+// is neither applied nor completed, and the next start's replay re-indexes the entity.
 func (c *Component) processWork(ctx context.Context, work indexWork) {
 	if c.stopping.Load() {
 		return

@@ -182,19 +182,25 @@ func (h holdFirstIndexed) WithGroup(name string) slog.Handler {
 	return holdFirstIndexed{h.Handler.WithGroup(name), h.hold}
 }
 
-// TestStopDropsQueuedWork: a Stop with a backlog writes the entity already in flight and
-// leaves the queued ones alone. They are not read, not written, not marked failed, and their
-// revisions are not completed, and nothing is logged as a warning. The next boot replays every
-// stored entity, so nothing is lost.
-//
-// The one lane is held inside the first entity until the first Stop, under a context that has
-// already ended, has run its cleanup: that Stop returns the context's error and has begun the
-// pool's shutdown. The lane is then let go, and a second Stop, under a short context, returns
-// nil, so a Stop its context interrupted is finished by the next one.
-func TestStopDropsQueuedWork(t *testing.T) {
-	client := fixtureClient(t)
+// heldBacklog is graph-index on one lane, held inside the first of stored entities with the
+// rest queued behind it.
+type heldBacklog struct {
+	c            *Component
+	h            *harness
+	logs         *logBuffer
+	inFlight     string            // the entity the lane is held inside, its rows written
+	revisions    map[string]uint64 // each stored entity's revision
+	errorsBefore int
+	releaseLane  func()
+}
+
+// startHeldBacklog stores the entities, starts graph-index and returns once the lane is held
+// inside the first and every entry is counted. The follower calls Deliver for one entry at a
+// time, and deliver counts an entry before it submits it, so the last entry counted means every
+// earlier entry's submit has returned: at least stored-2 entities wait behind the one in flight.
+func startHeldBacklog(t *testing.T, client *natsclient.Client, stored int) *heldBacklog {
+	t.Helper()
 	states := ensureEntityStates(t, client)
-	const stored = 50
 	target := entityID(999)
 	revisions := make(map[string]uint64, stored)
 	for n := 1; n <= stored; n++ {
@@ -207,7 +213,7 @@ func TestStopDropsQueuedWork(t *testing.T) {
 	}
 
 	hold := &laneHold{entered: make(chan string, 1), release: make(chan struct{})}
-	releaseOnce := sync.OnceFunc(func() { close(hold.release) })
+	releaseLane := sync.OnceFunc(func() { close(hold.release) })
 	logs := &logBuffer{}
 	built, err := CreateGraphIndex(json.RawMessage(`{}`), component.Dependencies{ // one lane
 		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
@@ -224,52 +230,43 @@ func TestStopDropsQueuedWork(t *testing.T) {
 		t.Fatalf("Initialize: %v", err)
 	}
 	startComponent(t, c)
-	t.Cleanup(releaseOnce) // runs before startComponent's Stop
-	h := &harness{c: c, f: c.follower.Load(), client: client}
+	t.Cleanup(releaseLane) // runs before startComponent's Stop
 
 	inFlight := <-hold.entered
-	// The follower calls Deliver for one entry at a time, and deliver counts an entry before it
-	// submits it. The last entry counted therefore means every earlier entry's submit has
-	// returned, so at least stored-2 entities wait in the lane behind the one in flight.
 	await(t, "every entry delivered",
 		func(context.Context) (int64, error) { return c.DataFlow().Messages, nil },
-		func(n int64) bool { return n >= stored })
-	errorsBefore := c.Health().ErrorCount
+		func(n int64) bool { return n >= int64(stored) })
+	return &heldBacklog{
+		c: c, h: &harness{c: c, f: c.follower.Load(), client: client}, logs: logs,
+		inFlight: inFlight, revisions: revisions, errorsBefore: c.Health().ErrorCount,
+		releaseLane: releaseLane,
+	}
+}
 
-	ended, cancelEnded := context.WithDeadline(t.Context(), time.Unix(1, 0))
-	defer cancelEnded()
-	if err := c.Stop(ended); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Stop(ended) = %v, want context.DeadlineExceeded with the lane held", err)
+// requireQueuedDropped checks, after a Stop that returned nil, so with every lane joined, that
+// only the entity in flight was written: no queued entity has rows, none is marked failed, no
+// queued revision is completed, and nothing is logged as a warning.
+func (b *heldBacklog) requireQueuedDropped(t *testing.T) {
+	t.Helper()
+	if written := b.h.keys(t, graph.BucketOutgoingIndex); !slices.Equal(written, []string{b.inFlight}) {
+		t.Errorf("outgoing rows after Stop = %d entities, want only the one in flight (%s)", len(written), b.inFlight)
 	}
-	releaseOnce()
-	// The deadline is the behaviour under test: with the queue dropped, Stop waits for one
-	// entity's writes, not for the backlog.
-	short, cancelShort := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancelShort()
-	if err := c.Stop(short); err != nil {
-		t.Fatalf("retried Stop under a short context = %v, want nil", err)
-	}
-
-	// Stop has returned nil, so every lane has joined: what the lanes did is settled.
-	if written := h.keys(t, graph.BucketOutgoingIndex); !slices.Equal(written, []string{inFlight}) {
-		t.Errorf("outgoing rows after Stop = %d entities, want only the one in flight (%s)", len(written), inFlight)
-	}
-	if got := c.failedTotal(); got != 0 {
+	if got := b.c.failedTotal(); got != 0 {
 		t.Errorf("%d entities marked failed after Stop, want 0", got)
 	}
 	lowestQueued := uint64(0)
-	for id, rev := range revisions {
-		if id != inFlight && (lowestQueued == 0 || rev < lowestQueued) {
+	for id, rev := range b.revisions {
+		if id != b.inFlight && (lowestQueued == 0 || rev < lowestQueued) {
 			lowestQueued = rev
 		}
 	}
-	if got := h.f.Indexed(); got >= lowestQueued {
+	if got := b.h.f.Indexed(); got >= lowestQueued {
 		t.Errorf("indexed floor = %d after Stop, want below %d: a queued revision was completed", got, lowestQueued)
 	}
-	if got := c.Health().ErrorCount; got != errorsBefore {
-		t.Errorf("ErrorCount = %d after Stop, want %d", got, errorsBefore)
+	if got := b.c.Health().ErrorCount; got != b.errorsBefore {
+		t.Errorf("ErrorCount = %d after Stop, want %d", got, b.errorsBefore)
 	}
-	out := logs.String()
+	out := b.logs.String()
 	if strings.Contains(out, "readiness withheld") {
 		t.Errorf("Stop logged readiness withheld:\n%s", out)
 	}
@@ -278,6 +275,81 @@ func TestStopDropsQueuedWork(t *testing.T) {
 			t.Errorf("Stop logged at %s:\n%s", level, out)
 		}
 	}
+}
+
+// TestStopDropsQueuedWork: a Stop with a backlog writes the entity already in flight and
+// leaves the queued ones alone. They are not read, not written, not marked failed, and their
+// revisions are not completed, and nothing is logged as a warning. The next boot replays every
+// stored entity, so nothing is lost.
+//
+// The one lane is held inside the first entity until the first Stop, under a context that has
+// already ended, has run its cleanup: that Stop returns the context's error and has begun the
+// pool's shutdown. The lane is then let go, and a second Stop, under a short context, returns
+// nil, so a Stop its context interrupted is finished by the next one.
+func TestStopDropsQueuedWork(t *testing.T) {
+	b := startHeldBacklog(t, fixtureClient(t), 50)
+
+	ended, cancelEnded := context.WithDeadline(t.Context(), time.Unix(1, 0))
+	defer cancelEnded()
+	if err := b.c.Stop(ended); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop(ended) = %v, want context.DeadlineExceeded with the lane held", err)
+	}
+	b.releaseLane()
+	// The deadline is the behaviour under test: with the queue dropped, Stop waits for one
+	// entity's writes, not for the backlog.
+	short, cancelShort := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelShort()
+	if err := b.c.Stop(short); err != nil {
+		t.Fatalf("retried Stop under a short context = %v, want nil", err)
+	}
+	b.requireQueuedDropped(t)
+}
+
+// TestStopDropsQueuedWorkFromItsStart: the cutoff is where Stop begins, not where the pool
+// shuts down. A query handler that is still running holds Stop in its subscription drain; the
+// lane, let go during that drain, must still leave the queued entities alone.
+func TestStopDropsQueuedWorkFromItsStart(t *testing.T) {
+	client := fixtureClient(t)
+	b := startHeldBacklog(t, client, 50)
+
+	entered := make(chan struct{})
+	enteredOnce := sync.OnceFunc(func() { close(entered) })
+	release := make(chan struct{})
+	releaseHandler := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseHandler)
+	const stuckSubject = "test.graph-index.stop-cutoff"
+	stuck, err := client.SubscribeForRequests(t.Context(), stuckSubject,
+		func(context.Context, []byte) ([]byte, error) {
+			enteredOnce()
+			<-release
+			return nil, nil
+		})
+	if err != nil {
+		t.Fatalf("subscribe %s: %v", stuckSubject, err)
+	}
+	// First, so its drain is the first thing Stop waits on.
+	b.c.subscriptions = append([]*natsclient.Subscription{stuck}, b.c.subscriptions...)
+	if err := client.GetConnection().PublishRequest(stuckSubject, "test.graph-index.reply", nil); err != nil {
+		t.Fatalf("publish %s: %v", stuckSubject, err)
+	}
+	<-entered
+
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), stopBound)
+	defer cancelStop()
+	stopped := make(chan error, 1)
+	go func() { stopped <- b.c.Stop(stopCtx) }()
+	// The flag is the event that orders the lane's release after Stop has begun: component.Lifecycle
+	// reports "stopped" before it calls cleanup, so Health cannot order it. The held handler keeps
+	// Stop in its first drain until releaseHandler.
+	await(t, "Stop began dropping queued work",
+		func(context.Context) (bool, error) { return b.c.stopping.Load(), nil },
+		func(set bool) bool { return set })
+	b.releaseLane()
+	releaseHandler()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Stop = %v, want nil", err)
+	}
+	b.requireQueuedDropped(t)
 }
 
 // TestStopWithAStuckHandlerStopsEveryOtherVerb: a handler that outlasts Stop's context does not

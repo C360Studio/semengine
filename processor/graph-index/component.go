@@ -79,9 +79,9 @@ type Component struct {
 	failedEntities sync.Map
 	failedCount    atomic.Int64
 
-	// stopping is set by cleanup before the pool shuts down. A lane that takes up queued work
-	// after that returns at once, so a stop waits for the writes in flight, not the backlog;
-	// the next start's replay re-indexes what was skipped.
+	// stopping is set first thing in cleanup, when Stop begins. A lane that takes up queued
+	// work after that returns at once, so a stop waits for the writes in flight, not the
+	// backlog; the next start's replay re-indexes what was skipped.
 	stopping atomic.Bool
 
 	// lastProjections maps an entity ID to the projection last indexed for it, for the
@@ -300,14 +300,16 @@ func (c *Component) Stop(ctx context.Context) error {
 }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating
-// a partial start. It initiates every query subscription drain, ends the feeds' context and
-// waits up to ctx for the feeds. It then sets stopping, so queued work no lane has started is
-// dropped with no read, write, failure mark or completed revision, and initiates pool Shutdown
-// while keeping poolCtx live until the writes already in flight have finished. It does not
-// return early on an earlier ctx error. A ctx that ends before all joins complete returns its
-// error with the handles kept, and the next Stop resumes; poolCancel runs and handles are
-// cleared once everything has joined.
+// a partial start. It first sets stopping, so from then on queued work no lane has started is
+// dropped with no read, write, failure mark or completed revision, even while cleanup waits on
+// a slow query below. It then initiates every query subscription drain, ends the feeds'
+// context, waits up to ctx for the feeds, and initiates pool Shutdown while keeping poolCtx
+// live until the writes already in flight have finished. It does not return early on an
+// earlier ctx error. A ctx that ends before all joins complete returns its error with the
+// handles kept, and the next Stop resumes; poolCancel runs and handles are cleared once
+// everything has joined.
 func (c *Component) cleanup(ctx context.Context) error {
+	c.stopping.Store(true)
 	var cleanupErr error
 	for _, sub := range c.subscriptions {
 		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
@@ -323,7 +325,6 @@ func (c *Component) cleanup(ctx context.Context) error {
 		}
 	}
 	if c.pool != nil {
-		c.stopping.Store(true)
 		cleanupErr = errors.Join(cleanupErr, c.pool.Shutdown(ctx))
 	}
 	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {

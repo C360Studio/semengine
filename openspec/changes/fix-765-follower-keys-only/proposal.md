@@ -1,9 +1,10 @@
 # Proposal: fix-765-follower-keys-only
 
-Approved-by: cglusky (2026-11-26) <https://github.com/C360Studio/semengine/pull/772#issuecomment-7197671217> sha256:da8362268350
+Approved-by:
 
-Track: `quick`. Capability: `entity-state-follower` (one Requirement modified: "An entry carries the delivered
-value"). Packages: `graph/follower`, `processor/graph-index`.
+Track: `design` (two capabilities). Capabilities: `entity-state-follower` (modified: "An entry carries the delivered
+value") and `graph-index` (renamed and modified: "DataFlow counts deliveries" becomes "DataFlow counts entity
+reads"). Packages: `graph/follower`, `processor/graph-index`. Design: `design.md`.
 
 ## Why
 
@@ -22,8 +23,8 @@ shape was confirmed in a Fable read (comment 7197615534).
 - `follower.Config` gains a keys-only field, off by default. With it set, the watch delivers keys and revisions only
   (`jetstream.MetaOnly()`). `Entry.Value` is nil and `Entry.Bytes` is 0 for every entry, and the owner reads the
   entity itself. The field's doc comment says so.
-- graph-index sets it. Its input-bytes count moves from the delivered entry to the bytes of its own entity read, so
-  the count keeps meaning what graph-index took in.
+- graph-index sets it. Its input count moves from the delivered entry to its own entity read: one input per entity
+  it reads, with that read's bytes, so the count keeps meaning what graph-index took in.
 - While the initial build runs, the follower logs its progress at Info: entries delivered, the watermark's observed
   and indexed revisions. Today that stretch is silent.
 
@@ -31,6 +32,8 @@ shape was confirmed in a Fable read (comment 7197615534).
 
 - graph-index's follower stops receiving entity values at boot. Only graph-index changes; the other three readers keep
   receiving values.
+- graph-index's input count means entities read, not entries delivered: coalesced writes count once, deletes and
+  refused keys count none, and repair reads count. The per-delivery count stays in `watch_events_total`.
 
 ## Non-goals
 

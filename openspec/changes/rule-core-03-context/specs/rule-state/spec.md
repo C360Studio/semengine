@@ -4,7 +4,8 @@
 
 ### Requirement: A rule's stored state is kept per rule and entity
 
-`StateTracker` SHALL store one `MatchState` per rule ID and entity key, under the key `<rule ID>.<entity key>`.
+`NewStateTracker` SHALL build a `StateTracker` over a `natsclient.KVStore`. `StateTracker` SHALL store one `MatchState`
+per rule ID and entity key, under the key `<rule ID>.<entity key>`.
 `Set` followed by `Get` for the same pair SHALL return an equal record. `Get` for a pair with no record SHALL return an
 error matching `ErrStateNotFound`.
 

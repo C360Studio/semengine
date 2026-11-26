@@ -121,6 +121,17 @@ predicate is absent. Otherwise the whole path SHALL be read as the predicate.
 - **THEN** the result is `0.82`, read as the predicate `autoresearch.best.value`, since `autoresearch.best` is not a
   3-part predicate
 
+### Requirement: Lifecycle names read the context's lifecycle manager
+
+An `ExecutionContext` whose `Lifecycle` field holds a `LifecycleManager` SHALL resolve the `$entity.lifecycle.*` names
+through that manager for the context's entity ID, looking the entity up at most once per context. With no manager, or
+an entity it does not know, each such name SHALL stay as written and be reported.
+
+#### Scenario: No lifecycle manager
+
+- **WHEN** the template is `$entity.lifecycle.phase` and the context's `Lifecycle` field is nil
+- **THEN** the result is `$entity.lifecycle.phase` and the token is reported
+
 ### Requirement: One token keeps its type
 
 `ExecutionContext.SubstituteVariablesTyped` SHALL return a value with its own type, and true, only when the whole

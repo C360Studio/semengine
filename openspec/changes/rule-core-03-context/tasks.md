@@ -31,7 +31,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
     `ErrStateNotFound`; a wildcard entity key and a dotted rule ID refused, classified invalid, no record written;
     a nil context refused; `DeleteAllForEntity` keeps other entities' records, returns nil on an empty bucket, and
     refuses `>` and an ID holding `*`, classified invalid, with every record kept.
-- [ ] 2.2 `ExecutionContext` and the substituter from `execution_context.go`, `typed_substitution.go`,
+- [x] 2.2 `ExecutionContext` and the substituter from `execution_context.go`, `typed_substitution.go`,
   `entity_substitution.go`, `message_substitution.go`, `lifecycle_substitution.go` (D1, D2, D3, D5, D6), reading
   `expression.SubstitutionPrefixes()`. Not carried: `Schedule` and the `$schedule.*` pass (D1),
   `caller_substitution.go`, `RelatedID`, `Related` and every `$related` branch (D4), `:256-268`, `:377-379`,
@@ -41,7 +41,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   template string in semteams' rules (4df44ae8) and semboids' (ab4e0fbc) through the pin copy and the port, each
   referenced predicate present: list every difference, each one an F19 or F20 case or `.length` (D3).
 - [x] 2.3 `LifecycleManager` with `LookupByEntityID` and `GetWorkflowDefinition` only (D5, `actions.go:513-514`).
-- [ ] 2.4 `MatchState`, the transition type and `detectTransition` (unexported), `StateTracker` from `state_tracker.go`
+- [x] 2.4 `MatchState`, the transition type and `detectTransition` (unexported), `StateTracker` from `state_tracker.go`
   (D8, D9): no
   `ActionIterations`, no pair key, no `Delete`, no nil-bucket branches; `NewStateTracker(kv *natsclient.KVStore)`;
   doc comments give D8's field meanings. Unexport `substituteConditionValues` (one function, no twin) and

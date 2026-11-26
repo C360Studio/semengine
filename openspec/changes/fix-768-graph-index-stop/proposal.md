@@ -1,6 +1,6 @@
 # Proposal: fix-768-graph-index-stop
 
-Approved-by:
+Approved-by: cglusky (2026-11-26) <https://github.com/C360Studio/semengine/pull/770#issuecomment-7196743368> sha256:fa80ee52bd71
 
 Track: `quick`. Capability: `graph-index` (one Requirement modified: "Stop writes accepted work"). Package: `processor/graph-index`.
 

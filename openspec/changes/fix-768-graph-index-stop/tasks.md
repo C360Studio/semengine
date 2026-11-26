@@ -5,7 +5,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:` in `proposal.md`. OPEN-Q: approval of the stopping-flag design (Fable read,
+- [x] 1.1 The owner fills `Approved-by:` in `proposal.md`: approval of the stopping-flag design (Fable read,
   #768).
 
 ## 2. Code and test

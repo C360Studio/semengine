@@ -5,7 +5,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:` in `proposal.md`. OPEN-Q: re-approval after the graph-index count change
+- [x] 1.1 The owner fills `Approved-by:` in `proposal.md`: re-approval after the graph-index count change
   (first approval: PR #772 comment 7197671217, sha256:da8362268350).
 
 ## 2. Code and test

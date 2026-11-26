@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -349,7 +351,11 @@ func TestLostJetStreamInputReportsUnhealthy(t *testing.T) {
 // created again, Health is unhealthy naming the consumer, before and after a message is published
 // to it, while the loop still runs.
 func TestMemoryInputLostAtBrokerRestartStaysUnhealthy(t *testing.T) {
-	ctx := t.Context()
+	// An hour, not t.Context() alone: under a context with no deadline nats.go gives each
+	// JetStream call its own five-second timeout, so a slow broker would fail stream creation.
+	// go test -timeout ends the test long before the hour does.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
+	defer cancel()
 
 	// Own server: restarts the server mid-test.
 	f := natsfixture.New(t)
@@ -375,11 +381,17 @@ func TestMemoryInputLostAtBrokerRestartStaysUnhealthy(t *testing.T) {
 	createInputStream(ctx, t, f.JetStream(), jetstream.MemoryStorage)
 	// The Component's own client sees the stream again, so the check's next lookup reaches the
 	// broker and fails on the consumer, not on the connection.
-	// The lookup's error is kept, so a wait that never ends says which step failed: no connection,
-	// a timed-out request, or a stream the broker does not have.
+	// Each new lookup error is written to stderr as it happens, so a wait that go test -timeout
+	// ends still shows which step failed: no connection, a timed-out request, or a stream the broker
+	// does not have. The timeout panics without returning here, and t.Log output is lost without -v.
 	js := clientJetStream(t, client)
+	var lastLookup string
 	if _, err := probe.Await(ctx, func(ctx context.Context) (bool, error) {
 		_, err := js.Stream(ctx, inputStream)
+		if err != nil && err.Error() != lastLookup {
+			lastLookup = err.Error()
+			fmt.Fprintf(os.Stderr, "%s: lookup of %s after the restart: %v\n", t.Name(), inputStream, err)
+		}
 		return err == nil, err
 	}, func(found bool) bool { return found }); err != nil {
 		t.Fatalf("the Component's client must reach %s after the restart: %v", inputStream, err)

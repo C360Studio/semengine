@@ -200,7 +200,7 @@ func awaitKeys(ctx context.Context, t *testing.T, js jetstream.JetStream, bucket
 	return keys
 }
 
-// awaitErrorCount waits, up to 30 seconds, for the Component's ErrorCount to reach want. A
+// awaitErrorCount waits under ctx for the Component's ErrorCount to reach want. A
 // handler counts an error after it settled the delivery and logged it, so the wait orders reads of
 // the log and of the bucket after both.
 func awaitErrorCount(ctx context.Context, t *testing.T, c *Component, want int) {

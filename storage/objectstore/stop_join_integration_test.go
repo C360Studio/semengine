@@ -75,7 +75,9 @@ func TestStopJoinsHandlerAfterConnectionLoss(t *testing.T) {
 		{"core", coreConfig, "objectstore.test.core", false},
 	} {
 		t.Run(lane.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+			// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+			// five-second timeout. go test -timeout ends the test long before the hour does.
+			ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 			defer cancel()
 
 			// Own server: the test takes the broker away under a running Component.
@@ -176,9 +178,7 @@ func TestStopJoinsHandlerAfterConnectionLoss(t *testing.T) {
 			}
 
 			releaseHandler()
-			retryCtx, retryCancel := context.WithTimeout(ctx, 30*time.Second)
-			defer retryCancel()
-			if err := c.Stop(retryCtx); err != nil {
+			if err := c.Stop(ctx); err != nil {
 				t.Fatalf("Stop after the handler returned: %v", err)
 			}
 			if held := (suiteOwner{c}).Observe().Unresolved; len(held) != 0 {
@@ -200,7 +200,9 @@ func TestJetStreamInputAckWaitReachesConsumer(t *testing.T) {
 		{"unset", "", 30 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+			// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+			// five-second timeout. go test -timeout ends the test long before the hour does.
+			ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 			defer cancel()
 			client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 			js := clientJetStream(t, client)

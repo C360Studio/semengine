@@ -299,7 +299,9 @@ func TestSecondComponentRefusedAtStart(t *testing.T) {
 // durable consumer is deleted, which ends the consume loop, and Health becomes unhealthy naming the
 // input and the restart that recovers it.
 func TestLostJetStreamInputReportsUnhealthy(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+	// five-second timeout. go test -timeout ends the test long before the hour does.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 	defer cancel()
 	client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 	js := clientJetStream(t, client)
@@ -314,9 +316,7 @@ func TestLostJetStreamInputReportsUnhealthy(t *testing.T) {
 	// lands before the loop's first pull reaches the server leaves the loop pulling, and only the
 	// lookup reads the loss. The test waits for that pull, so the scenario is a running input
 	// losing its consumer.
-	pullCtx, cancelPull := context.WithTimeout(ctx, 10*time.Second)
-	defer cancelPull()
-	if _, err := probe.Await(pullCtx, func(ctx context.Context) (int, error) {
+	if _, err := probe.Await(ctx, func(ctx context.Context) (int, error) {
 		consumer, err := js.Consumer(ctx, inputStream, inputConsumer)
 		if err != nil {
 			return 0, err

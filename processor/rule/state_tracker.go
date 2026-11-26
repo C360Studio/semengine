@@ -42,7 +42,8 @@ type MatchState struct {
 	SourceRevision uint64 `json:"source_revision"`
 	// LastChecked is when the rule was last evaluated, set by every evaluation.
 	LastChecked time.Time `json:"last_checked"`
-	// Iteration counts the rule's evaluations of this key.
+	// Iteration counts how many times the rule has entered matching for this key;
+	// an exit keeps it.
 	Iteration int `json:"iteration"`
 	// MaxIterations is a copy of the rule's max_iterations at that evaluation, so
 	// that $state.max_iterations can read it. It is never read back and is not a
@@ -128,7 +129,7 @@ func (st *StateTracker) Set(ctx context.Context, state MatchState) error {
 
 // DeleteAllForEntity deletes every rule's record for entityID. It refuses an ID
 // that is not a literal key, so a wildcard deletes nothing. It tries every
-// record and returns the failures joined, each naming its key; no record is nil.
+// record and returns the failures joined, each naming its key. It returns nil when no record matches.
 func (st *StateTracker) DeleteAllForEntity(ctx context.Context, entityID string) error {
 	if err := natsclient.ValidateKVLiteralKey(entityID); err != nil {
 		return fmt.Errorf("rule state entity ID %q: %w", entityID, err)

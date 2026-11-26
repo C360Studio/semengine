@@ -170,22 +170,25 @@ func TestStateTracker(t *testing.T) {
 
 	t.Run("deleting an entity's records keeps every other record", func(t *testing.T) {
 		tracker, bucket := newStateTracker(t)
-		// Neighbours whose keys end like entity A's or extend it: an instance with A's
+		// Neighbours whose keys start or end like entity A's: two instances with A's
 		// instance as a prefix, one with A's whole ID as a dotted prefix, and a key
 		// whose entity key ends with A's whole ID.
 		underscoreSibling := entityA + "_x"
-		dottedSibling := entityA + "0"
+		digitSibling := entityA + "0"
+		dottedSibling := entityA + ".x"
 		longerKey := "prefix." + entityA
 		for _, key := range []struct{ ruleID, entityKey string }{
 			{"r1", entityA}, {"r2", entityA}, {"r1", entityB},
-			{"r1", underscoreSibling}, {"r1", dottedSibling}, {"r1", longerKey},
+			{"r1", underscoreSibling}, {"r1", digitSibling}, {"r1", dottedSibling}, {"r1", longerKey},
 		} {
 			require.NoError(t, tracker.Set(t.Context(), MatchState{RuleID: key.ruleID, EntityKey: key.entityKey}))
 		}
 
 		require.NoError(t, tracker.DeleteAllForEntity(t.Context(), entityA))
 
-		want := []string{"r1." + entityB, "r1." + dottedSibling, "r1." + underscoreSibling, "r1." + longerKey}
+		want := []string{
+			"r1." + entityB, "r1." + digitSibling, "r1." + dottedSibling, "r1." + underscoreSibling, "r1." + longerKey,
+		}
 		slices.Sort(want)
 		assert.Equal(t, want, storedKeys(t, bucket))
 		_, err := tracker.Get(t.Context(), "r1", entityA)

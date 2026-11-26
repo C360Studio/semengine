@@ -7,9 +7,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 - [x] 1.1 The inventory review passes, the design review passes; the owner fills `Approved-by:`.
 - [x] 1.2 Fable reads this design before any code, or the owner declines that read (proposal, first decision:
   `design.md` D1, D7, D8, D9).
-- [ ] 1.3 Start implementation once PR #758 (`rule-core-02-definitions`) has merged; merge `origin/main` into this
+- [x] 1.3 Start implementation once PR #758 (`rule-core-02-definitions`) has merged; merge `origin/main` into this
   branch first.
-  Hold: PR #758 not yet merged.
 
 ## 2. Port
 

@@ -41,7 +41,9 @@ func (s *stubSubscription) Drain(ctx context.Context) error {
 // through natsclient's WaitConsumerHandlers, which knows only handles its client returned, so a
 // stub consume loop would be refused.
 func TestFailedCleanupRetainsInputsForLaterStop(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+	// five-second timeout. go test -timeout ends the test long before the hour does.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 	defer cancel()
 	client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 	createInputStream(ctx, t, clientJetStream(t, client), jetstream.MemoryStorage)
@@ -90,15 +92,13 @@ func TestFailedCleanupRetainsInputsForLaterStop(t *testing.T) {
 		t.Fatalf("run context after the failed cleanup = %v, want canceled", runCtx.Err())
 	}
 
-	stopCtx, stopCancel := context.WithTimeout(ctx, 30*time.Second)
-	defer stopCancel()
-	if err := owner.Stop(stopCtx); err != nil {
+	if err := owner.Stop(ctx); err != nil {
 		t.Fatalf("later Stop: %v", err)
 	}
 	if got := owner.Observe().Unresolved; len(got) != 0 {
 		t.Fatalf("held after the later Stop = %v, want nothing", got)
 	}
-	if err := owner.Stop(stopCtx); err != nil {
+	if err := owner.Stop(ctx); err != nil {
 		t.Fatalf("repeated Stop: %v", err)
 	}
 }

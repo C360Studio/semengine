@@ -24,5 +24,5 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 3. Close
 
-- [ ] 3.1 `task verify` on a clean tree, push, CI green.
-- [ ] 3.2 Archive the change as the last content commit. Accept: `task spec:check`.
+- [x] 3.1 `task verify` on a clean tree at 329e1941, push, CI green (run 45871872920).
+- [x] 3.2 Archive the change as the last content commit. Accept: `task spec:check`.

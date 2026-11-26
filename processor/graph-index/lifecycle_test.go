@@ -80,7 +80,7 @@ func TestLifecycleBeforeStart(t *testing.T) {
 
 // TestStopWithEndedContextInitiatesPoolShutdownAndRetries checks that Stop with an already-expired
 // context cancels runCtx and initiates pool.Shutdown even when feeds have not exited yet, keeping
-// poolCtx live so accepted items finish draining on the retry Stop.
+// poolCtx live so a write in flight can finish before the retry Stop returns.
 func TestStopWithEndedContextInitiatesPoolShutdownAndRetries(t *testing.T) {
 	client, err := natsclient.NewClient("")
 	if err != nil {
@@ -148,7 +148,7 @@ func TestStopWithEndedContextInitiatesPoolShutdownAndRetries(t *testing.T) {
 		t.Fatalf("SubmitBlocking after Stop(expired) = %v, want dispatch.ErrStopped (pool.Shutdown initiated)", err)
 	}
 	if poolCtx.Err() != nil {
-		t.Fatal("Stop(expired) must keep poolCtx live until accepted work drains")
+		t.Fatal("Stop(expired) must keep poolCtx live until the pool has joined")
 	}
 
 	close(releaseFeeds)

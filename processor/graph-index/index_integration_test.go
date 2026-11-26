@@ -148,8 +148,8 @@ func startComponent(t *testing.T, c *Component) {
 	t.Cleanup(func() { stopComponent(t, c) })
 }
 
-// stopBound is out of reach: a Stop writes every entry the pool accepted, up to indexLaneCapacity
-// of them, so how long it takes depends on the machine's load. go test -timeout is the
+// stopBound is out of reach: a Stop waits for the writes a lane has started and for the feeds to
+// return, and how long that takes depends on the machine's load. go test -timeout is the
 // deadline that fails a Stop that never returns, and it prints every goroutine's stack.
 const stopBound = time.Hour
 

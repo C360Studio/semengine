@@ -11,7 +11,7 @@ import (
 )
 
 // $entity.lifecycle.* reads the lifecycle state of the context's entity from
-// its lifecycle manager (ADR-047):
+// its lifecycle manager:
 //
 //   - $entity.lifecycle.phase: the participant's phase.
 //   - $entity.lifecycle.terminal: "true" or "false".

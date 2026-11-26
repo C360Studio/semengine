@@ -17,7 +17,8 @@ import (
 )
 
 // Requirement: rule-substitution/"A token ends where its name ends" (the four
-// $entity.lifecycle.* names) and "An unresolved token stays and is reported".
+// $entity.lifecycle.* names), "An unresolved token stays and is reported" and
+// "Lifecycle names read the context's lifecycle manager".
 
 // fakeParticipant is a lifecycle participant the fake manager returns.
 type fakeParticipant struct {

@@ -42,7 +42,9 @@ type ExecutionContext struct {
 	MessageData map[string]any
 
 	// Lifecycle answers $entity.lifecycle.* for EntityID. With no manager, or
-	// one that does not know the entity, those tokens stay unresolved.
+	// one that does not know the entity, those tokens stay unresolved. The first
+	// lifecycle token's lookup is kept, so EntityID and Lifecycle are fixed once
+	// a lifecycle token has been filled.
 	Lifecycle LifecycleManager
 
 	// lifecycleLookup keeps the one lookup of EntityID in Lifecycle, found or

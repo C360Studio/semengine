@@ -39,7 +39,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   and `MessageData` are read-only to a handler, that an `ExecutionContext` is not safe for concurrent use, and prefers
   `$entity.id` to `$entity.instance` for an identity (ADR-056). Record in `notes/2.2.md` a one-off run of every
   template string in semteams' rules (4df44ae8) and semboids' (ab4e0fbc) through the pin copy and the port, each
-  referenced predicate present: list every difference, each one an F19 or F20 case or `.length` (D3).
+  referenced predicate present: list every difference, each one an F19 or F20 case, `.length` (D3), or a triple path
+  outside D2's `[a-z0-9_-]`, which no stored predicate can hold.
 - [x] 2.3 `LifecycleManager` with `LookupByEntityID` and `GetWorkflowDefinition` only (D5, `actions.go:513-514`).
 - [x] 2.4 `MatchState`, the transition type and `detectTransition` (unexported), `StateTracker` from `state_tracker.go`
   (D8, D9): no
@@ -60,7 +61,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 - [x] 2.8 Extend PR 2's ledger row `processor/rule` with what this PR adds; keep its `scripts/cover-check.sh` floor
   (80%). Check: `task ledger:check`, `task cover:check`.
 - [ ] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
-  adopter section says `Entity`, `State` and `MessageData` are read-only to a handler (D7).
+  adopter section says `Entity`, `State` and `MessageData` are read-only to a handler and that an `ExecutionContext`
+  is not safe for concurrent use (D7).
 
 ## 3. Docs
 

@@ -3581,7 +3581,8 @@
     plugs in through Deliver, Failed, Complete and ReportDamaged (D3); (2) lifecycle through component.Lifecycle: a second Start is
     refused with errs.ErrAlreadyStarted, the run context is not a child of Start's context, Stop drains accepted pool
     work and writes it before the run context ends, and Health's Healthy ignores the error count (D4; ADR-108,
-    ADR-109 D2, ADR-113); (3) DataFlow counts one input per delivered ENTITY_STATES entry, not one per write (D4);
+    ADR-109 D2, ADR-113); (3) DataFlow counts one input per entity graph-index reads from ENTITY_STATES, of that
+    read's bytes, since its follower watch carries keys only; watch_events_total still counts each delivery by kind (D4);
     (4) every one of the eight verbs refuses with transient index_not_ready during startup replay and while the
     feed is lost; a stored value that does not decode is a damaged entity, so the verbs go on answering, count it in
     damaged_entities, and refuse fatal graph_state_reset_required only a request that names it (D5; ADR-109 D1,

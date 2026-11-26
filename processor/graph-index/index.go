@@ -115,13 +115,13 @@ func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower
 	return nil
 }
 
-// deliver is the follower's Deliver: it counts the entry, before any coalescing, and
-// routes its key. A key the shared KV key validator refuses is settled here and never
-// routed (settleUnreadable). A delete drops the key's pending coalesced revision and goes
-// to the lane at once; the delete's revision is greater, so completing it completes the
-// dropped one (revlag).
+// deliver is the follower's Deliver: it counts the delivery by kind, before any coalescing,
+// and routes its key. DataFlow's input is counted where the entity is read, since the
+// follower's watch carries no values. A key the shared KV key validator refuses is settled
+// here and never routed (settleUnreadable). A delete drops the key's pending coalesced
+// revision and goes to the lane at once; the delete's revision is greater, so completing it
+// completes the dropped one (revlag).
 func (c *Component) deliver(ctx context.Context, e follower.Entry) {
-	c.lifecycle.CountInput(e.Bytes)
 	event := "update"
 	if e.Deleted {
 		event = "delete"
@@ -226,6 +226,8 @@ func (c *Component) reconcileEntity(ctx context.Context, work indexWork) bool {
 			slog.String("entity", entityID), slog.Any("error", err))
 		return true
 	}
+	// One input is one entity read, of the bytes read.
+	c.lifecycle.CountInput(len(entry.Value()))
 	if err := c.indexEntity(ctx, entityID, entry.Revision(), entry.Value()); err != nil {
 		// A refused plan or a failed write still completes: readiness is gated on the failed
 		// set, and a revision left pending would pin the watermark for ever (ADR-066 §1).
@@ -253,6 +255,7 @@ func (c *Component) reconcileNoncanonical(ctx context.Context, entityID string, 
 			slog.String("entity", entityID), slog.Any("error", err))
 		return
 	}
+	c.lifecycle.CountInput(len(entry.Value()))
 	c.clearEntityFailed(entityID)
 	c.reportDamaged(entityID, entry.Revision(), noncanonicalRefusal(entityID, invalid))
 }

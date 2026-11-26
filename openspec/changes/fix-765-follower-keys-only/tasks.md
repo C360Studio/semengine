@@ -16,7 +16,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 - [x] 2.2 The progress log: while the initial build runs, the follower logs at Info the entries delivered and the
   watermark's observed and indexed revisions, on a cadence it already has. Test: a replay logs at least one progress
   line before the build completes, and none after it.
-- [ ] 2.3 graph-index sets the field and counts its input bytes from its own entity read. Test: after a replay, the
+- [x] 2.3 graph-index sets the field and counts its input bytes from its own entity read. Test: after a replay, the
   input-bytes count equals the stored values' total length. Accept: the graph-index tests pass.
 
 ## 3. Close

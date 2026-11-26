@@ -205,9 +205,10 @@ func (c *Component) Health() component.HealthStatus {
 	return c.lifecycle.Health(stuck...)
 }
 
-// DataFlow reports input messages: one per delivered ENTITY_STATES entry, update or delete,
-// with the delivered value's length, counted before coalescing. ErrorRate is
-// the errors counted (Health's ErrorCount) per input.
+// DataFlow reports input messages: one per entity graph-index reads from ENTITY_STATES to
+// apply it, with the length of the value read; writes the coalescer folds count once, and a
+// delete counts none. watch_events_total counts each delivery. ErrorRate is the errors counted
+// (Health's ErrorCount) per input.
 func (c *Component) DataFlow() component.FlowMetrics {
 	return c.lifecycle.DataFlow()
 }
@@ -246,6 +247,9 @@ func (c *Component) start(ctx context.Context) error {
 		StartupAttempts: c.config.StartupAttempts,
 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
 		Deliver:         c.deliver,
+		// reconcileEntity reads each entity itself, so the watch need not carry values; with them a
+		// replay of a large store overruns the client's subscription buffer.
+		KeysOnly: true,
 		// graph-index counts unresolved writes without reasons, so its envelope carries none.
 		Failed: func() (int64, map[string]uint64) { return c.failedTotal(), nil },
 	})

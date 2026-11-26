@@ -16,6 +16,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
@@ -195,9 +196,10 @@ type heldBacklog struct {
 }
 
 // startHeldBacklog stores the entities, starts graph-index and returns once the lane is held
-// inside the first and every entry is counted. The follower calls Deliver for one entry at a
-// time, and deliver counts an entry before it submits it, so the last entry counted means every
-// earlier entry's submit has returned: at least stored-2 entities wait behind the one in flight.
+// inside the first and every entry is counted in watch_events_total. The follower calls Deliver
+// for one entry at a time, and deliver counts an entry before it submits it, so the last entry
+// counted means every earlier entry's submit has returned: at least stored-2 entities wait behind
+// the one in flight. DataFlow cannot say this: it counts entity reads, which the held lane stops.
 func startHeldBacklog(t *testing.T, client *natsclient.Client, stored int) *heldBacklog {
 	t.Helper()
 	states := ensureEntityStates(t, client)
@@ -234,13 +236,22 @@ func startHeldBacklog(t *testing.T, client *natsclient.Client, stored int) *held
 
 	inFlight := <-hold.entered
 	await(t, "every entry delivered",
-		func(context.Context) (int64, error) { return c.DataFlow().Messages, nil },
-		func(n int64) bool { return n >= int64(stored) })
+		func(context.Context) (float64, error) { return updatesDelivered(c) },
+		func(n float64) bool { return n >= float64(stored) })
 	return &heldBacklog{
 		c: c, h: &harness{c: c, f: c.follower.Load(), client: client}, logs: logs,
 		inFlight: inFlight, revisions: revisions, errorsBefore: c.Health().ErrorCount,
 		releaseLane: releaseLane,
 	}
+}
+
+// updatesDelivered is c's watch_events_total{event_type="update"}: the writes deliver has counted.
+func updatesDelivered(c *Component) (float64, error) {
+	var m dto.Metric
+	if err := c.metrics.watchEvents.WithLabelValues("update").Write(&m); err != nil {
+		return 0, err
+	}
+	return m.GetCounter().GetValue(), nil
 }
 
 // requireQueuedDropped checks, after a Stop that returned nil, so with every lane joined, that

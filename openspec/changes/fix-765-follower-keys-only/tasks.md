@@ -5,7 +5,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:` in `proposal.md`. OPEN-Q: third approval, after correcting what
+- [x] 1.1 The owner fills `Approved-by:` in `proposal.md`: third approval, after correcting what
   graph-embedding does. Earlier approvals: PR #772 comments 7197671217 (sha256:da8362268350) and 7202436636
   (sha256:e16c41266dd3).
 

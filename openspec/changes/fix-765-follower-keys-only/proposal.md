@@ -1,6 +1,6 @@
 # Proposal: fix-765-follower-keys-only
 
-Approved-by:
+Approved-by: cglusky (2026-11-26) <https://github.com/C360Studio/semengine/pull/772#issuecomment-7204021696> sha256:6e1478d949fb
 
 Track: `design` (two capabilities). Capabilities: `entity-state-follower` (modified: "An entry carries the delivered
 value") and `graph-index` (renamed and modified: "DataFlow counts deliveries" becomes "DataFlow counts entity

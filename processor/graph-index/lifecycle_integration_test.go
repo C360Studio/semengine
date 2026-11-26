@@ -341,9 +341,11 @@ func TestStopDropsQueuedWorkFromItsStart(t *testing.T) {
 	// The flag is the event that orders the lane's release after Stop has begun: component.Lifecycle
 	// reports "stopped" before it calls cleanup, so Health cannot order it. The held handler keeps
 	// Stop in its first drain until releaseHandler.
-	await(t, "Stop began dropping queued work",
+	if _, err := probe.Await(t.Context(),
 		func(context.Context) (bool, error) { return b.c.stopping.Load(), nil },
-		func(set bool) bool { return set })
+		func(set bool) bool { return set }); err != nil {
+		t.Fatalf("Stop began dropping queued work: %v", err)
+	}
 	b.releaseLane()
 	releaseHandler()
 	if err := <-stopped; err != nil {

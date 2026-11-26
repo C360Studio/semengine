@@ -60,7 +60,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   pass's order claim (`entity_substitution.go:31-34`) goes (F26).
 - [x] 2.8 Extend PR 2's ledger row `processor/rule` with what this PR adds; keep its `scripts/cover-check.sh` floor
   (80%). Check: `task ledger:check`, `task cover:check`.
-- [ ] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
+- [x] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
   adopter section says `Entity`, `State` and `MessageData` are read-only to a handler and that an `ExecutionContext`
   is not safe for concurrent use (D7).
 
@@ -74,5 +74,5 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 4. Land
 
-- [ ] 4.1 Sync `openspec/specs/rule-substitution/`, `rule-state/` and `rule-conditions/` and archive the change as the
+- [x] 4.1 Sync `openspec/specs/rule-substitution/`, `rule-state/` and `rule-conditions/` and archive the change as the
   PR's last content commit. Check: `task spec:check`.

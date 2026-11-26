@@ -9,11 +9,11 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 2. Code and test
 
-- [ ] 2.1 The keys-only field on `follower.Config`. The follower's integration tests run in both modes and show, at
+- [x] 2.1 The keys-only field on `follower.Config`. The follower's integration tests run in both modes and show, at
   the pinned nats.go and nats-server, that with keys-only a delete and a purge still arrive with their operation,
   revisions still ascend, and the end-of-replay marker still arrives. A test asserts `Entry.Value` is nil and
   `Entry.Bytes` is 0 with the field set. Record the runs in `notes/2.1.md`.
-- [ ] 2.2 The progress log: while the initial build runs, the follower logs at Info the entries delivered and the
+- [x] 2.2 The progress log: while the initial build runs, the follower logs at Info the entries delivered and the
   watermark's observed and indexed revisions, on a cadence it already has. Test: a replay logs at least one progress
   line before the build completes, and none after it.
 - [ ] 2.3 graph-index sets the field and counts its input bytes from its own entity read. Test: after a replay, the

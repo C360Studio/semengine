@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"slices"
@@ -107,14 +108,23 @@ func put(t *testing.T, kv jetstream.KeyValue, key string, value []byte) uint64 {
 
 func open(t *testing.T, client *natsclient.Client, deliver func(context.Context, Entry), failed func() (int64, map[string]uint64)) *Follower {
 	t.Helper()
+	return openWith(t, client, Config{Deliver: deliver, Failed: failed})
+}
+
+// openWith opens a follower on client with the test defaults under cfg's Deliver, Failed,
+// KeysOnly and Logger.
+func openWith(t *testing.T, client *natsclient.Client, cfg Config) *Follower {
+	t.Helper()
 	f, err := Open(t.Context(), Config{
 		Client:          client,
 		Key:             readiness.KeyGraphIndex,
 		MetricsRegistry: metric.NewMetricsRegistry(),
+		Logger:          cfg.Logger,
 		StartupAttempts: 3,
 		StartupInterval: 50 * time.Millisecond,
-		Deliver:         deliver,
-		Failed:          failed,
+		Deliver:         cfg.Deliver,
+		Failed:          cfg.Failed,
+		KeysOnly:        cfg.KeysOnly,
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -385,8 +395,14 @@ func TestFollowerPublishesOnEveryHeartbeat(t *testing.T) {
 
 // TestFollowerSnapshotEndSetsBootstrapTarget: at the snapshot's end the bootstrap target is the
 // highest revision delivered; the latch sets when the floor reaches it although later writes keep
-// the live target above, and never before.
+// the live target above, and never before. It runs with values and with keys only, since the
+// keys-only watch must end its replay with the same marker.
 func TestFollowerSnapshotEndSetsBootstrapTarget(t *testing.T) {
+	t.Run("values", func(t *testing.T) { snapshotEndCase(t, false) })
+	t.Run("keys only", func(t *testing.T) { snapshotEndCase(t, true) })
+}
+
+func snapshotEndCase(t *testing.T, keysOnly bool) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
 	var target uint64
@@ -394,7 +410,11 @@ func TestFollowerSnapshotEndSetsBootstrapTarget(t *testing.T) {
 		target = put(t, kv, entityID(n), storedEntity(entityID(n)))
 	}
 	delivered := make(chan Entry, 16)
-	f := open(t, client, func(_ context.Context, e Entry) { delivered <- e }, noFailures)
+	f := openWith(t, client, Config{
+		Deliver:  func(_ context.Context, e Entry) { delivered <- e },
+		Failed:   noFailures,
+		KeysOnly: keysOnly,
+	})
 	start(t, f)
 
 	var snapshot []Entry
@@ -466,6 +486,180 @@ func TestEntryCarriesDeliveredValue(t *testing.T) {
 	}
 	if !marker.Deleted || marker.Value != nil {
 		t.Errorf("delete marker = %+v; want Deleted and a nil Value", marker)
+	}
+}
+
+// TestKeysOnlyEntriesCarryNoValue: with KeysOnly set, a replay and the live writes after it deliver
+// every entry with Value nil and Bytes 0; a delete and a purge, stored before Run and written after
+// the replay, each arrive with Deleted; revisions ascend in delivery order with no feed declared
+// lost; the end-of-replay marker arrives, fixing the bootstrap target at the replay's last
+// revision; and the initial build completes. This is the check, at the pinned nats.go and server,
+// that a headers-only watch keeps what the follower reads from each entry.
+func TestKeysOnlyEntriesCarryNoValue(t *testing.T) {
+	client := fixtureClient(t)
+	kv := entityStates(t, client)
+	put(t, kv, entityID(1), storedEntity(entityID(1)))
+	put(t, kv, entityID(2), storedEntity(entityID(2)))
+	put(t, kv, entityID(3), storedEntity(entityID(3)))
+	if err := kv.Delete(t.Context(), entityID(2)); err != nil {
+		t.Fatalf("delete %s: %v", entityID(2), err)
+	}
+	if err := kv.Purge(t.Context(), entityID(3)); err != nil {
+		t.Fatalf("purge %s: %v", entityID(3), err)
+	}
+	replayEnd := lastRevision(t, kv)
+
+	delivered := make(chan Entry, 16)
+	var f *Follower
+	f = openWith(t, client, Config{
+		Deliver: func(_ context.Context, e Entry) {
+			f.Complete(e.Key, e.Revision)
+			delivered <- e
+		},
+		Failed:   noFailures,
+		KeysOnly: true,
+	})
+	start(t, f)
+
+	// The replay delivers the last write of each key: entity 1's value and the markers of 2 and 3.
+	got := []Entry{<-delivered, <-delivered, <-delivered}
+	wantDeleted := map[string]bool{entityID(1): false, entityID(2): true, entityID(3): true}
+	for _, e := range got {
+		if want, ok := wantDeleted[e.Key]; !ok || e.Deleted != want {
+			t.Errorf("replayed %+v; want Deleted %v for %s", e, want, e.Key)
+		}
+	}
+
+	// Live writes after the replay, each awaited, so each arrives on its own.
+	put(t, kv, entityID(4), storedEntity(entityID(4)))
+	got = append(got, <-delivered)
+	if err := kv.Delete(t.Context(), entityID(1)); err != nil {
+		t.Fatalf("delete %s: %v", entityID(1), err)
+	}
+	got = append(got, <-delivered)
+	if err := kv.Purge(t.Context(), entityID(4)); err != nil {
+		t.Fatalf("purge %s: %v", entityID(4), err)
+	}
+	got = append(got, <-delivered)
+	for i, want := range []Entry{{Key: entityID(4)}, {Key: entityID(1), Deleted: true}, {Key: entityID(4), Deleted: true}} {
+		if e := got[3+i]; e.Key != want.Key || e.Deleted != want.Deleted {
+			t.Errorf("live entry %d = %+v; want key %s, Deleted %v", i, e, want.Key, want.Deleted)
+		}
+	}
+
+	for i, e := range got {
+		if e.Value != nil || e.Bytes != 0 {
+			t.Errorf("entry %s at %d carries Bytes %d and %d value bytes; want Value nil and Bytes 0", e.Key, e.Revision, e.Bytes, len(e.Value))
+		}
+		if i > 0 && e.Revision <= got[i-1].Revision {
+			t.Errorf("revision %d delivered after %d; want ascending", e.Revision, got[i-1].Revision)
+		}
+	}
+	if stuckNames(f, feedLost) {
+		t.Errorf("Stuck = %q; want no lost feed", f.Stuck())
+	}
+	// The marker follows the replay's last entry on Run's goroutine, which nothing above orders
+	// before this read, so the test waits for it.
+	if _, err := probe.Await(t.Context(), func(context.Context) (bool, error) { return f.snapshotDone.Load(), nil },
+		func(done bool) bool { return done }); err != nil {
+		t.Fatalf("the end-of-replay marker never arrived: %v", err)
+	}
+	if target := f.bootstrapTarget.Load(); target != replayEnd {
+		t.Errorf("bootstrap target = %d; want the replay's last revision %d", target, replayEnd)
+	}
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("QueryReady after every entry completed = %v; want nil", err)
+	}
+	if !f.bootstrapped.Load() {
+		t.Error("the initial build did not complete")
+	}
+}
+
+// lastRevision is the last sequence of the bucket's stream: the revision of its latest write.
+func lastRevision(t *testing.T, kv jetstream.KeyValue) uint64 {
+	t.Helper()
+	s, err := kv.Status(t.Context())
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	return s.(*jetstream.KeyValueBucketStatus).StreamInfo().State.LastSeq
+}
+
+// progressLines records the follower's initial-build progress lines; the rest it drops.
+type progressLines struct {
+	mu    sync.Mutex
+	lines []slog.Record
+}
+
+func (p *progressLines) Enabled(context.Context, slog.Level) bool { return true }
+func (p *progressLines) WithAttrs([]slog.Attr) slog.Handler       { return p }
+func (p *progressLines) WithGroup(string) slog.Handler            { return p }
+
+func (p *progressLines) Handle(_ context.Context, r slog.Record) error {
+	if r.Message == "initial build in progress" {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.lines = append(p.lines, r.Clone())
+	}
+	return nil
+}
+
+func (p *progressLines) snapshot() []slog.Record {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.lines)
+}
+
+// TestFollowerLogsBuildProgressUntilComplete: while the initial build runs, each heartbeat logs a
+// progress line at Info naming the entries delivered and the observed and indexed revisions; once
+// an envelope reads the build complete, no further line is logged. Each line is written before its
+// envelope, so an envelope read from GRAPH_STATUS orders the lines of every heartbeat up to it.
+func TestFollowerLogsBuildProgressUntilComplete(t *testing.T) {
+	client := fixtureClient(t)
+	kv := entityStates(t, client)
+	put(t, kv, entityID(1), storedEntity(entityID(1)))
+	put(t, kv, entityID(2), storedEntity(entityID(2)))
+	lines := &progressLines{}
+	delivered := make(chan Entry, 4)
+	f := openWith(t, client, Config{
+		Logger:  slog.New(lines),
+		Deliver: func(_ context.Context, e Entry) { delivered <- e },
+		Failed:  noFailures,
+	})
+	status := statusWatch(t, client)
+	start(t, f)
+
+	// Nothing is completed yet, so the first envelope reads the build incomplete.
+	if first := nextEnvelope(t, status); first.status.BootstrapComplete {
+		t.Fatalf("first envelope %+v reads the build complete before any entry completed", first.status)
+	}
+	before := lines.snapshot()
+	if len(before) == 0 {
+		t.Fatal("no progress line before the first envelope of an incomplete build")
+	}
+	for _, r := range before {
+		if r.Level != slog.LevelInfo {
+			t.Errorf("progress line at %v; want Info", r.Level)
+		}
+		attrs := map[string]bool{}
+		r.Attrs(func(a slog.Attr) bool { attrs[a.Key] = true; return true })
+		for _, key := range []string{"delivered", "observed_revision", "indexed_revision"} {
+			if !attrs[key] {
+				t.Errorf("progress line lacks %q", key)
+			}
+		}
+	}
+
+	for range 2 {
+		e := <-delivered
+		f.Complete(e.Key, e.Revision)
+	}
+	awaitEnvelope(t, status, func(s graph.IndexStatusResponse) bool { return s.BootstrapComplete })
+	atComplete := len(lines.snapshot())
+	// The next heartbeat's envelope orders its line, if it logged one, before this read.
+	nextEnvelope(t, status)
+	if after := len(lines.snapshot()); after != atComplete {
+		t.Errorf("%d progress lines after the build completed; want none", after-atComplete)
 	}
 }
 

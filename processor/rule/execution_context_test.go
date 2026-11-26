@@ -2,8 +2,10 @@ package rule
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 	gtypes "github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/harness/semantictest"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/processor/rule/expression"
 )
 
@@ -169,8 +172,9 @@ func TestTokenEnds(t *testing.T) {
 		{
 			name: "names that extend or miss a fixed name",
 			ec: &ExecutionContext{
-				EntityID: id,
-				State:    &MatchState{RuleID: "rule-a", Iteration: 2, MaxIterations: 5},
+				EntityID:  id,
+				State:     &MatchState{RuleID: "rule-a", Iteration: 2, MaxIterations: 5},
+				Lifecycle: knowing(id),
 			},
 			template: "$nowhere $entity.idx $entity.lifecycle.x $state.last_transition $schedule.last_fired_at",
 			want:     "$nowhere $entity.idx $entity.lifecycle.x $state.last_transition $schedule.last_fired_at",
@@ -317,4 +321,106 @@ func TestSubstituteConditionValues(t *testing.T) {
 		"the caller's conditions are not changed")
 	assert.Nil(t, log.unresolved(t))
 	assert.Nil(t, substituteConditionValues(t.Context(), nil, ec))
+}
+
+// knowing returns a lifecycle manager that knows id as a mission in flight.
+func knowing(id string) *fakeLifecycleManager {
+	mgr := newFakeManager()
+	mgr.seed("mission", &fakeParticipant{entityID: id, phase: "flying"})
+	return mgr
+}
+
+// Requirement: rule-substitution/"A handler's own names are filled in the same
+// read".
+func TestSubstituteWithNames(t *testing.T) {
+	log := captureWarnings(t)
+	id := droneID(t)
+
+	t.Run("a loop item holding a token comes out as written", func(t *testing.T) {
+		ec := &ExecutionContext{EntityID: id}
+
+		got, err := ec.SubstituteVariablesWith(t.Context(), "$entity.instance: $subtopic",
+			map[string]string{"subtopic": "see $entity.id"})
+
+		require.NoError(t, err)
+		assert.Equal(t, "001: see $entity.id", got)
+		assert.Nil(t, log.unresolved(t))
+	})
+
+	t.Run("a name ends where a fixed name ends", func(t *testing.T) {
+		ec := &ExecutionContext{EntityID: id}
+
+		got, err := ec.SubstituteVariablesWith(t.Context(), "$subtopic. $subtopic-x $subtopics $subtopic_1 $subtopic",
+			map[string]string{"subtopic": "S", "subtopic_1": "T"})
+
+		require.NoError(t, err)
+		assert.Equal(t, "S. S-x $subtopics T S", got)
+		assert.Nil(t, log.unresolved(t), "a dollar sign that names no framework token is not reported")
+	})
+
+	t.Run("a framework value naming a handler name is not read again", func(t *testing.T) {
+		ec := &ExecutionContext{EntityID: id, MessageData: map[string]any{"m": "$subtopic"}}
+
+		got, err := ec.SubstituteVariablesWith(t.Context(), "$message.m/$subtopic", map[string]string{"subtopic": "S"})
+
+		require.NoError(t, err)
+		assert.Equal(t, "$subtopic/S", got)
+	})
+
+	t.Run("framework tokens beside names are still reported", func(t *testing.T) {
+		ec := &ExecutionContext{EntityID: id}
+
+		got, err := ec.SubstituteVariablesWith(t.Context(), "$item $message.missing", map[string]string{"item": "I"})
+
+		require.NoError(t, err)
+		assert.Equal(t, "I $message.missing", got)
+		assert.Equal(t, []string{"$message.missing"}, log.unresolved(t))
+	})
+
+	t.Run("names that only start like a framework name", func(t *testing.T) {
+		ec := &ExecutionContext{EntityID: id}
+
+		got, err := ec.SubstituteVariablesWith(t.Context(), "$entityx $no $statement",
+			map[string]string{"entityx": "E", "no": "N", "statement": "S"})
+
+		require.NoError(t, err)
+		assert.Equal(t, "E N S", got)
+	})
+
+	t.Run("no names", func(t *testing.T) {
+		ec := &ExecutionContext{EntityID: id}
+
+		got, err := ec.SubstituteVariablesWith(t.Context(), "$entity.instance $item", nil)
+
+		require.NoError(t, err)
+		assert.Equal(t, "001 $item", got)
+	})
+
+	for _, name := range []string{"now", "nowx", "nowhere", "entity", "message", "state", "schedule", "", "a-b", "a.b", "a b", "é"} {
+		t.Run("the name "+strconv.Quote(name)+" is refused", func(t *testing.T) {
+			mgr := knowing(id)
+			ec := &ExecutionContext{EntityID: id, Lifecycle: mgr}
+
+			got, err := ec.SubstituteVariablesWith(t.Context(), "$entity.lifecycle.phase $message.missing $item",
+				map[string]string{"item": "I", name: "X"})
+
+			require.Error(t, err)
+			assert.True(t, errs.IsInvalid(err), "classified invalid: %v", err)
+			assert.Contains(t, err.Error(), strconv.Quote(name), "the error names the name")
+			assert.Empty(t, got)
+			assert.Zero(t, mgr.lookups, "refused before any scan: no lookup")
+			assert.Nil(t, log.unresolved(t), "refused before any scan: nothing reported")
+		})
+	}
+
+	t.Run("a nil context is refused", func(t *testing.T) {
+		ec := &ExecutionContext{EntityID: id}
+		var nilCtx context.Context
+
+		got, err := ec.SubstituteVariablesWith(nilCtx, "$entity.instance", nil)
+
+		require.Error(t, err)
+		assert.True(t, errs.IsInvalid(err), "classified invalid: %v", err)
+		assert.Empty(t, got)
+	})
 }

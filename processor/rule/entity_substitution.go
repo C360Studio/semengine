@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -37,13 +38,16 @@ var entityParts = []entityPart{
 const triplePrefix = "$entity.triple."
 
 // resolveEntity reads a token starting with $entity.: the ID, one of its parts,
-// or a triple.
-func (ec *ExecutionContext) resolveEntity(s string) (string, int, bool) {
+// a lifecycle name or a triple.
+func (ec *ExecutionContext) resolveEntity(ctx context.Context, s string) (string, int, bool) {
 	if fixedName(s, "$entity.id") {
 		return ec.EntityID, len("$entity.id"), true
 	}
 	if strings.HasPrefix(s, triplePrefix) {
 		return ec.resolveTriple(s)
+	}
+	if strings.HasPrefix(s, lifecyclePrefix) {
+		return ec.resolveLifecycle(ctx, s)
 	}
 	for _, part := range entityParts {
 		if !fixedName(s, part.name) {
@@ -58,20 +62,52 @@ func (ec *ExecutionContext) resolveEntity(s string) (string, int, bool) {
 	return "", 0, false
 }
 
-// resolveTriple reads $entity.triple.<path>. The path is a suffix form
+// tripleForm is what a $entity.triple.<path> token asks for.
+type tripleForm int
+
+const (
+	tripleBare    tripleForm = iota // the first triple's object
+	tripleLength                    // .length: the number of values
+	tripleTriples                   // .triples: every value, as a JSON array
+	tripleValue                     // .value after a valid three-part predicate
+)
+
+// parseTriple reads the $entity.triple.<path> token at the start of s: the
+// predicate, the form and the token's length. The path is a suffix form
 // (.length, .triples, or .value after a valid three-part predicate) or, when
-// it is none of those, the whole predicate.
-func (ec *ExecutionContext) resolveTriple(s string) (string, int, bool) {
+// it is none of those, the whole predicate. It returns false for an empty
+// path.
+func parseTriple(s string) (string, tripleForm, int, bool) {
 	path := s[len(triplePrefix):]
 	path = path[:dottedRun(path, isPredicateByte)]
 	if path == "" {
-		return "", 0, false
+		return "", 0, 0, false
 	}
 	n := len(triplePrefix) + len(path)
 	if predicate, ok := strings.CutSuffix(path, ".length"); ok {
-		return strconv.Itoa(len(collectPredicateValues(ec.Entity, predicate))), n, true
+		return predicate, tripleLength, n, true
 	}
 	if predicate, ok := strings.CutSuffix(path, ".triples"); ok {
+		return predicate, tripleTriples, n, true
+	}
+	if predicate, ok := strings.CutSuffix(path, ".value"); ok {
+		if _, err := vocabulary.ParsePredicate(predicate); err == nil {
+			return predicate, tripleValue, n, true
+		}
+	}
+	return path, tripleBare, n, true
+}
+
+// resolveTriple reads $entity.triple.<path>.
+func (ec *ExecutionContext) resolveTriple(s string) (string, int, bool) {
+	predicate, form, n, ok := parseTriple(s)
+	if !ok {
+		return "", 0, false
+	}
+	switch form {
+	case tripleLength:
+		return strconv.Itoa(len(collectPredicateValues(ec.Entity, predicate))), n, true
+	case tripleTriples:
 		values := collectPredicateValues(ec.Entity, predicate)
 		if values == nil {
 			values = []string{} // [] for an absent predicate, never null
@@ -81,15 +117,12 @@ func (ec *ExecutionContext) resolveTriple(s string) (string, int, bool) {
 			return "", 0, false
 		}
 		return string(encoded), n, true
+	case tripleValue:
+		object, _ := firstObject(ec.Entity, predicate)
+		return object, n, true
 	}
-	if predicate, ok := strings.CutSuffix(path, ".value"); ok {
-		if _, err := vocabulary.ParsePredicate(predicate); err == nil {
-			object, _ := firstObject(ec.Entity, predicate)
-			return object, n, true
-		}
-	}
-	object, ok := firstObject(ec.Entity, path)
-	if !ok {
+	object, found := firstObject(ec.Entity, predicate)
+	if !found {
 		return "", 0, false
 	}
 	return object, n, true
@@ -98,15 +131,25 @@ func (ec *ExecutionContext) resolveTriple(s string) (string, int, bool) {
 // firstObject returns the object of the predicate's first triple on entity,
 // as text.
 func firstObject(entity *gtypes.EntityState, predicate string) (string, bool) {
-	if entity == nil {
+	object, ok := firstObjectTyped(entity, predicate)
+	if !ok {
 		return "", false
+	}
+	return fmt.Sprintf("%v", object), true
+}
+
+// firstObjectTyped returns the object of the predicate's first triple on
+// entity as it is stored.
+func firstObjectTyped(entity *gtypes.EntityState, predicate string) (any, bool) {
+	if entity == nil {
+		return nil, false
 	}
 	for _, triple := range entity.Triples {
 		if triple.Predicate == predicate {
-			return fmt.Sprintf("%v", triple.Object), true
+			return triple.Object, true
 		}
 	}
-	return "", false
+	return nil, false
 }
 
 // collectPredicateValues returns every value of predicate on entity, in triple

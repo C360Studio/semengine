@@ -2,12 +2,16 @@ package rule
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	gtypes "github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/processor/rule/expression"
 )
 
@@ -18,7 +22,8 @@ import (
 // Entity, State and MessageData are read-only to an action handler: the rule
 // processor builds them for one evaluation, and a handler that changes them
 // changes what every later action of that evaluation reads. An
-// ExecutionContext is not safe for concurrent use.
+// ExecutionContext is not safe for concurrent use: substitution keeps the
+// result of its lifecycle lookup on it.
 type ExecutionContext struct {
 	// EntityID is the ID of the entity the rule was evaluated for. To name the
 	// entity in a template, use $entity.id: $entity.instance is only the last of
@@ -35,6 +40,14 @@ type ExecutionContext struct {
 	// MessageData holds the fields of the message the rule was evaluated for,
 	// for $message.<path>; nil when no message triggered the evaluation.
 	MessageData map[string]any
+
+	// Lifecycle answers $entity.lifecycle.* for EntityID. With no manager, or
+	// one that does not know the entity, those tokens stay unresolved.
+	Lifecycle LifecycleManager
+
+	// lifecycleLookup keeps the one lookup of EntityID in Lifecycle, found or
+	// failed, so the templates of one evaluation ask the manager once.
+	lifecycleLookup *lifecycleLookupResult
 }
 
 // RuleID returns the ID of the rule whose state the context holds, or "" when
@@ -65,6 +78,8 @@ func (ec *ExecutionContext) RuleID() string {
 //     triple's object when <predicate> is a valid three-part predicate. These
 //     three give [], 0 and "" when the predicate is absent.
 //   - $message.<path>: the field at a dotted path in MessageData.
+//   - $entity.lifecycle.phase, .terminal, .workflow and .workflow_def, from
+//     Lifecycle; the entity is looked up once per context.
 //
 // A fixed name ($now, $entity.id and the like) is a token only when the
 // character after it is not a letter, digit or underscore, so $entity.idx is
@@ -76,10 +91,16 @@ func (ec *ExecutionContext) RuleID() string {
 // call is named in one warning with the rule ID. A dollar sign starting
 // anything else is ordinary text and is not reported.
 func (ec *ExecutionContext) SubstituteVariables(ctx context.Context, template string) string {
+	return ec.substituteAndWarn(ctx, template, nil)
+}
+
+// substituteAndWarn runs the one scan and names every unresolved token in one
+// warning.
+func (ec *ExecutionContext) substituteAndWarn(ctx context.Context, template string, names map[string]string) string {
 	if !strings.Contains(template, "$") {
 		return template
 	}
-	result, unresolved := ec.substitute(template)
+	result, unresolved := ec.substitute(ctx, template, names)
 	if len(unresolved) > 0 {
 		slog.Default().WarnContext(ctx, "rule template tokens did not resolve and stay as written",
 			slog.Any("unresolved", unresolved),
@@ -90,9 +111,58 @@ func (ec *ExecutionContext) SubstituteVariables(ctx context.Context, template st
 	return result
 }
 
+// SubstituteVariablesWith is SubstituteVariables that also fills a handler's
+// own names, such as the item of a loop: each $<name> of names is replaced by
+// its value in the same single read, under the end rule of a fixed name, so
+// $item. and $item-x hold the token $item and $items does not. Neither a filled
+// value nor the text of a framework token's value is read again for names.
+//
+// A name is one non-empty segment of [A-Za-z0-9_]. A name whose $<name> starts
+// with $now, or whose $<name>. is one of expression.SubstitutionPrefixes, would
+// collide with a framework token and is refused. A refused name or a nil ctx
+// returns an error classified invalid, and no text, before the template is
+// read. A $<name> that is not in names is ordinary text and is not reported.
+func (ec *ExecutionContext) SubstituteVariablesWith(ctx context.Context, template string, names map[string]string) (string, error) {
+	if ctx == nil {
+		return "", errs.Classified(errs.ErrorInvalid, errors.New("substitute variables: nil context"))
+	}
+	if err := checkHandlerNames(names); err != nil {
+		return "", err
+	}
+	return ec.substituteAndWarn(ctx, template, names), nil
+}
+
+// checkHandlerNames refuses a handler name that is not one word segment or
+// that a framework token would read first.
+func checkHandlerNames(names map[string]string) error {
+	prefixes := expression.SubstitutionPrefixes()
+	for name := range names {
+		if name == "" || !isWordRun(name) {
+			return errs.Classified(errs.ErrorInvalid, fmt.Errorf(
+				"substitute variables: name %q is not one segment of letters, digits and underscores", name))
+		}
+		token := "$" + name
+		if strings.HasPrefix(token, "$now") || slices.Contains(prefixes, token+".") {
+			return errs.Classified(errs.ErrorInvalid, fmt.Errorf(
+				"substitute variables: name %q collides with a framework token", name))
+		}
+	}
+	return nil
+}
+
+func isWordRun(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if !isWordByte(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // substitute is the one scan: it copies template, replacing each token that
-// resolves, and returns the tokens that did not.
-func (ec *ExecutionContext) substitute(template string) (string, []string) {
+// resolves, and returns the tokens that did not. Where no framework token
+// starts, a $<name> of names is filled.
+func (ec *ExecutionContext) substitute(ctx context.Context, template string, names map[string]string) (string, []string) {
 	prefixes := expression.SubstitutionPrefixes()
 	var out strings.Builder
 	var unresolved []string
@@ -106,11 +176,16 @@ func (ec *ExecutionContext) substitute(template string) (string, []string) {
 		out.WriteString(rest[:i])
 		rest = rest[i:]
 		if !hasAnyPrefix(rest, prefixes) {
+			if value, n, ok := handlerName(rest, names); ok {
+				out.WriteString(value)
+				rest = rest[n:]
+				continue
+			}
 			out.WriteByte('$')
 			rest = rest[1:]
 			continue
 		}
-		if value, n, ok := ec.resolve(rest); ok {
+		if value, n, ok := ec.resolve(ctx, rest); ok {
 			out.WriteString(value)
 			rest = rest[n:]
 			continue
@@ -126,12 +201,12 @@ func (ec *ExecutionContext) substitute(template string) (string, []string) {
 // resolve reads the token at the start of s, which starts with a substitution
 // prefix. It returns the token's value and length, or false when the token
 // does not resolve.
-func (ec *ExecutionContext) resolve(s string) (string, int, bool) {
+func (ec *ExecutionContext) resolve(ctx context.Context, s string) (string, int, bool) {
 	switch {
 	case fixedName(s, "$now"):
 		return time.Now().UTC().Format(time.RFC3339), len("$now"), true
 	case strings.HasPrefix(s, "$entity."):
-		return ec.resolveEntity(s)
+		return ec.resolveEntity(ctx, s)
 	case strings.HasPrefix(s, "$state."):
 		return ec.resolveState(s)
 	case strings.HasPrefix(s, "$message."):
@@ -152,6 +227,24 @@ func (ec *ExecutionContext) resolveState(s string) (string, int, bool) {
 		return strconv.Itoa(ec.State.MaxIterations), len("$state.max_iterations"), true
 	}
 	return "", 0, false
+}
+
+// handlerName reads the $<name> of names at the start of s. The name is the
+// whole run of letters, digits and underscores after the dollar sign, which is
+// the end rule of a fixed name.
+func handlerName(s string, names map[string]string) (string, int, bool) {
+	if len(names) == 0 {
+		return "", 0, false
+	}
+	n := 1
+	for n < len(s) && isWordByte(s[n]) {
+		n++
+	}
+	value, ok := names[s[1:n]]
+	if !ok {
+		return "", 0, false
+	}
+	return value, n, true
 }
 
 // fixedName reports whether s starts with name and the character after it is

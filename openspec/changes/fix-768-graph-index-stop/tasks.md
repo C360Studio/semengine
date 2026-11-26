@@ -18,8 +18,9 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
   The write in flight when the flag is set finishes. Rewrite or remove `TestStopWritesAcceptedWork` and
   `TestStopInterruptedThenRetriedWritesAcceptedWork` to the modified requirement, and update their line in
   `docs/admission-ledger.yaml`. Accept: the 2.1 test and the graph-index tests pass.
-- [ ] 2.3 graph-embedding: read what its queued items record at stop. File an issue if they log false failures or
-  complete revisions they did not apply; otherwise say so in `notes/2.3.md`.
+- [x] 2.3 graph-embedding: read what its queued items record at stop. File an issue if they log false failures or
+  complete revisions they did not apply; otherwise say so in `notes/2.3.md`. Filed #771: its queued hop 2
+  records log false ERROR lines at stop.
 
 ## 3. Close
 

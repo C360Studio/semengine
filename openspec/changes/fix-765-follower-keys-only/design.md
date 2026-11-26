@@ -31,5 +31,5 @@ complete.
 
 ## What stays open
 
-Issue #750 stays open for the three readers still watching values. Steps 2 and 3 of #765: measuring one entity's reconcile cost, then
-a design that avoids re-indexing on every boot (#108), read by Fable before code.
+Issue #750 stays open for the three readers still watching values. Steps 2 and 3 of #765 follow: measuring one
+entity's reconcile cost, then a design that avoids re-indexing on every boot (#108), read by Fable before code.

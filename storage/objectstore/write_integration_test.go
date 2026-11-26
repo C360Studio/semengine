@@ -186,12 +186,10 @@ func bucketKeys(ctx context.Context, t *testing.T, js jetstream.JetStream, bucke
 	return keys
 }
 
-// awaitKeys waits, up to bound, for bucket to hold exactly want objects, and returns their keys.
-func awaitKeys(ctx context.Context, t *testing.T, js jetstream.JetStream, bucket string, want int, bound time.Duration) []string {
+// awaitKeys waits under ctx for bucket to hold exactly want objects, and returns their keys.
+func awaitKeys(ctx context.Context, t *testing.T, js jetstream.JetStream, bucket string, want int) []string {
 	t.Helper()
-	waitCtx, cancel := context.WithTimeout(ctx, bound)
-	defer cancel()
-	keys, err := probe.Await(waitCtx, func(ctx context.Context) ([]string, error) {
+	keys, err := probe.Await(ctx, func(ctx context.Context) ([]string, error) {
 		return listBucket(ctx, js, bucket)
 	}, func(keys []string) bool { return len(keys) == want })
 	if err != nil {
@@ -236,7 +234,9 @@ func decodeStored(t *testing.T, data []byte) *StoredMessage {
 // triples and a reference, stamped objectstore, that opens to the body through the Store the
 // Component provides (object-store spec, "A document on the write input").
 func TestWriteLaneStoresBodyAndEmitsReference(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+	// five-second timeout. go test -timeout ends the test long before the hour does.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 	defer cancel()
 	client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 	stored, err := client.GetConnection().SubscribeSync("storage.objectstore.stored")
@@ -253,7 +253,7 @@ func TestWriteLaneStoresBodyAndEmitsReference(t *testing.T) {
 	if err := client.Publish(ctx, "objectstore.test.core", wire(t, doc)); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	reply, err := stored.NextMsg(15 * time.Second)
+	reply, err := stored.NextMsgWithContext(ctx)
 	if err != nil {
 		t.Fatalf("no StoredMessage on the stored output: %v", err)
 	}
@@ -286,7 +286,9 @@ func TestWriteLaneStoresBodyAndEmitsReference(t *testing.T) {
 // (object-store spec, "Both lanes after the Start context ended"): neither lane writes under a
 // child of the Start context.
 func TestStartContextEndKeepsBothLanesWriting(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+	// five-second timeout. go test -timeout ends the test long before the hour does.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 	defer cancel()
 	client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 	js := clientJetStream(t, client)
@@ -308,7 +310,7 @@ func TestStartContextEndKeepsBothLanesWriting(t *testing.T) {
 	if err := client.PublishToStream(ctx, inputSubject, wire(t, stream)); err != nil {
 		t.Fatalf("publish JetStream: %v", err)
 	}
-	keys := awaitKeys(ctx, t, js, bucket, 2, 20*time.Second)
+	keys := awaitKeys(ctx, t, js, bucket, 2)
 	var bodies []string
 	for _, key := range keys {
 		body, err := c.ProvidedStores()[instanceName].Get(ctx, key)
@@ -353,7 +355,9 @@ func TestWriteLaneRefusals(t *testing.T) {
 		{"jetstream", jetStreamConfig, "COMPONENT_JS", true},
 	} {
 		t.Run(lane.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+			// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+			// five-second timeout. go test -timeout ends the test long before the hour does.
+			ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 			defer cancel()
 			client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 			js := clientJetStream(t, client)
@@ -389,7 +393,7 @@ func TestWriteLaneRefusals(t *testing.T) {
 					t.Errorf("%s: bucket holds %v, want nothing stored", tc.name, keys)
 				}
 				if lane.jetStream {
-					if _, err := terminated.NextMsg(10 * time.Second); err != nil {
+					if _, err := terminated.NextMsgWithContext(ctx); err != nil {
 						t.Errorf("%s: no MSG_TERMINATED advisory: %v", tc.name, err)
 					}
 				}
@@ -420,7 +424,9 @@ func TestWriteLaneRefusals(t *testing.T) {
 // and publishes its reference: one acknowledged delivery, two objects, exactly one referenced
 // (object-store spec, "The reference cannot be published").
 func TestStoredEmitFailureNaksThenRedeliveryStores(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	// An hour, not t.Context() alone: with no deadline nats.go gives each JetStream call its own
+	// five-second timeout. go test -timeout ends the test long before the hour does.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
 	defer cancel()
 	client := natsfixture.Open(t, SharedServer.Reset(t), openSharedClient)
 	js := clientJetStream(t, client)
@@ -460,9 +466,7 @@ func TestStoredEmitFailureNaksThenRedeliveryStores(t *testing.T) {
 		t.Fatalf("CreateStream %s again: %v", storedStream, err)
 	}
 	// The redelivery waits out the 30-second transient NAK delay.
-	waitCtx, cancelWait := context.WithTimeout(ctx, 60*time.Second)
-	defer cancelWait()
-	if _, err := probe.Await(waitCtx, func(ctx context.Context) (uint64, error) {
+	if _, err := probe.Await(ctx, func(ctx context.Context) (uint64, error) {
 		info, err := output.Info(ctx)
 		if err != nil {
 			return 0, err
@@ -481,7 +485,7 @@ func TestStoredEmitFailureNaksThenRedeliveryStores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Consumer: %v", err)
 	}
-	info, err := probe.Await(waitCtx, func(ctx context.Context) (*jetstream.ConsumerInfo, error) {
+	info, err := probe.Await(ctx, func(ctx context.Context) (*jetstream.ConsumerInfo, error) {
 		return consumer.Info(ctx)
 	}, func(info *jetstream.ConsumerInfo) bool { return info.NumAckPending == 0 })
 	if err != nil {

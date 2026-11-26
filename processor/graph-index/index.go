@@ -80,8 +80,8 @@ func (c *Component) openIndexBuckets(ctx context.Context) error {
 // startIndexPool builds the keyed pool, and the coalescer when coalesce_ms is above zero,
 // after openIndexBuckets. f is the follower whose watermark and damage record the lanes
 // report to. poolCtx is handed to every lane's apply; it must stay live until the pool's
-// Shutdown has returned, so accepted work is written. The coalescer's run is the caller's
-// to start and join.
+// Shutdown has returned, so a write a lane has started finishes whole. The coalescer's run is
+// the caller's to start and join.
 func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower) error {
 	c.follower.Store(f)
 	c.aliasPredicates = vocabulary.DiscoverAliasPredicates()
@@ -187,8 +187,12 @@ func (c *Component) submit(ctx context.Context, work indexWork) {
 // processWork is the one mutation entry for deliveries, coalesced batches and repair; the
 // pool keeps each key's work in submit order. Each item applies current authoritative
 // state, not the event it came from, so a repair that read R2 before the follower
-// submitted R1 cannot be undone by R1.
+// submitted R1 cannot be undone by R1. From the moment Stop begins it does nothing: the work
+// is neither applied nor completed, and the next start's replay re-indexes the entity.
 func (c *Component) processWork(ctx context.Context, work indexWork) {
+	if c.stopping.Load() {
+		return
+	}
 	if c.reconcileEntity(ctx, work) && work.revision > 0 {
 		c.follower.Load().Complete(work.entityID, work.revision)
 	}

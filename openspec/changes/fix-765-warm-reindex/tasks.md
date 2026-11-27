@@ -41,9 +41,9 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 - [x] 2.4 Rule 7, too large. Accept: `TestOversizeRecordFallsBackToListing`. Done: notes in `notes/2.4.md`.
 - [x] 2.5 Generations. Accept: `TestRestartRebuildsRecreatedIndexBucket`. Done: 2.3 already refused another
   generation; the test and its notes are in `notes/2.5.md`.
-- [ ] 2.6 The ADR-077 amendment per Decision 2, under its port note: the condition at `:40-42` refuted by the step 2
+- [x] 2.6 The ADR-077 amendment per Decision 2, under its port note: the condition at `:40-42` refuted by the step 2
   measurement, §2 owner listing as fallback and oracle, §4 replacement through the record. Accept: the amendment
-  cites the measurement comment and this change.
+  cites the measurement comment and this change. Done: ADR-077's "SemEngine amendment" section, and its ledger row.
 - [ ] 2.7 The declared limits, the power-cut pointer, the reset, and when to bump the format constant (two cases;
   a bump costs one listing pass, about 38 minutes at 40,000 on one lane) in the graph-index README. Accept:
   `TestDeletingRecordsRebuildsEveryEntity`.

@@ -3718,11 +3718,15 @@
     the pin's decision record for graph-index's bounded owner discovery, fixed token positions and source-owned
     INCOMING keys, which processor/graph-index implements; carried with the graph-index port
   destination: docs/adr/077-bounded-owner-discovery-and-incoming-ownership.md
-  contract: the decision text as at the pin
+  contract: >-
+    the decision text as at the pin, amended under the port note by fix-765-warm-reindex (PR #774): the Context's
+    acceptance condition is refuted by the measurement in #765 comment 7208287082, so owner listing becomes the
+    fallback and the test oracle (section 2) and replacement goes through graph-index's per-entity record (section 4)
   dependencies_and_side_effects: none; a document
   known_risks: >-
     the status paragraph is rewrapped for markdownlint's line length, the words unchanged; a port note added under
-    the title says the evidence runs and the runbook it cites are SemStreams' and not ported
+    the title says the evidence runs and the runbook it cites are SemStreams' and not ported; the SemEngine amendment
+    follows the port note, and the pin's sections below it are not edited
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-index technical writer
   disposition: adapt

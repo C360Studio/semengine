@@ -40,8 +40,8 @@ loaded disabled cron rule owes nothing; (3) a rule with no `entity.pattern` is r
 runs on messages or a schedule, never for an entity; (4) a malformed entity ID is an error; (5) an entity outside the
 pattern (`semtypes.MatchEntityIDPattern`, `pkg/types/entity_id.go:169`) is `false, nil`, since production never
 evaluates that rule for it and nothing is owed (refusing would fail a pack-wide scan on every rule an entity is not
-for); (6) no conditions is `false, nil` (`Load` gives an expression rule at least one, so this is only reached by a
-malformed input); (7) the stateless refusals (D3), then evaluation. A pack-wide scan skips rules with no pattern before
+for); (6) no conditions is `false, nil` (`Load` gives an expression rule at least one, so nothing reaches this until
+PR 11 loads cron rules with a pattern); (7) the stateless refusals (D3), then evaluation. A pack-wide scan skips rules with no pattern before
 asking, reading `entity.pattern` from the `Definition` it decoded. Rules 1 to 3 of the pin's adopter note
 (`docs/operations/adopter-match-and-inflight.md`: ask the framework, not the evaluator; obligation, not instant; three
 outcomes; pass a deadline, as the lookup does I/O) become the methods' doc comment; the note itself is not ported, as
@@ -54,8 +54,8 @@ forward); condition values are filled under the caller's context (F5); then the 
 picks entity rules by pattern before calling (pin `message_handler.go:265-276`), so the pattern check is `Matches`' own.
 `Matches` adds the D2 refusals, the stateless ones (`EnsureStatelessResolvable`; a failed lookup when a condition reads
 `$entity.lifecycle.*`) and returns what the firing match turns into no match (D4). Cooldown applies to neither. The two
-share one implementation only for an enabled rule with a pattern and an entity inside it; outside the pattern they
-differ by design, the firing match answering on its conditions and `Matches` false (D2, step 5). Proof: the oracle is
+always share one implementation; their verdicts agree for an enabled rule with a pattern and an entity inside it;
+outside the pattern they differ by design, the firing match answering on its conditions and `Matches` false (D2, step 5). Proof: the oracle is
 the carried `matches_test.go` corpus with hand-written verdicts (each case given a pattern and a six-part entity ID),
 plus the carried entity tests. A generated check (`rapid`, seed and completed checks recorded) guards drift, not truth:
 over enabled rules with a pattern and entities inside it, whenever both answer they agree, and whenever the firing match

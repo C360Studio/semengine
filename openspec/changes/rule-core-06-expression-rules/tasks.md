@@ -43,8 +43,9 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   - A generated check with `pgregory.net/rapid` (D3), recording seed and completed checks, as a drift guard (the
     oracle is the hand-written corpus): over enabled rules with an `entity.pattern` and entities inside it, whenever
     both the firing match and `Matches` return a verdict they are equal, and whenever the firing match returns an
-    error, `Matches` does too. Record in `notes/2.1.md` a run against a mutant where `Matches` turns an evaluation
-    error into `false, nil`, failing.
+    error, `Matches` does too. The generator draws inputs that make the firing match error (an operator whose value
+    cannot be compared, such as `gt "abc"` on a number, and an unfilled value template). Record in `notes/2.1.md` a
+    run against a mutant where `Matches` turns an evaluation error into `false, nil`, failing.
 - [ ] 2.2 `ErrRequiredFieldMissing` in `processor/rule/expression`, wrapped as the `Err` of the evaluator's three
   absent-required errors (`evaluator.go:167`, `:183`, `:229-240`), not of the required `transition` with no entity
   (`:283-287`); the `rule-conditions` scenarios. Check:

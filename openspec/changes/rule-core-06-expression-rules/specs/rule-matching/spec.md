@@ -15,7 +15,8 @@ meaning the answer could not be found. A rule's cooldown SHALL NOT apply and SHA
 
 ### Requirement: A stateless match checks in a fixed order
 
-`Matches` SHALL apply these in order, the first that applies deciding: nil rule, context, state or manager, refused;
+`Matches` and `MatchesWithLifecycle` SHALL apply these in order, the first that applies deciding: nil rule, context,
+state or manager, refused;
 a disabled rule, false; no `entity.pattern`, refused, classified invalid, as the rule runs on messages or a schedule;
 a malformed entity ID, an error; an entity outside the pattern, false; no conditions, false; then the stateless
 refusals, then evaluation. Each false comes with no error.
@@ -43,8 +44,8 @@ refusals, then evaluation. Each false comes with no error.
 
 ### Requirement: Firing and asking share one match
 
-For an enabled rule with an `entity.pattern` and an entity inside it, the firing entity match and `Matches` SHALL
-share one implementation: whenever both give a verdict the verdicts SHALL be equal, and whenever the firing match
+The firing entity match and `Matches` SHALL share one implementation. For an enabled rule with an `entity.pattern`
+and an entity inside it, whenever both give a verdict the verdicts SHALL be equal, and whenever the firing match
 returns an error, `Matches` SHALL return one too. Outside the pattern they differ by design: the firing match does
 not check the pattern, as its caller picks rules by it, and `Matches` answers false.
 

@@ -4,10 +4,10 @@
 
 ### Requirement: An entity whose rows would not change is not re-indexed
 
-After every row write for an entity succeeds, graph-index SHALL store a mark: a digest of the rows written, a format
-constant, and the generations of `ENTITY_STATES` and the index buckets. When an entity's value decodes, its planned
-rows have the mark's digest, and the constant and every generation match, graph-index SHALL neither list nor write,
-SHALL clear the entity from the failed set, and SHALL complete the revision.
+graph-index SHALL keep one record per entity of the rows it wrote, pending or clean, with a format constant and the
+generations of `ENTITY_STATES` and the index buckets. When an entity's value decodes, and a clean record with
+matching constant and generations holds exactly the planned rows, graph-index SHALL neither list nor write, SHALL
+clear the entity from the failed set, and SHALL complete the revision.
 
 #### Scenario: A warm restart over an unchanged store
 
@@ -22,36 +22,49 @@ SHALL clear the entity from the failed set, and SHALL complete the revision.
 - **THEN** graph-index lists no index bucket and writes no index row for them, and every read answers as before
 - **AND** the test that verifies this is `TestEqualReofferSkipsIndexing`
 
-#### Scenario: A store indexed before marks existed
+#### Scenario: A failed entity whose rows are current
 
-- **WHEN** graph-index starts over index rows that have no marks
-- **THEN** each entity is listed once and marked, and the next start lists none
-- **AND** the test that verifies this is `TestRestartWithoutMarksListsOnce`
+- **WHEN** an entity whose clean record matches is in the failed set after a failed read, and the repair pass reads it
+- **THEN** it leaves the failed set without a listing, and queries are no longer withheld for it
+- **AND** the test that verifies this is `TestRepairSkipClearsFailed`
+
+#### Scenario: The record's encoding
+
+- **WHEN** the record for a fixed plan is built
+- **THEN** its bytes equal a stored fixture, which changes only with the format constant
+- **AND** the test that verifies this is `TestRecordGoldenFixture`
+
+### Requirement: A changed entity's old rows are found from its record
+
+When a clean record with matching constant and generations differs from the planned rows, graph-index SHALL delete
+the rows the record names that the plan drops, put the rows the plan adds or whose value changed, and SHALL NOT list.
+With no usable record, graph-index SHALL list as before and then record the entity.
+
+#### Scenario: A live change
+
+- **WHEN** an indexed entity changes from A to B while graph-index runs
+- **THEN** every read answers B and nothing of A for it, and no index bucket was listed
+- **AND** the test that verifies this is `TestLiveChangeUsesRecord`
+
+#### Scenario: A store indexed before records existed
+
+- **WHEN** graph-index starts over index rows that have no records
+- **THEN** each entity is listed once and recorded, and the next start lists none
+- **AND** the test that verifies this is `TestRestartWithoutRecordsListsOnce`
 
 #### Scenario: A predicate registered between starts
 
 - **WHEN** a predicate becomes an alias predicate between two starts, and no entity's value changes
-- **THEN** after the second start an `alias` request answers each entity carrying it, and only those entities were
-  listed
+- **THEN** after the second start an `alias` request answers each entity carrying it, only those entities were
+  written, and no index bucket was listed
 - **AND** the test that verifies this is `TestRestartAppliesNewAliasPredicate`
 
-#### Scenario: A failed entity whose rows are current
+### Requirement: A record names every row its entity can own
 
-- **WHEN** an entity whose mark matches is in the failed set after a failed read, and the repair pass reads it
-- **THEN** it leaves the failed set without a listing, and queries are no longer withheld for it
-- **AND** the test that verifies this is `TestRepairSkipClearsFailed`
-
-#### Scenario: The mark's encoding
-
-- **WHEN** the mark for a fixed plan is built
-- **THEN** its bytes equal a stored fixture, which changes only with the format constant
-- **AND** the test that verifies this is `TestMarkGoldenFixture`
-
-### Requirement: A mark exists only while the rows match it
-
-An apply that writes SHALL delete the entity's mark before its first row write, and SHALL write nothing if that
-delete fails. A failed mark write SHALL count as a failed index write. A mark that is missing, does not decode, or
-cannot be read SHALL make graph-index apply the entity as before. A damaged value's removal SHALL leave no mark.
+Before its first row write an apply SHALL put a pending record holding the old and the planned rows, and SHALL write
+nothing if that put fails; after its last write it SHALL put a clean record of the planned rows. A failed record
+write SHALL count as a failed index write. A pending record SHALL lead to every planned row being put and every other
+row it names deleted. A damaged value's removal SHALL leave no record.
 
 #### Scenario: Cut off, then any value under any rules
 
@@ -59,7 +72,13 @@ cannot be read SHALL make graph-index apply the entity as before. A damaged valu
   either of two sets, and graph-index starts again
 - **THEN** every read answers that value under those rules and nothing else for the entity
 - **AND** the test that verifies this is `TestRestartConvergesFromEveryCutPoint`, a generated check over cut points,
-  values and rules against a reference model, seeded with one golden mark fixture beside the package's builder
+  values and rules against a reference model, seeded with one golden record fixture beside the package's builder
+
+#### Scenario: The record agrees with a listing
+
+- **WHEN** a generated history of changes, cuts, re-offers and deletes has been applied
+- **THEN** each entity's record names exactly the rows a listing of the index buckets finds for it
+- **AND** the test that verifies this is `TestRecordMatchesListingOracle`
 
 #### Scenario: Deleted while graph-index is down
 
@@ -67,15 +86,27 @@ cannot be read SHALL make graph-index apply the entity as before. A damaged valu
 - **THEN** every read answers nothing for it after the first start, and the second start lists nothing for it
 - **AND** the test that verifies this is `TestRestartAppliesDeleteWhileDown`
 
-#### Scenario: The mark bucket deleted while graph-index runs
+#### Scenario: The record bucket deleted while graph-index runs
 
-- **WHEN** `GRAPH_INDEX_MARKS` is deleted while graph-index runs, and an indexed entity then changes
+- **WHEN** `GRAPH_INDEX_RECORDS` is deleted while graph-index runs, and an indexed entity then changes
 - **THEN** none of its rows are written, a request answers `index_not_ready`, and after a restart the change answers
-- **AND** the test that verifies this is `TestMarkBucketDeletedWhileRunningWithholds`
+- **AND** the test that verifies this is `TestRecordBucketDeletedWhileRunningWithholds`
+
+### Requirement: An entity too large for one record is indexed by listing
+
+When an entity's encoded record would exceed the payload limit the server reports, graph-index SHALL delete its
+record before any row write, writing nothing if that delete fails, and SHALL apply the entity by listing with no
+record.
+
+#### Scenario: A source with many relationships
+
+- **WHEN** an entity's relationships make its record larger than the payload limit, and it then changes
+- **THEN** every read answers its current relationships, it has no record, and the apply listed
+- **AND** the test that verifies this is `TestOversizeRecordFallsBackToListing`
 
 ### Requirement: A recreated index bucket is rebuilt
 
-A mark written under another generation of `ENTITY_STATES` or of an index bucket SHALL NOT match.
+A record written under another generation of `ENTITY_STATES` or of an index bucket SHALL NOT be used.
 
 #### Scenario: INCOMING_INDEX deleted while down
 
@@ -86,12 +117,12 @@ A mark written under another generation of `ENTITY_STATES` or of an index bucket
 
 ### Requirement: What a restart does not repair is declared
 
-graph-index's documentation SHALL declare that, under a matching mark, rows edited by hand, a bucket emptied in place
-or restored with its creation time, rows written by a graph-index that keeps no marks, and writes a host power loss
-discarded are not repaired, and that deleting the mark bucket while graph-index is stopped rebuilds every entity.
+graph-index's documentation SHALL declare that, under a clean record, rows edited by hand, a bucket emptied in place
+or restored with its creation time, rows written by a graph-index that keeps no records, and writes a host power loss
+discarded are not repaired, and that deleting the record bucket while graph-index is stopped rebuilds every entity.
 
 #### Scenario: The reset
 
-- **WHEN** a row is deleted by hand while graph-index is stopped, the mark bucket is deleted, and graph-index starts
+- **WHEN** a row is deleted by hand while graph-index is stopped, the record bucket is deleted, and graph-index starts
 - **THEN** after the first build the deleted row answers again
-- **AND** the test that verifies this is `TestDeletingMarksRebuildsEveryEntity`
+- **AND** the test that verifies this is `TestDeletingRecordsRebuildsEveryEntity`

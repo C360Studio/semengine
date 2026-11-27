@@ -20,18 +20,18 @@ does not apply.
 | Production file | Lines | Carried (rewritten) | Not carried |
 | --- | --- | --- | --- |
 | `expression_factory.go` | 449 | `:57-75` (19), `:143-209` (67), `:210-236` (27), `:237-327` (91) = 204 | `:1-16` (16), `:17-56` (40), `:76-83` (8), `:84-132` (49), `:133-142` (10), `:328-367` (40), `:368-441` (74), `:442-449` (8) = 245 |
-| `matches.go` | 228 | 228 | 0 |
+| `matches.go` | 228 | `:1-91`, `:125-174`, `:184-228` = 186 | `:92-124` (33), `:175-183` (9) = 42 |
 | `payload_projection.go` | 70 | 70 | 0 |
-| **total** | **747** | **502** | **245** |
+| **total** | **747** | **460** | **287** |
 
 | Test file | Lines | Carried | Moved | Dropped |
 | --- | --- | --- | --- | --- |
 | `expression_factory_test.go` | 792 | `:1-18`, `:229-363`, `:451-481`, `:542-735` = 378 | `:364-407` cooldown to PR 7 (44); `:482-541`, `:736-792` config to PR 8 (117) | `:19-43`, `:44-193`, `:194-228`, `:408-450` = 253 |
-| `matches_test.go` | 688 | 660 | 0 | `:312-339` (28) |
-| `matches_lifecycle_integration_test.go` | 104 | 104 | 0 | 0 |
+| `matches_test.go` | 688 | 542 | 0 | `:312-339`, `:404-443`, `:477-487`, `:514-559`, `:668-688` = 146 |
+| `matches_lifecycle_integration_test.go` | 104 | `:1-34`, `:61-84` = 58 | 0 | `:35-60`, `:85-104` = 46 |
 | `payload_projection_test.go` | 428 | `:1-240` (240) | `:302-428` to PR 9 (127) | `:241-301` (61) |
 | `payload_projection_integration_test.go` | 279 | 0 | 279 to PR 9 | 0 |
-| **total** | **2,291** | **1,382** | **567** | **342** |
+| **total** | **2,291** | **1,218** | **567** | **506** |
 
 Both pin totals equal the split plan's (`archive/…-split-plan/inventory.md:20`). Sent here by PR 3, counted in PR 3's
 size, not above: `typed_substitution_test.go:273-351`, `lifecycle_substitution_test.go:301-327`, `:329-355`,
@@ -42,7 +42,10 @@ Why each dropped test range goes: `:19-43` and `:408-450` test the factory regis
 (`processor/rule/load_test.go:161-193` — `cause: "at least one condition"` … `"cooldown": "soon"`); `:194-228` tests the
 constructor; `matches_test.go:312-339` checks the trigger latch and last-fired stamp, which are not carried (§ 6, F6);
 `payload_projection_test.go:241-301` reads `configs/rules/agentic-workflow/architect-editor.json` and `agentic` types,
-neither in this repository (agentic tier, Q15).
+neither in this repository (agentic tier, Q15). `matches.go:92-124` is `MatchesWithLifecycle` and `:175-183` the
+failed-lookup refusal only it reaches; `matches_test.go:404-443`, `:477-487`, `:514-559`, `:668-688` and
+`matches_lifecycle_integration_test.go:35-60`, `:85-104` test only that method (its nil manager, its refusal of a failed
+lookup, its agreement with `Matches`). All wait until a product asks for the method.
 
 ## 2. Pin probe (commands in `notes/inventory-probe.md`)
 
@@ -286,7 +289,8 @@ The developer is semteams' author of `research_loop_budget_test.go`, or a produc
    has uncompiled regex conditions, which evaluation refuses (PR 1 risk, `archive/…-01-expression/design.md:111-112`).
 2. **If they do nothing.** `rule.NewExpressionRule` does not compile: a compile error, the best rank. A pack with an
    action type the handler set lacks fails `Load` naming type, rule and position: a typed error. A semteams contract
-   test that keeps asserting false for a rule missing a required field gets an error from `Matches` instead.
+   test keeps its assertions of false: `Matches` answers false for a rule missing a required field, as
+   `EvaluateEntityState` did.
 3. **Where they find out.** Compile error (types gone); typed runtime errors (`Load`'s refusal; `Matches`' three
    answers).
 4. **What they should have to know.** That a loaded rule answers "does it match", and an error means "cannot tell".

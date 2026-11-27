@@ -23,29 +23,33 @@ logged where nobody looks, so a broken rule just never fires.
 
 ## Decisions you are making by approving
 
-- **`Matches` becomes a method of a loaded rule (recommended).** The rule asked about has passed every load check,
-  including "no rule matches on an agent's private predicate". The cost: the asker must load the rule, so it needs a
-  handler for every action type in it and its predicates declared; semteams' research rules need `publish_agent`. It
-  answers in a fixed order: a disabled rule is "no match"; an enabled rule with no entity pattern is refused (it runs on
-  messages or a schedule); an entity outside the rule's pattern is "no match"; then the conditions decide. Other ways:
-  keep it on a raw definition (a second, partial load path), or drop it (no product calls it today). New exported
-  surface: two methods.
-- **A required field that is absent means "no match" when firing and an error when asking (recommended).** 84 of 91
-  product rules use `required: true` to mean "only when present". This exempts an absent required field from PR 1's
-  every-error-at-Warn commitment, which would otherwise log on every evaluation that does not match. Adds one exported
-  error value, `expression.ErrRequiredFieldMissing`, so code tells the case apart without reading error text. Other
-  way: report every error and let PRs 7 and 9 log each once.
+- **`Matches` becomes a method of a loaded rule, and the only new one (recommended).** The rule asked about has passed
+  every load check, including "no rule matches on an agent's private predicate". The cost: the asker must load the
+  rule, so it needs a handler for every action type in it and its predicates declared; semteams' research rules need
+  `publish_agent`. It answers "no match" for any rule the engine would never run for this entity: a disabled rule, one
+  with no entity pattern (it runs on messages or a schedule), an entity outside the pattern. Then the conditions
+  decide. It refuses a condition on an entity's lifecycle, as it has no lifecycle lookup; a version that takes one
+  waits until a product asks. Other ways: keep it on a raw definition (a second, partial load path), or drop it (no
+  product calls it today). New exported surface: one method.
+- **A required field that is absent means "no match", with no error, both when firing and when asking
+  (recommended).** 84 of 91 product rules use `required: true` to mean "only when present", so this is the ordinary
+  "this rule is not for this entity yet". It is exempt from PR 1's every-error-at-Warn commitment, which would
+  otherwise log on every evaluation that does not match. A failed comparison and an unfilled template stay errors on
+  both. Adds one exported error value, `expression.ErrRequiredFieldMissing`, so the rule package tells the case apart
+  without reading error text. What is lost: an asker cannot tell "absent" from "conditions false"; no caller needs to.
+  Other ways: an error from `Matches` only, which every asker must special-case; or report every error and let PRs 7
+  and 9 log each once.
 - **A condition naming a missing value fails the match on the firing path too (recommended).** Today the firing path
   compares the unfilled text and can match; `Matches` already refuses. This changes what the old engine promised. No
   product rule is affected: its 5 templated values all resolve.
 - **`Load` refuses a condition its path can never fill (recommended):** `$entity.` in a rule with no entity pattern,
   `$message.` in one with a pattern. None of the 91 product rules does this.
-- **Fable reads one question before code (recommended):** "Is `Matches` as a method of a loaded rule (with the path and
-  pattern refusals) plus the `ErrRequiredFieldMissing` sentinel the right exported shape?" The split plan said no read,
-  but this adds exported surface. Other way: decline, since the methods follow the old engine's own contract.
+- **Fable read of the exported shape:** read; comment 7223972395; owner ruled 7223995054. The three rulings are worked
+  into the two decisions above; no further read.
 
 ## Impact
 
 `processor/rule` (match, payload fields, one `Load` check), `processor/rule/expression` (one error value), the ledger
 row, `processor/rule/docs/syntax.md`. Independent of PR 4; PR 7 waits for both. semteams' contract test
-`test/contract/research_loop_budget_test.go` moves from `NewExpressionRule` to `Load` and `Matches`.
+`test/contract/research_loop_budget_test.go` moves from `NewExpressionRule` to `Load` and `Matches` and keeps its
+assertions of false.

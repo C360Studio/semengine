@@ -16,14 +16,14 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 2. Code and test
 
-- [ ] 2.1 Failing first, shown red on 3d823c82's code in `notes/2.1.md`: `TestWarmRestartSkipsIndexedEntities` and
+- [x] 2.1 Failing first, shown red on 3d823c82's code in `notes/2.1.md`: `TestWarmRestartSkipsIndexedEntities` and
   `TestLiveChangeUsesRecord` count list operations (`kv_operations_total`; listings at `owner_reconcile.go:46`).
   Accept: red before 2.3, green after.
 - [x] 2.2 The record bucket: `GRAPH_INDEX_RECORDS` in `graph/constants.go` and the catalog (`kvcatalog.go:169-174`),
   derived, owner graph-index, opened in `openIndexBuckets` (`index.go:54`); each bucket's generation read at start
   the way `readStream` does (`graph/follower/follower.go:546`). Accept: catalog tests pass. Done: notes in
   `notes/2.2.md`.
-- [ ] 2.3 The record per Decision 1 rules 1 to 6: pending (one union, carried forward) before the first row write,
+- [x] 2.3 The record per Decision 1 rules 1 to 6: pending (one union, carried forward) before the first row write,
   clean after the last (`index.go:502-508`); the change and pending paths replace the listing in
   `reconcileOwnedRows` (`owner_reconcile.go:46`) and in `deleteFromIndexes` (`index.go:606`), which stay as the
   fallback, with value-carrying rows put again there (`owner_reconcile.go:85`); the clean empty record after a

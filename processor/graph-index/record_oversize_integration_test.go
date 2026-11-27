@@ -166,6 +166,22 @@ func TestOversizeRecordFallsBackToListing(t *testing.T) {
 		h.awaitIndexed(t, rev)
 		return rev, listings(kvOperations(t, h.c)) - before
 	}
+	// A too-large apply is declared by a counter and an Info line, both written before the revision
+	// completes, so the floor reaching rev orders them before these reads too.
+	tooLargeSignals := func() (float64, int) {
+		t.Helper()
+		return tooLargeCount(t, h.c), strings.Count(h.logs.String(), `msg="record too large to keep`)
+	}
+	requireSignals := func(step string, beforeCount float64, beforeLines, want int) {
+		t.Helper()
+		count, lines := tooLargeSignals()
+		if count-beforeCount != float64(want) {
+			t.Errorf("%s: reconcile_operations_total{record,too_large} grew by %v, want %d", step, count-beforeCount, want)
+		}
+		if lines-beforeLines != want {
+			t.Errorf("%s: %d too-large log lines, want %d", step, lines-beforeLines, want)
+		}
+	}
 	requireNoRecord := func(step string) {
 		t.Helper()
 		if r, ok := storedRecord(t, client, src); ok {
@@ -185,18 +201,22 @@ func TestOversizeRecordFallsBackToListing(t *testing.T) {
 		rels []int
 	}{{"grown", grown}, {"changed", changed}, {"shrunk", shrunk}} {
 		var listed float64
+		count, lines := tooLargeSignals()
 		rev, listed = apply(step.rels)
 		requireCurrent(step.what, step.rels, rev)
 		requireNoRecord(step.what)
+		requireSignals(step.what, count, lines, 1)
 		if listed != oneListing {
 			t.Errorf("%s: %v owner listings, want %d, one listing apply", step.what, listed, oneListing)
 		}
 	}
 
 	// Applied once more, the shrunk entity's listing finds only its small rows, and its record fits.
+	count, lines := tooLargeSignals()
 	rev, listed := apply(shrunk)
 	requireCurrent("shrunk, applied again", shrunk, rev)
 	requireCleanRecord(t, client, src)
+	requireSignals("shrunk, applied again", count, lines, 0)
 	if listed != oneListing {
 		t.Errorf("shrunk, applied again: %v owner listings, want %d", listed, oneListing)
 	}
@@ -233,4 +253,30 @@ type refusedRecordReads struct{ jetstream.KeyValue }
 
 func (refusedRecordReads) Get(context.Context, string) (jetstream.KeyValueEntry, error) {
 	return nil, errors.New("the test refuses every record read")
+}
+
+// tooLargeCount reads reconcile_operations_total{index_type="record",operation="too_large"} from c's
+// own registry, summed over results.
+func tooLargeCount(t *testing.T, c *Component) float64 {
+	t.Helper()
+	families, err := c.metricsRegistry.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	var total float64
+	for _, family := range families {
+		if family.GetName() != "semengine_graph_index_reconcile_operations_total" {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, label := range m.GetLabel() {
+				labels[label.GetName()] = label.GetValue()
+			}
+			if labels["index_type"] == "record" && labels["operation"] == "too_large" {
+				total += m.GetCounter().GetValue()
+			}
+		}
+	}
+	return total
 }

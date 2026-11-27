@@ -47,7 +47,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 - [x] 2.7 The declared limits, the power-cut pointer, the reset, and when to bump the format constant (two cases;
   a bump costs one listing pass, about 38 minutes at 40,000 on one lane) in the graph-index README. Accept:
   `TestDeletingRecordsRebuildsEveryEntity`. Done: notes in `notes/2.7.md`.
-- [ ] 2.8 Re-run the #765 probe (branch `claude/probe-765-reconcile-cost`, 24f3cc51) at 40,000 entities, one lane, to
+- [x] 2.8 Re-run the #765 probe (branch `claude/probe-765-reconcile-cost`, 24f3cc51) at 40,000 entities, one lane, to
   the end, with a warm restart, an equal re-offer of every entity and 1,000 live changes; post the times and the
   per-entity breakdown and the record bucket's size on #765. Accept: the comment link in `notes/2.8.md`.
 

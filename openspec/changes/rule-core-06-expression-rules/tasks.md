@@ -52,7 +52,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   absent-required errors (`evaluator.go:167`, `:183`, `:229-240`), not of the required `transition` with no entity
   (`:283-287`); the `rule-conditions` scenarios. Check:
   `go test ./processor/rule/expression/`.
-- [ ] 2.3 The entity match and `Matches` from `expression_factory.go:210-327` and `matches.go` (D2, D3, D4, D5):
+- [x] 2.3 The entity match and `Matches` from `expression_factory.go:210-327` and `matches.go` (D2, D3, D4, D5):
   methods on `*Rule`; the lifecycle lookup an argument of the unexported firing match; condition values filled under
   the caller's context with the one scan, `regex` conditions left as compiled; an unresolved token an error, not a log
   line; an absent required field no match and no error, read with `errors.Is` (on the message match too, 2.4);
@@ -63,7 +63,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   `docs/operations/adopter-match-and-inflight.md` as D2 restates them. Not carried: `MatchesWithLifecycle` and the
   failed-lookup refusal (`matches.go:92-124`, `:175-183`), `NewExpressionRule`, `SetLifecycleManager`,
   `unresolvedTemplateVarRe`.
-- [ ] 2.4 The message match and the projection from `expression_factory.go:57-75`, `:143-209` and
+- [x] 2.4 The message match and the projection from `expression_factory.go:57-75`, `:143-209` and
   `payload_projection.go` (D7): no cooldown, no latch, no empty-payload return; the unreadable report once per loaded
   rule and payload type.
 - [x] 2.5 The `Load` check of D6 in the expression arm (`load.go:143`).

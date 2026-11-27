@@ -59,6 +59,7 @@ func (r *Rule) matchMessage(ctx context.Context, msg message.Message) (bool, err
 // flooding the log; a rule loaded again reports again, as its definition may
 // be the fix. The set is bounded by the registered payload types.
 func (r *Rule) reportUnreadable(ctx context.Context, msg message.Message) {
+	// shortcut: logged only; a per-rule, per-type metric comes with the rule processor's metrics
 	payloadType := payloadTypeLabel(msg)
 	if _, reported := r.unreadableReported.LoadOrStore(payloadType, struct{}{}); reported {
 		return
@@ -73,8 +74,9 @@ func (r *Rule) reportUnreadable(ctx context.Context, msg message.Message) {
 // ruleFields returns the fields a message's payload lets rules read: those
 // its message.RuleReadable implementation declares, which a
 // message.GenericJSONPayload answers with its data map. It is the one reading
-// of a payload for rules, so a condition and an action's message data see the
-// same fields. Nothing reads the payload's structure.
+// of a payload for rules: whatever gives a rule a payload's fields reads them
+// here, so all of it sees the same fields. Nothing reads the payload's
+// structure.
 //
 // The bool tells two answers apart. (nil or empty, true): readable, with
 // nothing to match on, so a condition over it is false in the ordinary way.

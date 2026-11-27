@@ -1,6 +1,6 @@
 # Proposal: fix-765-warm-reindex
 
-Approved-by: cglusky (2026-11-27) <https://github.com/C360Studio/semengine/pull/774#issuecomment-7218854493> sha256:34aa46464c38
+Approved-by: cglusky (2026-11-27) <https://github.com/C360Studio/semengine/pull/774#issuecomment-7220794652> sha256:90bf131af6c8
 
 Track: `design`. Step 3 of #765, as the owner ordered it (issue comment 7196901233): a design read by Fable before
 code, because it changes what a restart trusts. Edits one capability, `graph-index`, and amends ADR-077.
@@ -24,9 +24,9 @@ it does not.
 - If the record is clean and the rows would come out the same, the entity is not touched. If they would differ, only
   the rows that changed are written or deleted, with no listing. If the record is pending (a write was cut off),
   every new row is written again and every other row it names is deleted. A pending record keeps every row it has
-  ever named until a write finishes, so a second cut during that recovery loses nothing. Each record write checks
-  that nobody changed the record since it was read, so two graph-index processes on one store for a moment (during a
-  rolling update) cannot lose track of a row.
+  ever named until a write finishes, so a second cut during that recovery loses nothing. Two graph-index processes
+  on one store at once are not supported: stop the old one before starting the new one, and after any overlap delete
+  the record bucket while graph-index is stopped (owner, PR #774 comment 7220794652).
 - With no record (a store indexed before this change, or an entity too large for one record), it lists as today.
 - Estimated, not measured: a warm restart or re-sent seed of 40,000 unchanged entities in about 20 s instead of about
   38 minutes, and a live change in about 2 ms instead of about 48 ms.

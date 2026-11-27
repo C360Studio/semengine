@@ -143,8 +143,9 @@ A record written under another generation of `ENTITY_STATES` or of an index buck
 ### Requirement: What a restart does not repair is declared
 
 graph-index's documentation SHALL declare that, under a clean record, rows edited by hand, a bucket emptied in place
-or restored with its creation time, rows written by a graph-index that keeps no records, and writes a host power loss
-discarded are not repaired, and that deleting the record bucket while graph-index is stopped rebuilds every entity.
+or restored with its creation time, rows written by a graph-index that keeps no records or by two graph-index
+processes overlapping on one store, and writes a host power loss discarded are not repaired, and that deleting the
+record bucket while graph-index is stopped rebuilds every entity.
 
 #### Scenario: The reset
 

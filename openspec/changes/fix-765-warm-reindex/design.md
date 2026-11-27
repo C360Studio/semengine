@@ -56,8 +56,9 @@ scenario:
    (`Create` when there was none, `natsclient/kv.go:227`; `Update`, `:250`), the clean put on the pending record's
    revision, and rule 7's delete on the revision read (`DeleteAtRevision`, `:540`). A mismatch is a failed write:
    nothing more is written, and repair starts again from the stored record. Each in-place retry (`index.go:283`)
-   reads the record again, since a put that timed out may have landed. So two graph-index processes on one store
-   for a moment (a rolling update that starts the new one first) cannot leave a row no record names. A row delete
+   reads the record again, since a put that timed out may have landed. This catches a second writer between an
+   apply's read and its pending put; it cannot order two applies' row writes, so Decision 3 declares two processes
+   on one store unsupported (owner, PR #774 comment 7220794652). A row delete
    answered "not found" counts as done, as today (`owner_reconcile.go:73-75`).
 3. **Change.** For a usable clean record that differs from the plan: delete the rows it names that the plan drops,
    and put the rows that are added or have a changed value. There is no listing.
@@ -107,6 +108,7 @@ Under a usable clean record these are not caught:
 - rows edited by hand;
 - a bucket emptied in place, or restored with its creation time;
 - rows written by a graph-index from before this change;
+- rows left by two graph-index processes overlapping on one store: stop the old one before starting the new one;
 - writes lost to a host power cut. That last one is declared, with no choice offered here: it is the whole store's
   question, #775.
 

@@ -77,7 +77,8 @@ every other row of its set. A failed record write SHALL count as a failed index 
 
 #### Scenario: The record agrees with a listing
 
-- **WHEN** a generated history of changes, cuts, re-offers and deletes is applied, ending with a completed apply
+- **WHEN** a generated history of changes, cuts, re-offers, deletes and a second writer between an apply's record
+  read and its pending put is applied, ending with a completed apply
 - **THEN** after every step each pending record names at least the rows a listing of the index buckets finds for its
   entity, and at the end each clean record names exactly those rows
 - **AND** the test that verifies this is `TestRecordMatchesListingOracle`
@@ -100,6 +101,19 @@ every other row of its set. A failed record write SHALL count as a failed index 
 - **WHEN** `GRAPH_INDEX_RECORDS` is deleted while graph-index runs, and an indexed entity then changes
 - **THEN** none of its rows are written, a request answers `index_not_ready`, and after a restart the change answers
 - **AND** the test that verifies this is `TestRecordBucketDeletedWhileRunningWithholds`
+
+### Requirement: A record write is conditional on the record it read
+
+Each record write SHALL be conditional on a revision: the pending put on the revision the apply read (a create when
+there was none), the clean put on the pending record's revision, a record delete on the revision read. A mismatch
+SHALL count as a failed index write, with nothing more written, and each retry SHALL read the record again.
+
+#### Scenario: A second graph-index writes the record first
+
+- **WHEN** another writer puts an entity's record between an apply's record read and its pending put
+- **THEN** the apply writes no row, the entity is failed, and the repair pass converges it from the stored record so
+  that every row the entity can own is named by its record
+- **AND** the test that verifies this is `TestSecondWriterFailsRecordWrite`
 
 ### Requirement: An entity too large for one record is indexed by listing
 

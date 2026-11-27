@@ -52,7 +52,13 @@ scenario:
    written and the entity is failed (fail closed; repair retries). After the last row write it puts the clean record
    of the planned rows. A failed record put or delete is a failed index write: Warn line, `write_failures_total`,
    failed set, repair. So whenever a record exists it names every row the entity can own, however many applies in
-   a row are cut.
+   a row are cut. Every record write is conditional on a revision: the pending put on the revision the apply read
+   (`Create` when there was none, `natsclient/kv.go:227`; `Update`, `:250`), the clean put on the pending record's
+   revision, and rule 7's delete on the revision read (`DeleteAtRevision`, `:540`). A mismatch is a failed write:
+   nothing more is written, and repair starts again from the stored record. Each in-place retry (`index.go:283`)
+   reads the record again, since a put that timed out may have landed. So two graph-index processes on one store
+   for a moment (a rolling update that starts the new one first) cannot leave a row no record names. A row delete
+   answered "not found" counts as done, as today (`owner_reconcile.go:73-75`).
 3. **Change.** For a usable clean record that differs from the plan: delete the rows it names that the plan drops,
    and put the rows that are added or have a changed value. There is no listing.
 4. **Pending.** For a usable pending record: put a new pending record of its whole union plus the planned rows
@@ -74,10 +80,16 @@ scenario:
 
 Listing stays, as the fallback and as the test oracle. Over a generated history of changes, cuts (several in a row),
 re-offers and deletes, every pending record names a superset of what a listing of the four buckets plus OUTGOING
-finds, and once each history ends with a completed apply, every clean record equals it. The format constant is
-bumped by any change to how rows are planned, keyed or cleaned. A golden record fixture (a fixed plan gives fixed
-bytes) fails when the encoding moves without a bump; a cleanup fix that leaves the encoding alone is caught only in
-review. The record replaces `lastProjections` and `computeIndexProjection` (`index.go:498-508`, `:521`).
+finds, and once each history ends with a completed apply, every clean record equals it. One case of that history
+puts a second writer between an apply's record read and its pending put.
+
+The format constant is bumped in two cases only: the record's own encoding changed, or a fix for a defect that left
+rows no record names. A release that plans or keys rows differently, or changes the alias or name predicates, needs
+no bump: the record holds each row's literal bucket, key and value hash, so the new plan differs from it and rule 3
+deletes the old rows and puts the new ones. A bump costs one listing pass over every entity (about 38 minutes at
+40,000 on one lane, today's figure), and the README says so. A golden record fixture (a fixed plan gives fixed bytes)
+fails when the encoding moves without a bump; a defect fix that leaves the encoding alone is caught only in review.
+The record replaces `lastProjections` and `computeIndexProjection` (`index.go:498-508`, `:521`).
 
 ### Decision 2. ADR-077 amendment (ruled)
 
@@ -85,7 +97,8 @@ review. The record replaces `lastProjections` and `computeIndexProjection` (`ind
   failed.
 - §4: replacement diffs the plan against the owner's record, and lists only under rule 5.
 - §1's ownership matrix and §5's source-owned INCOMING stand.
-- The record is per entity with one writer, which is not the "central reverse manifest" of the Context (`:40`).
+- The record is per entity with one writer, checked by revision (rule 2), which is not the "central reverse
+  manifest" of the Context (`:40`).
 
 ### Decision 3. What a restart no longer repairs (owner, except the power cut)
 
@@ -107,6 +120,13 @@ pending put for every changed entity, so readiness is withheld until a restart: 
   necessary.
 - `reindex_events_total{result}` reads the record, so an unchanged entity after a start counts `unchanged`.
 - Whether SemSource's re-offers arrive before or after the snapshot marker is unknown; either way rule 1 skips them.
+- The record bucket holds every index key a second time, plus 32 bytes a row, and one empty record stays for every
+  entity ever deleted. Both are bounded by what ENTITY_STATES has held; task 2.8 reports the bucket's size.
+- The OUTGOING value is `json.Marshal` of the entries in the order the statements give (`index.go:556`). A re-offer
+  with the same relationships in another order hashes differently and takes rule 3: correct, at the cost of three
+  writes. The plan does not sort them, because readers see that order today.
+- After rule 7's listing apply no record is written, even when the clean record would fit. The next apply lists once
+  more (rule 5), and its union then fits, so the entity is recorded again. This keeps one ordered-operations function.
 
 ## Migration Plan
 
@@ -115,6 +135,5 @@ Rule 5: a store without records is listed once per entity and recorded.
 ## Open Questions
 
 - Owner: Decision 3 (a) or (b); the older-graph-index reset; the lane count (proposal).
-- Fable: with one writer per entity, do rules 2 to 5 keep "a record names every row the entity can own" true at every
-  cut point? That includes a cut after a pending put whose outcome is unknown, on the change, pending and fallback
-  paths alike. And do rule 7 and the tombstone record leave any row no later apply can reach?
+- Fable answered yes, and its two changes (revision-checked record writes, the narrower format-constant bump) are in
+  rule 2 and Decision 1 (PR #774 comment 7218493911).

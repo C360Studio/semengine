@@ -294,8 +294,9 @@ func isUnresolvedByte(b byte) bool { return isWordByte(b) || b == '-' }
 // holding a dollar sign is filled, so a condition can compare against a value
 // such as $entity.triple.<predicate>.length. Other values are kept. A regex
 // condition keeps the pattern Load compiled: Compile refuses a pattern holding
-// a token, so filling leaves its text as it was. A token that does not resolve is an error naming the condition's field and
-// the token, and nothing is logged: compared as text, the token could match.
+// a token, so filling leaves its text as it was. A token that does not resolve
+// is an error naming the condition's field and the token, and nothing is
+// logged: compared as text, the token could match.
 func substituteConditionValues(ctx context.Context, conds []expression.ConditionExpression, ec *ExecutionContext) ([]expression.ConditionExpression, error) {
 	if ec == nil || len(conds) == 0 {
 		return conds, nil

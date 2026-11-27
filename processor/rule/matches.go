@@ -94,8 +94,9 @@ func (r *Rule) matchEntity(ctx context.Context, state *gtypes.EntityState, looku
 	}
 
 	fields := expression.StateFields{}
-	// shortcut: a failed lifecycle lookup leaves the lifecycle fields absent and is not reported, until the
-	// firing path that owns the lookup decides how a failure is reported
+	// shortcut: a failed lifecycle lookup leaves the lifecycle fields
+	// absent and is not reported, until the firing path that owns the
+	// lookup decides how a failure is reported
 	_ = populateLifecycleStateFields(ctx, lookup, state.ID, fields)
 
 	ec := &ExecutionContext{EntityID: state.ID, Entity: state, Lifecycle: lookup}

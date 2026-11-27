@@ -361,6 +361,29 @@ func TestRequiredFieldMissing(t *testing.T) {
 			assert.Contains(t, err.Error(), "sensor.classification.type", name)
 		}
 	})
+
+	t.Run("a message lacking a required field", func(t *testing.T) {
+		r := loadMessageRule(t, messageRuleID,
+			`[{"field": "$message.outcome", "operator": "eq", "value": "success", "required": true}]`)
+		for name, msg := range map[string]message.Message{
+			"generic":           genericMessage(map[string]any{"role": "architect"}),
+			"typed, undeclared": messageOf(&declaredSubsetPayload{Role: "architect", Outcome: "success"}),
+		} {
+			got, err := r.matchMessage(t.Context(), msg)
+			require.NoError(t, err, name)
+			assert.False(t, got, name)
+		}
+	})
+
+	t.Run("an operator failure on a message is an error and not the sentinel", func(t *testing.T) {
+		r := loadMessageRule(t, messageRuleID, `[{"field": "$message.role", "operator": "length_eq", "value": "abc"}]`)
+		got, err := r.matchMessage(t.Context(), genericMessage(map[string]any{"role": "architect"}))
+		require.Error(t, err)
+		assert.False(t, got)
+		assert.False(t, errors.Is(err, expression.ErrRequiredFieldMissing), "%v", err)
+		assert.Contains(t, err.Error(), messageRuleID)
+		assert.Contains(t, err.Error(), "$message.role")
+	})
 }
 
 // Requirement: rule-matching/"A condition is never compared with an unfilled
@@ -434,3 +457,4 @@ func TestUnresolvedValueTemplate(t *testing.T) {
 		assert.Empty(t, log.take(t), "the matches log nothing")
 	})
 }
+

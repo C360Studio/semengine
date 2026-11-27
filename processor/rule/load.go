@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/c360studio/semengine/natsclient"
@@ -33,6 +34,10 @@ type Rule struct {
 	whileTrue  []loadedAction
 	onRecovery []loadedAction
 	actions    []loadedAction
+
+	// unreadableReported holds the payload types this rule has reported it
+	// cannot read (reportUnreadable). Messages are matched concurrently.
+	unreadableReported sync.Map
 }
 
 // loadedAction is a checked action, its `when` compiled, with the key its

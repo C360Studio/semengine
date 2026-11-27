@@ -23,14 +23,18 @@ import (
 // its name ends", "An unresolved token stays and is reported", "RuleID names
 // the rule that built the state" and "The values of a predicate".
 
-// substitutionWarning is one warning SubstituteVariables logged, as the test
-// reads it back from the log's JSON.
+// substitutionWarning is one warning the rule package logged, as the test
+// reads it back from the log's JSON: SubstituteVariables' unresolved tokens,
+// or the message match's unreadable payload.
 type substitutionWarning struct {
-	Msg        string   `json:"msg"`
-	Unresolved []string `json:"unresolved"`
-	RuleID     string   `json:"rule_id"`
-	EntityID   string   `json:"entity_id"`
-	Template   string   `json:"template"`
+	Level       string   `json:"level"`
+	Msg         string   `json:"msg"`
+	Unresolved  []string `json:"unresolved"`
+	RuleID      string   `json:"rule_id"`
+	EntityID    string   `json:"entity_id"`
+	Template    string   `json:"template"`
+	PayloadType string   `json:"payload_type"`
+	Remedy      string   `json:"remedy"`
 }
 
 // warningLog holds what the process logger received while a test ran.

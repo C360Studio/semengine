@@ -238,7 +238,8 @@ optional ([Bounded port scope](../../../.agents/protocol.md#bounded-port-scope))
 - **F3. The no-conditions check in four places** (§ 4). Shape 1. Optional (inherited; one check remains in the one
   match, which a loaded cron rule reaches with no conditions).
 - **F4. Evaluation errors go to Debug.** `expression_factory.go:201-205` — `slog.Debug("ExpressionRule: message-path
-  evaluation error",`; `:226-230`; probe P2. Required (accepted design commitment: PR 1 seam,
+  evaluation error",`; `:226-230` (probe P2 measured a text comparison, not
+  this path). Required (accepted design commitment: PR 1 seam,
   `archive/…-01-expression/design.md:86`).
 - **F5. A nil context.** `expression_factory.go:198` (§ 2). Required (architect contract: callers never pass nil; PR 3
   forward).

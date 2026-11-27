@@ -48,7 +48,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
     be compared, such as `length_eq "abc"`, and an unfilled value template) and absent required fields. Record in
     `notes/2.1.md` a run against each of two mutants, failing: `Matches` turning an evaluation error into
     `false, nil`; `Matches` returning an absent required field as an error.
-- [ ] 2.2 `ErrRequiredFieldMissing` in `processor/rule/expression`, wrapped as the `Err` of the evaluator's three
+- [x] 2.2 `ErrRequiredFieldMissing` in `processor/rule/expression`, wrapped as the `Err` of the evaluator's three
   absent-required errors (`evaluator.go:167`, `:183`, `:229-240`), not of the required `transition` with no entity
   (`:283-287`); the `rule-conditions` scenarios. Check:
   `go test ./processor/rule/expression/`.
@@ -66,7 +66,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 - [ ] 2.4 The message match and the projection from `expression_factory.go:57-75`, `:143-209` and
   `payload_projection.go` (D7): no cooldown, no latch, no empty-payload return; the unreadable report once per loaded
   rule and payload type.
-- [ ] 2.5 The `Load` check of D6 in the expression arm (`load.go:143`).
+- [x] 2.5 The `Load` check of D6 in the expression arm (`load.go:143`).
 - [ ] 2.6 Carry the tests of inventory § 1's Carried column and PR 3's four forwarded tests
   (`typed_substitution_test.go:273-351`, `lifecycle_substitution_test.go:301-327`, `:329-355`, `:460-483`), rewritten
   to the harness rules (`t.Context()`, `internal/harness/semantictest`), the `Matches` cases with a pattern and a

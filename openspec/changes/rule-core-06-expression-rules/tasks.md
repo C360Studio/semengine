@@ -4,11 +4,11 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 1. Design
 
-- [ ] 1.1 OPEN-Q: the inventory review passes, the design review passes; the owner fills `Approved-by:`.
-  Hold: owner approval of `proposal.md`.
+- [x] 1.1 The inventory review passes, the design review passes; the owner fills `Approved-by:`.
 - [ ] 1.2 Fable answers, before any code, "Is `Matches` as a method of a loaded rule (with the path and pattern
   refusals) plus the `ErrRequiredFieldMissing` sentinel the right exported shape?" (`design.md` D2, D4), or the owner
   declines that read (proposal, last decision).
+  Hold: the owner opens the Fable read; no code until it lands.
 
 ## 2. Port
 

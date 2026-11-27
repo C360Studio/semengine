@@ -74,9 +74,9 @@ answer false for an entity outside the pattern.
 
 ### Requirement: A stateless match refuses what it cannot answer
 
-`Matches` SHALL return an error, never a verdict, when a condition is a `transition` or reads `$state.*`, `$prev.*` or
-`$entity.lifecycle.*`. The error for `$entity.lifecycle.*` SHALL say that the condition cannot be answered without a
-lifecycle lookup.
+`Matches` SHALL return an error, never a verdict, when a condition is a `transition` or its field reads `$state.*`,
+`$prev.*` or `$entity.lifecycle.*`. The error for `$entity.lifecycle.*` SHALL say that the condition cannot be
+answered without a lifecycle lookup.
 
 #### Scenario: A state field is refused
 

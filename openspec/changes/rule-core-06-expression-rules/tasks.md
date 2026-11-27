@@ -11,7 +11,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 2. Port
 
-- [ ] 2.1 Tests come before the code, each seen to fail first; after 2.5, run `task mutate:check` on each refusal and
+- [x] 2.1 Tests come before the code, each seen to fail first; after 2.5, run `task mutate:check` on each refusal and
   record detected or survived in `notes/2.1.md`.
   - `TestMatches` (D2, D3): the carried `matches_test.go` cases (`:86-311`, `:340-403`, `:444-464`) keep their
     hand-written verdicts, but for `:229-260`, whose absent required field now gives false and no error (D4) and whose
@@ -67,15 +67,15 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   `payload_projection.go` (D7): no cooldown, no latch, no empty-payload return; the unreadable report once per loaded
   rule and payload type.
 - [x] 2.5 The `Load` check of D6 in the expression arm (`load.go:143`).
-- [ ] 2.6 Carry the tests of inventory § 1's Carried column and PR 3's four forwarded tests
+- [x] 2.6 Carry the tests of inventory § 1's Carried column and PR 3's four forwarded tests
   (`typed_substitution_test.go:273-351`, `lifecycle_substitution_test.go:301-327`, `:329-355`, `:460-483`), rewritten
   to the harness rules (`t.Context()`, `internal/harness/semantictest`), the `Matches` cases with a pattern and a
   six-part ID added and their verdicts kept but for D4's (2.1). The lifecycle tests that remain call the firing entity
   match with the lookup as an argument; `matches_lifecycle_integration_test.go:61-84` runs on the package's shared
   NATS server with a real `lifecycle.NewManager`. Those that ask only `MatchesWithLifecycle` wait with it (§ 1,
   Dropped). Check: `go doc ./processor/rule` lists no name without a reader outside the package or a spec line.
-- [ ] 2.7 Comments: inventory F15's ten history lines keep their reason and lose the history.
-- [ ] 2.8 Extend the ledger row `processor/rule` with what this PR adds and what it does not carry (inventory § 1);
+- [x] 2.7 Comments: inventory F15's ten history lines keep their reason and lose the history.
+- [x] 2.8 Extend the ledger row `processor/rule` with what this PR adds and what it does not carry (inventory § 1);
   keep the `scripts/cover-check.sh` floor. Check: `task ledger:check`, `task cover:check`.
 - [ ] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
   adopter section says that `NewExpressionRule` and `EvaluateEntityState` are gone, that a product loads its pack and
@@ -84,7 +84,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 3. Docs
 
-- [ ] 3.1 Port `processor/rule/docs/syntax.md` corrected to the code (D9): no `${entity.field}`, `$related.*` or pair
+- [x] 3.1 Port `processor/rule/docs/syntax.md` corrected to the code (D9): no `${entity.field}`, `$related.*` or pair
   rules; `cooldown` checked at load, nothing more; D6's refusals. Check: `task docs:check`.
 
 ## 4. Land

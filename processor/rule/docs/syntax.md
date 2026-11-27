@@ -4,6 +4,9 @@ A rule is one JSON object. This page covers its keys, what a rule's path (entiti
 read, the template values a condition can compare with, and what `Load` refuses. Operators and field resolution are
 in [Conditions](conditions.md).
 
+Nothing in this repository runs a rule yet: the keys below say what the rule processor does with them, and `Load`
+checks each now.
+
 ## Definition structure
 
 ```go
@@ -136,7 +139,8 @@ its message conditions never hold for it, and it is reported once, at Warn, per 
 | `from` | string or array | The allowed previous values, for `transition` only |
 | `required` | bool | Match only when the field is present |
 
-A field without `$` must be a declared predicate, and not a rule-opaque one. An action's `when` guard is a list of
+A field without `$` must be a declared predicate, and not a rule-opaque one (a predicate declared as holding
+private content, which no rule may match on). An action's `when` guard is a list of
 conditions with the same check.
 
 ### A missing required field
@@ -211,7 +215,8 @@ An action is a JSON object with a `type`. Every action may carry `when` (a list 
 | `lifecycle_fail` | `workflow`, `reason` |
 
 A built-in action refuses a key its type does not read. A product adds its own types through `NewHandlers`; its
-handler checks its actions' keys. A triple action's `predicate` must be a declared literal, never a template. A
+handler checks its actions' keys. An `add_triple`, `remove_triple` or `update_triple` action's `predicate` must be a
+declared literal, never a template. A
 `publish` subject may not be in `user.response.>`.
 
 ## Cooldown

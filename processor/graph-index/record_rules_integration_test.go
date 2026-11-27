@@ -63,7 +63,16 @@ func holdsTokens(key, id string) bool {
 // every key of each index bucket, not graph-index's owner filters.
 func ownedRows(t *testing.T, client *natsclient.Client, id string) map[rowID]string {
 	t.Helper()
-	rows := map[rowID]string{}
+	return ownedRowsOf(t, client, id)[id]
+}
+
+// ownedRowsOf is ownedRows of each of ids, from one listing of each index bucket.
+func ownedRowsOf(t *testing.T, client *natsclient.Client, ids ...string) map[string]map[rowID]string {
+	t.Helper()
+	rows := map[string]map[rowID]string{}
+	for _, id := range ids {
+		rows[id] = map[rowID]string{}
+	}
 	for _, bucket := range indexBuckets {
 		reader, err := kvcatalog.OpenCatalogReader(t.Context(), client, bucket)
 		if err != nil {
@@ -74,17 +83,19 @@ func ownedRows(t *testing.T, client *natsclient.Client, id string) map[rowID]str
 			t.Fatalf("keys of %s: %v", bucket, err)
 		}
 		for _, key := range keys {
-			if !holdsTokens(key, id) {
-				continue
+			for _, id := range ids {
+				if !holdsTokens(key, id) {
+					continue
+				}
+				entry, err := reader.Get(t.Context(), key)
+				if natsclient.IsKVNotFoundError(err) {
+					continue // deleted since the listing
+				}
+				if err != nil {
+					t.Fatalf("get %s/%s: %v", bucket, key, err)
+				}
+				rows[id][rowID{bucket, key}] = string(entry.Value())
 			}
-			entry, err := reader.Get(t.Context(), key)
-			if natsclient.IsKVNotFoundError(err) {
-				continue // deleted since the listing
-			}
-			if err != nil {
-				t.Fatalf("get %s/%s: %v", bucket, key, err)
-			}
-			rows[rowID{bucket, key}] = string(entry.Value())
 		}
 	}
 	return rows

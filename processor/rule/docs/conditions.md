@@ -48,7 +48,9 @@ reads the entity only.
 `required` defaults to false.
 
 - **Optional (`required: false`)**: a missing field makes the condition false; evaluation of the list continues.
-- **Required (`required: true`)**: a missing field is an evaluation error, not false.
+- **Required (`required: true`)**: a missing field is an evaluation error that wraps
+  `expression.ErrRequiredFieldMissing`. A loaded rule's match reads that error as no match, with no error, so
+  `required` means "only when present" (see `syntax.md`).
 
 Two exceptions:
 
@@ -228,8 +230,9 @@ Evaluation returns an `*expression.EvaluationError` naming the field and operato
 
 Problems the load catches are refused when the rule loads, before any evaluation: an invalid or templated regex
 pattern, and a field that does not start with `$` and is not a declared predicate, or is a rule-opaque one. The field
-check is the same for a rule's `conditions` and an action's `when`. What the rule engine does with an evaluation
-error at run time is the engine's to say; it is not yet in this repository.
+check is the same for a rule's `conditions` and an action's `when`. A loaded rule's match (`Rule.Matches`, and the
+match that fires a rule) treats an absent required field as no match and returns every other evaluation error with
+the rule ID (`syntax.md`).
 
 ## Telling a stateless caller what it cannot answer
 

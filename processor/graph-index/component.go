@@ -43,18 +43,24 @@ type Component struct {
 
 	metrics *indexMetrics
 
-	// The index write path (index.go). The buckets and the ENTITY_STATES reader are set by
-	// openIndexBuckets; follower, pool and coalescer by startIndexPool (nil coalescer when
-	// coalesce_ms is 0).
+	// The index write path (index.go). The buckets, the ENTITY_STATES reader and the
+	// generations are set by openIndexBuckets; follower, pool and coalescer by startIndexPool
+	// (nil coalescer when coalesce_ms is 0).
 	outgoingBucket  *natsclient.KVStore
 	incomingBucket  *natsclient.KVStore
 	aliasBucket     *natsclient.KVStore
 	predicateBucket *natsclient.KVStore
 	nameBucket      *natsclient.KVStore
+	recordBucket    *natsclient.KVStore // GRAPH_INDEX_RECORDS
 	entities        kvcatalog.CatalogReader
 	follower        atomic.Pointer[follower.Follower] // read by Health at any time
 	pool            *dispatch.KeyedPool[indexWork]
 	coalescer       *revisionCoalescer
+
+	// generations holds the generation (bucketGeneration) of ENTITY_STATES and of each of the
+	// five index buckets, by bucket name, as this start read them. A record written under other
+	// generations describes rows in a bucket that has since been deleted and created again.
+	generations map[string]uint64
 
 	// The handles start records for cleanup, which clears them once it has released them all.
 	// poolCancel ends the one run context (ADR-113), which the pool's lanes write under;
@@ -83,10 +89,6 @@ type Component struct {
 	// work after that returns at once, so a stop waits for the writes in flight, not the
 	// backlog; the next start's replay re-indexes what was skipped.
 	stopping atomic.Bool
-
-	// lastProjections maps an entity ID to the projection last indexed for it, for the
-	// reindex_events_total metric: one string per entity.
-	lastProjections sync.Map
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-index: the ports

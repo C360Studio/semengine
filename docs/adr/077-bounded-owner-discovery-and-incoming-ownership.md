@@ -22,6 +22,35 @@
 > - ALIAS stays the open item this record says it is: its key layout is not decided here. ADR-114 decides it, and the
 >   alias read implements `[A] -> [B] -> []` like the other indexes.
 
+## SemEngine amendment: owner listing becomes the fallback (2026-11-27, #765)
+
+The Context approves owner discovery "provided that ... real-NATS evidence proves the leading-wildcard shape remains
+bounded under the production workload". Measured in this repository, it does not (#765 comment 7208287082, nats-server
+2.15.0 and nats.go v1.55.0, one run per size): each owner listing's cost grows with the store, from 0.59 ms at 200
+entities to 12.3 ms at 40,000; the four listings take 93 to 98 % of an entity's apply; and a warm restart of 40,000
+entities on one lane would take about 38 minutes, inferred from a 300-second window. The OpenSpec change
+`fix-765-warm-reindex` (PR #774) amends this record as follows.
+
+- **§2.** Fixed-arity leading-wildcard owner discovery stays approved, with every validation and conformance rule of
+  §2 and §3, but only as the fallback and as the test oracle. graph-index lists an entity's owned rows only when it has
+  no usable record of them: none yet, one that does not decode, one of another format, or one written under another
+  generation (creation time) of `ENTITY_STATES` or an index bucket; and when the record would be too large for one
+  message. Tests compare the record with a listing of the index buckets.
+- **§4.** Replacement diffs the planned rows against the entity's record in `GRAPH_INDEX_RECORDS`, not against a
+  listing. The record names each row the entity owns by bucket, key and value hash. Before the first row write an
+  apply puts a pending record naming every row the entity may own plus the planned rows, and after the last it puts a
+  clean record of the planned rows, so whenever a record exists it names every row its entity can own. An entity whose
+  planned rows equal its clean record is not written at all. Each record write is conditional on the revision the
+  apply read. `[A] -> [B] -> []` is unchanged as the required result.
+- **Not a central reverse manifest.** The Context approves owner listing as a way to find an entity's rows "without
+  a central reverse manifest", and §5 retires one shared reverse manifest. The record is not one: it is one entry per
+  entity, written only by that entity's keyed lane, checked by revision. §1's ownership matrix and §5's source-owned
+  INCOMING stand: an entity's record names the INCOMING rows it owns as a source, never rows other sources hold to it.
+- **What a restart no longer repairs** under a usable clean record is declared in `processor/graph-index/README.md`:
+  rows edited by hand, a bucket emptied in place or restored with its creation time, rows written by a graph-index
+  that kept no records, rows left by two graph-index processes overlapping on one store, and writes a power cut
+  discarded. So is the reset: delete `GRAPH_INDEX_RECORDS` while graph-index is stopped.
+
 ## Status
 
 **Accepted (2026-07-17).** **Amended 2026-09-11 (#1284)** — § 8 condition 4's evidence home; see § 8. This record

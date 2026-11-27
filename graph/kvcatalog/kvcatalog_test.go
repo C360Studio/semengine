@@ -103,7 +103,7 @@ func TestKVCatalog_EveryRowValidates(t *testing.T) {
 		assert.False(t, seen[spec.Name], "catalog row %q must be declared exactly once", spec.Name)
 		seen[spec.Name] = true
 	}
-	assert.Len(t, seen, 17, "the catalog carries the 17 retained framework-guaranteed buckets")
+	assert.Len(t, seen, 18, "the catalog carries the 18 framework-guaranteed buckets")
 }
 
 // TestKVCatalog_DeclaredPolicies pins the per-bucket policy decisions (history
@@ -119,6 +119,13 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 	assert.Equal(t, uint8(1), spec(graph.BucketEntityStates).History)
 	assert.Equal(t, natsclient.ClassAuthoritative, spec(graph.BucketEntityStates).Class)
 	assert.Equal(t, "graph-ingest", spec(graph.BucketEntityStates).Owner)
+
+	// graph-index's record of the rows it wrote is derived state graph-index owns, one version
+	// per entity.
+	records := spec(graph.BucketGraphIndexRecords)
+	assert.Equal(t, natsclient.ClassDerived, records.Class)
+	assert.Equal(t, "graph-index", records.Owner)
+	assert.Equal(t, uint8(1), records.History)
 
 	// GRAPH_STATUS keeps its readiness replay depth.
 	assert.Equal(t, uint8(3), spec(graph.BucketGraphStatus).History)
@@ -160,7 +167,7 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 	for _, name := range []string{
 		graph.BucketEntityStates, graph.BucketPredicateIndex, graph.BucketIncomingIndex, graph.BucketOutgoingIndex,
-		graph.BucketAliasIndex, graph.BucketNameIndex, graph.BucketSpatialIndex,
+		graph.BucketAliasIndex, graph.BucketNameIndex, graph.BucketGraphIndexRecords, graph.BucketSpatialIndex,
 		graph.BucketTemporalIndex, graph.BucketTemporalIndexReverse,
 		graph.BucketEmbeddingIndex, graph.BucketEmbeddingDedup, graph.BucketCommunityIndex,
 		graph.BucketCommunitySummaries,

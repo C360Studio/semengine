@@ -16,9 +16,13 @@ const (
 	// to the entities carrying it, for deterministic name→ranked-IDs lookup
 	// (graph.query.byName). Complements ALIAS_INDEX, which excludes display-name
 	// (AliasTypeLabel) predicates.
-	BucketNameIndex     = "NAME_INDEX"
-	BucketSpatialIndex  = "SPATIAL_INDEX"
-	BucketTemporalIndex = "TEMPORAL_INDEX"
+	BucketNameIndex = "NAME_INDEX"
+	// BucketGraphIndexRecords holds graph-index's record of the rows it wrote for each entity
+	// in the five index buckets above, one key per entity ID. Like those buckets it is derived
+	// from ENTITY_STATES.
+	BucketGraphIndexRecords = "GRAPH_INDEX_RECORDS"
+	BucketSpatialIndex      = "SPATIAL_INDEX"
+	BucketTemporalIndex     = "TEMPORAL_INDEX"
 	// BucketTemporalIndexReverse maps entityID -> current temporal bucket key.
 	// It lets graph-index-temporal remove an entity's stale event from its prior
 	// time bucket when the entity is re-indexed (observed-time changed) or deleted,

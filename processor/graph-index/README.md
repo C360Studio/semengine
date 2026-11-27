@@ -10,19 +10,21 @@ predicate" or "which entity has this name" without reading every entity. It answ
 verbs on `graph.index.query.*`.
 
 A *revision* is the number NATS gives each write to a bucket. A *watermark* is the highest revision graph-index has
-applied with nothing below it still waiting. The index is rebuilt from `ENTITY_STATES` on every start, so after a
-start it is not ready until it has caught up (see Query refusals).
+applied with nothing below it still waiting. Every start reads every entity in `ENTITY_STATES` again, so after a start
+it is not ready until it has caught up (see Query refusals). An entity whose index rows are already current is read and
+skipped, not written again: graph-index keeps a record of the rows it wrote for each entity (see The record).
 
 ## Architecture
 
 ```text
-                                       ┌─► OUTGOING_INDEX  (KV)
-ENTITY_STATES ──► graph/follower ──►   │─► INCOMING_INDEX  (KV)
-   (KV watch)      (the one watch,     │─► ALIAS_INDEX     (KV)
-                    the watermark,     │─► PREDICATE_INDEX (KV)
-                    GRAPH_STATUS)      └─► NAME_INDEX      (KV)
+                                       ┌─► OUTGOING_INDEX      (KV)
+ENTITY_STATES ──► graph/follower ──►   │─► INCOMING_INDEX      (KV)
+   (KV watch)      (the one watch,     │─► ALIAS_INDEX         (KV)
+                    the watermark,     │─► PREDICATE_INDEX     (KV)
+                    GRAPH_STATUS)      │─► NAME_INDEX          (KV)
+                                       └─► GRAPH_INDEX_RECORDS (KV, the record of each entity's rows)
                                               ▲
-graph.index.query.* (request/reply) ──────────┘ read by the eight verbs
+graph.index.query.* (request/reply) ──────────┘ read by the eight verbs (not the record)
 ```
 
 `graph/follower` owns the watch on `ENTITY_STATES`, the replay, the watermark and the readiness record it writes to
@@ -46,6 +48,54 @@ ADR-077 and ADR-078 (the alias layout is ADR-114). An alias is trimmed and case-
 name is, so `SN-1` and ` sn-1 ` are one alias. Any non-empty string is indexed, including one that is not a valid NATS
 KV key (for example `two words`): the key holds the hash, not the alias. The alias predicates are discovered once when
 graph-index starts; a predicate registered after that is not indexed until the next start.
+
+## The record
+
+`GRAPH_INDEX_RECORDS` holds one entry per entity, under its ID: the *record* of the index rows graph-index wrote for it.
+It names each row by its bucket, its key and the SHA-256 of its value, and it carries the creation time of
+`ENTITY_STATES` and of each index bucket at the start that wrote it (its *generations*) and a format name. Only the
+entity's lane writes it, and only graph-index reads it; no query reads it. It is internal, like `NAME_INDEX`, and is not
+a configurable output.
+
+A record is *clean* when it names exactly the rows the last completed apply wrote, and *pending* while an apply is
+writing: before its first row write an apply puts a pending record naming every row the entity may own (what the
+earlier record named, or a listing found, plus the rows it is about to write), and after its last write it puts the
+clean record. So whenever a record exists it names every row its entity can own, however many applies in a row are
+cut off. Every record write is conditional on the revision of the record the apply read, so a record another writer
+changed in between fails the apply before any row is written; the repair loop then retries from the stored record.
+
+What an apply does:
+
+- **The record equals the planned rows.** Nothing is listed or written, and the entity counts as applied. This is
+  what a restart over an unchanged store, and a producer writing an entity again with equal statements, cost: one read
+  of the entity and one of its record.
+- **The record differs.** The rows the plan drops are deleted, and the rows it adds or whose value changed are put.
+- **No usable record.** There is none yet (the first start over a store, or one indexed by a graph-index that kept no
+  records), it does not decode, it has another format name, or its generations are not this start's (an index bucket
+  or `ENTITY_STATES` was deleted and created again). graph-index then lists the entity's rows in each index bucket, as
+  it did before it kept records, and writes them and the record from that listing. A store with no records is listed
+  once per entity and recorded; a recreated bucket is rebuilt entity by entity, and a stop partway through loses
+  nothing.
+- **The record would not fit in one message.** If the pending or clean record is longer than the payload limit the
+  NATS server reports (`max_payload`) less 1,024 bytes kept for the subject and headers of its put,
+  graph-index deletes the stored record before any row write and applies the entity by listing, with no record. Every
+  later apply of that entity lists again until its record fits. Each such apply logs at Info and counts
+  `reconcile_operations_total{index_type="record",operation="too_large"}`. Under a 1 MiB limit only an entity with
+  thousands of rows reaches this: a relationship is one row of about 150 to 250 bytes in the record for typical IDs
+  and predicates. That a record of exactly the limit less 1,024 bytes is accepted is shown on the pinned server by
+  `TestOversizeRecordFallsBackToListing`; how many bytes the subject and headers take is not promised.
+
+**Size.** The record bucket holds every index key a second time: each row costs its bucket name, its key and 48
+bytes (two 8-byte lengths and the 32-byte hash), and each record about 230 bytes more for its format name and
+generations. One empty record stays for every entity ever deleted, so the bucket grows with every entity
+`ENTITY_STATES` has held, not only the live ones.
+
+**The format name.** The record's format name changes in two cases only: the record's encoding changed, or a release
+fixes a defect that left rows no record names. A release that plans or keys rows differently, or changes the alias or
+name predicates, needs no change: the record holds each row's literal bucket, key and value hash, so the new plan
+differs from it and the old rows are deleted. A changed format name makes every record unusable, so the next start
+lists every entity once: about 38 minutes for 40,000 entities on one lane, inferred from one measurement on one host
+(a listing costs more as the store grows).
 
 ## Query verbs
 
@@ -203,11 +253,11 @@ Collectors register on the injected `metric.MetricsRegistry`, never on Prometheu
 | --- | --- | --- |
 | `events_processed_total` | counter | `ENTITY_STATES` entries processed |
 | `updates_total` | counter vec | index updates by `index_type`; `alias` counts once per entity indexed or deleted |
-| `kv_operations_total` | counter vec | KV operations by `operation` and `kv_bucket` |
+| `kv_operations_total` | counter vec | KV operations by `operation` and `kv_bucket`; `kv_bucket="record"` counts record reads, puts and deletes, and `operation="list"` the owner listings |
 | `watch_events_total` | counter vec | watch events by `event_type` |
 | `write_failures_total` | counter | entities whose required index writes failed after retry |
-| `reindex_events_total` | counter vec | re-indexes by `result` (`changed` or `unchanged`) |
-| `reconcile_operations_total` | counter vec | owner reconciliation operations by `index_type`, `operation`, `result` |
+| `reindex_events_total` | counter vec | applies by `result`: `unchanged` when the record already held the planned rows, else `changed` |
+| `reconcile_operations_total` | counter vec | row and record operations by `index_type`, `operation`, `result`; `index_type="record"` counts record puts, deletes and `too_large` applies |
 | `query_rows_skipped_total` | counter vec | stored index rows a query left out, by `index_type` |
 
 The follower adds `readiness`, `lag`, `bootstrap_complete`, `readiness_state`, `status_publish_failures_total`,
@@ -218,9 +268,26 @@ graph-index on one registry writes the collectors the first registered.
 
 - **Overwritten revisions.** `ENTITY_STATES` keeps one revision per key, so a revision overwritten before the watch
   reads it is never delivered. The watermark tolerates this.
-- **Rebuild on every start.** The index is rebuilt from `ENTITY_STATES` at every start, and queries are refused for the
-  length of the rebuild. Resuming instead is an open decision.
-- **Memory.** One string per entity is kept to count `reindex_events_total`.
+- **Replay on every start.** Every start reads every entity in `ENTITY_STATES` again, and queries are refused until it
+  has. An entity whose record matches is not written, so this costs a read of the entity and of its record. Resuming
+  instead is an open decision.
+- **What a restart does not repair.** While an entity's clean record matches its planned rows, a start does not look at
+  the rows themselves, so it does not repair: rows edited or deleted by hand; an index bucket emptied in place, or
+  restored from a backup with its creation time; rows written by a graph-index that kept no records, when records
+  already exist; rows left by two graph-index processes running on one store at once; and writes the NATS host lost to
+  a power cut. What SemEngine promises after the NATS host loses power is an open question for the whole store, not
+  for graph-index alone.
+- **One graph-index per store.** Two graph-index processes writing one store at once can leave a row no record names.
+  Stop the old process before starting the new one, as in an update. Nothing refuses a second process; the record's
+  conditional writes catch only a second writer between one apply's read and its first write.
+- **The reset.** Deleting `GRAPH_INDEX_RECORDS` while graph-index is stopped makes the next start list every entity
+  once, repair its rows from `ENTITY_STATES`, and record it again: the same cost as a changed format name. Do this
+  after any of the cases above, and after two processes overlapped. Deleting it while graph-index runs fails the
+  pending record of every entity that changes after it, so those entities are failed and queries are refused until a
+  restart.
+- **Too large to record.** An entity whose record would not fit in one message is listed on every apply (see The
+  record). A record within the limit that the server still refuses is a failed write: that entity stays failed, and
+  queries are refused, until it changes.
 
 ## Dependencies
 

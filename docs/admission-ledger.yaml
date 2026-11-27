@@ -3601,17 +3601,26 @@
     in updates_total{index_type="alias"}; the alias skip counter is removed (ADR-114); (11) every one of the
     eight verbs accepts an optional min_revision and refuses with transient revision_not_reached, the reached
     revision in the detail, when its indexed revision is below it; it never waits (setup-04a-04-graph-roots-
-    graph-query D3)
+    graph-query D3); (12) a per-entity record in GRAPH_INDEX_RECORDS (derived, owner graph-index) of the rows each
+    entity's lane wrote, pending before the first row write and clean after the last, written only conditional on
+    the revision read and carrying the generations of ENTITY_STATES and the index buckets: an apply whose plan equals
+    the clean record writes nothing, a change diffs against the record, and owner listing runs only with no usable
+    record or one too large for the server's payload limit less 1,024 bytes; lastProjections and
+    computeIndexProjection are removed (fix-765-warm-reindex, PR #774; ADR-077 as amended)
   dependencies_and_side_effects: >-
     component, graph, graph/follower, graph/kvcatalog, graph/readiness, internal/dispatch, metric, natsclient,
     pkg/errs, pkg/types, vocabulary (in-set); nats.go/jetstream, prometheus/client_golang; KV reads and writes on the
-    five index buckets and reads on ENTITY_STATES, eight request subscriptions, one keyed lane pool, a coalescer and a
+    five index buckets and GRAPH_INDEX_RECORDS and reads on ENTITY_STATES, eight request subscriptions, one keyed lane pool, a coalescer and a
     repair loop started in Start and released by Stop
   known_risks: >-
     the alias predicates are read once at Start, so a predicate registered later is not indexed until restart
-    (ADR-114); ENTITY_STATES keeps History 1, so a revision overwritten before the follower reads it is never indexed; lastProjections keeps one
-    string per entity in memory for reindex_events_total (#108's instrument); the index is rebuilt on every start,
-    so queries are refused with index_not_ready for the replay's length (#108 stays open; the one load comparison is
+    (ADR-114); ENTITY_STATES keeps History 1, so a revision overwritten before the follower reads it is never indexed; every start
+    reads every entity again, so queries are refused with index_not_ready for the replay's length, though an entity
+    whose record matches is not written; under a matching clean record a restart does not repair rows edited by hand,
+    a bucket emptied in place or restored with its creation time, rows of a graph-index that kept no records, rows of
+    two overlapping graph-index processes (unsupported, nothing refuses one) or writes a host power cut lost (#775),
+    and deleting GRAPH_INDEX_RECORDS while graph-index is stopped is the reset; an entity too large to record is
+    listed on every apply (fix-765-warm-reindex design, Decision 3) (#108 stays open; the one load comparison is
     in openspec notes/1.6.md); kept optional pin shapes: S4 (the owned-bucket set spelled in five places), S6 (fixed 5 s
     handler deadlines, 10 s for predicateList) and S8 (two narrow reader interfaces); S5's map intermediate became
     []graph.OutgoingEntry. Config break for consumers: semconnect's two configs set batch_size under graph-index and fail
@@ -3636,7 +3645,14 @@
     TestQueryReadsImplementReplacement, TestMaximumLengthIDsAndPredicatesThroughPublicReads,
     TestMalformedIndexRowsAreSkippedLoggedAndCounted, TestAliasReadImplementsReplacement,
     TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase), plan_prop_test.go
-    (TestContractValidStateAlwaysPlans); the pin tests dropped, each with its reason, are listed in
+    (TestContractValidStateAlwaysPlans), record_test.go (TestRecordGoldenFixture, FuzzRecordDecode), record_integration_test.go
+    (TestWarmRestartSkipsIndexedEntities, TestLiveChangeUsesRecord), record_rules_integration_test.go
+    (TestEqualReofferSkipsIndexing, TestRepairSkipClearsFailed, TestRestartWithoutRecordsListsOnce,
+    TestRestartAppliesNewAliasPredicate, TestDamagedRemovalRecordsEmpty, TestRestartAppliesDeleteWhileDown,
+    TestRecordBucketDeletedWhileRunningWithholds, TestSecondWriterFailsRecordWrite), record_history_integration_test.go
+    (TestRestartConvergesFromEveryCutPoint, TestRecordMatchesListingOracle), record_oversize_integration_test.go
+    (TestOversizeRecordFallsBackToListing), record_rebuild_integration_test.go (TestRestartRebuildsRecreatedIndexBucket,
+    TestDeletingRecordsRebuildsEveryEntity); the pin tests dropped, each with its reason, are listed in
     openspec/changes/setup-04a-04-graph-roots-graph-index/notes/2.3.md
   owner: setup-04a-04-graph-roots-graph-index developer
   disposition: adapt
@@ -3718,11 +3734,15 @@
     the pin's decision record for graph-index's bounded owner discovery, fixed token positions and source-owned
     INCOMING keys, which processor/graph-index implements; carried with the graph-index port
   destination: docs/adr/077-bounded-owner-discovery-and-incoming-ownership.md
-  contract: the decision text as at the pin
+  contract: >-
+    the decision text as at the pin, amended under the port note by fix-765-warm-reindex (PR #774): the Context's
+    acceptance condition is refuted by the measurement in #765 comment 7208287082, so owner listing becomes the
+    fallback and the test oracle (section 2) and replacement goes through graph-index's per-entity record (section 4)
   dependencies_and_side_effects: none; a document
   known_risks: >-
     the status paragraph is rewrapped for markdownlint's line length, the words unchanged; a port note added under
-    the title says the evidence runs and the runbook it cites are SemStreams' and not ported
+    the title says the evidence runs and the runbook it cites are SemStreams' and not ported; the SemEngine amendment
+    follows the port note, and the pin's sections below it are not edited
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-index technical writer
   disposition: adapt

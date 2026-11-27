@@ -165,13 +165,16 @@ var catalog = func() []natsclient.BucketSpec {
 			"graph-ingest redelivery guard: (entityID/streamName) -> stream generation and last-applied sequence (SemStreams ADR-072)",
 			natsclient.ClassOperational),
 
-		// graph-index's four config-declared output indexes + the name lookup internal.
+		// graph-index's four config-declared output indexes, the name lookup internal, and its
+		// record of the rows it wrote for each entity.
 		derived(graph.BucketOutgoingIndex, "graph-index", "Graph index bucket: outgoing relationships"),
 		derived(graph.BucketIncomingIndex, "graph-index", "Graph index bucket: incoming relationships"),
 		derived(graph.BucketAliasIndex, "graph-index", "Graph index bucket: alias lookup"),
 		derived(graph.BucketPredicateIndex, "graph-index", "Graph index bucket: predicate lookup"),
 		derived(graph.BucketNameIndex, "graph-index",
 			"Name/title → entities index for deterministic name lookup"),
+		derived(graph.BucketGraphIndexRecords, "graph-index",
+			"Per-entity record of the index rows graph-index wrote for the entity"),
 
 		// Spatial / temporal tier.
 		derived(graph.BucketSpatialIndex, "graph-index-spatial", "Spatial index for geospatial queries"),

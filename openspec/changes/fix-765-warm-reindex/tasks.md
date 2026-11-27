@@ -5,8 +5,9 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 1. Proposal
 
-- [ ] 1.1 The owner fills `Approved-by:` in `proposal.md`, ruling on each bullet under "Decisions you are making by
-  approving". Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 The owner fills `Approved-by:` in `proposal.md`, ruling on each bullet under "Decisions you are making by
+  approving": (a) for hand edits, the reset declared for an older graph-index, the lane count left alone (PR #774
+  comment 7218854493).
 - [x] 1.2 Fable reads the revised `design.md` before any code (owner ruling, PR #774 comment 7217731180): with one
   writer per entity, do rules 2 to 5 keep "a record names every row the entity can own" true at every cut point,
   including a pending put whose outcome is unknown, and do rule 7 and the tombstone record leave any row no later

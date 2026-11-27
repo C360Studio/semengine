@@ -1,6 +1,6 @@
 # Proposal: fix-765-warm-reindex
 
-Approved-by:
+Approved-by: cglusky (2026-11-27) <https://github.com/C360Studio/semengine/pull/774#issuecomment-7218854493> sha256:34aa46464c38
 
 Track: `design`. Step 3 of #765, as the owner ordered it (issue comment 7196901233): a design read by Fable before
 code, because it changes what a restart trusts. Edits one capability, `graph-index`, and amends ADR-077.

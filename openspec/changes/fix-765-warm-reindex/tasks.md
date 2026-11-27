@@ -20,16 +20,19 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 - [ ] 2.2 The record bucket: `GRAPH_INDEX_RECORDS` in `graph/constants.go` and the catalog (`kvcatalog.go:169-174`),
   derived, owner graph-index, opened in `openIndexBuckets` (`index.go:54`); each bucket's generation read at start
   the way `readStream` does (`graph/follower/follower.go:546`). Accept: catalog tests pass.
-- [ ] 2.3 The record per Decision 1 rules 1 to 6: pending before the first row write, clean after the last
-  (`index.go:502-508`); the change and pending paths replace the listing in `reconcileOwnedRows`
-  (`owner_reconcile.go:46`) and in `deleteFromIndexes` (`index.go:606`), which stay as the fallback; the clean
-  empty record after a tombstone, none after a damaged removal (`index.go:480-484`); the encoding and format constant
-  with `TestRecordGoldenFixture`; replaces `lastProjections` and `computeIndexProjection` (`index.go:498-508`,
-  `:521`). Accept: the first three requirements' tests. `TestRestartConvergesFromEveryCutPoint` and
-  `TestRecordMatchesListingOracle` add no hook to production code. They run a generated history of values in
-  {A, B, C}, two alias-predicate sets, re-offers and deletes. They seed each state a cut write can leave (old rows
-  and record; a pending record with any subset of the row changes applied) with the package's builders and one
-  golden record fixture, and record seed and checks per `docs/testing.md`.
+- [ ] 2.3 The record per Decision 1 rules 1 to 6: pending (one union, carried forward) before the first row write,
+  clean after the last (`index.go:502-508`); the change and pending paths replace the listing in
+  `reconcileOwnedRows` (`owner_reconcile.go:46`) and in `deleteFromIndexes` (`index.go:606`), which stay as the
+  fallback, with value-carrying rows put again there (`owner_reconcile.go:85`); the clean empty record after a
+  tombstone or a damaged removal (`index.go:480-484`); the encoding and format constant with
+  `TestRecordGoldenFixture`; replaces `lastProjections` and `computeIndexProjection` (`index.go:498-508`, `:521`).
+  Accept: the first three requirements' tests. Rule 2's write order is proven by
+  `TestRecordBucketDeletedWhileRunningWithholds` (no row is written when the pending put fails) and by
+  `TestRestartConvergesFromEveryCutPoint` and `TestRecordMatchesListingOracle`, which add no hook to production
+  code. The apply builds its ordered operations (record puts, row puts and deletes) in one function; the tests seed
+  each cut state by running a prefix of that function's own list against NATS, repeated from the resulting pending
+  record for two or more cuts in a row. They run a generated history of values in {A, B, C}, two alias-predicate
+  sets, re-offers and deletes, check one golden record fixture, and record seed and checks per `docs/testing.md`.
 - [ ] 2.4 Rule 7, too large. Accept: `TestOversizeRecordFallsBackToListing`.
 - [ ] 2.5 Generations. Accept: `TestRestartRebuildsRecreatedIndexBucket`.
 - [ ] 2.6 The ADR-077 amendment per Decision 2, under its port note: the condition at `:40-42` refuted by the step 2

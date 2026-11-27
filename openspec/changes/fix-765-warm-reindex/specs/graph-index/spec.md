@@ -61,24 +61,33 @@ With no usable record, graph-index SHALL list as before and then record the enti
 
 ### Requirement: A record names every row its entity can own
 
-Before its first row write an apply SHALL put a pending record holding the old and the planned rows, and SHALL write
-nothing if that put fails; after its last write it SHALL put a clean record of the planned rows. A failed record
-write SHALL count as a failed index write. A pending record SHALL lead to every planned row being put and every other
-row it names deleted. A damaged value's removal SHALL leave no record.
+Before its first row write an apply SHALL put a pending record of every row the entity may own (a pending record's
+whole set carried forward) plus the planned rows, and SHALL write nothing if that put fails; after its last write it
+SHALL put a clean record of the planned rows. From a pending record an apply SHALL put every planned row and delete
+every other row of its set. A failed record write SHALL count as a failed index write.
 
 #### Scenario: Cut off, then any value under any rules
 
-- **WHEN** an entity's writes are cut off at any point, its value is then A, B or C, the alias predicates are then
-  either of two sets, and graph-index starts again
+- **WHEN** an entity's writes are cut off at any point, one or more times in a row (each recovery cut again), its
+  value is then A, B or C, the alias predicates are then either of two sets, and graph-index starts again
 - **THEN** every read answers that value under those rules and nothing else for the entity
 - **AND** the test that verifies this is `TestRestartConvergesFromEveryCutPoint`, a generated check over cut points,
-  values and rules against a reference model, seeded with one golden record fixture beside the package's builder
+  values and rules against a reference model, each cut state seeded by running a prefix of the apply's own ordered
+  operations
 
 #### Scenario: The record agrees with a listing
 
-- **WHEN** a generated history of changes, cuts, re-offers and deletes has been applied
-- **THEN** each entity's record names exactly the rows a listing of the index buckets finds for it
+- **WHEN** a generated history of changes, cuts, re-offers and deletes is applied, ending with a completed apply
+- **THEN** after every step each pending record names at least the rows a listing of the index buckets finds for its
+  entity, and at the end each clean record names exactly those rows
 - **AND** the test that verifies this is `TestRecordMatchesListingOracle`
+
+#### Scenario: A damaged value
+
+- **WHEN** an indexed entity is overwritten with a value that does not decode, and graph-index starts again
+- **THEN** its rows are gone, it is reported damaged on both starts, it has a clean empty record, and the second start
+  lists nothing for it
+- **AND** the test that verifies this is `TestDamagedRemovalRecordsEmpty`
 
 #### Scenario: Deleted while graph-index is down
 
@@ -94,14 +103,16 @@ row it names deleted. A damaged value's removal SHALL leave no record.
 
 ### Requirement: An entity too large for one record is indexed by listing
 
-When an entity's encoded record would exceed the payload limit the server reports, graph-index SHALL delete its
-record before any row write, writing nothing if that delete fails, and SHALL apply the entity by listing with no
-record.
+When an entity's encoded record would exceed the payload limit the server reports, less a stated allowance,
+graph-index SHALL delete its record before any row write, writing nothing if that delete fails, and SHALL apply the
+entity by listing with no record. A record put still refused SHALL count as a failed index write.
 
 #### Scenario: A source with many relationships
 
-- **WHEN** an entity's relationships make its record larger than the payload limit, and it then changes
-- **THEN** every read answers its current relationships, it has no record, and the apply listed
+- **WHEN** a recorded small entity grows past the payload limit, then changes, then shrinks below it and is applied
+  once more
+- **THEN** every read answers its current relationships at each step, a listing finds no stale row, it has no record
+  while large, and it is recorded again at the end
 - **AND** the test that verifies this is `TestOversizeRecordFallsBackToListing`
 
 ### Requirement: A recreated index bucket is rebuilt

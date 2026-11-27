@@ -46,28 +46,38 @@ scenario:
 1. **Skip.** The value decodes (damage is checked first), and a usable clean record's rows equal the planned rows.
    Nothing is listed or written, the entity leaves the failed set, and its revision completes. DataFlow counts the
    read. This covers a restart and an equal re-offer.
-2. **Pending first, clean last.** An apply that writes first puts a pending record holding the record's rows (or the
-   listed rows) together with the planned rows. If that put fails, nothing is written and the entity is failed
-   (fail closed; repair retries). After the last row write it puts the clean record with the planned rows. A failed
-   record put or delete is a failed index write: Warn line, `write_failures_total`, failed set, repair. So whenever
-   a record exists, it names every row the entity can own.
+2. **Pending first, clean last.** A pending record holds one set: the union of every row the entity may own. An
+   apply that writes first puts a pending record of that union plus the planned rows. The union is the clean
+   record's rows, a pending record's whole union carried forward, or the listed rows. If that put fails, nothing is
+   written and the entity is failed (fail closed; repair retries). After the last row write it puts the clean record
+   of the planned rows. A failed record put or delete is a failed index write: Warn line, `write_failures_total`,
+   failed set, repair. So whenever a record exists it names every row the entity can own, however many applies in
+   a row are cut.
 3. **Change.** For a usable clean record that differs from the plan: delete the rows it names that the plan drops,
    and put the rows that are added or have a changed value. There is no listing.
-4. **Pending.** For a usable pending record: put every planned row, and delete every other row the record names.
-5. **Fallback.** No record, or one that is unusable or cannot be read: list as today, then rules 2 and 3 with the
-   listed rows. A generation mismatch therefore rebuilds entity by entity, and a kill mid-rebuild loses nothing.
-6. **Delete.** A tombstone plans no rows: its rows are deleted, then a clean empty record is written, which a replay
-   skips. A damaged value's removal ends with no record.
+4. **Pending.** For a usable pending record: put a new pending record of its whole union plus the planned rows
+   (rule 2), then put every planned row and delete every other row of the union. A cut during this recovery leaves
+   the larger union.
+5. **Fallback.** No record, or one that is unusable or cannot be read: list as today and use the listed keys as the
+   union. A listing returns keys only (`natsclient/kv.go:656`), so every planned row whose value carries data (NAME,
+   OUTGOING) is put again, as `owner_reconcile.go:85` and `name_index.go:75` do today. A generation mismatch
+   therefore rebuilds entity by entity, and a kill mid-rebuild loses nothing.
+6. **Delete.** A tombstone, or a damaged value, plans no rows: its rows are deleted, then a clean empty record is
+   written, which a replay skips. Damage is decided from the value before the record is read, so the record never
+   hides it, and the damaged entity is still reported on every start, without four listings each time.
 7. **Too large.** If the encoded pending or clean record exceeds the payload limit the server reports
-   (`natsclient/client.go:358`), the record is deleted before any row write (fail closed, as in rule 2) and the
-   entity is applied by listing, with no record. Each later apply of it lists: a declared cost for very large
-   entities.
+   (`natsclient/client.go:358`), less a stated allowance for the message's subject and headers, the record is
+   deleted before any row write (fail closed, as in rule 2) and the entity is applied by listing, with no record.
+   Each later apply of it lists: a declared cost for very large entities. The limit is diagnostic and the put's
+   result is what counts (`client.go:355-357`). A record within the allowance that is still refused is a failed
+   write, so that entity stays failed and withholds readiness until it changes: declared.
 
-Listing stays, as the fallback and as the test oracle. After a generated history of changes, cuts and re-offers, each
-record's rows equal what a listing of the four buckets plus OUTGOING finds. The format constant is bumped by any
-change to how rows are planned, keyed or cleaned. A golden record fixture (a fixed plan gives fixed bytes) fails when
-the encoding moves without a bump; a cleanup fix that leaves the encoding alone is caught only in review. The record
-replaces `lastProjections` and `computeIndexProjection` (`index.go:498-508`, `:521`).
+Listing stays, as the fallback and as the test oracle. Over a generated history of changes, cuts (several in a row),
+re-offers and deletes, every pending record names a superset of what a listing of the four buckets plus OUTGOING
+finds, and once each history ends with a completed apply, every clean record equals it. The format constant is
+bumped by any change to how rows are planned, keyed or cleaned. A golden record fixture (a fixed plan gives fixed
+bytes) fails when the encoding moves without a bump; a cleanup fix that leaves the encoding alone is caught only in
+review. The record replaces `lastProjections` and `computeIndexProjection` (`index.go:498-508`, `:521`).
 
 ### Decision 2. ADR-077 amendment (ruled)
 

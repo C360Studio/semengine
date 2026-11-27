@@ -23,7 +23,8 @@ it does not.
   "clean" with the new rows.
 - If the record is clean and the rows would come out the same, the entity is not touched. If they would differ, only
   the rows that changed are written or deleted, with no listing. If the record is pending (a write was cut off),
-  every new row is written again and every other row it names is deleted.
+  every new row is written again and every other row it names is deleted. A pending record keeps every row it has
+  ever named until a write finishes, so a second cut during that recovery loses nothing.
 - With no record (a store indexed before this change, or an entity too large for one record), it lists as today.
 - Estimated, not measured: a warm restart or re-sent seed of 40,000 unchanged entities in about 20 s instead of about
   38 minutes, and a live change in about 2 ms instead of about 48 ms.

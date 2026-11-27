@@ -15,5 +15,5 @@ evaluation error SHALL wrap it.
 
 #### Scenario: An operator failure is not a missing field
 
-- **WHEN** a required `gt "abc"` condition is evaluated on a field holding 5
+- **WHEN** a required `length_eq "abc"` condition is evaluated on a field holding a list
 - **THEN** the error does not satisfy `errors.Is(err, ErrRequiredFieldMissing)`

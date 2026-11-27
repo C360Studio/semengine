@@ -15,7 +15,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   record detected or survived in `notes/2.1.md`.
   - `TestMatches` (D2, D3): the carried `matches_test.go` cases (`:86-311`, `:340-403`, `:444-464`) keep their
     hand-written verdicts, but for `:229-260`, whose absent required field now gives false and no error (D4) and whose
-    error case becomes `gt "abc"` on a number; their inputs gain an `entity.pattern` and a six-part entity ID in place
+    error case becomes `length_eq "abc"`; their inputs gain an `entity.pattern` and a six-part entity ID in place
     of `"test.entity.id"`, and the rules are built with `DecodeDefinition` and `Load`. In D2's order: a nil rule,
     context and state are refused; a malformed entity ID is an error, for a disabled rule too; a loaded disabled cron
     rule (no pattern, no conditions), an enabled rule with no `entity.pattern`, and an entity outside the pattern each
@@ -24,7 +24,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   - `TestRequiredFieldMissing` (D4): an entity lacking a required field gives no match and no error from the firing
     match and from `Matches`; a message lacking a required `$message.` field gives the same from the firing message
     match; under `or`, an absent required field gives no match though another condition holds; a type error
-    (`gt "abc"` on a number) is an error on both and does not wrap the sentinel.
+    (`length_eq "abc"`) is an error on both and does not wrap the sentinel.
   - `TestUnresolvedValueTemplate` (D5): a value `$entity.triple.x.y.missing` against a triple holding that text is an
     error naming rule, field and token on both paths, and nothing is logged; semteams' `research/02-plan-to-gather.json`
     and `03b-synthesize-when-all-gathers-complete.json`, copied to `testdata/` with a README naming repository, commit
@@ -45,7 +45,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
     oracle is the hand-written corpus): over enabled rules with an `entity.pattern` and conditions `Matches` does not
     refuse, and entities inside the pattern, the firing match and `Matches` give the same answer (equal verdicts, or
     an error from both). The generator draws inputs that make the firing match error (an operator whose value cannot
-    be compared, such as `gt "abc"` on a number, and an unfilled value template) and absent required fields. Record in
+    be compared, such as `length_eq "abc"`, and an unfilled value template) and absent required fields. Record in
     `notes/2.1.md` a run against each of two mutants, failing: `Matches` turning an evaluation error into
     `false, nil`; `Matches` returning an absent required field as an error.
 - [ ] 2.2 `ErrRequiredFieldMissing` in `processor/rule/expression`, wrapped as the `Err` of the evaluator's three

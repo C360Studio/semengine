@@ -54,7 +54,9 @@ lookup, its agreement with `Matches`). All wait until a product asks for the met
 - PR 6's 4 integration tests (`-tags integration`, `-race`), Docker reachable: all 4 `--- PASS`.
 - Behaviour probe, P1 to P7 (same notes file), each observed as stated:
   - P1: `$message.x ne "a"` on payloads `{}` and `{"y":1}`: both no match. No condition tried passes on an absent field.
-  - P2: `$message.x gt "abc"` on `{"x":5}`: no match, and nothing logged at Info (the error goes to Debug).
+  - P2: `$message.x gt "abc"` on `{"x":5}`: no match and nothing logged; this is a text comparison
+    (`"5" < "abc"`), not an error, as ordering operators fall back to comparing text (`evaluator.go:616-640`); an
+    operator failure is `length_eq "abc"`.
   - P3: on the message path, `$message.who eq "$entity.id"` with `who` holding `"$entity.id"`: no match. `$entity.id`
     became `""` (no entity), silently.
   - P4: `Subscribe()` is `[>]` without an entity pattern, `[]` with one.

@@ -101,7 +101,7 @@ a bare false.
 
 #### Scenario: A comparison that cannot be made
 
-- **WHEN** the firing message match runs a `gt "abc"` condition on a numeric field
+- **WHEN** the firing message match runs a `length_eq "abc"` condition on a field
 - **THEN** it returns an error naming the rule ID and the field
 
 ### Requirement: A condition is never compared with an unfilled template

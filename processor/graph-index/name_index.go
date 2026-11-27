@@ -1,16 +1,12 @@
 package graphindex
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"log/slog"
 	"strings"
 
 	"github.com/c360studio/semengine/message"
-	"github.com/c360studio/semengine/pkg/errs"
-	semtypes "github.com/c360studio/semengine/pkg/types"
 	"github.com/c360studio/semengine/vocabulary"
 )
 
@@ -53,28 +49,6 @@ type nameIndexWrite struct {
 	priority  int
 }
 
-// reconcileNameIndex replaces entityID's name memberships with writes.
-func (c *Component) reconcileNameIndex(ctx context.Context, entityID string, writes []nameIndexWrite) error {
-	if err := semtypes.ValidateEntityID(entityID); err != nil {
-		return err
-	}
-	desired := make(map[string][]byte, len(writes))
-	for _, write := range writes {
-		if write.name == "" || !validateNameKeyInputs(entityID, write.predicate, c.logger) {
-			return errs.WrapInvalid(errs.ErrInvalidData, "Component", "reconcileNameIndex",
-				"name membership contains an invalid name, entity ID, or predicate")
-		}
-		value, err := json.Marshal(nameCompositeValue{Name: write.name, Priority: write.priority})
-		if err != nil {
-			return errs.Wrap(err, "Component", "reconcileNameIndex", "marshal value")
-		}
-		desired[nameCompositeKey(nameIndexKey(write.name), entityID, write.predicate)] = value
-	}
-	// Retained keys are overwritten: the original-case spelling and the priority live in
-	// the value and may change while the folded key stays the same.
-	return c.reconcileOwnedRows(ctx, "name", c.nameBucket, nameIndexEntityFilter(entityID), desired, true)
-}
-
 // validateNameKeyInputs reports whether entityID and predicate make a valid NAME_INDEX
 // key, logging the refusal at Debug: a key the reader would reject or mis-split is never
 // stored.
@@ -106,17 +80,4 @@ func aliasIndexEntityFilter(entityID string) string {
 type aliasIndexWrite struct {
 	alias     string
 	predicate string
-}
-
-// reconcileAliasIndex replaces entityID's alias memberships with writes. Retained keys are
-// not rewritten: the value is an empty marker, so a kept key has nothing to change.
-func (c *Component) reconcileAliasIndex(ctx context.Context, entityID string, writes []aliasIndexWrite) error {
-	if err := semtypes.ValidateEntityID(entityID); err != nil {
-		return err
-	}
-	desired := make(map[string][]byte, len(writes))
-	for _, write := range writes {
-		desired[aliasIndexKey(write.alias, entityID, write.predicate)] = []byte{}
-	}
-	return c.reconcileOwnedRows(ctx, "alias", c.aliasBucket, aliasIndexEntityFilter(entityID), desired, false)
 }

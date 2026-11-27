@@ -39,7 +39,8 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
   sets, re-offers, deletes and a second writer between an apply's record read and its pending put, check one golden
   record fixture, and record seed and checks per `docs/testing.md`.
 - [x] 2.4 Rule 7, too large. Accept: `TestOversizeRecordFallsBackToListing`. Done: notes in `notes/2.4.md`.
-- [ ] 2.5 Generations. Accept: `TestRestartRebuildsRecreatedIndexBucket`.
+- [x] 2.5 Generations. Accept: `TestRestartRebuildsRecreatedIndexBucket`. Done: 2.3 already refused another
+  generation; the test and its notes are in `notes/2.5.md`.
 - [ ] 2.6 The ADR-077 amendment per Decision 2, under its port note: the condition at `:40-42` refuted by the step 2
   measurement, §2 owner listing as fallback and oracle, §4 replacement through the record. Accept: the amendment
   cites the measurement comment and this change.

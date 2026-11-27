@@ -89,10 +89,6 @@ type Component struct {
 	// work after that returns at once, so a stop waits for the writes in flight, not the
 	// backlog; the next start's replay re-indexes what was skipped.
 	stopping atomic.Bool
-
-	// lastProjections maps an entity ID to the projection last indexed for it, for the
-	// reindex_events_total metric: one string per entity.
-	lastProjections sync.Map
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-index: the ports

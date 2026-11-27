@@ -2,11 +2,9 @@ package graphindex
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 
@@ -317,12 +315,18 @@ func (c *Component) reportDamaged(entityID string, revision uint64, refusal erro
 }
 
 // retryIndexWrites runs writeAll up to indexWriteMaxAttempts times, returning nil on the
-// first success and the last error otherwise; an ended ctx stops it at once.
+// first success and the last error otherwise; an ended ctx or a record conflict
+// (errRecordConflict) stops it at once.
 func retryIndexWrites(ctx context.Context, writeAll func() error) error {
 	var writeErr error
 	for attempt := range indexWriteMaxAttempts {
 		if writeErr = writeAll(); writeErr == nil {
 			return nil
+		}
+		// Another writer put the record since it was read: retrying in place would undo what it
+		// wrote, so the entity is failed and the repair pass starts again from the stored record.
+		if errors.Is(writeErr, errRecordConflict) {
+			return writeErr
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -485,33 +489,13 @@ func (c *Component) isAliasPredicate(predicate string) bool {
 	return ok
 }
 
-// applyEntityIndexPlan writes plan to every index, returning every failure joined.
-func (c *Component) applyEntityIndexPlan(ctx context.Context, plan entityIndexPlan) error {
-	var errList []error
-	if err := c.reconcileIncomingIndex(ctx, plan.entityID, plan.incomingByTarget); err != nil {
-		errList = append(errList, fmt.Errorf("incoming: %w", err))
-	}
-	if err := c.writeOutgoingIndex(ctx, plan.entityID, plan.outgoing); err != nil {
-		errList = append(errList, fmt.Errorf("outgoing: %w", err))
-	}
-	if err := c.reconcilePredicateIndex(ctx, plan.entityID, plan.predicatesUsed); err != nil {
-		errList = append(errList, fmt.Errorf("predicate: %w", err))
-	}
-	if err := c.reconcileAliasIndex(ctx, plan.entityID, plan.aliasWrites); err != nil {
-		errList = append(errList, fmt.Errorf("alias: %w", err))
-	}
-	if err := c.reconcileNameIndex(ctx, plan.entityID, plan.nameWrites); err != nil {
-		errList = append(errList, fmt.Errorf("name: %w", err))
-	}
-	return errors.Join(errList...)
-}
-
 // indexEntity indexes entityID from its stored value data, read at revision. A value
-// graph.UnmarshalEntityState refuses is damaged: it is reported first and then every row the
-// entity's earlier value built is removed, so a reply that lacks those rows already counts it; a
-// failed removal is a failed write, marked by the delete. It returns an error for a refused index plan and for required
-// writes that still fail after retry; both mark the entity failed and withhold readiness until it
-// re-indexes.
+// graph.UnmarshalEntityState refuses is damaged: it is reported first, before the record is read, so
+// a record never hides damage, and then every row the entity's earlier value built is removed, so a
+// reply that lacks those rows already counts it; a failed removal is a failed write, marked by the
+// delete. A value whose planned rows its clean record already holds writes nothing. It returns an
+// error for a refused index plan and for required writes that still fail after retry; both mark the
+// entity failed and withhold readiness until it re-indexes.
 func (c *Component) indexEntity(ctx context.Context, entityID string, revision uint64, data []byte) error {
 	var state graph.EntityState
 	if err := graph.UnmarshalEntityState(entityID, data, &state); err != nil {
@@ -529,180 +513,55 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, revision u
 		c.markEntityFailed(entityID)
 		return err
 	}
-
-	// Re-index instrumentation, observe only: the projection is compared with the last
-	// one indexed, and stored only after the writes succeed, so a failed write never
-	// becomes the baseline.
-	projection := computeIndexProjection(state, c.namePredicates, c.isAliasPredicate)
-	prev, loaded := c.lastProjections.Load(entityID)
-	c.metrics.recordReindex(loaded && prev.(string) == projection)
-
-	if err := retryIndexWrites(ctx, func() error { return c.applyEntityIndexPlan(ctx, plan) }); err != nil {
+	planned, err := c.plannedRows(plan)
+	if err != nil {
+		c.markEntityFailed(entityID)
+		return err
+	}
+	unchanged, err := c.writeRows(ctx, entityID, planned)
+	if err != nil {
 		c.markEntityFailed(entityID)
 		return errs.WrapTransient(err, "Component", "indexEntity",
-			fmt.Sprintf("index writes failed for %s after %d attempts", entityID, indexWriteMaxAttempts))
+			fmt.Sprintf("index writes failed for %s", entityID))
 	}
 	c.clearEntityFailed(entityID)
-	c.lastProjections.Store(entityID, projection)
+	c.metrics.recordReindex(unchanged)
+	c.metrics.eventsProcessed.Inc()
+	if unchanged {
+		c.logger.Debug("entity rows unchanged", slog.String("entity", entityID))
+		return nil
+	}
 	for _, indexType := range []string{"name", "alias", "predicate", "incoming", "outgoing"} {
 		c.metrics.indexUpdates.WithLabelValues(indexType).Inc()
 	}
-	c.metrics.eventsProcessed.Inc()
 	c.logger.Debug("indexed entity", slog.String("entity", entityID), slog.Int("triples", len(state.Triples)))
 	return nil
 }
 
-// computeIndexProjection is a canonical, sorted string of everything the indexes read
-// from state: relationship (predicate, target) pairs, the distinct predicates, (name
-// predicate, name) pairs and (alias predicate, alias) pairs. Two states with the same
-// projection produce the same index writes.
-func computeIndexProjection(state graph.EntityState, namePredicates map[string]int, isAlias func(string) bool) string {
-	parts := make([]string, 0, len(state.Triples)*3)
-	predicateSeen := make(map[string]bool, len(state.Triples))
-	for _, t := range state.Triples {
-		if t.IsRelationship() {
-			if targetID, ok := t.Object.(string); ok {
-				parts = append(parts, "rel:"+t.Predicate+":"+targetID)
-			}
-		}
-		if !predicateSeen[t.Predicate] {
-			predicateSeen[t.Predicate] = true
-			parts = append(parts, "pred:"+t.Predicate)
-		}
-		if _, isName := namePredicates[t.Predicate]; isName {
-			if name, ok := t.Object.(string); ok && name != "" {
-				parts = append(parts, "name:"+t.Predicate+":"+name)
-			}
-		}
-		if isAlias(t.Predicate) {
-			if alias, ok := t.Object.(string); ok && alias != "" {
-				parts = append(parts, "alias:"+t.Predicate+":"+alias)
-			}
-		}
-	}
-	slices.Sort(parts)
-	return strings.Join(parts, "|")
-}
-
-// writeOutgoingIndex stores entityID's complete outgoing list under its own key; a Put of
-// the whole list replaces the previous one.
-func (c *Component) writeOutgoingIndex(ctx context.Context, entityID string, entries []graph.OutgoingEntry) error {
-	if err := validateEntityLiteralKey(entityID); err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if err := validateEntityLiteralKey(entry.ToEntityID); err != nil {
-			return err
-		}
-	}
-	data, err := json.Marshal(entries)
-	if err != nil {
-		return errs.Wrap(err, "Component", "writeOutgoingIndex", "entry serialization")
-	}
-	_, putErr := c.outgoingBucket.Put(ctx, entityID, data)
-	c.metrics.kvOperations.WithLabelValues("put", "outgoing").Inc()
-	if putErr != nil {
-		return errs.Wrap(putErr, "Component", "writeOutgoingIndex", "KV store")
-	}
-	return nil
-}
-
-// deleteFromIndexes removes a deleted entity's rows. PREDICATE, NAME and OUTGOING rows are
-// owned by the entity. INCOMING rows are owned by their source, though their key begins
-// with the target, so the delete lists by the source filter and keeps edges from live
-// sources that still point at the deleted entity. ALIAS rows are owned by the entity that
-// carries the alias (ADR-114 §2).
+// deleteFromIndexes removes the rows of an entity that is deleted, or whose value is damaged, and
+// leaves it a clean empty record, which a replay of the delete finds equal and skips. A failed
+// write leaves stale rows the record still names: the entity stays failed and the repair pass runs
+// the delete again.
 func (c *Component) deleteFromIndexes(ctx context.Context, entityID string) error {
-	// Validate the owner and its filters before the first list or delete.
 	if err := validateEntityLiteralKey(entityID); err != nil {
 		return err
 	}
-	type deleteSet struct {
-		name   string
-		bucket *natsclient.KVStore
-		filter string
-		keys   []string
-	}
-	deleteSets := []deleteSet{
-		{name: "incoming", bucket: c.incomingBucket, filter: incomingIndexSourceFilter(entityID)},
-		{name: "predicate", bucket: c.predicateBucket, filter: predicateIndexEntityFilter(entityID)},
-		{name: "name", bucket: c.nameBucket, filter: nameIndexEntityFilter(entityID)},
-		{name: "alias", bucket: c.aliasBucket, filter: aliasIndexEntityFilter(entityID)},
-	}
-	for _, set := range deleteSets {
-		if err := natsclient.ValidateKVWildcardFilter(set.filter); err != nil {
-			return err
-		}
-	}
-
-	// List and validate every owned key before the first delete, so a failed list or a
-	// poisoned key never leaves one family retracted and another not; a retry starts from
-	// the same complete plan.
-	preflightFailures := 0
-	for i := range deleteSets {
-		set := &deleteSets[i]
-		keys, listErr := set.bucket.KeysByFilter(ctx, set.filter)
-		c.metrics.kvOperations.WithLabelValues("list", set.name).Inc()
-		c.metrics.recordReconcileOperation(set.name, "list", listErr)
-		if listErr != nil {
-			preflightFailures++
-			c.logger.Warn("failed to list owned index rows for delete",
-				slog.String("index", set.name), slog.String("entity_id", entityID), slog.Any("error", listErr))
-			continue
-		}
-		slices.Sort(keys)
-		set.keys = slices.Compact(keys)
-		for _, key := range set.keys {
-			if keyErr := natsclient.ValidateKVLiteralKey(key); keyErr != nil {
-				preflightFailures++
-				c.logger.Warn("invalid owned index key returned for delete",
-					slog.String("index", set.name), slog.String("key", key), slog.Any("error", keyErr))
-			}
-		}
-	}
-	if preflightFailures > 0 {
+	unchanged, err := c.writeRows(ctx, entityID, nil)
+	if err != nil {
 		c.markEntityFailed(entityID)
-		return errs.WrapTransient(errIndexWritePartial, "Component", "deleteFromIndexes",
-			fmt.Sprintf("%d delete-plan operations failed for %s (no rows were deleted)", preflightFailures, entityID))
+		c.logger.Warn("entity delete from the indexes failed; readiness withheld until it is retried",
+			slog.String("entity_id", entityID), slog.Any("error", err))
+		return errs.WrapTransient(err, "Component", "deleteFromIndexes",
+			fmt.Sprintf("index deletes failed for %s", entityID))
 	}
-
-	failures := 0
-	outgoingErr := c.outgoingBucket.Delete(ctx, entityID)
-	c.metrics.kvOperations.WithLabelValues("delete", "outgoing").Inc()
-	if outgoingErr != nil && !natsclient.IsKVNotFoundError(outgoingErr) {
-		failures++
-		c.logger.Warn("failed to delete from outgoing index",
-			slog.String("entity_id", entityID), slog.Any("error", outgoingErr))
-	}
-	for _, set := range deleteSets {
-		for _, key := range set.keys {
-			delErr := set.bucket.Delete(ctx, key)
-			if natsclient.IsKVNotFoundError(delErr) {
-				delErr = nil
-			}
-			c.metrics.kvOperations.WithLabelValues("delete", set.name).Inc()
-			c.metrics.recordReconcileOperation(set.name, "delete", delErr)
-			if delErr != nil {
-				failures++
-				c.logger.Warn("failed to delete owned index row",
-					slog.String("index", set.name), slog.String("key", key), slog.Any("error", delErr))
-			}
-		}
-	}
-	// A failed list or delete may leave stale rows: the index is known incomplete, so the
-	// entity stays failed and the repair loop runs the delete again.
-	if failures > 0 {
-		c.markEntityFailed(entityID)
-		return errs.WrapTransient(errIndexWritePartial, "Component", "deleteFromIndexes",
-			fmt.Sprintf("%d delete/list operations failed for %s (stale index rows may remain)", failures, entityID))
-	}
-	// A clean delete evicts the projection baseline, so a re-add is not read as unchanged.
-	c.lastProjections.Delete(entityID)
 	c.clearEntityFailed(entityID)
+	c.metrics.eventsProcessed.Inc()
+	if unchanged {
+		return nil
+	}
 	for _, indexType := range []string{"name", "alias", "predicate", "incoming", "outgoing"} {
 		c.metrics.indexUpdates.WithLabelValues(indexType).Inc()
 	}
-	c.metrics.eventsProcessed.Inc()
 	c.logger.Debug("entity deleted from indexes", slog.String("entity_id", entityID))
 	return nil
 }

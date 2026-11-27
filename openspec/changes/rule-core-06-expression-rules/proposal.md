@@ -1,6 +1,6 @@
 # Proposal: rule-core-06-expression-rules
 
-Approved-by: cglusky (2026-11-27) <https://github.com/C360Studio/semengine/pull/777#issuecomment-7221771032> sha256:7768b09ad32b
+Approved-by: cglusky (2026-11-27) <https://github.com/C360Studio/semengine/pull/777#issuecomment-7225903712> sha256:f668551c6d9d
 
 Track: `design`. PR 6 of the rule-core split plan (`archive/2026-11-25-design-rule-core-split-plan/`). Adds the
 `rule-matching` capability and one requirement each to `rule-definitions` and `rule-conditions`. Leaves out the

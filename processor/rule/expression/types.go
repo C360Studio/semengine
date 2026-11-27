@@ -4,9 +4,16 @@
 package expression
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 )
+
+// ErrRequiredFieldMissing is the Err of the *EvaluationError returned when a
+// condition marked required reads a field the entity, the state or the
+// message does not hold. A caller tells this case apart with errors.Is: for a
+// rule it means the conditions do not hold, not that evaluation failed.
+var ErrRequiredFieldMissing = errors.New("required field missing")
 
 // ConditionExpression represents a single field/operator/value condition
 type ConditionExpression struct {
@@ -16,7 +23,7 @@ type ConditionExpression struct {
 	// Required: when true, a missing field causes evaluation to error
 	// rather than silently match false. Scalar operators (eq, lt,
 	// contains, ...) honour this strictly: missing predicate +
-	// Required=true → EvaluationError.
+	// Required=true → EvaluationError wrapping ErrRequiredFieldMissing.
 	//
 	// List operators (length_*, array_contains; see isArrayOperator)
 	// differ on an entity: a missing predicate is an empty list and the

@@ -132,7 +132,8 @@ func TestSubstituteConditionValuesLifecycle(t *testing.T) {
 		Field: "test.fixture.phase", Operator: expression.OpEqual, Value: "$entity.lifecycle.phase",
 	}}
 
-	got := substituteConditionValues(t.Context(), conditions, ec)
+	got, err := substituteConditionValues(t.Context(), conditions, ec)
+	require.NoError(t, err)
 
 	assert.Equal(t, "flying", got[0].Value)
 }

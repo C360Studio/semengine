@@ -226,6 +226,20 @@ func TestLoadRefuses(t *testing.T) {
 			cause:    `"state_machine"`,
 		},
 		{
+			name: "an entity token in a rule with no entity pattern",
+			rule: `{"id": "r1", "type": "expression",
+			  "conditions": [{"field": "$message.zone", "operator": "eq", "value": "zone-$entity.id"}]}`,
+			position: "conditions[0]",
+			cause:    `runs on messages, which have no entity, so the value "zone-$entity.id"`,
+		},
+		{
+			name: "a message field in a rule with an entity pattern",
+			rule: `{"id": "r1", "type": "expression", "entity": {"pattern": "c360.*.*.*.*.*"},
+			  "conditions": [{"field": "$message.x", "operator": "eq", "value": "a"}]}`,
+			position: "conditions[0]",
+			cause:    `runs on entities, which have no message, so the field "$message.x"`,
+		},
+		{
 			name:         "a cron rule action of an unknown type",
 			rule:         `{"id": "r1", "type": "cron", "enabled": false, "schedule": "@daily", "actions": [{"type": "page_oncall"}]}`,
 			position:     "actions[0]",

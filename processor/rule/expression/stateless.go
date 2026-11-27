@@ -43,10 +43,10 @@ func hasStatefulPrefix(field string) bool {
 // world. An error a caller can refuse on is recoverable; a fabricated verdict is
 // not.
 //
-// lifecycleResolved reports whether the caller supplied a lifecycle Manager. With
-// one, `$entity.lifecycle.*` fields are pre-resolved into StateFields and are
-// answerable; without one they are not, which is why answerability — not
-// preference — is what the Manager governs.
+// lifecycleResolved reports whether the caller resolved the entity's lifecycle
+// state into StateFields. Then `$entity.lifecycle.*` fields are answerable;
+// otherwise they are refused, as they cannot be answered without a lifecycle
+// lookup.
 //
 // This is a pre-scan, deliberately: it runs BEFORE evaluation and leaves the
 // evaluator untouched, so the stateful path cannot regress in service of the
@@ -67,15 +67,15 @@ func EnsureStatelessResolvable(condition ConditionExpression, lifecycleResolved 
 		return nil
 	}
 
-	// Lifecycle fields are the one stateful class a stateless caller CAN make
-	// answerable, by supplying the Manager they are resolved from.
+	// Lifecycle fields are the one stateful class a caller CAN make
+	// answerable, by resolving them from a lifecycle lookup first.
 	if strings.HasPrefix(condition.Field, lifecyclePrefix) {
 		if lifecycleResolved {
 			return nil
 		}
 		return &EvaluationError{
 			Field:   condition.Field,
-			Message: "lifecycle field requires a lifecycle Manager: pass one to resolve it, or the field cannot be answered",
+			Message: "lifecycle field cannot be answered without a lifecycle lookup",
 		}
 	}
 

@@ -49,7 +49,10 @@
 // rule condition and in an action's `when` gets the same check: it starts
 // with `$` (`$message.`, `$state.` and the like) or is a declared predicate
 // that is not rule-opaque, as a rule-opaque predicate holds private content
-// no rule may match on. A refusal is
+// no rule may match on. An expression rule's condition reads only what its
+// path has: with no `entity.pattern` the rule runs on messages and may not
+// name `$entity.` in a field or value, and with one it runs on entities and
+// may not name `$message.`. A refusal is
 // classified invalid and names the rule ID, the source, the position (such as
 // `on_enter[1].when[0]`) and the cause:
 //

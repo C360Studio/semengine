@@ -23,14 +23,18 @@ import (
 // its name ends", "An unresolved token stays and is reported", "RuleID names
 // the rule that built the state" and "The values of a predicate".
 
-// substitutionWarning is one warning SubstituteVariables logged, as the test
-// reads it back from the log's JSON.
+// substitutionWarning is one warning the rule package logged, as the test
+// reads it back from the log's JSON: SubstituteVariables' unresolved tokens,
+// or the message match's unreadable payload.
 type substitutionWarning struct {
-	Msg        string   `json:"msg"`
-	Unresolved []string `json:"unresolved"`
-	RuleID     string   `json:"rule_id"`
-	EntityID   string   `json:"entity_id"`
-	Template   string   `json:"template"`
+	Level       string   `json:"level"`
+	Msg         string   `json:"msg"`
+	Unresolved  []string `json:"unresolved"`
+	RuleID      string   `json:"rule_id"`
+	EntityID    string   `json:"entity_id"`
+	Template    string   `json:"template"`
+	PayloadType string   `json:"payload_type"`
+	Remedy      string   `json:"remedy"`
 }
 
 // warningLog holds what the process logger received while a test ran.
@@ -312,7 +316,8 @@ func TestSubstituteConditionValues(t *testing.T) {
 		{Field: "a.b.d", Operator: expression.OpEqual, Value: "plain"},
 	}
 
-	got := substituteConditionValues(t.Context(), conds, ec)
+	got, err := substituteConditionValues(t.Context(), conds, ec)
+	require.NoError(t, err)
 
 	assert.Equal(t, "2", got[0].Value, "a string value is substituted")
 	assert.Equal(t, 3.0, got[1].Value, "a value that is not a string is kept")
@@ -320,7 +325,9 @@ func TestSubstituteConditionValues(t *testing.T) {
 	assert.Equal(t, "$entity.triple.coordinator.decision.subtopics.length", conds[0].Value,
 		"the caller's conditions are not changed")
 	assert.Nil(t, log.unresolved(t))
-	assert.Nil(t, substituteConditionValues(t.Context(), nil, ec))
+	none, err := substituteConditionValues(t.Context(), nil, ec)
+	require.NoError(t, err)
+	assert.Nil(t, none)
 }
 
 // knowing returns a lifecycle manager that knows id as a mission in flight.

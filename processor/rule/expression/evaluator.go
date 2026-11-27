@@ -168,6 +168,7 @@ func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.Ent
 				return false, &EvaluationError{
 					Field:   condition.Field,
 					Message: "required state field not found",
+					Err:     ErrRequiredFieldMissing,
 				}
 			}
 			return false, nil
@@ -184,6 +185,7 @@ func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.Ent
 				return false, &EvaluationError{
 					Field:   condition.Field,
 					Message: "required message field not found",
+					Err:     ErrRequiredFieldMissing,
 				}
 			}
 			return false, nil
@@ -231,11 +233,13 @@ func (e *Evaluator) evaluateConditionWithStateAndMessage(entityState *gtypes.Ent
 			return false, &EvaluationError{
 				Field:   condition.Field,
 				Message: "no entity state or message fields available",
+				Err:     ErrRequiredFieldMissing,
 			}
 		}
 		return false, &EvaluationError{
 			Field:   condition.Field,
 			Message: "required field not found",
+			Err:     ErrRequiredFieldMissing,
 		}
 	}
 	return false, nil

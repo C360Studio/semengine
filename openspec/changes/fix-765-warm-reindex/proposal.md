@@ -10,33 +10,37 @@ code, because it changes what a restart trusts. Edits one capability, `graph-ind
 Every start re-indexes every stored entity. For each one graph-index lists the rows the entity already owns in four
 index buckets, so it can delete the ones the entity no longer has. Measured on #765 (comment 7208287082): those four
 listings are 93 to 98 % of an entity's time, each costs more as the store grows (0.6 ms at 200 entities, 12 ms at
-40,000), and a warm restart of 40,000 entities with one lane takes about 38 minutes, all of it refusing queries. Live
-writes pay the same 48 ms per entity.
+40,000), and a warm restart of 40,000 entities with one lane takes about 38 minutes, all of it refusing queries.
 
 ## What changes
 
-- graph-index keeps, per entity, a record of what it last indexed for it, in a bucket of its own. The record names
-  every row the entity may own, and says the rows are complete only once every write has finished.
-- An entity whose record is complete and matches what its current value asks for is not listed and not written.
-  A changed entity finds its old rows from the record, not by listing.
-- An entity with no record (a store indexed before this change, or a wiped record bucket) is listed as today, once.
-- An index bucket that was deleted and created again while graph-index was down makes every record untrusted, and
-  that start rebuilds everything as today.
-- Expected effect, inferred and not yet measured: a warm restart of 40,000 unchanged entities in tens of seconds
-  instead of about 38 minutes; the first start after upgrading still takes the full time once.
+- After every row write for an entity has succeeded, graph-index stores a small mark for it: the entity's revision,
+  a fingerprint of the rows it wrote, and which copy of each bucket it wrote them in.
+- On a later start, an entity whose revision, rows and buckets all still match its mark is neither listed nor
+  written. Anything else is indexed exactly as today.
+- A write cut off part-way never leaves a matching mark, so the next start lists that entity as today.
+- A store with no marks (indexed before this change) is listed once and marked.
+- Expected effect, estimated and not yet measured: a warm restart of 40,000 unchanged entities takes tens of seconds
+  instead of about 38 minutes. Live writes keep their current cost.
 
 ## Decisions you are making by approving
 
-- **Keep a per-entity record instead of a "done at revision R" mark (recommended).** A revision mark misses changes
-  that do not change the entity: a product that registers a new alias or name predicate, or a graph-index upgrade
-  that changes its row layout. The record compares what the value asks for now, so those are re-indexed.
-- **Change the old decision record ADR-077 (recommended: an amendment under its port note).** ADR-077 chose to find
-  an entity's rows by listing, without a stored list. After this, listing is only the fallback; the record is how a
-  restart and a live update find old rows.
-- **Hand edits to an index bucket while graph-index is down become a declared limit (recommended).** Today a restart
-  repairs them. After this, a bucket deleted and recreated is still detected and rebuilt, but a row deleted by hand
-  is not; the documented reset is to delete the record bucket, which forces a full rebuild on the next start.
-- **Keep the listing for stores that have no records (recommended)** rather than asking deployments to wipe: the
-  code exists today, and the first start after the upgrade is the only slow one.
+- **Skip by a mark, not by a stored list of rows (recommended).** The alternative is a stored list of each entity's
+  rows, used to find old rows without listing at all. It would also make live writes faster, but a restart would
+  then trust it to find stale rows, it needs two writes per change, and it changes ADR-077's decision. With the
+  mark, listing stays how old rows are found. The stored list can follow if live write speed is measured as a problem.
+- **Changes made to the index buckets by hand while graph-index is down.** Today a restart repairs them. After this, a
+  bucket deleted and created again is still caught and rebuilt. Rows deleted by hand, a bucket emptied in place, or a
+  bucket restored from a backup are not caught. Choose (a, recommended) to declare this, with the reset "delete the
+  mark bucket" (the next start rebuilds everything), or (b) to have graph-index re-check every entity in the
+  background after it is ready, which brings back today's listing load without blocking queries.
+- **Power loss on the NATS host.** NATS writes to disk on a timer, not on every write. So after a power cut, a mark
+  can survive while the rows it vouches for are lost. Today the next start repairs this; after this change it does
+  not. Choose (a, recommended) to declare it and say "after a host crash, delete the mark bucket", (b) to rely on the
+  background check above, or (c) to tell deployments that need it to make NATS write every change to disk.
+- **Going back to an older graph-index.** A version from before this change rewrites rows without updating marks. The
+  declared step (recommended) is: after running an older graph-index on the same store, delete the mark bucket.
+- **ADR-077 keeps its decision (recommended).** Listing stays how an entity's old rows are found. A note records that
+  a matching mark skips the listing.
 - **Leave the default lane count alone here (recommended).** 16 lanes made a 20,000-entity restart five times faster
-  but used seven times the NATS CPU; that is its own question.
+  but used seven times the NATS CPU. That is a separate question.

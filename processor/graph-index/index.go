@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/graph/kvcatalog"
@@ -47,10 +49,11 @@ type indexWork struct {
 	revision uint64
 }
 
-// openIndexBuckets acquires the five index buckets graph-index owns, as their owner,
-// and the read handle on ENTITY_STATES the lanes read current state from. Config.Validate
+// openIndexBuckets acquires the five index buckets graph-index owns and its record
+// bucket, as their owner, and the read handle on ENTITY_STATES the lanes read current state
+// from, and reads the generation of ENTITY_STATES and of each index bucket. Config.Validate
 // has already refused any output that is not one of the four declared index buckets;
-// NAME_INDEX is internal and not a declared output.
+// NAME_INDEX and GRAPH_INDEX_RECORDS are internal and not declared outputs.
 func (c *Component) openIndexBuckets(ctx context.Context) error {
 	buckets := []struct {
 		name  string
@@ -62,19 +65,54 @@ func (c *Component) openIndexBuckets(ctx context.Context) error {
 		{graph.BucketPredicateIndex, &c.predicateBucket},
 		{graph.BucketNameIndex, &c.nameBucket},
 	}
+	generations := make(map[string]uint64, len(buckets)+1)
 	for _, b := range buckets {
 		kv, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, b.name)
 		if err != nil {
 			return errs.Wrap(err, "Component", "openIndexBuckets", "KV bucket: "+b.name)
 		}
+		if generations[b.name], err = bucketGeneration(ctx, kv); err != nil {
+			return errs.Wrap(err, "Component", "openIndexBuckets", "generation of "+b.name)
+		}
 		*b.store = c.natsClient.NewKVStore(kv)
 	}
+	records, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, graph.BucketGraphIndexRecords)
+	if err != nil {
+		return errs.Wrap(err, "Component", "openIndexBuckets", "KV bucket: "+graph.BucketGraphIndexRecords)
+	}
+	c.recordBucket = c.natsClient.NewKVStore(records)
 	entities, err := kvcatalog.OpenCatalogReader(ctx, c.natsClient, graph.BucketEntityStates)
 	if err != nil {
 		return errs.Wrap(err, "Component", "openIndexBuckets", "KV bucket: "+graph.BucketEntityStates)
 	}
-	c.entities = entities
+	if generations[graph.BucketEntityStates], err = bucketGeneration(ctx, entities); err != nil {
+		return errs.Wrap(err, "Component", "openIndexBuckets", "generation of "+graph.BucketEntityStates)
+	}
+	c.entities, c.generations = entities, generations
 	return nil
+}
+
+// bucketGeneration reads a bucket's generation: the creation time on the server of its backing
+// stream, in nanoseconds since the Unix epoch. A bucket deleted and created again gets a new one
+// (TestFollowerDeclaresLostFeed's "deleted and recreated" case drives that on the pinned server);
+// one restored with its creation time does not. A stream that reports no creation time is
+// refused, since two of its generations could not be told apart.
+func bucketGeneration(ctx context.Context, bucket interface {
+	Status(context.Context) (jetstream.KeyValueStatus, error)
+}) (uint64, error) {
+	s, err := bucket.Status(ctx)
+	if err != nil {
+		return 0, err
+	}
+	status, ok := s.(*jetstream.KeyValueBucketStatus)
+	if !ok || status.StreamInfo() == nil {
+		return 0, fmt.Errorf("kv status: unexpected %T without stream info", s)
+	}
+	created := status.StreamInfo().Created
+	if created.IsZero() {
+		return 0, errors.New("the backing stream reports no creation time")
+	}
+	return uint64(created.UnixNano()), nil
 }
 
 // startIndexPool builds the keyed pool, and the coalescer when coalesce_ms is above zero,

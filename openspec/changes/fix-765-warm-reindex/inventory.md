@@ -63,6 +63,12 @@ The follower holds ENTITY_STATES's generation: `follower.go:546-556`, `readStrea
   `c.aliasPredicates = vocabulary.DiscoverAliasPredicates()`, `index.go:88` —
   `c.namePredicates = vocabulary.DiscoverLabelPredicates()`; products register their own (`vocabulary/labels.go:14`).
   An unchanged entity can need different rows after a restart.
+- SemSource re-offers its full seed on every boot (#765 body: ENTITY_STATES `last_seq` about 302k for 41.5k entities
+  "because every boot re-offers the full seed"; SemSource is "separately cutting our own churn"). graph-ingest's
+  stream lane stores an equal re-offer as a new revision: it declines a write only when every set is older
+  (`processor/graph-ingest/entity_writes.go:238-240`) and stamps `existing.UpdatedAt = time.Now()` (`:254`); ADR-110
+  Q4. Not known: whether a boot's re-offers reach ENTITY_STATES before or after graph-index's snapshot marker, so
+  whether they count toward the first build or arrive as live writes after it.
 - Damaged: `index.go:480` — `c.reportDamaged(entityID, revision, err)`, then its rows are removed; the record of
   damage is in memory and rebuilt by the replay. Failed: a failed write still completes its revision (`index.go:102`,
   `:233`); readiness is held by the failed set, which the repair loop re-drives every 30 s (`index.go:41`).
@@ -103,8 +109,9 @@ None of these changes; a skipped entity still completes its revision.
 - ADR-066 §1 (watermark, failed-set gate): kept; a skip completes its revision and clears the failed set.
 - ADR-065 (one writer per key) is not ported; its invariant is cited in code (`incoming_index.go:19-21`) and the mark
   keeps it, one lane per entity key.
-- ADR-108 D4 (read current truth at apply): kept, the skip reads the entity. ADR-109 D1, D4: kept.
-- ADR-110 Q4 (an equal re-arrival raises the revision): kept; such an entity is listed as today.
+- ADR-108 D4 (read current truth at apply): kept, the skip reads the entity and plans it. ADR-109 D1, D4: kept.
+- ADR-110 Q4 (an equal re-arrival raises the revision): kept; graph-index now skips such an entity, so its cost is
+  paid down without changing graph-ingest.
 - ADR-114 (alias layout): kept.
 
 ## Library statements
@@ -122,7 +129,7 @@ None of these changes; a skipped entity still completes its revision.
 
 | Dimension | Evidence |
 | --- | --- |
-| Semantic class | what an owner last indexed, so a restart can skip it (F: which rows, to retract them) |
+| Semantic class | a digest of the rows an owner last wrote, so an unchanged apply can be skipped |
 | Owners | graph-index listing (`owner_reconcile.go:46`); TEMPORAL_INDEX_REVERSE, unported (`kvcatalog.go:179`) |
 | Owners (cont.) | GRAPH_INGEST_APPLIED_SEQ, applied mark per entity and stream, operational (`kvcatalog.go:164`) |
 | Owners (cont.) | embedding's record: revision and embedder identity, a restart skip (`embedding/storage.go:251`) |
@@ -137,10 +144,12 @@ None of these changes; a skipped entity still completes its revision.
 | Writers | graph-index lanes only |
 | Recovery | full re-derivation on every start (today) |
 
-The design adopts both existing shapes. It takes the revision-plus-identity skip from embedding, with no
-compare-and-set, since one lane writes each key (embedding's guard is one, `storage.go:249-250`). It takes the
-generation from creation time, with the same declared restored-stream limit. #602 (generation next to
-`indexed_revision`) reads the same ENTITY_STATES generation the mark stores; neither blocks the other.
+The design adopts the existing shapes. From embedding: the skip on a stored identity, but keyed on a digest of the
+rows rather than a revision, because an equal re-offer gets a new revision (§3); with no compare-and-set, since one
+lane writes each key (embedding's guard is one, `storage.go:249-250`); and the length-prefixed digest of
+`graph/embedding/dedup.go:79-90`. It takes the generation from creation time, with the same declared
+restored-stream limit. #602 (generation next to `indexed_revision`) reads the same ENTITY_STATES generation the mark
+stores; neither blocks the other.
 
 Adoption sweep: the shape is local to graph-index; one other owner listing with a leading wildcard exists,
 `processor/rule/state_tracker.go:137` — `keys, err := st.kv.KeysByFilter(ctx, "*."+entityID)`, on delete only. Not a
@@ -148,9 +157,10 @@ shared primitive; no tracking issue proposed.
 
 ## Adopter seam
 
-1. Must know: consumers nothing (no reply, subject or config change). A graph-index developer nothing: the digest is
-   over the rows, so a layout change shows itself. An operator: one reset, delete the mark bucket, after a hand edit,
-   an in-place purge, a backup restore, an older graph-index, or a host power loss.
+1. Must know: consumers nothing (no reply, subject or config change). A graph-index developer: bump the format
+   constant when changing how rows are planned or cleaned (a golden fixture catches encoding changes; a cleanup fix
+   is review only). An operator: one reset, delete the mark bucket while graph-index is stopped, after a hand
+   edit, an in-place purge, a backup restore, an older graph-index, or a host power loss.
 2. Do nothing: the operator gets missing or stale rows until the entity changes (silent): Decision 3.
 3. Find out: doc only, for the operator.
 4. Should know: nothing; the gap is Decision 3, put to the owner with a background check as option (b).

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,6 +15,7 @@ import (
 	gtypes "github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/harness/semantictest"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/processor/rule/expression"
 	"github.com/c360studio/semengine/vocabulary"
 )
@@ -273,6 +275,7 @@ func TestMatches(t *testing.T) {
 				var evalErr *expression.EvaluationError
 				assert.ErrorAs(t, err, &evalErr, "the error names the field")
 				assert.Contains(t, err.Error(), matchRuleID)
+				assert.True(t, errs.IsInvalid(err), "classified invalid, as Load's refusals are: %v", err)
 			})
 		}
 
@@ -458,3 +461,38 @@ func TestUnresolvedValueTemplate(t *testing.T) {
 	})
 }
 
+// Requirement: rule-matching/"A loaded rule answers whether it matches an
+// entity": Matches is safe for concurrent use on one loaded rule.
+func TestMatchesConcurrent(t *testing.T) {
+	r := loadExpression(t, "and", `[{"field": "sensor.measurement.fahrenheit", "operator": "gte", "value": 40.0},
+	  {"field": "sensor.classification.type", "operator": "eq", "value": "$entity.triple.sensor.classification.type"}]`)
+	kind := message.Triple{Predicate: "sensor.classification.type", Object: "temperature"}
+	warm := entityWith(sensorID(t, "004"), message.Triple{Predicate: "sensor.measurement.fahrenheit", Object: 41.2}, kind)
+	cold := entityWith(sensorID(t, "005"), message.Triple{Predicate: "sensor.measurement.fahrenheit", Object: 12.0}, kind)
+
+	const goroutines, each = 16, 50
+	type result struct {
+		matched, want bool
+		err           error
+	}
+	results := make([]result, goroutines*each)
+	var wg sync.WaitGroup
+	for g := range goroutines {
+		wg.Go(func() {
+			for i := range each {
+				state, want := warm, true
+				if (g+i)%2 == 1 {
+					state, want = cold, false
+				}
+				matched, err := r.Matches(t.Context(), state)
+				results[g*each+i] = result{matched, want, err}
+			}
+		})
+	}
+	// Wait orders the reads of results after every call.
+	wg.Wait()
+	for i, res := range results {
+		require.NoError(t, res.err, "call %d", i)
+		assert.Equal(t, res.want, res.matched, "call %d", i)
+	}
+}

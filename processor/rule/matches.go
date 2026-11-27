@@ -72,7 +72,7 @@ func (r *Rule) Matches(ctx context.Context, state *gtypes.EntityState) (bool, er
 
 	for _, condition := range r.def.Conditions {
 		if err := expression.EnsureStatelessResolvable(condition, false); err != nil {
-			return false, fmt.Errorf("rule.Matches: rule %q: %w", r.def.ID, err)
+			return false, errs.Classified(errs.ErrorInvalid, fmt.Errorf("rule.Matches: rule %q: %w", r.def.ID, err))
 		}
 	}
 	return r.matchEntity(ctx, state, nil)

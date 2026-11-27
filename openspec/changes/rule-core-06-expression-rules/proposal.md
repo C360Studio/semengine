@@ -25,10 +25,11 @@ logged where nobody looks, so a broken rule just never fires.
 
 - **`Matches` becomes a method of a loaded rule (recommended).** The rule asked about has passed every load check,
   including "no rule matches on an agent's private predicate". The cost: the asker must load the rule, so it needs a
-  handler for every action type in it and its predicates declared; semteams' research rules need `publish_agent`. A
-  rule with no entity pattern is refused (it only ever runs on messages), and an entity outside the rule's pattern is
-  "no match". Other ways: keep it on a raw definition (a second, partial load path), or drop it (no product calls it
-  today). New exported surface: two methods.
+  handler for every action type in it and its predicates declared; semteams' research rules need `publish_agent`. It
+  answers in a fixed order: a disabled rule is "no match"; an enabled rule with no entity pattern is refused (it runs on
+  messages or a schedule); an entity outside the rule's pattern is "no match"; then the conditions decide. Other ways:
+  keep it on a raw definition (a second, partial load path), or drop it (no product calls it today). New exported
+  surface: two methods.
 - **A required field that is absent means "no match" when firing and an error when asking (recommended).** 84 of 91
   product rules use `required: true` to mean "only when present". This exempts an absent required field from PR 1's
   every-error-at-Warn commitment, which would otherwise log on every evaluation that does not match. Adds one exported

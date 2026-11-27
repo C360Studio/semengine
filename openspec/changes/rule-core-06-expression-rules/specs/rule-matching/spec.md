@@ -6,18 +6,19 @@
 
 `(*Rule).Matches` and `(*Rule).MatchesWithLifecycle` SHALL answer whether the conditions of a rule `Load` returned hold
 for an entity's state, with no rule processor running: a match with no error, no match with no error, or an error
-meaning the answer could not be found. A disabled rule and a rule with no conditions SHALL NOT match. A rule's
-cooldown SHALL NOT apply and SHALL NOT be refused.
+meaning the answer could not be found. A rule's cooldown SHALL NOT apply and SHALL NOT be refused.
 
 #### Scenario: A matching entity
 
-- **WHEN** a loaded rule's conditions hold for an entity and `Matches` is called
+- **WHEN** a loaded rule's conditions hold for an entity inside its `entity.pattern` and `Matches` is called
 - **THEN** it returns true and no error
 
-#### Scenario: A disabled rule owes nothing
+### Requirement: A stateless match checks in a fixed order
 
-- **WHEN** `Matches` is called on a loaded rule whose `enabled` is false
-- **THEN** it returns false and no error
+`Matches` SHALL apply these in order, the first that applies deciding: nil rule, context, state or manager, refused;
+a disabled rule, false; no `entity.pattern`, refused, classified invalid, as the rule runs on messages or a schedule;
+a malformed entity ID, an error; an entity outside the pattern, false; no conditions, false; then the stateless
+refusals, then evaluation. Each false comes with no error.
 
 #### Scenario: Missing inputs are refused
 
@@ -25,16 +26,32 @@ cooldown SHALL NOT apply and SHALL NOT be refused.
   nil manager
 - **THEN** it returns an error and no verdict; for the nil manager the error says to call `Matches` instead
 
+#### Scenario: A disabled rule owes nothing, even without a pattern
+
+- **WHEN** `Matches` is called on a loaded disabled cron rule, which has no `entity.pattern` and no conditions
+- **THEN** it returns false and no error
+
+#### Scenario: An enabled rule with no pattern is refused
+
+- **WHEN** `Matches` is called on a loaded enabled rule with no `entity.pattern`
+- **THEN** it returns an error classified invalid and no verdict
+
+#### Scenario: An entity the rule does not watch
+
+- **WHEN** `Matches` is called for an entity whose ID does not match the rule's `entity.pattern`
+- **THEN** it returns false and no error
+
 ### Requirement: Firing and asking share one match
 
-The firing entity match and `Matches` SHALL share one implementation. Whenever both give a verdict for the
-same rule and entity, the verdicts SHALL be equal, and whenever the firing match returns an error, `Matches`
-SHALL return one too.
+For an enabled rule with an `entity.pattern` and an entity inside it, the firing entity match and `Matches` SHALL
+share one implementation: whenever both give a verdict the verdicts SHALL be equal, and whenever the firing match
+returns an error, `Matches` SHALL return one too. Outside the pattern they differ by design: the firing match does
+not check the pattern, as its caller picks rules by it, and `Matches` answers false.
 
-#### Scenario: The two agree
+#### Scenario: The two agree inside the pattern
 
-- **WHEN** the firing entity match and `Matches` are both run for one loaded rule and one entity, and both give a
-  verdict
+- **WHEN** the firing entity match and `Matches` are both run for one loaded rule with an `entity.pattern` and one
+  entity inside it, and both give a verdict
 - **THEN** the verdicts are equal
 
 ### Requirement: A stateless match refuses what it cannot answer
@@ -54,22 +71,6 @@ a rule with no lifecycle condition. An absent required field SHALL be an error f
 
 - **WHEN** `Matches` is called for an entity lacking a field a condition marks required
 - **THEN** it returns an error for which `errors.Is(err, expression.ErrRequiredFieldMissing)` holds
-
-### Requirement: A stateless match answers only what production asks
-
-`Matches` and `MatchesWithLifecycle` SHALL refuse, classified invalid, a rule with no `entity.pattern`, since such a
-rule runs only on messages. For an entity whose ID is outside the rule's `entity.pattern` they SHALL return false with
-no error, since the rule is never evaluated for it. A malformed entity ID SHALL be an error.
-
-#### Scenario: A message rule is refused
-
-- **WHEN** `Matches` is called on a loaded rule with no `entity.pattern`
-- **THEN** it returns an error classified invalid and no verdict
-
-#### Scenario: An entity the rule does not watch
-
-- **WHEN** `Matches` is called for an entity whose ID does not match the rule's `entity.pattern`
-- **THEN** it returns false and no error
 
 ### Requirement: A missing required field is no match when firing
 

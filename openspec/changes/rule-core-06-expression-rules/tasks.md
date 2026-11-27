@@ -14,11 +14,12 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 - [ ] 2.1 Tests come before the code, each seen to fail first; after 2.5, run `task mutate:check` on each refusal and
   record detected or survived in `notes/2.1.md`.
-  - `TestMatches` (D2, D3): the carried `matches_test.go` corpus and its hand-written verdicts, on rules built with
-    `DecodeDefinition` and `Load`; a nil rule, context, state, and a nil manager on `MatchesWithLifecycle` are refused;
-    a disabled rule and a loaded disabled cron rule do not match; a rule with a cooldown is answered, not refused; a
-    rule with no `entity.pattern` is refused, classified invalid; an entity outside the rule's pattern gives false and
-    no error; a malformed entity ID is an error.
+  - `TestMatches` (D2, D3): the carried `matches_test.go` cases (`:86-418`) keep their hand-written verdicts; their
+    inputs gain an `entity.pattern` and a six-part entity ID in place of `"test.entity.id"`, and the rules are built
+    with `DecodeDefinition` and `Load`. In D2's order: a nil rule, context, state, and a nil manager on
+    `MatchesWithLifecycle` are refused; a loaded disabled cron rule (no pattern, no conditions) gives false and no
+    error; an enabled rule with no `entity.pattern` is refused, classified invalid; a malformed entity ID is an error;
+    an entity outside the pattern gives false and no error; a rule with a cooldown is answered, not refused.
   - `TestRequiredFieldMissing` (D4): an entity lacking a required field gives no match and no error from the firing
     match, and from `Matches` an error for which `errors.Is(err, expression.ErrRequiredFieldMissing)` holds; the same
     for a message lacking a required `$message.` field; under `or`, an absent required field gives no match though
@@ -40,9 +41,10 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
     type, under `-race`; exactly one Warn names the rule ID and payload type; a second `Load` of the same definition
     reports once more.
   - A generated check with `pgregory.net/rapid` (D3), recording seed and completed checks, as a drift guard (the
-    oracle is the hand-written corpus): over conditions and entities `Matches` can answer, whenever both the firing
-    match and `Matches` return a verdict they are equal, and whenever the firing match returns an error, `Matches`
-    does too. Record in `notes/2.1.md` a run against a mutant where `Matches` skips the disabled check, failing.
+    oracle is the hand-written corpus): over enabled rules with an `entity.pattern` and entities inside it, whenever
+    both the firing match and `Matches` return a verdict they are equal, and whenever the firing match returns an
+    error, `Matches` does too. Record in `notes/2.1.md` a run against a mutant where `Matches` turns an evaluation
+    error into `false, nil`, failing.
 - [ ] 2.2 `ErrRequiredFieldMissing` in `processor/rule/expression`, wrapped as the `Err` of the evaluator's three
   absent-required errors (`evaluator.go:167`, `:183`, `:229-240`), not of the required `transition` with no entity
   (`:283-287`); the `rule-conditions` scenarios. Check:
@@ -60,7 +62,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 - [ ] 2.5 The `Load` check of D6 in the expression arm (`load.go:143`).
 - [ ] 2.6 Carry the tests of inventory § 1's Carried column and PR 3's four forwarded tests
   (`typed_substitution_test.go:273-351`, `lifecycle_substitution_test.go:301-327`, `:329-355`, `:460-483`), rewritten
-  to the harness rules (`t.Context()`, `internal/harness/semantictest`); the three lifecycle integration tests on the
+  to the harness rules (`t.Context()`, `internal/harness/semantictest`), the `Matches` cases with a pattern and a
+  six-part ID added and their verdicts kept (2.1); the three lifecycle integration tests on the
   package's shared NATS server with a real `lifecycle.NewManager`. Check: `go doc ./processor/rule` lists no name
   without a reader outside the package or a spec line.
 - [ ] 2.7 Comments: inventory F15's ten history lines keep their reason and lose the history.

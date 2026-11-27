@@ -27,33 +27,39 @@ the graph event), `SetLifecycleManager` (F7), `Name`, `Subscribe` (F2), `Execute
 latch and last-fired stamp (F6), the factory, `Validate` (in `Load`), `Schema`, `init`. Proof: `go doc ./processor/rule`
 lists no name without a reader or a spec line.
 
-**D2. `Matches` is a method of a loaded rule, refusing what production never asks (owner decision 1).** Options: (a)
-the pin's package functions over a `Definition`: a second, partial load path that compiles regexes itself and skips
-`Load`'s declared and rule-opaque field checks (ADR-036); (b, recommended) methods on the `*Rule` `Load` returns. Its
-cost: the asker must pass `Load`, so it needs a handler for every action type in the rule and every bare condition
-field declared (inventory § 11, item 1); semteams' research rules carry `publish_agent` and predicates semteams
-declares. A product running the rule processor has both. (c) drop: no caller in scope, and semteams' contract test
-loses its way to ask. The pair stays split: the lookup decides which conditions can be answered, so it is in the name.
-`Matches` gives no verdict production never would: a rule with no `entity.pattern` runs only on messages, so it is
-refused, classified invalid; an entity outside the rule's pattern (`semtypes.MatchEntityIDPattern`,
-`pkg/types/entity_id.go:169`) is `false, nil`, since production never evaluates that rule for it and nothing is owed
-(refusing would make a pack-wide scan fail on every rule an entity is not for); a malformed entity ID is an error. A
-nil rule, context, state or manager is refused. Rules 1 to 3 of the pin's adopter note
+**D2. `Matches` is a method of a loaded rule, refusing what production never asks (owner decision 1).** Options: (a) the
+pin's package functions over a `Definition`: a second, partial load path that compiles regexes itself and skips `Load`'s
+declared and rule-opaque field checks (ADR-036); (b, recommended) methods on the `*Rule` `Load` returns. Its cost: the
+asker must pass `Load`, so it needs a handler for every action type in the rule and every bare condition field declared
+(inventory § 11, item 1); semteams' research rules carry `publish_agent` and predicates semteams declares. A product
+running the rule processor has both. (c) drop: no caller in scope, and semteams' contract test loses its way to ask. The
+pair stays split: the lookup decides which conditions can be answered, so it is in the name. `Matches` gives no verdict
+production never would, checking in this order, the first that applies deciding (the pin's order for the first two,
+`matches.go:132-149`): (1) a nil rule, context, state or manager is refused; (2) a disabled rule is `false, nil`, so a
+loaded disabled cron rule owes nothing; (3) a rule with no `entity.pattern` is refused, classified invalid, since it
+runs on messages or a schedule, never for an entity; (4) a malformed entity ID is an error; (5) an entity outside the
+pattern (`semtypes.MatchEntityIDPattern`, `pkg/types/entity_id.go:169`) is `false, nil`, since production never
+evaluates that rule for it and nothing is owed (refusing would fail a pack-wide scan on every rule an entity is not
+for); (6) no conditions is `false, nil` (`Load` gives an expression rule at least one, so this is only reached by a
+malformed input); (7) the stateless refusals (D3), then evaluation. A pack-wide scan skips rules with no pattern before
+asking, reading `entity.pattern` from the `Definition` it decoded. Rules 1 to 3 of the pin's adopter note
 (`docs/operations/adopter-match-and-inflight.md`: ask the framework, not the evaluator; obligation, not instant; three
 outcomes; pass a deadline, as the lookup does I/O) become the methods' doc comment; the note itself is not ported, as
-its readers are post-MVP. Proof: `TestMatches` (spec scenarios, including the two refusals and the out-of-pattern
-entity).
+its readers are post-MVP. Proof: `TestMatches` (spec scenarios in that order: a disabled cron rule is false, an enabled
+rule with no pattern is refused, an out-of-pattern entity is false).
 
 **D3. One match for firing and asking.** The firing entity match: a disabled rule or one with no conditions does not
 match; lifecycle fields are resolved (a failed lookup leaves them absent, as at the pin; PR 7 decides otherwise, PR 3's
 forward); condition values are filled under the caller's context (F5); then the evaluator answers. The rule processor
-picks entity rules by pattern before calling (pin `message_handler.go:265-276`), so the pattern check is `Matches`'
-own. `Matches` adds the D2 refusals, the stateless ones (`EnsureStatelessResolvable`; a failed lookup when a condition
-reads `$entity.lifecycle.*`) and returns what the firing match turns into no match (D4). Cooldown applies to neither.
-Proof: the oracle is the carried `matches_test.go` corpus with hand-written verdicts, plus the carried entity tests. A
-generated check (`rapid`, seed and completed checks recorded) guards drift, not truth: whenever both answer they agree,
-and whenever the firing match errors, so does `Matches`; a mutant where `Matches` skips the disabled check is shown to
-fail it.
+picks entity rules by pattern before calling (pin `message_handler.go:265-276`), so the pattern check is `Matches`' own.
+`Matches` adds the D2 refusals, the stateless ones (`EnsureStatelessResolvable`; a failed lookup when a condition reads
+`$entity.lifecycle.*`) and returns what the firing match turns into no match (D4). Cooldown applies to neither. The two
+share one implementation only for an enabled rule with a pattern and an entity inside it; outside the pattern they
+differ by design, the firing match answering on its conditions and `Matches` false (D2, step 5). Proof: the oracle is
+the carried `matches_test.go` corpus with hand-written verdicts (each case given a pattern and a six-part entity ID),
+plus the carried entity tests. A generated check (`rapid`, seed and completed checks recorded) guards drift, not truth:
+over enabled rules with a pattern and entities inside it, whenever both answer they agree, and whenever the firing match
+errors, so does `Matches`; a mutant where `Matches` turns an evaluation error into `false, nil` is shown to fail it.
 
 **D4. A required field that is absent: no match when firing, an error when asking (owner decision 2).** Products use
 `required: true` to mean "match only when present". This exempts an absent required field from PR 1's every-error-at-
@@ -61,10 +67,12 @@ Warn commitment: otherwise 84 rules would log on every evaluation they do not ma
 only the report changes. The evaluator's errors for an absent required field (`evaluator.go:167`, `:183`, `:229-240`)
 wrap `ErrRequiredFieldMissing`, so callers use `errors.Is`, never the text. A required `transition` with no entity
 (`:283-287`) does not wrap it: the entity is absent, not a field; `Matches` refuses `transition` before evaluating, and
-the firing entity match never runs without an entity. Under `or`, an absent required field vetoes the whole rule, as at
-the pin, since the evaluator returns at the first error (`:108-119`); 0 product rules use `or`. Other evaluation errors
-stay errors on both paths. Other option: return every error and let PRs 7 and 9 log each once per rule and field (a
-real fault is then silenced after its first report). Proof: `TestRequiredFieldMissing`.
+the firing entity match never runs without an entity. On the firing message match a required `transition` is that
+unwrapped error, logged at Warn by its caller, which is right: on a message it can never hold. Under `or`, an absent
+required field vetoes the whole rule, as at the pin, since the evaluator returns at the first error (`:108-119`); 0
+product rules use `or`. Other evaluation errors stay errors on both paths. Other option: return every error and let PRs
+7 and 9 log each once per rule and field (a real fault is then silenced after its first report). Proof:
+`TestRequiredFieldMissing`.
 
 **D5. An unresolved value template fails the match, on both paths (owner decision 3).** At the pin the firing path
 compares `$entity.triple.x.y.missing` as text and can match (P5). Here both paths return an error naming rule, field and
@@ -112,6 +120,6 @@ PR 11.
 
 Retires none. #702 and #25 retire at PR 7, named without a closing keyword. #756 and #757 stay, optional inherited
 maintenance: the message match is the first path where Go-built values reach the evaluator, but no `RuleFields` at the
-pin or in a consumer returns a float or a `[]string` (inventory § 9). Independent of PR 4. Risks: semteams' contract test
-moves to `Load` and `Matches`, needs its handlers and predicates, and gets an error where it asserted false for a
+pin or in a consumer returns a float or a `[]string` (inventory § 9). Independent of PR 4. Risks: semteams' contract
+test moves to `Load` and `Matches`, needs its handlers and predicates, and gets an error where it asserted false for a
 missing required field; `ErrRequiredFieldMissing` is new surface in PR 1's package.

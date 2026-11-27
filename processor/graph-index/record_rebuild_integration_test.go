@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/vocabulary"
 )
@@ -130,5 +131,52 @@ func TestRestartRebuildsRecreatedIndexBucket(t *testing.T) {
 	}
 	if n := second.c.failedTotal(); n != 0 {
 		t.Errorf("failed entities after the rebuild = %d, want 0", n)
+	}
+}
+
+// TestDeletingRecordsRebuildsEveryEntity deletes one INCOMING row by hand while graph-index is
+// stopped. A start with the records in place does not repair it: the source's clean record still
+// matches its plan, so the source is skipped. Deleting GRAPH_INDEX_RECORDS while graph-index is
+// stopped is the reset: after the next start's first build the row answers again, and every entity
+// is recorded again.
+func TestDeletingRecordsRebuildsEveryEntity(t *testing.T) {
+	client := fixtureClient(t)
+	first := startIndex(t, client, `{}`)
+	src, other, target := entityID(1), entityID(2), entityID(10)
+	first.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{alias, "source-1"}))
+	rev := first.put(t, other, entityValue(t, other, stmt{linkTo, target}, stmt{armed, true}))
+	first.awaitIndexed(t, rev)
+	both := []string{linkTo + "<" + src, linkTo + "<" + other}
+	incomingOf := func(h *harness) []string {
+		t.Helper()
+		in := answer[graph.IncomingRelationshipsData](t, h.client, "incoming", map[string]string{"entity_id": target}, rev)
+		return sortedIDs(incomingSources(in.Relationships))
+	}
+	requireRelationship(t, "incoming before the hand edit", incomingOf(first), both)
+	stopComponent(t, first.c)
+
+	incoming, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketIncomingIndex)
+	if err != nil {
+		t.Fatalf("open %s: %v", graph.BucketIncomingIndex, err)
+	}
+	if err := incoming.Delete(t.Context(), target+"."+src+"."+hexOf(linkTo)); err != nil {
+		t.Fatalf("delete the INCOMING row by hand: %v", err)
+	}
+
+	second := restart(t, client, `{}`)
+	second.awaitIndexed(t, rev) // the floor orders the read after every apply
+	requireRelationship(t, "incoming after a start with the records in place", incomingOf(second),
+		[]string{linkTo + "<" + other})
+	stopComponent(t, second.c)
+
+	deleteBucket(t, client, graph.BucketGraphIndexRecords)
+	third := restart(t, client, `{}`)
+	third.awaitIndexed(t, rev)
+	requireRelationship(t, "incoming after the reset", incomingOf(third), both)
+	for _, id := range []string{src, other} {
+		requireCleanRecord(t, client, id)
+	}
+	if n := third.c.failedTotal(); n != 0 {
+		t.Errorf("failed entities after the reset = %d, want 0", n)
 	}
 }

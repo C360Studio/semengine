@@ -5,6 +5,12 @@
 // graph.QueryVerbs. Each answer is a graph.QueryResponse carrying the revision it reflects
 // (indexed_revision) and the producer that gave it.
 //
+// It also keeps GRAPH_INDEX_RECORDS, a record per entity of the index rows it wrote. An entity
+// whose planned rows equal its record is not written again, on a restart or when a producer
+// writes it again unchanged, and a changed entity's old rows are found from its record. An
+// entity with no usable record, or one too large to keep, is applied by listing its rows in the
+// index buckets.
+//
 // Until the index has rebuilt from ENTITY_STATES after a start, and for as long as it has lost
 // its feed, every verb refuses with the transient error code index_not_ready. A stored entity
 // that cannot be decoded is damaged: its rows are removed, every reply counts it in

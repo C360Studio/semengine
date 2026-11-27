@@ -56,13 +56,14 @@ behind the D2 checks and the stateless refusals (`EnsureStatelessResolvable`: `t
 `$entity.lifecycle.*`, saying it cannot be answered without a lookup). Cooldown applies to neither. Two differences
 remain, by design: outside the pattern the firing match answers on its conditions and `Matches` gives false (D2, step
 three); a condition `Matches` refuses gets a verdict when firing. For an enabled rule with a pattern, an entity inside
-it and conditions `Matches` can answer, the two give the same answer: equal verdicts, or both an error. The oracle is
-the carried `matches_test.go` corpus with hand-written verdicts (each case given a pattern and a six-part entity ID),
-plus the carried entity tests. A generated check (`rapid`, seed and completed checks recorded) guards drift, not truth:
-over those rules and entities, drawing inputs that make the firing match error (an operator whose value cannot be
-compared, an unfilled value template) and absent required fields, the two give the same answer. Two mutants are shown to
-fail it: `Matches` turning an evaluation error into `false, nil`, and `Matches` returning an absent required field as an
-error.
+it and conditions reading none of those four in field or value (a `$entity.lifecycle.*` value is filled when firing but
+left unfilled by `Matches`), the firing match run with no lookup and `Matches` give the same answer: equal verdicts, or
+both an error. The oracle is the carried `matches_test.go` corpus with hand-written verdicts (each case given a pattern
+and a six-part entity ID), plus the carried entity tests. A generated check (`rapid`, seed and completed checks
+recorded) guards drift, not truth: over those rules and entities, the firing match run with no lookup, drawing inputs
+that make the firing match error (an operator whose value cannot be compared, an unfilled value template) and absent
+required fields, the two give the same answer. Two mutants are shown to fail it: `Matches` turning an evaluation error
+into `false, nil`, and `Matches` returning an absent required field as an error.
 
 **D4. A required field that is absent: no match and no error, on every path (owner decision 2).** Products use
 `required: true` to mean "match only when present" (inventory § 5), and semteams' contract test asserts false there (§

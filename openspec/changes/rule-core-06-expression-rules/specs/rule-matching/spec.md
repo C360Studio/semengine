@@ -32,31 +32,45 @@ evaluation. Each false comes with no error.
 
 #### Scenario: A disabled rule owes nothing, even without a pattern
 
-- **WHEN** `Matches` is called on a loaded disabled cron rule, which has no `entity.pattern` and no conditions
+- **WHEN** `Matches` is called on a loaded disabled cron rule, which has no `entity.pattern` and no conditions, for an
+  entity with a well-formed ID
 - **THEN** it returns false and no error
 
 #### Scenario: An enabled rule with no pattern owes nothing
 
-- **WHEN** `Matches` is called on a loaded enabled rule with no `entity.pattern`
+- **WHEN** `Matches` is called on a loaded enabled rule with no `entity.pattern`, for an entity with a well-formed ID
 - **THEN** it returns false and no error
 
 #### Scenario: An entity the rule does not watch
 
-- **WHEN** `Matches` is called for an entity whose ID does not match the rule's `entity.pattern`
+- **WHEN** `Matches` is called for an entity whose ID is well formed and does not match the rule's
+  `entity.pattern`
 - **THEN** it returns false and no error
 
 ### Requirement: Firing and asking share one match
 
 The firing entity match and `Matches` SHALL share one implementation. For an enabled rule with an `entity.pattern`, an
-entity inside it, and conditions `Matches` does not refuse, the two SHALL give the same answer: equal verdicts, or an
-error from both. Outside the pattern they differ by design: the firing match does not check the pattern, as its caller
-picks rules by it, and `Matches` answers false.
+entity inside it, and conditions that read no `transition`, `$state.*`, `$prev.*` or `$entity.lifecycle.*` in either
+field or value, the firing match run with no lifecycle lookup and `Matches` SHALL give the same answer: equal verdicts,
+or an error from both.
 
 #### Scenario: The two agree inside the pattern
 
-- **WHEN** the firing entity match and `Matches` are both run for one loaded rule with an `entity.pattern` and one
-  entity inside it, the rule's conditions reading no `transition`, `$state.*`, `$prev.*` or `$entity.lifecycle.*`
+- **WHEN** the firing entity match, run with no lifecycle lookup, and `Matches` are both run for one loaded rule with an
+  `entity.pattern` and one entity inside it, the rule's conditions reading no `transition`, `$state.*`, `$prev.*` or
+  `$entity.lifecycle.*` in field or value
 - **THEN** both return the same verdict, or both return an error
+
+### Requirement: Outside the pattern, only Matches checks the pattern
+
+The firing entity match SHALL NOT check the rule's `entity.pattern`, as its caller picks rules by it; `Matches` SHALL
+answer false for an entity outside the pattern.
+
+#### Scenario: An entity outside the pattern
+
+- **WHEN** the firing entity match and `Matches` are run for one loaded rule and an entity with a well-formed ID outside
+  its `entity.pattern`, whose state satisfies the rule's conditions
+- **THEN** the firing match returns true and `Matches` returns false, both with no error
 
 ### Requirement: A stateless match refuses what it cannot answer
 

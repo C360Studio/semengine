@@ -160,7 +160,8 @@ lookup, its agreement with `Matches`). All wait until a product asks for the met
 
 | Pin name | Pin production readers | Consumer readers | Disposition basis |
 | --- | --- | --- | --- |
-| `Matches`, `MatchesWithLifecycle` | none | none in scope; contract: pin `rule-engine` spec `:64-233`, pin adopter note | framework API by contract line; the shape is the design's |
+| `Matches` | none | none in scope; contract: pin `rule-engine` spec `:64-233`, pin adopter note | framework API by contract line; the shape is the design's |
+| `MatchesWithLifecycle` | none | none in scope | not carried; no caller in scope; waits until a product asks (owner, 7223995054) |
 | `ExpressionRule`, `NewExpressionRule` | via the `Rule` interface: `message_handler.go:118`, `:308` (PRs 9, 10) | semteams contract test (§ 5) | `Rule` interface and factory not carried (target-shape § 1) |
 | `SetLifecycleManager` (rule) | `runtime_config.go:241`, `processor.go:702` | 0 | a setter; the lookup can be an argument |
 | `Name`, `Subscribe` | `processor.go:1451`, `message_handler.go:390` | 0 | go with the `Rule` interface |

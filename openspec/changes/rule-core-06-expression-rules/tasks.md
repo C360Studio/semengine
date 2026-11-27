@@ -59,7 +59,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   line; an absent required field no match and no error, read with `errors.Is` (on the message match too, 2.4);
   `Matches` answers false for a rule with no `entity.pattern` and for an entity outside it
   (`semtypes.MatchEntityIDPattern`), and refuses a `$entity.lifecycle.` condition, saying it cannot be answered
-  without a lookup. The method's doc comment carries rules 1 to 3 of the pin's
+  without a lookup (the refusal message in `expression/stateless.go` drops "pass one to resolve it", and its doc
+  comment follows). The method's doc comment carries rules 1 to 3 of the pin's
   `docs/operations/adopter-match-and-inflight.md` as D2 restates them. Not carried: `MatchesWithLifecycle` and the
   failed-lookup refusal (`matches.go:92-124`, `:175-183`), `NewExpressionRule`, `SetLifecycleManager`,
   `unresolvedTemplateVarRe`.

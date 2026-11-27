@@ -5135,7 +5135,9 @@
     the pin; stated as the rule-conditions spec. Changed: Compile compiles each regex pattern of a condition slice
     once and keeps it on the element, refusing a non-string value, a pattern holding a SubstitutionPrefixes token,
     a pattern over 500 characters, or one regexp rejects (classified invalid, naming index and field); evaluation
-    never compiles and refuses an uncompiled or since-edited regex condition; empty logic means and
+    never compiles and refuses an uncompiled or since-edited regex condition; empty logic means and. Added by
+    rule-core-06-expression-rules: the three errors for an absent required field wrap ErrRequiredFieldMissing (a
+    required transition with no entity does not), so a caller tells the absence apart with errors.Is
   dependencies_and_side_effects: graph, message (tests), pkg/errs, encoding/json, regexp; no goroutine, no I/O, no
     package state
   known_risks: >-
@@ -5190,6 +5192,27 @@
   owner: rule-core-01-expression developer
   disposition: adapt
 
+- source_path: processor/rule/docs/syntax.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the rule-author guide to a rule's keys, its path, condition template values and the load refusals, for rule JSON
+    authors in semteams and semboids; carried with processor/rule's matching (rule-core-06-expression-rules design D9)
+  destination: processor/rule/docs/syntax.md
+  contract: >-
+    describes Definition and DecodeDefinition's strict keys, the entity or message path a pattern decides and Load's
+    refusal of a condition its path never has, a missing required field as no match, the condition template values
+    the one scan fills and an unresolved one as an error, the built-in action types and their keys, cooldown as checked
+    at load only, and what Load refuses
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    rewritten where the pin's text and code disagreed: no ${entity.field}, $related.* or pair rules
+    (related_patterns), no entity watch_buckets; type is required and enabled defaults to true; cooldown is checked
+    at load and applied nowhere yet; the rules_files and inline_rules processor configuration is not documented (the
+    processor is PR 8); links to guides not yet ported are dropped; examples use three-part predicates
+  proving_tests: n/a (task docs:check lints it; claims checked against the code, notes/2.6.md of the change)
+  owner: rule-core-06-expression-rules developer
+  disposition: adapt
+
 # Change rule-core-02-definitions (PR #758, epic #9): processor/rule ported in part as adapt, PR 2 of the rule-core
 # split plan (owner approval PR #758 comment 7168133081; watch-bucket ruling on PR #758; Fable APPROVE 7168081578).
 
@@ -5202,7 +5225,8 @@
     processor/rule (partial: definition.go, action.go, action_id.go, builtin.go, load.go, doc.go from PR 2;
     execution_context.go, entity_substitution.go, message_substitution.go, typed_substitution.go,
     lifecycle_substitution.go, state_tracker.go from PR 3, rewritten, with a pin-order scan in place of the pin's
-    nine passes). PRs 4-12 add the action executor and graph actions (4), state and lifecycle
+    nine passes; matches.go and message_match.go from PR 6, rewritten from expression_factory.go, matches.go and
+    payload_projection.go, with docs/syntax.md). PRs 4-12 add the action executor and graph actions (4), state and lifecycle
     actions (5), the expression rule and its matching (6), the stateful evaluator and firing caps (7), the
     processor, its registration and file loader (8), the message input (9), the entity watch (10), cron (11) and
     hot reload (12)
@@ -5227,12 +5251,27 @@
     ones through LifecycleManager with one lookup per context. MatchState is the stored evaluation record and
     StateTracker (NewStateTracker over natsclient.KVStore, Get, Set, DeleteAllForEntity) keeps it, each key checked
     by ValidateKVLiteralKey, an absent record ErrStateNotFound. The expression change: SubstitutionPrefixes() drops
-    $related. and $caller., which nothing fills, so a regex or template holding them is literal text
+    $related. and $caller., which nothing fills, so a regex or template holding them is literal text. Added by
+    rule-core-06-expression-rules (the rule-matching spec, one requirement each in rule-definitions and
+    rule-conditions): (*Rule).Matches(ctx, state) answers whether a loaded rule's conditions hold for an entity, in a
+    fixed order: a nil rule, context or state is refused and a malformed entity ID is an error (classified invalid);
+    a disabled rule, one with no entity.pattern, an entity outside the pattern or no conditions is false and no
+    error; a transition, $state., $prev. or $entity.lifecycle. field is refused (classified invalid); then the one
+    entity match the rule processor fires on, run with no lifecycle lookup. That match fills condition values
+    through the one scan under the caller's context, an unresolved token being an error naming rule, field and
+    token, and nothing logged; an absent required field (errors.Is expression.ErrRequiredFieldMissing) is no match
+    and no error; any other evaluation error is returned with the rule ID; a cooldown is neither applied nor
+    refused. The message match reads only the fields a payload declares through message.RuleReadable; an
+    unreadable payload is no match, no error and one Warn per loaded rule and payload type. Load refuses, at
+    conditions[<i>], enabled or not, a $entity. field or value in a rule with no entity.pattern and a $message.
+    one in a rule with one
   dependencies_and_side_effects: >-
-    natsclient (key validators; KVStore for StateTracker), pkg/errs, pkg/types (pattern validator),
-    pkg/lifecycle (phase constants), processor/rule/expression, vocabulary, crypto/sha256, encoding/json, reflect;
-    StateTracker reads and writes the rule-state records in its bucket; substitution has no goroutine and no I/O
-    beyond one LifecycleManager lookup per context; no package state beyond the declared-key sets
+    natsclient (key validators; KVStore for StateTracker), pkg/errs, pkg/types (pattern validator and matcher),
+    pkg/lifecycle (phase constants), graph (EntityState), message (RuleReadable), processor/rule/expression,
+    vocabulary, crypto/sha256, encoding/json, reflect, log/slog, sync; StateTracker reads and writes the rule-state
+    records in its bucket; substitution and the matches have no goroutine and no I/O beyond one LifecycleManager
+    lookup per context and the firing match's one for its lifecycle fields; the unreadable report is the one state a
+    match writes, a set on the loaded rule; no package state beyond the declared-key sets
   known_risks: >-
     not carried, by ruling: Factory, Dependencies, Schema and the registry functions, interfaces.go,
     test_rule_factory.go, docs/custom-rules.md, the map round trip, the agentic action types and fields, deny and
@@ -5245,7 +5284,20 @@
     ActionIterations (PR 7), StateTracker.Delete, the nil-bucket branches, the nine-regex substitution passes and
     the pin's mock bucket. Changed: .length counts every value (it returned an error marker for a scalar); a
     template is read once; StateTracker takes natsclient.KVStore, not jetstream.KeyValue. The record's writer, the
-    RULE_STATE bucket and its catalog row are PR 8's. The cover floor (80%) is unchanged
+    RULE_STATE bucket and its catalog row are PR 8's. PR 6, not carried: MatchesWithLifecycle and the failed-lookup
+    refusal only it reaches (until a product asks for it), ExpressionRule, NewExpressionRule and its pack and platform
+    checks, SetLifecycleManager, Name, Subscribe, ExecuteEvents, the cooldown, trigger latch and last-fired stamp,
+    ExpressionRuleFactory with Create, Validate (in Load), Schema and init, unresolvedTemplateVarRe, and
+    docs/operations/adopter-match-and-inflight.md (rules 1 to 3 are Matches' doc comment). Tests moved: the cooldown
+    test to PR 7, the config tests to PR 8, payload_projection_test.go:302-428 and the projection integration test to
+    PR 9; dropped: the factory registry, Validate and constructor tests, the latch test, the architect-editor pack
+    test and the MatchesWithLifecycle-only tests. Changed from the pin: Matches answers false, not an error, for an
+    absent required field, and false for a rule with no pattern or an entity outside it; a malformed entity ID is an
+    error; the firing match fails on an unfilled value template where the pin compared it as text; the message
+    match has no empty-payload return. Shortcuts: the firing match ignores a failed lifecycle lookup, leaving the
+    lifecycle fields absent (PR 7 decides); the unreadable report is a log line with no metric (PR 8). Uncovered:
+    exactly one unreadable Warn against a check-then-store report set survives at -cpu 1 (notes/2.4.md of
+    rule-core-06-expression-rules). The cover floor (80%) is unchanged
   proving_tests: >-
     processor/rule definition_test.go (TestDecodeDefinition, FuzzDecodeDefinition), action_test.go
     (TestNewHandlers, TestActionBody, TestBodyKeepsBytes), action_id_test.go (TestCapKey), builtin_test.go
@@ -5255,10 +5307,15 @@
     TestTokenEnds, TestTripleLength), triple_length_substitution_test.go, triple_triples_substitution_test.go,
     triple_value_substitution_test.go, message_substitution_test.go, lifecycle_substitution_test.go,
     typed_substitution_test.go, state_tracker_test.go and state_tracker_integration_test.go (TestStateTracker),
-    substitution_prop_test.go (TestSubstitutionProperties); notes/2.1.md, 2.5.md and 2.6.md of change
-    rule-core-02-definitions and notes/2.1.md, 2.2.md and 2.4.md of change rule-core-03-context record
-    failing-first output and mutation checks
-  owner: rule-core-02-definitions developer; rule-core-03-context developer
+    substitution_prop_test.go (TestSubstitutionProperties); PR 6: matches_test.go (TestMatches,
+    TestRequiredFieldMissing, TestUnresolvedValueTemplate, TestMatchesConcurrent), message_match_test.go
+    (TestMessageMatch, TestMessageMatchVerdicts, TestUnreadableReportedOnce), entity_match_test.go
+    (TestTripleValueCondition, TestNumericCompareOfTextObjects, TestEntityMatchLifecycle), matches_prop_test.go
+    (TestFiringAndAskingAgree), matches_lifecycle_integration_test.go (TestEntityMatchRealManagerOrdinaryRule), two
+    TestLoadRefuses cases; notes/2.1.md, 2.5.md and 2.6.md of change rule-core-02-definitions, notes/2.1.md, 2.2.md
+    and 2.4.md of change rule-core-03-context and notes/2.1.md, 2.3.md, 2.4.md and 2.6.md of change
+    rule-core-06-expression-rules record failing-first output, mutation checks and the generated run
+  owner: rule-core-02-definitions developer; rule-core-03-context developer; rule-core-06-expression-rules developer
   disposition: adapt
 
 # Change rule-core-03-context (PR #759, epic #9): ADR-048 carried with the substitution code.

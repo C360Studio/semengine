@@ -25,7 +25,9 @@ import (
 //   - a pending record: the pending record, every planned row, the deletes of every other row it
 //     names, the clean record;
 //   - no usable record: the owner listings, then as for a pending record whose rows are the listed
-//     ones, every planned row that carries a value put again since a listing returns no values.
+//     ones, every planned row that carries a value put again since a listing returns no values;
+//   - a pending or clean record too large for one message: the delete of the stored record, then
+//     the owner listings and their rows as above, with no record put.
 //
 // Record writes are conditional on the revision read, so a second writer between the read and the
 // pending put fails the apply before any row is written.
@@ -38,14 +40,23 @@ var errRecordConflict = errors.New("graph-index: the record changed since it was
 type opKind int
 
 const (
-	opPending opKind = iota // put the pending record, conditional on the revision read
-	opPut                   // put an index row
-	opDelete                // delete an index row; "not found" counts as done
-	opClean                 // put the clean record, conditional on the pending record's revision
+	opPending    opKind = iota // put the pending record, conditional on the revision read
+	opPut                      // put an index row
+	opDelete                   // delete an index row; "not found" counts as done
+	opClean                    // put the clean record, conditional on the pending record's revision
+	opDropRecord               // delete the record, conditional on the revision read
 )
 
+// recordPayloadAllowance is the room a record leaves, under the payload limit the server reports,
+// for the rest of its put: the subject and the header that makes the put conditional. A record
+// longer than the limit less this allowance is not kept. How many bytes the subject and header
+// take is not promised; that a record of exactly the limit less this allowance is accepted, under
+// the longest entity ID, is shown on the pinned server by TestOversizeRecordFallsBackToListing.
+const recordPayloadAllowance = 1024
+
 // indexOp is one operation of an apply. bucket and key name an index row for opPut and opDelete;
-// value is the row's value for opPut and the encoded record for opPending and opClean.
+// value is the row's value for opPut and the encoded record for opPending and opClean; opDropRecord
+// carries neither.
 type indexOp struct {
 	kind   opKind
 	bucket string
@@ -90,7 +101,7 @@ func (c *Component) prepareApply(ctx context.Context, entityID string, planned [
 	entry, err := c.recordBucket.Get(ctx, entityID)
 	c.metrics.kvOperations.WithLabelValues("get", "record").Inc()
 	var record entityRecord
-	usable := false
+	usable, readErr := false, error(nil)
 	switch {
 	case err == nil:
 		apply.revision = entry.Revision
@@ -105,26 +116,80 @@ func (c *Component) prepareApply(ctx context.Context, entityID string, planned [
 	default:
 		// The record cannot be read. Listing finds the stored rows; the pending put is then a create,
 		// which a record that does exist refuses.
+		readErr = err
 		c.logger.Debug("record read failed; listing the owned rows",
 			slog.String("entity", entityID), slog.Any("error", err))
 	}
 
+	var listed []recordRow
 	if usable && !record.pending {
 		if sameRows(record.rows, planned) {
 			return apply, nil
 		}
 		apply.ops = c.changeOps(record.rows, planned)
-		return apply, nil
+	} else {
+		union := record.rows
+		if !usable {
+			if listed, err = c.listOwnedRows(ctx, entityID); err != nil {
+				return entityApply{}, err
+			}
+			union = listed
+		}
+		apply.ops = c.recoveryOps(union, planned, !usable)
 	}
-	union := record.rows
-	if !usable {
-		listed, err := c.listOwnedRows(ctx, entityID)
-		if err != nil {
+
+	fits, err := c.recordsFit(apply.ops)
+	if err != nil || fits {
+		return apply, err
+	}
+	return c.tooLargeApply(ctx, apply, planned, listed, readErr)
+}
+
+// recordsFit reports whether the pending and clean records ops would put each fit in one message:
+// no longer than the payload limit the server reports, less recordPayloadAllowance. The limit is
+// read from the connection and may change after it is read, so a record that fits and is still
+// refused is a failed write.
+func (c *Component) recordsFit(ops []indexOp) (bool, error) {
+	limit, err := c.natsClient.MaxPayload()
+	if err != nil {
+		return false, errs.WrapTransient(err, "Component", "recordsFit", "read the payload limit")
+	}
+	for _, op := range ops {
+		if (op.kind == opPending || op.kind == opClean) && int64(len(op.value)) > limit-recordPayloadAllowance {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// tooLargeApply replaces apply, whose pending or clean record is too large to keep, with an apply
+// that keeps no record: the delete of the stored record, at the revision read, before any row
+// write, then the rows of the owner listings taken to planned, as when there is no record. Every
+// later apply of the entity lists again until its record fits. listed is the listing prepareApply
+// already ran, nil when it ran none. A record that could not be read (readErr) cannot be deleted at
+// a known revision, so the apply fails and nothing is written: a record left in place would name
+// fewer rows than the listing apply writes.
+func (c *Component) tooLargeApply(ctx context.Context, apply entityApply, planned []indexRow, listed []recordRow,
+	readErr error,
+) (entityApply, error) {
+	if readErr != nil {
+		return entityApply{}, errs.WrapTransient(readErr, "Component", "tooLargeApply",
+			fmt.Sprintf("the record of %s is too large to keep and could not be read to delete it", apply.entityID))
+	}
+	if listed == nil {
+		var err error
+		if listed, err = c.listOwnedRows(ctx, apply.entityID); err != nil {
 			return entityApply{}, err
 		}
-		union = listed
 	}
-	apply.ops = c.recoveryOps(union, planned, !usable)
+	c.metrics.recordReconcileOperation("record", "too_large", nil)
+	c.logger.Info("record too large to keep; the entity is applied by listing, and every apply lists until it fits",
+		slog.String("entity", apply.entityID), slog.Int("planned_rows", len(planned)))
+	var ops []indexOp
+	if apply.revision != 0 {
+		ops = append(ops, indexOp{kind: opDropRecord})
+	}
+	apply.ops = append(ops, c.rowOps(listed, planned, true)...)
 	return apply, nil
 }
 
@@ -157,11 +222,19 @@ func (c *Component) changeOps(recorded []recordRow, planned []indexRow) []indexO
 // union is a listing (listed), which knows no values, a planned marker row it found is not put again,
 // as its value is the bucket's empty marker; every row that carries a value is.
 func (c *Component) recoveryOps(union []recordRow, planned []indexRow, listed bool) []indexOp {
+	ops := []indexOp{{kind: opPending, value: c.recordOf(true, unionRows(union, planned))}}
+	ops = append(ops, c.rowOps(union, planned, listed)...)
+	return append(ops, indexOp{kind: opClean, value: c.recordOf(false, recordedRows(planned))})
+}
+
+// rowOps is every planned row's put and the delete of every other row of union, except, when union
+// is a listing (listed), the puts of the planned marker rows it found.
+func (c *Component) rowOps(union []recordRow, planned []indexRow, listed bool) []indexOp {
 	known := make(map[rowID]bool, len(union))
 	for _, row := range union {
 		known[row.id()] = true
 	}
-	ops := []indexOp{{kind: opPending, value: c.recordOf(true, unionRows(union, planned))}}
+	var ops []indexOp
 	keep := make(map[rowID]bool, len(planned))
 	for _, row := range planned {
 		id := rowID{row.bucket, row.key}
@@ -176,7 +249,7 @@ func (c *Component) recoveryOps(union []recordRow, planned []indexRow, listed bo
 			ops = append(ops, indexOp{kind: opDelete, bucket: row.bucket, key: row.key})
 		}
 	}
-	return append(ops, indexOp{kind: opClean, value: c.recordOf(false, recordedRows(planned))})
+	return ops
 }
 
 // unionRows is every place in stored or planned, sorted, each once; a planned row carries its
@@ -214,6 +287,8 @@ func (c *Component) runApply(ctx context.Context, apply entityApply) error {
 			pendingRevision, err = c.putRecord(ctx, apply.entityID, op.value, apply.revision)
 		case opClean:
 			_, err = c.putRecord(ctx, apply.entityID, op.value, pendingRevision)
+		case opDropRecord:
+			err = c.dropRecord(ctx, apply.entityID, apply.revision)
 		case opPut, opDelete:
 			err = c.writeRow(ctx, op)
 		}
@@ -246,6 +321,22 @@ func (c *Component) putRecord(ctx context.Context, entityID string, value []byte
 		return 0, fmt.Errorf("put the record of %q: %w", entityID, err)
 	}
 	return newRevision, nil
+}
+
+// dropRecord deletes entityID's record, conditional on revision being current; a refusal because
+// the record changed is errRecordConflict.
+func (c *Component) dropRecord(ctx context.Context, entityID string, revision uint64) error {
+	err := c.recordBucket.DeleteAtRevision(ctx, entityID, revision)
+	c.metrics.kvOperations.WithLabelValues("delete", "record").Inc()
+	c.metrics.recordReconcileOperation("record", "delete", err)
+	if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
+		err = fmt.Errorf("%w: %w", errRecordConflict, err)
+	}
+	if err != nil {
+		c.logger.Debug("record delete failed", slog.String("entity", entityID), slog.Any("error", err))
+		return fmt.Errorf("delete the record of %q: %w", entityID, err)
+	}
+	return nil
 }
 
 // writeRow puts or deletes one index row. A delete answered "not found" is done.

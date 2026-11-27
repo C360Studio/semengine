@@ -38,7 +38,7 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
   record for two or more cuts in a row. They run a generated history of values in {A, B, C}, two alias-predicate
   sets, re-offers, deletes and a second writer between an apply's record read and its pending put, check one golden
   record fixture, and record seed and checks per `docs/testing.md`.
-- [ ] 2.4 Rule 7, too large. Accept: `TestOversizeRecordFallsBackToListing`.
+- [x] 2.4 Rule 7, too large. Accept: `TestOversizeRecordFallsBackToListing`. Done: notes in `notes/2.4.md`.
 - [ ] 2.5 Generations. Accept: `TestRestartRebuildsRecreatedIndexBucket`.
 - [ ] 2.6 The ADR-077 amendment per Decision 2, under its port note: the condition at `:40-42` refuted by the step 2
   measurement, §2 owner listing as fallback and oracle, §4 replacement through the record. Accept: the amendment

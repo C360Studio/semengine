@@ -137,8 +137,9 @@ func Load(def Definition, source string, handlers Handlers) (*Rule, error) {
 }
 
 // checkExpressionRule checks what only an expression rule needs: at least
-// one condition, each with a field and a known operator, a logic of `and` or
-// `or`, and a cooldown that is a duration. It returns the position of a
+// one condition, each with a field and a known operator and reading only what
+// the rule's path has, a logic of `and` or `or`, and a cooldown that is a
+// duration. It returns the position of a
 // refusal with its cause.
 func checkExpressionRule(def Definition) (string, error) {
 	if len(def.Conditions) == 0 {
@@ -155,6 +156,9 @@ func checkExpressionRule(def Definition) (string, error) {
 		case !known:
 			return position, fmt.Errorf("unknown operator %q", cond.Operator)
 		}
+		if err := checkConditionPath(def.Entity.Pattern != "", cond); err != nil {
+			return position, err
+		}
 	}
 	if def.Logic != "" && def.Logic != "and" && def.Logic != "or" {
 		return "logic", fmt.Errorf("logic %q is not \"and\" or \"or\"", def.Logic)
@@ -165,6 +169,25 @@ func checkExpressionRule(def Definition) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// checkConditionPath refuses a condition that reads what the rule's path
+// never has: a rule with no entity pattern runs on messages and has no
+// entity, one with a pattern runs on entities and has no message. Such a
+// field or value would never be filled, so the condition would quietly read
+// nothing.
+func checkConditionPath(onEntities bool, cond expression.ConditionExpression) error {
+	absent, path, missing := "$entity.", "messages", "entity"
+	if onEntities {
+		absent, path, missing = "$message.", "entities", "message"
+	}
+	if strings.HasPrefix(cond.Field, absent) {
+		return fmt.Errorf("the rule runs on %s, which have no %s, so the field %q can never be filled", path, missing, cond.Field)
+	}
+	if value, ok := cond.Value.(string); ok && strings.Contains(value, absent) {
+		return fmt.Errorf("the rule runs on %s, which have no %s, so the value %q can never be filled", path, missing, value)
+	}
+	return nil
 }
 
 // checkConditionField refuses a condition, of the rule or of an action's

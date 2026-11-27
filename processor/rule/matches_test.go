@@ -40,6 +40,7 @@ func declareMatchPredicates() {
 	for _, p := range []string{
 		"sensor.measurement.fahrenheit",
 		"sensor.measurement.psi",
+		"sensor.measurement.percent",
 		"sensor.classification.type",
 		"geo.location.zone",
 		"gather.child.completed",
@@ -111,6 +112,39 @@ func matchCorpus() []matchCase {
 				{Predicate: "geo.location.zone", Object: "zone.cold-storage-1"},
 			},
 			want: false,
+		},
+		{
+			name:  "and: the zone does not match",
+			logic: "and",
+			conditions: `[{"field": "sensor.measurement.fahrenheit", "operator": "gte", "value": 40.0, "required": true},
+			  {"field": "geo.location.zone", "operator": "contains", "value": "cold-storage", "required": true}]`,
+			triples: []message.Triple{
+				{Predicate: "sensor.measurement.fahrenheit", Object: 45.0},
+				{Predicate: "geo.location.zone", Object: "zone.dock-1"},
+			},
+			want: false,
+		},
+		{
+			name:  "and: humidity at its threshold and of its type",
+			logic: "and",
+			conditions: `[{"field": "sensor.measurement.percent", "operator": "gte", "value": 50.0, "required": true},
+			  {"field": "sensor.classification.type", "operator": "eq", "value": "humidity", "required": true}]`,
+			triples: []message.Triple{
+				{Predicate: "sensor.measurement.percent", Object: 52.8},
+				{Predicate: "sensor.classification.type", Object: "humidity"},
+			},
+			want: true,
+		},
+		{
+			name:  "and: pressure below its threshold and of its type",
+			logic: "and",
+			conditions: `[{"field": "sensor.measurement.psi", "operator": "lt", "value": 100.0, "required": true},
+			  {"field": "sensor.classification.type", "operator": "eq", "value": "pressure", "required": true}]`,
+			triples: []message.Triple{
+				{Predicate: "sensor.measurement.psi", Object: 88.5},
+				{Predicate: "sensor.classification.type", Object: "pressure"},
+			},
+			want: true,
 		},
 		{
 			name:  "or: second condition carries it",

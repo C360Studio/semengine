@@ -171,6 +171,89 @@ func TestMessageMatch(t *testing.T) {
 	assert.Empty(t, log.take(t), "no readable payload is reported and no match logs")
 }
 
+// Requirement: rule-matching/"A message rule reads the payload's declared
+// fields": verdicts written by hand for a generic JSON payload, nested
+// fields, both logics and an absent required field among them.
+func TestMessageMatchVerdicts(t *testing.T) {
+	battery := func(level float64) map[string]any { return map[string]any{"level": level} }
+	for _, c := range []struct {
+		name       string
+		logic      string
+		conditions string
+		data       map[string]any
+		want       bool
+	}{
+		{
+			name:       "one condition holds",
+			conditions: `[{"field": "$message.battery.level", "operator": "lte", "value": 20.0}]`,
+			data:       map[string]any{"battery": battery(15)},
+			want:       true,
+		},
+		{
+			name:       "one condition does not hold",
+			conditions: `[{"field": "$message.battery.level", "operator": "lte", "value": 20.0}]`,
+			data:       map[string]any{"battery": battery(75)},
+			want:       false,
+		},
+		{
+			name:  "and: both hold",
+			logic: "and",
+			conditions: `[{"field": "$message.battery.level", "operator": "lte", "value": 20.0},
+			  {"field": "$message.status", "operator": "eq", "value": "active"}]`,
+			data: map[string]any{"battery": battery(15), "status": "active"},
+			want: true,
+		},
+		{
+			name:  "and: one does not hold",
+			logic: "and",
+			conditions: `[{"field": "$message.battery.level", "operator": "lte", "value": 20.0},
+			  {"field": "$message.status", "operator": "eq", "value": "active"}]`,
+			data: map[string]any{"battery": battery(15), "status": "idle"},
+			want: false,
+		},
+		{
+			name:  "or: one holds",
+			logic: "or",
+			conditions: `[{"field": "$message.battery.level", "operator": "lte", "value": 20.0},
+			  {"field": "$message.temperature", "operator": "gte", "value": 50.0}]`,
+			data: map[string]any{"battery": battery(75), "temperature": 55.0},
+			want: true,
+		},
+		{
+			name:  "or: none holds",
+			logic: "or",
+			conditions: `[{"field": "$message.battery.level", "operator": "lte", "value": 20.0},
+			  {"field": "$message.temperature", "operator": "gte", "value": 50.0}]`,
+			data: map[string]any{"battery": battery(75), "temperature": 25.0},
+			want: false,
+		},
+		{
+			name:       "a required field absent",
+			conditions: `[{"field": "$message.battery.level", "operator": "lte", "value": 20.0, "required": true}]`,
+			data:       map[string]any{"other_field": "value"},
+			want:       false,
+		},
+		{
+			name:       "gt",
+			conditions: `[{"field": "$message.speed", "operator": "gt", "value": 100.0}]`,
+			data:       map[string]any{"speed": 150.0},
+			want:       true,
+		},
+		{
+			name:       "contains",
+			conditions: `[{"field": "$message.message", "operator": "contains", "value": "error"}]`,
+			data:       map[string]any{"message": "critical error occurred"},
+			want:       true,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := loadRule(t, fmt.Sprintf(`{"id": %q, "type": "expression", "logic": %q, "conditions": %s}`,
+				messageRuleID, c.logic, c.conditions))
+			assert.Equal(t, c.want, matchMessageOK(t, r, genericMessage(c.data)))
+		})
+	}
+}
+
 // unreadableReports returns the unreadable reports logged since the last
 // take, by rule ID and then payload type, counting each.
 func unreadableReports(t *testing.T, log *warningLog) map[string]map[string]int {

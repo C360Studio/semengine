@@ -291,18 +291,28 @@ func isWordByte(b byte) bool {
 func isUnresolvedByte(b byte) bool { return isWordByte(b) || b == '-' }
 
 // substituteConditionValues returns a copy of conds in which each string value
-// holding a dollar sign is substituted, so a condition can compare against a
-// value such as $entity.triple.<predicate>.length. Other values are kept.
-func substituteConditionValues(ctx context.Context, conds []expression.ConditionExpression, ec *ExecutionContext) []expression.ConditionExpression {
+// holding a dollar sign is filled, so a condition can compare against a value
+// such as $entity.triple.<predicate>.length. Other values are kept. A regex
+// condition keeps the pattern Load compiled: Compile refuses a pattern holding
+// a token, so filling leaves its text as it was. A token that does not resolve is an error naming the condition's field and
+// the token, and nothing is logged: compared as text, the token could match.
+func substituteConditionValues(ctx context.Context, conds []expression.ConditionExpression, ec *ExecutionContext) ([]expression.ConditionExpression, error) {
 	if ec == nil || len(conds) == 0 {
-		return conds
+		return conds, nil
 	}
 	out := make([]expression.ConditionExpression, len(conds))
 	for i, c := range conds {
 		out[i] = c
-		if s, ok := c.Value.(string); ok && strings.Contains(s, "$") {
-			out[i].Value = ec.SubstituteVariables(ctx, s)
+		s, ok := c.Value.(string)
+		if !ok || !strings.Contains(s, "$") {
+			continue
 		}
+		filled, unresolved := ec.substitute(ctx, s, nil)
+		if len(unresolved) > 0 {
+			return nil, fmt.Errorf("condition on %q: value %q holds tokens that did not resolve: %s",
+				c.Field, s, strings.Join(unresolved, ", "))
+		}
+		out[i].Value = filled
 	}
-	return out
+	return out, nil
 }

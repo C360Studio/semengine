@@ -1,0 +1,67 @@
+{
+  "id": "research_synthesize_when_all_gathers_complete",
+  "type": "expression",
+  "name": "All gatherers complete → researcher-research-synthesize (join)",
+  "description": "ADR-046 Phase 1 JOIN — synthesize half. Fires on the PLAN loop entity (where rule 03a accumulates research.gather.completed-subtopic triples) when the counter length matches the planner's coordinator.decision.subtopics list length. Uses beta.84 #149 .length substitution so the join is dynamic — N=1 prompts (single subtopic, single gatherer) and N=many prompts both work without per-width forking. cooldown=5s guards against double-fire if two gatherers stamp within the same evaluation window. The spawned synthesizer receives plan_loop_id in its properties AND the JSON-encoded list of gather loop ids inlined into its prompt via beta.86's $entity.triple.<predicate>.triples substitution (ADR-048 PR 4 / #155, closes semstreams#151) — no graph-query tool needed, persona prose teaches the JSON-parse-the-array pattern.\n\nEMPTY-FAN-OUT GUARD (coordinator.decision.subtopics length_gt 0): without it, a planner that terminates WITHOUT deciding gather (a loop-failure, or any terminal that skips the gather decide) leaves both research.gather.completed-subtopic AND coordinator.decision.subtopics absent — and length_eq(absent, absent.length) evaluates 0==0 → this rule fires a SPURIOUS synthesize join over zero gatherers. The happy path is shielded only by cooldown=5s + the planner deciding within ~1s; a slow/failing planner that sits in the no-subtopics state past the cooldown trips it (surfaced by the ADR-053 4a′ run-failed journey, where the wedged planner failed at max_iterations). The length_gt 0 guard requires a real subtopics list before the join can fire; a zero-subtopics planner termination now correctly drives executing→failed (research/09 + agent-run/04) with NO orphan synthesize.",
+  "enabled": true,
+  "entity": {
+    "pattern": "*.*.agentic-loop.agent.execution.*"
+  },
+  "cooldown": "5s",
+  "conditions": [
+    {
+      "field": "agent.loop.role",
+      "operator": "eq",
+      "value": "researcher-research-plan",
+      "required": true
+    },
+    {
+      "field": "coordinator.decision.subtopics",
+      "operator": "length_gt",
+      "value": 0,
+      "required": true
+    },
+    {
+      "field": "research.gather.completed-subtopic",
+      "operator": "length_eq",
+      "value": "$entity.triple.coordinator.decision.subtopics.length",
+      "required": true
+    }
+  ],
+  "logic": "and",
+  "on_enter": [
+    {
+      "type": "publish_agent",
+      "subject": "agent.task.researcher-research-synthesize",
+      "role": "researcher-research-synthesize",
+      "loop_max_iterations": "24",
+      "model": "research",
+      "tools": ["read_loop_result", "emit_research_artifact", "scratchpad", "decide"],
+      "tool_choice": { "mode": "required" },
+      "action_allowlist": ["emit", "needs_clarification"],
+      "properties": {
+        "plan_loop_id": "$entity.instance",
+        "prior_synthesize_loop_id": "$entity.triple.agent.lineage.researcher",
+        "category": "research",
+        "phase": "synthesize"
+      },
+      "related_loops": {
+        "researcher-plan": "$entity.instance",
+        "prior-synthesize": "$entity.triple.agent.lineage.researcher"
+      },
+      "prompt": "SYNTHESIZE phase entry — aggregating fan-out. The PLAN loop at $entity.instance fanned out N gatherers via for_each over its subtopics list; all N have stamped completion and you are spawned to aggregate.\n\nInputs:\n- plan_loop_id (in your task properties): $entity.instance — call read_loop_result on it to read the plan (goal, context, scope, full subtopics list)\n- prior_synthesize_loop_id (in your task properties on revision-2+ recovery passes): $entity.triple.agent.lineage.researcher — when non-empty, call read_loop_result on it to carry forward unchanged prior-revision claims with their original revision and tool_result_ref\n- Sibling gather loop IDs (inlined here as a JSON array): $entity.triple.research.gather.completed-subtopic.triples — parse this as JSON, then iterate each loop ID and call read_loop_result on each to fetch that gatherer's findings\n\nEach gatherer's decide.reason opens with 'Subtopic: <verbatim>' so you can index contributions against the plan's subtopics list. Compose ONE aggregated research artifact (actors deduplicated across subtopics, integration_points spanning boundaries, tasks decomposed against the plan, open_gaps carried forward from any sibling that surfaced one) per researcher-research-synthesize/00-identity.md, 10-output-contract.md, and 30-emit-artifact.md. Use scratchpad to decompose the aggregation before the strict-schema emit_research_artifact call.\n\nThis pack terminates at reviewer-research after emit. Architect / spec / build phases do not exist in the research category.\n\nTerminal: decide(action=\"emit\") forwards to reviewer-research; decide(action=\"needs_clarification\") when the aggregate evidence is structurally inconsistent with the plan."
+    }
+  ],
+  "on_exit": [],
+  "metadata": {
+    "iteration_budget_note": "24 allows reading gathered evidence, drafting and emitting the artifact, and the terminal decision; fan-out width is not bounded here. Conservative engineering defaults, not successful-completion guarantees.",
+    "pack": "research",
+    "phase": "ADR-042 MVP-2 + ADR-046 Phase 1",
+    "adr": "docs/adr/042-coordinator-instantiated-flows-via-templates.md",
+    "join_role": "synthesize",
+    "joins_with": "03a-gather-stamp-completion-on-plan.json",
+    "length_substitution_requires": "semstreams beta.84 (#149) — $entity.triple.*.length substitution.",
+    "triples_substitution_requires": "semstreams beta.86 (#155 / ADR-048 PR 4) — $entity.triple.*.triples substitution (closes #151). Sibling loop IDs render as a JSON-encoded array string inlined into the prompt.",
+    "fires_on_plan_entity": "Subscribes to the planner's loop entity (NOT the gather entities). Rule 03a stamps gather.completed_subtopic ON the plan entity (via subject override); when the Nth stamp matches the subtopics length, this rule's condition flips true and fires once. cooldown=5s is defense-in-depth against same-tick double-evaluation."
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "id": "research_plan_to_gather",
+  "type": "expression",
+  "name": "researcher-research-plan → researcher-research-gather (fan-out)",
+  "description": "ADR-042 §Phase 2 redesign + ADR-046 Phase 1 fan-out + ADR-060 §7 (#272) containment ceiling. Fires when the plan-phase researcher terminates with decide(action=gather, subtopics=[...]) carrying 1..4 subtopics. The decide tool stamps coordinator.decision.subtopics as a JSON-encoded list triple on the planner's loop entity (after researchdecide enforces minItems=1/maxItems=4 pre-mutation); this rule gates on a 1..4 element JSON string-array regex as defense-in-depth and uses for_each over that list to spawn ONE researcher-research-gather per subtopic, in parallel. Each spawned gatherer carries $subtopic in its prompt and properties as its scope. The join half lives in rule 03a (stamp completion on parent) + rule 03b (synthesize when all complete). N=1 (non-decomposable prompt) degenerates to a single sequential gatherer — first-class case, not a special path.",
+  "enabled": true,
+  "entity": {
+    "pattern": "*.*.agentic-loop.agent.execution.*"
+  },
+  "conditions": [
+    {
+      "field": "agent.loop.role",
+      "operator": "eq",
+      "value": "researcher-research-plan",
+      "required": true
+    },
+    {
+      "field": "coordinator.decision.next-action",
+      "operator": "eq",
+      "value": "gather",
+      "required": true
+    },
+    {
+      "field": "coordinator.decision.subtopics",
+      "operator": "regex",
+      "value": "^\\[(?:\\s*\"(?:[^\"\\\\]|\\\\.)*\"\\s*)(?:,\\s*\"(?:[^\"\\\\]|\\\\.)*\"\\s*){0,3}\\]$",
+      "required": true
+    }
+  ],
+  "logic": "and",
+  "on_enter": [
+    {
+      "type": "publish_agent",
+      "subject": "agent.task.researcher-research-gather",
+      "role": "researcher-research-gather",
+      "loop_max_iterations": "20",
+      "model": "research",
+      "tools": ["read_loop_result", "github_read", "web_search", "bash", "scratchpad", "decide"],
+      "tool_choice": { "mode": "required" },
+      "action_allowlist": ["synthesize", "needs_clarification"],
+      "for_each": "$entity.triple.coordinator.decision.subtopics",
+      "for_each_var": "subtopic",
+      "properties": {
+        "prior_loop_id": "$entity.instance",
+        "plan_loop_id": "$entity.instance",
+        "subtopic": "$subtopic",
+        "category": "research",
+        "phase": "gather"
+      },
+      "related_loops": {
+        "researcher-plan": "$entity.instance",
+        "plan-loop-entity-id": "$entity.id"
+      },
+      "prompt": "GATHER phase entry — fan-out from PLAN. The plan-phase researcher at loop $entity.instance handed off with decide(action=\"gather\", subtopics=[...]). The framework spawned one gatherer per subtopic in parallel; YOU are scoped to one subtopic:\n\n**Your subtopic:** $subtopic\n\nThat string IS your scope. Investigate only what it names — your N-1 sibling gatherers are working their own subtopics concurrently. Call read_loop_result on $entity.instance (the plan loop) for situational awareness (goal, context, full subtopics list), but do NOT expand your assignment beyond your subtopic.\n\nWhen your subtopic targets a configured portfolio program, project, or repository, use github_read (channel=\"github\", source_class=\"primary\") to read issues, pull_requests, releases, commits, and ci_status. For external web sources, use web_search to discover candidate sources and bash + curl to fetch specific URLs when snippet results are insufficient. Accumulate findings in scratchpad per researcher-research-gather/20-iteration-rules.md.\n\nTerminate with decide(action=\"synthesize\", reason=\"Subtopic: $subtopic\\n\\n<your subtopic findings — per-actor evidence, per-boundary observations, any open gaps>\") when your subtopic is grounded. Open the reason with the literal 'Subtopic: $subtopic' line so SYNTHESIZE's aggregator can index your contribution. OR decide(action=\"needs_clarification\", reason=\"github_read / web_search + bash could not resolve subtopic '$subtopic' — <specific reason>\") when external evidence is structurally insufficient for your subtopic."
+    }
+  ],
+  "on_exit": [],
+  "metadata": {
+    "iteration_budget_note": "20 allows scoped searches, source reads, scratchpad updates, and the terminal decision for each fan-out child. Conservative engineering defaults, not successful-completion guarantees.",
+    "pack": "research",
+    "phase": "ADR-042 MVP-2 + ADR-046 Phase 1",
+    "adr": "docs/adr/042-coordinator-instantiated-flows-via-templates.md",
+    "fan_out": "for_each over $entity.triple.coordinator.decision.subtopics — one gatherer per subtopic in parallel. JOIN happens at rules 03a (per-completion stamp) + 03b (length_eq synthesize trigger).",
+    "tool_choice_rationale": "Required-mode forces gemini-flash to emit a tool call every iteration; decide is in the tools list, so the loop terminates via decide(synthesize|needs_clarification) — populating Result with the synthesis-ready reason. Without it, text-only completions strand the LLM's prose output (framework Result field is exclusively populated by tool returns; #133 synthetic-decide doesn't fire on this path). Surfaced by smoke #fan-out-validation-2 2026-05-29: 2 of 3 parallel gemini-flash gathers terminated text-only at 219+ tokens, all stranded. Beta.80 #132 documented pattern.",
+    "supersedes_legacy": "configs/rules/research-mode-transition/04-phase-transition-to-gather.json — same forward edge, now fan-out instead of single dispatch."
+  }
+}

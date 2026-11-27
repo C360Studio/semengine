@@ -27,13 +27,13 @@ cooldown SHALL NOT apply and SHALL NOT be refused.
 
 ### Requirement: Firing and asking share one match
 
-The rule processor's entity match and `Matches` SHALL share one implementation. Whenever both give a verdict for the
-same rule and entity, the verdicts SHALL be equal, and whenever the processor's match returns an error, `Matches`
+The firing entity match and `Matches` SHALL share one implementation. Whenever both give a verdict for the
+same rule and entity, the verdicts SHALL be equal, and whenever the firing match returns an error, `Matches`
 SHALL return one too.
 
 #### Scenario: The two agree
 
-- **WHEN** the processor's entity match and `Matches` are both run for one loaded rule and one entity, and both give a
+- **WHEN** the firing entity match and `Matches` are both run for one loaded rule and one entity, and both give a
   verdict
 - **THEN** the verdicts are equal
 
@@ -55,19 +55,35 @@ a rule with no lifecycle condition. An absent required field SHALL be an error f
 - **WHEN** `Matches` is called for an entity lacking a field a condition marks required
 - **THEN** it returns an error for which `errors.Is(err, expression.ErrRequiredFieldMissing)` holds
 
+### Requirement: A stateless match answers only what production asks
+
+`Matches` and `MatchesWithLifecycle` SHALL refuse, classified invalid, a rule with no `entity.pattern`, since such a
+rule runs only on messages. For an entity whose ID is outside the rule's `entity.pattern` they SHALL return false with
+no error, since the rule is never evaluated for it. A malformed entity ID SHALL be an error.
+
+#### Scenario: A message rule is refused
+
+- **WHEN** `Matches` is called on a loaded rule with no `entity.pattern`
+- **THEN** it returns an error classified invalid and no verdict
+
+#### Scenario: An entity the rule does not watch
+
+- **WHEN** `Matches` is called for an entity whose ID does not match the rule's `entity.pattern`
+- **THEN** it returns false and no error
+
 ### Requirement: A missing required field is no match when firing
 
-The rule processor's entity match and message match SHALL treat an absent required field as no match, with no error.
+The firing entity match and the firing message match SHALL treat an absent required field as no match, with no error.
 Every other evaluation error SHALL be returned with the rule ID, never logged at Debug and turned into a bare false.
 
 #### Scenario: An entity without a required field
 
-- **WHEN** the processor's entity match runs for an entity lacking a field a condition marks required
+- **WHEN** the firing entity match runs for an entity lacking a field a condition marks required
 - **THEN** it returns false and no error
 
 #### Scenario: A comparison that cannot be made
 
-- **WHEN** the processor's message match runs a `gt "abc"` condition on a numeric field
+- **WHEN** the firing message match runs a `gt "abc"` condition on a numeric field
 - **THEN** it returns an error naming the rule ID and the field
 
 ### Requirement: A condition is never compared with an unfilled template
@@ -78,9 +94,9 @@ the token, and SHALL NOT log it. A `regex` condition SHALL keep the pattern `Loa
 
 #### Scenario: A missing value fails the match
 
-- **WHEN** a condition's value is `$entity.triple.x.y.missing`, the entity has no such predicate, and a triple holds the
-  text `$entity.triple.x.y.missing`
-- **THEN** the processor's match and `Matches` each return an error naming the token, and neither returns true
+- **WHEN** a condition's value is `$entity.triple.x.y.missing`, the entity has no such predicate, and a triple holds
+  that text
+- **THEN** the firing match and `Matches` each return an error naming the token, and neither returns true
 
 #### Scenario: A regex holding a literal dollar sign
 
@@ -90,9 +106,9 @@ the token, and SHALL NOT log it. A `regex` condition SHALL keep the pattern `Loa
 ### Requirement: A message rule reads the payload's declared fields
 
 A message match SHALL read `$message.*` conditions and condition values from the fields a payload declares by
-implementing `message.RuleReadable`, through one projection that the rule processor also uses for an action's message
+implementing `message.RuleReadable`, through one projection that the firing path also uses for an action's message
 data. A field the payload does not declare SHALL NOT be readable. A `message.GenericJSONPayload` SHALL be read through
-its data map. A payload with no fields SHALL give the answer a payload without the condition's field gives.
+its data map.
 
 #### Scenario: A typed payload's declared field
 

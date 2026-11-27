@@ -214,40 +214,60 @@ Queries: `gh issue list --state open --search "<q>" --limit 200` for `rule`, `ex
 - #196 (adoption: `internal/lifecycleguard`): no lifecycle owner here.
 
 Name the word, not the package: #730, #141, #712, #110, #109, #635, #108, #155, #554, #614, #84, #284, #535, #734, #134,
-  #665, #776, #765, #484, #60, #300, #775, #683, #576, #111, #771, #487, #350.
+  #665, #776, #765, #484, #60, #300, #775, #683, #576, #111, #771, #487, #350. The `projection` query also returns #477
+  (adoption: `pkg/graphview` for shared KV views) and #270 (a graph-ingest integration test that failed once); neither
+  names a carried package.
 
 ## 10. Shape sweep (pin copy)
 
+Each finding ends with its disposition: required, with the binding basis, or optional, with why changing it is
+optional ([Bounded port scope](../../../.agents/protocol.md#bounded-port-scope)).
+
 - **F1. One rule's conditions are evaluated twice on the entity path.** `stateful_evaluator.go:261-263` — "EvaluateEntityState
   runs without $prev.* state fields, so transition conditions always return false there. This method re-evaluates the
-  full condition set"; probe P6. Shape 1. Its second half is PR 7's file.
+  full condition set"; probe P6. Shape 1. Optional here (the second evaluation is PR 7's file; PR 6 adds no input
+  without a caller); PR 7 decides.
 - **F2. Two spellings of which path a rule runs on** (§ 4); `matchesRuleSubject`'s prefix branch is dead. Shape 1.
-- **F3. The no-conditions check in four places** (§ 4). Shape 1.
+  Required (target-shape § 1 ruling: the `Rule` interface, which `Subscribe` belongs to, is not carried).
+- **F3. The no-conditions check in four places** (§ 4). Shape 1. Optional (inherited; one check remains in the one
+  match, which a loaded cron rule reaches with no conditions).
 - **F4. Evaluation errors go to Debug.** `expression_factory.go:201-205` — `slog.Debug("ExpressionRule: message-path
-  evaluation error",`; `:226-230`; probe P2. Against PR 1's seam (§ 5).
-- **F5. A nil context.** `expression_factory.go:198` (§ 2). Architect contract: callers never pass nil.
+  evaluation error",`; `:226-230`; probe P2. Required (accepted design commitment: PR 1 seam,
+  `archive/…-01-expression/design.md:86`).
+- **F5. A nil context.** `expression_factory.go:198` (§ 2). Required (architect contract: callers never pass nil; PR 3
+  forward).
 - **F6. Mutable per-rule state written by concurrent evaluations.** `expression_factory.go:206` —
   `r.shouldTrigger = result`, `:233`, `:363` — `r.lastTriggered = time.Now()`; the file says evaluation "runs
-  concurrently across NATS deliveries" (`:47-48`). Not carried (cooldown to PR 7, latch with `ExecuteEvents`).
+  concurrently across NATS deliveries" (`:47-48`). Required (owner rulings: the latch goes with `ExecuteEvents`, #9
+  comment 7160955176; the stamp with the cooldown, #702 to PR 7).
 - **F7. A setter for a dependency.** `expression_factory.go:80` — `func (r *ExpressionRule) SetLifecycleManager(m
-  LifecycleManager) {`; the lookup is read only by `EvaluateEntityState` (`:224`).
+  LifecycleManager) {`; the lookup is read only by `EvaluateEntityState` (`:224`). Required (build: the type it sets on
+  is not carried, target-shape § 1; the lookup becomes an argument).
 - **F8. A second token grammar.** `matches.go:220` — `if token := unresolvedTemplateVarRe.FindString(s); token != ""
-  {`; main has no such regex (§ 4).
+  {`; main has no such regex (§ 4). Required (build).
 - **F9. An `$entity.` value on the message path resolves to `""` without a report** (probe P3; main resolves
-  `$entity.id` to `ec.EntityID`, `entity_substitution.go:43-44`).
+  `$entity.id` to `ec.EntityID`, `entity_substitution.go:43-44`). Required (AGENTS.md: failure paths fail closed; a
+  degrade is declared); the design puts the shape to the owner.
 - **F10. The firing path compares an unresolved value template as text** (probe P5); `Matches` refuses it
-  (`matches.go:194-200`).
+  (`matches.go:194-200`). Required (fail closed, as F9); the design puts the change to the owner.
 - **F11. A required field that is absent is an evaluation error** (§ 4). With 84 of 91 product rules carrying one
   (§ 5), on the firing path it is the ordinary "this entity or message is not for this rule". Combined with F4's
-  correction, every such evaluation would log at Warn.
-- **F12. The empty-payload early return** (`expression_factory.go:181-183`) gives the answer evaluation gives (P1).
-- **F13. Exported with no reader:** the factory, `Schema`, `init` (§ 6). Shape 4.
+  correction, every such evaluation would log at Warn. Required (F4's commitment makes it a log flood); the shape is
+  the owner's.
+- **F12. The empty-payload early return** (`expression_factory.go:181-183`). For P1's condition (`ne`, a literal value)
+  evaluation gives the same answer. It does not hold for a `$message.` value template: with the early return the pin
+  answers false; without it, under the design's unresolved-template rule, the match returns an error. Optional (the
+  return is a shortcut); the design says which it keeps.
+- **F13. Exported with no reader:** the factory, `Schema`, `init` (§ 6). Shape 4. Required (surface audit (a); and
+  AGENTS.md: imports register nothing).
 - **F14. A layered interface with one implementation:** `Rule`/`EntityStateEvaluator`, `ExpressionRule` the only
-  production implementer (target-shape `inventory.md:21`). Shape 3. Ruled out (target-shape § 1).
+  production implementer (target-shape `inventory.md:21`). Shape 3. Required (target-shape § 1 ruling).
 - **F15. Port-history comments:** 10 lines in the carried files name issues, reviewer findings or ADRs as history
-  (`grep -c -E '#[0-9]+|gh#|ADR-|owner ruling|Measured'`: `expression_factory.go` 6, `matches.go` 4).
+  (`grep -c -E '#[0-9]+|gh#|ADR-|owner ruling|Measured'`: `expression_factory.go` 6, `matches.go` 4). Required
+  (AGENTS.md comments rule, #606).
 - **F16. An evaluator built per rule and per `Matches` call** (`expression_factory.go:129`, `matches.go:205`); it holds
-  only the operator table (`expression/types.go:42-44`). Optional.
+  only the operator table (`expression/types.go:42-44`). Optional (no behaviour depends on it; a cost of a map
+  build per call).
 - Classification by error text: none (`matches.go:178` tests the field's prefix, not an error's text). Copied
   shell: none. `NewGenericJSON` in carried code: none.
 
@@ -256,13 +276,21 @@ Name the word, not the package: #730, #141, #712, #110, #109, #635, #108, #155, 
 The developer is semteams' author of `research_loop_budget_test.go`, or a product writing a recovery pass.
 
 1. **What they must know.** Today: build an `ExpressionRule` with a platform and pack ID neither matching reads; call
-   `EvaluateEntityState`, which answers false on an error. With `Matches`: the definition must come from a decode,
-   or regex conditions are refused at evaluation (PR 1 risk, `archive/…-01-expression/design.md:111-112`).
-2. **If they do nothing.** `rule.NewExpressionRule` does not compile: a compile error, the best rank. A semteams
-   contract test that keeps asserting false for a rule missing a required field gets an error from `Matches`
-   instead.
-3. **Where they find out.** Compile error (types gone); typed runtime error (`Matches`' three answers).
+   `EvaluateEntityState`, which answers false on an error. With `Matches` on a loaded rule: `Load` must accept the
+   rule, so the caller needs a handler for every action type the rule uses (`Load` refuses a type not in the set,
+   `load.go:118-130`, `:216-219`; the set is built by `NewHandlers`, `action.go:202`) and every bare condition field
+   declared in the vocabulary (`load.go:175-186`). semteams' `research/02-plan-to-gather.json` and `03b-…json` each
+   carry a `publish_agent` action, and their condition predicates (`agent.loop.role`,
+   `coordinator.decision.subtopics`, …) are declared by semteams, not here. A product running the rule processor has
+   both already; a recovery pass that only asks `Matches` must supply them too. A rule from a raw decode, not `Load`,
+   has uncompiled regex conditions, which evaluation refuses (PR 1 risk, `archive/…-01-expression/design.md:111-112`).
+2. **If they do nothing.** `rule.NewExpressionRule` does not compile: a compile error, the best rank. A pack with an
+   action type the handler set lacks fails `Load` naming type, rule and position: a typed error. A semteams contract
+   test that keeps asserting false for a rule missing a required field gets an error from `Matches` instead.
+3. **Where they find out.** Compile error (types gone); typed runtime errors (`Load`'s refusal; `Matches`' three
+   answers).
 4. **What they should have to know.** That a loaded rule answers "does it match", and an error means "cannot tell".
+   The gap: the handler set and declared predicates, which a product needs for `Load` anyway.
 
 ## 12. What PR 6 sends forward
 

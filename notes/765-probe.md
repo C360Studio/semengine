@@ -1,9 +1,265 @@
-# Probe: one entity's reconcile cost on a warm restart (#765, step 2)
+# Probe: graph-index reconcile cost, before and after the record (#765)
 
-Measured on `origin/main` 3d823c82 (keys-only follower watch merged) plus the probe test
-`processor/graph-index/probe765_integration_test.go`. No production code changed. This branch never merges.
+This branch never merges. It carries the probe test `processor/graph-index/probe765_integration_test.go`. No
+production code is changed here.
 
-## Host
+- **Step 2.8 (below, first):** the record implementation, PR #774 at b9e68996, merged into this branch
+  (merge commit dc90e27d). One run.
+- **Step 2 (further down):** the code before the record, `origin/main` 3d823c82, at commit 24f3cc51. The test file
+  at that commit is the one those figures came from.
+
+## Step 2.8: with the per-entity record (PR #774 at b9e68996)
+
+### Host
+
+- Apple M3 Pro, 12 cores, 36 GiB, macOS 26.5.2, Go 1.26.11 darwin/arm64.
+- NATS: the package's shared fixture, the pinned `nats:2.15.0-alpine` image (nats-server 2.15.0, as the server
+  reports on connect), in Docker Desktop 29.9.3 (VM: 12 CPUs, 23.2 GiB). File storage inside the VM. Client nats.go
+  v1.55.0 (`go.mod`).
+- Load average (1, 5, 15 minutes) at each phase, from `sysctl -n vm.loadavg` inside the test: seed and cold-build
+  start 6.51 / 8.77 / 11.80; cold-build end 6.63 / 7.79 / 9.42; warm-restart end 6.74 / 7.75 / 9.38; re-offer end
+  6.33 / 7.61 / 9.30; live changes start 5.90 / 7.50 / 9.25. The run script waited 225 s for the 5-minute load to
+  fall under 5 before starting; other sessions were running tests throughout. Per-30-second load and NATS container
+  CPU are under "Raw load log (step 2.8)".
+- One run of each phase at 40,000 entities. No repeat runs, so no spread across runs.
+
+### Method
+
+`TestProbeReconcileCost` (integration tag, `package graphindex`), one lane (`workers: 1`) in every phase:
+
+1. **Seed** ENTITY_STATES with 40,000 entities, 16 writers. Each entity as in step 2: a `dc.terms.title` name, a
+   `core.identity.alias`, two relationships (`(i+1) % N`, `(7i) % N`), three plain properties. 12 rows per entity:
+   2 INCOMING, 1 OUTGOING, 7 PREDICATE, 1 ALIAS, 1 NAME.
+2. **Cold build:** a graph-index over the seeded store with empty indexes and no records, timed from `Start` until
+   its indexed floor reaches revision 40,000 and `QueryReady` answers nil. Then stopped.
+3. **Warm restart:** a second graph-index over the same store, indexes and records, timed the same way.
+4. **Equal re-offer:** on that ready component, every entity is written again with byte-identical statements (16
+   writers), so each gets a new revision (40,001 to 80,000). Timed from the first write until the floor reaches
+   80,000.
+5. **Live-change breakdown**, on the ready, idle component, 1,000 entities (every 40th), one at a time. For each,
+   timed separately: the ENTITY_STATES `Get`; decode and plan of a changed value (new title, new `test.link.near`
+   target); the record `Get` and decode; the diff (`changeOps`); then the operations `runApply` makes, in its order:
+   the pending record put, the row writes (5: OUTGOING put, INCOMING put and delete, NAME put and delete), the clean
+   record put. ENTITY_STATES is not written in these steps, so the follower stays idle. Then the real
+   `reconcileEntity` (revision 0, as a repair pass runs it): it reads the stored value, which differs from the
+   record, and takes the index back to it, a change of the same size from the record. Then `reconcileEntity` again,
+   which finds the record equal to the plan: the unchanged path.
+6. **Live changes end to end:** 1,000 entities (every 40th), each written to ENTITY_STATES with another changed value
+   (same shape), one at a time, timed from the `Put` until the follower's indexed floor reaches the put's revision.
+   The wait reads the floor (an atomic) in a loop that yields, with no poll interval.
+7. **Counts** for each phase: the component's `kv_operations_total` by operation and bucket (listings, row puts and
+   deletes, record gets and puts); each index bucket's stream last sequence before and after (every row put or
+   delete appends one message, whatever the component counts); consumer-create advisories on
+   `$JS.EVENT.ADVISORY.CONSUMER.CREATED.>` (a listing creates one consumer); JetStream API calls from account info.
+8. **Sizes:** each bucket's stream info (stored messages, subjects, bytes) after the cold build and after the run.
+
+### Command
+
+```bash
+PROBE_765_SIZES=40000 go test -tags integration -count=1 -timeout 150m -run TestProbeReconcileCost -v ./processor/graph-index/
+```
+
+Run through `/tmp/probe765-2.8/run.sh` (local only, not committed), which waited for the 5-minute load average to fall
+under 5 (at most 15 minutes) and logged load and NATS container CPU every 30 s. Without `PROBE_765_SIZES` the test
+runs once at 200 entities (about 3 s). `PROBE_765_WORKERS` sets the lane count (default 1).
+
+`task verify` was not run on this branch: it is a scratch branch and never merges. `go vet -tags integration
+./processor/graph-index/` and `gofmt` pass on the probe file.
+
+### Results (all measured, one run, 40,000 entities, one lane)
+
+| Phase | Time | per entity | Listings | Row writes | Record puts | Consumers created |
+| --- | --- | --- | --- | --- | --- | --- |
+| Cold build (no records) | 666.0 s | 16.65 ms | 160,000 (4.00 each) | 480,000 puts | 80,000 | 160,001 |
+| Warm restart | 14.7 s | 0.368 ms | 0 | 0 | 0 | 1 (the follower's watch) |
+| Equal re-offer | 14.3 s (writes 1.1 s) | 0.358 ms | 0 | 0 | 0 | 0 |
+| 1,000 live changes | 1.62 ms mean each | | 0 | 5,000 (5 each) | 2,000 (2 each) | 0 |
+
+Each phase read 1 record per entity (40,000; 1,000 for the live changes). The index streams' sequences moved by 0 in
+the warm restart and in the re-offer, and by 5,000 in the live changes, matching the counted writes.
+
+Live-change breakdown, ms, 1,000 entities one at a time:
+
+| Step | median | p90 | p99 | mean |
+| --- | --- | --- | --- | --- |
+| ENTITY_STATES Get | 0.155 | 0.169 | 0.323 | 0.165 |
+| decode + plan | 0.030 | 0.035 | 0.047 | 0.031 |
+| record Get + decode | 0.154 | 0.171 | 1.413 | 0.197 |
+| diff | 0.012 | 0.015 | 0.021 | 0.012 |
+| pending record put | 0.166 | 0.185 | 1.543 | 0.216 |
+| row writes (5) | 0.796 | 0.838 | 1.232 | 0.843 |
+| clean record put | 0.163 | 0.175 | 0.209 | 0.165 |
+| record puts (both) | 0.329 | 0.362 | 1.715 | 0.381 |
+| sum of steps | 1.479 | 1.659 | 4.121 | 1.633 |
+| reconcileEntity, a change (real) | 1.460 | 1.527 | 1.759 | 1.474 |
+| reconcileEntity, unchanged (real) | 0.345 | 0.365 | 0.435 | 0.347 |
+| live change, put to applied | 1.600 | 1.680 | 2.069 | 1.621 |
+| of which ENTITY_STATES put | 0.172 | 0.184 | 0.209 | 0.171 |
+
+Bucket sizes after the run:
+
+| Bucket | Stored messages | Subjects | Bytes |
+| --- | --- | --- | --- |
+| GRAPH_INDEX_RECORDS | 40,000 | 40,000 | 79,194,585 |
+| ENTITY_STATES | 40,000 | 40,000 | 49,554,890 |
+| INCOMING_INDEX | 82,000 | 82,000 | 12,128,000 |
+| OUTGOING_INDEX | 40,000 | 40,000 | 10,040,000 |
+| PREDICATE_INDEX | 280,000 | 280,000 | 28,320,000 |
+| ALIAS_INDEX | 40,000 | 40,000 | 7,400,000 |
+| NAME_INDEX | 42,000 | 42,000 | 8,808,890 |
+
+INCOMING and NAME hold 2,000 more messages than after the cold build: the delete markers the live changes left (a KV
+delete stores a marker under the key). After the cold build the five index buckets held 65,908,890 bytes and the
+record bucket 79,194,445 (1,980 bytes per entity, for 12 rows).
+
+### Reading
+
+- **Warm restart: 14.7 s, not about 38 minutes.** No listing, no row write, no record put: one record read per
+  entity. The design estimated about 0.5 ms per unchanged entity and about 20 s; measured 0.368 ms and 14.7 s. Step 2
+  measured 17.4 entities/s over the first 5 minutes at this size; this run did 2,717/s to the end.
+- **Equal re-offer: the same path, 0.358 ms per entity**, with nothing listed or written.
+- **Live change: 1.6 ms put to applied, 1.46 ms in `reconcileEntity`**, against the design's about 1.7 ms and step 2's
+  43 ms (`reconcileEntity`) at 40k. The row writes are about half; the record Get and the two record puts about a
+  third.
+- **Cold build: 666 s on one lane, 16.65 ms per entity, with exactly 4 listings per entity.** This is the design's
+  non-goal (a first seed lists as before). It is faster per entity than step 2's warm 1-lane replay (57 ms) because
+  the indexes start empty and grow; step 2's cold build used 16 lanes (93 s), so the two cold figures are not
+  comparable.
+- **The record bucket is the largest:** 79 MB for 40,000 entities, about 1.2 times the five index buckets together
+  and 1.6 times ENTITY_STATES. Inferred, not measured: its size is about 1,980 bytes per entity at 12 rows, so it
+  grows with each entity's row count.
+
+### Skipped (step 2.8)
+
+- Repeat runs: each phase ran once.
+- Per-step timing inside the running lane during the warm restart: the unchanged path is timed separately in the
+  breakdown (`reconcileEntity`, unchanged), not inside the replay.
+- Other sizes, more lanes, the 105k watermark plateau, the Mac mini.
+- A cold build on 16 lanes for comparison with step 2's 93 s.
+
+### Raw test output (step 2.8; testcontainers and bucket lines removed)
+
+```text
+    probe765_integration_test.go:91: nats-server 2.15.0
+    probe765_integration_test.go:120: load at seed: { 6.51 8.77 11.80 }
+    probe765_integration_test.go:122: seeded 40000 entities in 880ms
+    probe765_integration_test.go:125: load at cold build start: { 6.51 8.77 11.80 }
+    probe765_integration_test.go:316:   progress 30s: indexed revision 5327 (177.5/s overall)
+    probe765_integration_test.go:316:   progress 1m0s: indexed revision 9377 (156.2/s overall)
+    probe765_integration_test.go:316:   progress 1m30s: indexed revision 12646 (140.5/s overall)
+    probe765_integration_test.go:316:   progress 2m0s: indexed revision 15161 (126.3/s overall)
+    probe765_integration_test.go:316:   progress 2m30s: indexed revision 17301 (115.3/s overall)
+    probe765_integration_test.go:316:   progress 3m0s: indexed revision 18929 (105.2/s overall)
+    probe765_integration_test.go:316:   progress 3m30s: indexed revision 20708 (98.6/s overall)
+    probe765_integration_test.go:316:   progress 4m0s: indexed revision 22603 (94.2/s overall)
+    probe765_integration_test.go:316:   progress 4m30s: indexed revision 24340 (90.1/s overall)
+    probe765_integration_test.go:316:   progress 5m0s: indexed revision 26047 (86.8/s overall)
+    probe765_integration_test.go:316:   progress 5m30s: indexed revision 27486 (83.3/s overall)
+    probe765_integration_test.go:316:   progress 6m0s: indexed revision 29020 (80.6/s overall)
+    probe765_integration_test.go:316:   progress 6m30s: indexed revision 30262 (77.6/s overall)
+    probe765_integration_test.go:316:   progress 7m0s: indexed revision 31409 (74.8/s overall)
+    probe765_integration_test.go:316:   progress 7m30s: indexed revision 32457 (72.1/s overall)
+    probe765_integration_test.go:316:   progress 8m0s: indexed revision 33693 (70.2/s overall)
+    probe765_integration_test.go:316:   progress 8m30s: indexed revision 34717 (68.1/s overall)
+    probe765_integration_test.go:316:   progress 9m0s: indexed revision 35583 (65.9/s overall)
+    probe765_integration_test.go:316:   progress 9m30s: indexed revision 36524 (64.1/s overall)
+    probe765_integration_test.go:316:   progress 10m0s: indexed revision 37487 (62.5/s overall)
+    probe765_integration_test.go:316:   progress 10m30s: indexed revision 38584 (61.2/s overall)
+    probe765_integration_test.go:316:   progress 11m0s: indexed revision 39763 (60.2/s overall)
+    probe765_integration_test.go:130: load at cold build end: { 6.63 7.79 9.42 }
+    probe765_integration_test.go:131: cold build (workers 1): 40000 entities ready in 11m6.04s (60.1/s, 16.651 ms per entity), consumer-create advisories 160001 (4.00 per entity), JetStream API calls 320197 (8.00 per entity)
+    probe765_integration_test.go:136: cold build ops: listings 160000 (4.00 per entity), row puts 480000, row deletes 0, record gets 40000, record puts 80000, record deletes 0
+    probe765_integration_test.go:137:   ENTITY_STATES: 40000 stored messages, 40000 subjects, 49552890 bytes
+    probe765_integration_test.go:137:   INCOMING_INDEX: 80000 stored messages, 80000 subjects, 11760000 bytes
+    probe765_integration_test.go:137:   OUTGOING_INDEX: 40000 stored messages, 40000 subjects, 10040000 bytes
+    probe765_integration_test.go:137:   PREDICATE_INDEX: 280000 stored messages, 280000 subjects, 28320000 bytes
+    probe765_integration_test.go:137:   ALIAS_INDEX: 40000 stored messages, 40000 subjects, 7400000 bytes
+    probe765_integration_test.go:137:   NAME_INDEX: 40000 stored messages, 40000 subjects, 8388890 bytes
+    probe765_integration_test.go:137:   GRAPH_INDEX_RECORDS: 40000 stored messages, 40000 subjects, 79194445 bytes
+    probe765_integration_test.go:144: load at warm restart start: { 6.63 7.79 9.42 }
+    probe765_integration_test.go:150: load at warm restart end: { 6.74 7.75 9.38 }
+    probe765_integration_test.go:151: warm restart (workers 1): 40000 entities ready in 14.724s (2716.7/s, 0.368 ms per entity), consumer-create advisories 1, JetStream API calls 52 (0.00 per entity)
+    probe765_integration_test.go:156: warm restart ops: listings 0 (0.00 per entity), row puts 0, row deletes 0, record gets 40000, record puts 0, record deletes 0
+    probe765_integration_test.go:157: warm restart index stream messages appended: 0 (ALIAS_INDEX +0, INCOMING_INDEX +0, NAME_INDEX +0, OUTGOING_INDEX +0, PREDICATE_INDEX +0)
+    probe765_integration_test.go:161: load at re-offer start: { 6.74 7.75 9.38 }
+    probe765_integration_test.go:171: load at re-offer end: { 6.33 7.61 9.30 }
+    probe765_integration_test.go:172: equal re-offer (workers 1): 40000 writes in 1.075s, all applied 14.303s after the first write (2796.6/s, 0.358 ms per entity), consumer-create advisories 0, JetStream API calls 4 (0.00 per entity)
+    probe765_integration_test.go:178: equal re-offer ops: listings 0 (0.00 per entity), row puts 0, row deletes 0, record gets 40000, record puts 0, record deletes 0
+    probe765_integration_test.go:179: equal re-offer index stream messages appended: 0 (ALIAS_INDEX +0, INCOMING_INDEX +0, NAME_INDEX +0, OUTGOING_INDEX +0, PREDICATE_INDEX +0)
+    probe765_integration_test.go:183: load at breakdown start: { 6.33 7.61 9.30 }
+    probe765_integration_test.go:184: breakdown of a live change over 1000 entities (every 40th), ms:
+    probe765_integration_test.go:184:   | step                     |    median |       p90 |       p99 |      mean |
+    probe765_integration_test.go:478:   | ENTITY_STATES get        |     0.155 |     0.169 |     0.323 |     0.165 |
+    probe765_integration_test.go:478:   | decode + plan            |     0.030 |     0.035 |     0.047 |     0.031 |
+    probe765_integration_test.go:478:   | record get + decode      |     0.154 |     0.171 |     1.413 |     0.197 |
+    probe765_integration_test.go:478:   | diff (changeOps)         |     0.012 |     0.015 |     0.021 |     0.012 |
+    probe765_integration_test.go:478:   | pending record put       |     0.166 |     0.185 |     1.543 |     0.216 |
+    probe765_integration_test.go:478:   | row writes               |     0.796 |     0.838 |     1.232 |     0.843 |
+    probe765_integration_test.go:478:   | clean record put         |     0.163 |     0.175 |     0.209 |     0.165 |
+    probe765_integration_test.go:478:   | record puts (both)       |     0.329 |     0.362 |     1.715 |     0.381 |
+    probe765_integration_test.go:478:   | sum of steps             |     1.479 |     1.659 |     4.121 |     1.633 |
+    probe765_integration_test.go:478:   | reconcileEntity, change  |     1.460 |     1.527 |     1.759 |     1.474 |
+    probe765_integration_test.go:478:   | reconcileEntity, same    |     0.345 |     0.365 |     0.435 |     0.347 |
+    probe765_integration_test.go:184: row writes per change: 5.00
+    probe765_integration_test.go:184: breakdown steps ops: listings 0 (0.00 per entity), row puts 3000, row deletes 2000, record gets 0, record puts 2000, record deletes 0
+    probe765_integration_test.go:184: breakdown reconcileEntity change ops: listings 0 (0.00 per entity), row puts 3000, row deletes 2000, record gets 1000, record puts 2000, record deletes 0
+    probe765_integration_test.go:184: breakdown reconcileEntity same ops: listings 0 (0.00 per entity), row puts 0, row deletes 0, record gets 1000, record puts 0, record deletes 0
+    probe765_integration_test.go:184: consumer-create advisories: 0.00 per change reconcile, 0.00 per unchanged reconcile
+    probe765_integration_test.go:185: load at live changes start: { 5.90 7.50 9.25 }
+    probe765_integration_test.go:186: live changes: 1000, one at a time, each awaited until applied, ms:
+    probe765_integration_test.go:186:   | step                     |    median |       p90 |       p99 |      mean |
+    probe765_integration_test.go:186:   | ENTITY_STATES put        |     0.172 |     0.184 |     0.209 |     0.171 |
+    probe765_integration_test.go:186:   | put to applied           |     1.600 |     1.680 |     2.069 |     1.621 |
+    probe765_integration_test.go:186: live changes ops: listings 0 (0.00 per entity), row puts 3000, row deletes 2000, record gets 1000, record puts 2000, record deletes 0
+    probe765_integration_test.go:186: live changes index stream messages appended: 5000 (ALIAS_INDEX +0, INCOMING_INDEX +2000, NAME_INDEX +2000, OUTGOING_INDEX +1000, PREDICATE_INDEX +0)
+    probe765_integration_test.go:186: live changes consumer-create advisories: 0
+    probe765_integration_test.go:187: load at live changes end: { 5.90 7.50 9.25 }
+    probe765_integration_test.go:191: after the run:
+    probe765_integration_test.go:192:   ENTITY_STATES: 40000 stored messages, 40000 subjects, 49554890 bytes
+    probe765_integration_test.go:192:   INCOMING_INDEX: 82000 stored messages, 82000 subjects, 12128000 bytes
+    probe765_integration_test.go:192:   OUTGOING_INDEX: 40000 stored messages, 40000 subjects, 10040000 bytes
+    probe765_integration_test.go:192:   PREDICATE_INDEX: 280000 stored messages, 280000 subjects, 28320000 bytes
+    probe765_integration_test.go:192:   ALIAS_INDEX: 40000 stored messages, 40000 subjects, 7400000 bytes
+    probe765_integration_test.go:192:   NAME_INDEX: 42000 stored messages, 42000 subjects, 8808890 bytes
+    probe765_integration_test.go:192:   GRAPH_INDEX_RECORDS: 40000 stored messages, 40000 subjects, 79194585 bytes
+--- PASS: TestProbeReconcileCost (702.13s)
+    --- PASS: TestProbeReconcileCost/40000 (702.13s)
+PASS
+ok      github.com/c360studio/semengine/processor/graph-index    702.708s
+exit 0
+```
+
+### Raw load log (step 2.8; every 30 s: load average, NATS container CPU and memory)
+
+```text
+10:42:33 load={ 4.99 8.51 11.73 } 
+10:43:04 load={ 6.16 8.46 11.58 } 8c710caccc7a cpu=65.21% mem=141.3MiB / 23.19GiB
+10:43:36 load={ 6.28 8.27 11.40 } 8c710caccc7a cpu=75.38% mem=184.3MiB / 23.19GiB
+10:44:07 load={ 5.91 7.99 11.19 } 8c710caccc7a cpu=82.78% mem=196.3MiB / 23.19GiB
+10:44:38 load={ 5.66 7.73 10.99 } 8c710caccc7a cpu=82.79% mem=194.2MiB / 23.19GiB
+10:45:09 load={ 7.62 7.93 10.92 } 8c710caccc7a cpu=84.02% mem=199.1MiB / 23.19GiB
+10:45:40 load={ 7.81 7.96 10.83 } 8c710caccc7a cpu=84.47% mem=200.8MiB / 23.19GiB
+10:46:11 load={ 7.02 7.77 10.66 } 8c710caccc7a cpu=85.56% mem=209.5MiB / 23.19GiB
+10:46:42 load={ 6.47 7.56 10.48 } 8c710caccc7a cpu=86.87% mem=223.1MiB / 23.19GiB
+10:47:13 load={ 6.15 7.37 10.31 } 8c710caccc7a cpu=88.51% mem=223.6MiB / 23.19GiB
+10:47:44 load={ 5.95 7.16 10.12 } 8c710caccc7a cpu=84.68% mem=229.1MiB / 23.19GiB
+10:48:15 load={ 5.81 6.99 9.95 } 8c710caccc7a cpu=88.91% mem=230.3MiB / 23.19GiB
+10:48:47 load={ 5.32 6.75 9.76 } 8c710caccc7a cpu=89.09% mem=237.8MiB / 23.19GiB
+10:49:18 load={ 7.47 7.13 9.79 } 8c710caccc7a cpu=92.03% mem=243.1MiB / 23.19GiB
+10:49:49 load={ 7.64 7.21 9.71 } 8c710caccc7a cpu=87.87% mem=250.3MiB / 23.19GiB
+10:50:20 load={ 7.42 7.19 9.62 } 8c710caccc7a cpu=88.97% mem=249.1MiB / 23.19GiB
+10:50:51 load={ 6.41 6.96 9.45 } 8c710caccc7a cpu=89.15% mem=252.6MiB / 23.19GiB
+10:51:22 load={ 11.99 8.29 9.85 } 8c710caccc7a cpu=89.65% mem=259.5MiB / 23.19GiB
+10:51:53 load={ 10.40 8.25 9.77 } 8c710caccc7a cpu=89.87% mem=260.2MiB / 23.19GiB
+10:52:24 load={ 10.73 8.57 9.83 } 8c710caccc7a cpu=88.89% mem=264.4MiB / 23.19GiB
+10:52:55 load={ 8.51 8.23 9.66 } 8c710caccc7a cpu=88.90% mem=288.5MiB / 23.19GiB
+10:53:27 load={ 7.38 7.98 9.52 } 8c710caccc7a cpu=90.61% mem=287.6MiB / 23.19GiB
+10:53:58 load={ 6.74 7.75 9.38 } 8c710caccc7a cpu=57.14% mem=419MiB / 23.19GiB
+```
+
+## Step 2: before the record (origin/main 3d823c82, commit 24f3cc51)
+
+### Host
 
 - Apple M3 Pro, 12 cores, 36 GiB, macOS 26.5.2, Go 1.26.11 darwin/arm64.
 - NATS: the package's shared fixture, `nats:2.15.0-alpine@sha256:ac8f88a6…` (nats-server 2.15.0), in Docker Desktop
@@ -12,7 +268,7 @@ Measured on `origin/main` 3d823c82 (keys-only follower watch merged) plus the pr
   2.3; between the 10k and 20k runs it reached 16 from another session's tests, and the 20k run waited until it fell
   under 5. Per-30-second load and NATS container CPU are under "Raw load log" below.
 
-## Method
+### Method
 
 `TestProbeReconcileCost` (integration tag, `package graphindex`), one subtest per store size:
 
@@ -36,7 +292,7 @@ Measured on `origin/main` 3d823c82 (keys-only follower watch merged) plus the pr
 The 10k run used an earlier version of the test in which the breakdown ran on the warm component after its replay
 rather than on the cold one; the indexes are the same in both cases.
 
-## Commands
+### Commands
 
 ```bash
 PROBE_765_SIZES=10000 go test -tags integration -count=1 -timeout 60m -run TestProbeReconcileCost -v ./processor/graph-index/
@@ -47,9 +303,9 @@ PROBE_765_SIZES=20000 PROBE_765_WARM_WORKERS=16 PROBE_765_WARM_WINDOW=5m go test
 
 Without the environment variables the test runs once at 200 entities (about 4 s).
 
-## Results
+### Results
 
-### Warm restart, 1 lane (measured)
+#### Warm restart, 1 lane (measured)
 
 | Store | Time to ready | Entities/s | ms per entity (wall / N) | Consumers created per entity |
 | --- | --- | --- | --- | --- |
@@ -64,7 +320,7 @@ Inferred, not measured: at 17.4/s a full 40,000 warm restart takes about 2,300 s
 runs the rate rose in the last part of the replay (20k: about 25/s at first, 54 to 60/s in its last 40 s), so the
 full 40k run may be somewhat shorter.
 
-### Per-entity breakdown, ms (measured, 1,000 entities each, one at a time)
+#### Per-entity breakdown, ms (measured, 1,000 entities each, one at a time)
 
 40,000 entities:
 
@@ -119,7 +375,7 @@ A second 20,000 sample (the 16-lane run) gave four listings 27.9 / 36.2 / 43.0 /
 Consumers created, breakdown: exactly 4.00 per entity for the four timed listings and 4.00 per `reconcileEntity`, at
 every size.
 
-### Per-entity cost against store size (measured)
+#### Per-entity cost against store size (measured)
 
 | Store | mean of one listing | four listings, mean | reconcileEntity, mean | warm wall per entity |
 | --- | --- | --- | --- | --- |
@@ -128,7 +384,7 @@ every size.
 | 20,000 | 9.04 / 7.04 | 36.17 / 28.15 | 31.95 / 25.24 | 30.52 |
 | 40,000 | 12.33 | 49.34 | 43.78 | 57.31 (first 5,235) |
 
-### Lanes (measured, one run)
+#### Lanes (measured, one run)
 
 | Store | Lanes | Warm time to ready | Entities/s | NATS container CPU |
 | --- | --- | --- | --- | --- |
@@ -138,7 +394,7 @@ every size.
 Cold builds, 16 lanes, empty indexes at start: 10k 10.3 s (973/s), 20k 32.4 s and 25.2 s (617/s, 795/s), 40k 93.2 s
 (429/s).
 
-## Reading
+### Reading
 
 - **Confirmed: per-entity cost is the whole wait.** With one lane the warm wall time per entity (17.7, 30.5 ms) equals
   the separately measured `reconcileEntity` mean (18.3, 32.0 ms) at 10k and 20k. At 40k the replay ran at 57 ms per
@@ -157,7 +413,7 @@ Cold builds, 16 lanes, empty indexes at start: 10k 10.3 s (973/s), 20k 32.4 s an
   (`*.*.*.*.*.*.<source>.*`, `*.*.*.<entity>`, `*.<entity>.*`), so a reading, not measured here: the server cannot
   narrow such a filter by its leading tokens and its cost follows the bucket's size.
 
-## Skipped
+### Skipped
 
 - A full 40,000 warm restart: projected at about 38 minutes, over the time-box; the 40k figure is the first five
   minutes of the replay.
@@ -166,7 +422,7 @@ Cold builds, 16 lanes, empty indexes at start: 10k 10.3 s (973/s), 20k 32.4 s an
 - The 105k watermark plateau, SemSource's own settings, and a run on the Mac mini.
 - Each size ran once (20k twice for the breakdown); no repeat runs to give a spread across runs.
 
-## Raw test output (testcontainers and bucket lines removed)
+### Raw test output (testcontainers and bucket lines removed)
 
 ```text
 === run-10k.log
@@ -314,7 +570,7 @@ ok      github.com/c360studio/semengine/processor/graph-index    489.761s
 ok      github.com/c360studio/semengine/processor/graph-index    202.768s
 ```
 
-## Raw load log (every 30 s: load average, NATS container CPU and memory)
+### Raw load log (every 30 s: load average, NATS container CPU and memory)
 
 ```text
 === load-10k.log

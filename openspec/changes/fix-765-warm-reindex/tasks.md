@@ -53,5 +53,5 @@ Each code task ends at its own tests passing; one clean-tree `task verify` runs 
 
 ## 3. Close
 
-- [ ] 3.1 `task verify` passes on a clean tree at the last code commit; the commit is recorded in `notes/3.1.md`.
+- [x] 3.1 `task verify` passes on a clean tree at the last code commit; the commit is recorded in `notes/3.1.md`.
 - [ ] 3.2 Archive the change and sync the graph-index spec as the last content commit. Accept: `task spec:check`.

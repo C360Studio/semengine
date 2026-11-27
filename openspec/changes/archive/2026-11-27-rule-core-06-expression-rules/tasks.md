@@ -77,7 +77,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 - [x] 2.7 Comments: inventory F15's ten history lines keep their reason and lose the history.
 - [x] 2.8 Extend the ledger row `processor/rule` with what this PR adds and what it does not carry (inventory § 1);
   keep the `scripts/cover-check.sh` floor. Check: `task ledger:check`, `task cover:check`.
-- [ ] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
+- [x] 2.9 The PR body states the carried pin lines, production and test, as `sed -n a,bp | wc -l` ranges, and its
   adopter section says that `NewExpressionRule` and `EvaluateEntityState` are gone, that a product loads its pack and
   calls `Matches`, which answers false for a missing required field as `EvaluateEntityState` did, and that
   `MatchesWithLifecycle` waits until a product asks for it.
@@ -89,5 +89,5 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 4. Land
 
-- [ ] 4.1 Sync `openspec/specs/rule-matching/`, `rule-definitions/` and `rule-conditions/` and archive the change as
+- [x] 4.1 Sync `openspec/specs/rule-matching/`, `rule-definitions/` and `rule-conditions/` and archive the change as
   the PR's last content commit. Check: `task spec:check`.

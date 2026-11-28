@@ -16,8 +16,9 @@ a value that cannot be filled is written out as its own text.
 
 - An action runs through its type's handler, from the one set PR 2 built, by a runner built once. Every handler is
   handed outputs to publish and add a triple, which refuse the reserved reply space and stamp who wrote and when.
-- Triple actions write through graph-ingest's typed writes; each commits at most one write, and a firing writes
-  nothing of its own. With graph writes off, a rule with a triple action is refused at load.
+- Triple actions write through graph-ingest's typed writes; each commits at most one write, retrying a lost race as
+  the lifecycle manager does, and a firing writes nothing of its own. With graph writes off, a rule with a triple
+  action is refused at load.
 - A product's deny result passes through for PR 7 to stop on. The rule package is checked to reach no agentic or
   governance code.
 

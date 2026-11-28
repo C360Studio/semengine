@@ -25,7 +25,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
     runs at fire, receiving the body byte for byte, the execution context and the framework's outputs; a type missing
     from the set, a nil context and a nil execution context are refused, classified invalid, no handler called; a
     returned `*DenyVerdict` and a transient classified error pass through `errors.As` and keep their class; a built-in
-    handed a stand-in `Outputs` is refused, classified invalid, with nothing sent.
+    handed a stand-in `Outputs` is refused, classified invalid, with nothing sent (an in-package guard; `Handlers` has
+    no exported lookup, so no product reaches it).
   - `TestNewActionExecutorRefuses` (D3): a zero `Handlers`, no publisher, triple writes on with no writer, a writer
     with triple writes off.
   - `TestRunConcurrent` (D3), under `-race`: many goroutines run actions of different rules through one executor, and

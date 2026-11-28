@@ -197,20 +197,26 @@ with `publish_agent` (#27). The graph-event files test the dropped graph-event p
   `timestamp`, `source` exactly `rule_engine`, optional `properties` and `related_id` (pin
   `docs/adr/093-typed-user-response-subject-ownership.md:28-32`).
 - **Usage counts** (python over semteams and semboids `configs/**/*.json`, 92 rule objects; semsource has no rules):
-  action types `add_triple` 57, `publish_agent` 42, `replace_owned` 9, `lifecycle_transition` 9,
-  `reconcile_predicates` 6, `publish` 6, `remove_triple` 2, `update_triple` 0. Keys: `add_triple` uses `subject` 48,
-  `predicate` 57, `object` 57, `ttl` 0; `remove_triple` `predicate` 2, `object` 0, `subject` 0; `publish` `subject` 6
-  (all the literal `boids.steering`), `properties` 6. Templates in triple fields: 42 `$entity.triple.*` tokens, of
-  which 9 in objects; 4 of the 9 have a required condition on the same predicate, 5 do not (all
+  action types `add_triple` 57, `publish_agent` 42, `replace_owned` 9, `lifecycle_transition` 9, `reconcile_predicates`
+  6, `publish` 6, `remove_triple` 2, `update_triple` 0. The 9 `replace_owned` are semteams'
+  `configs/rules/dev-via-test/02c`, `02d`, `07a`, `07c`, `07d`: each a single-value replace of the rule's own value on
+  another entity, subject `$entity.triple.lineage.run-loop-entity-id` (e.g. `02c-plan-retry-stamp.json:24-27`). No
+  handler exists (pin Go and semteams non-test Go: `grep -rn replace_owned --include='*.go'`, 0 outside tests); the pack
+  is parked (neither `configs/flow-bootstrap.json` nor `e2e-flow-bootstrap.json` loads it; `ui/Taskfile.yml:805`,
+  "PARKED"). It is the one product statement of what `update_triple` (design D4 (a)) does; mapped onto `update_triple`
+  it needs nothing new, while a product `replace_owned` handler would need the private replace. Keys: `add_triple` uses
+  `subject` 48, `predicate` 57, `object` 57, `ttl` 0; `remove_triple` `predicate` 2, `object` 0, `subject` 0; `publish`
+  `subject` 6 (all the literal `boids.steering`), `properties` 6. Templates in triple fields: 42 `$entity.triple.*`
+  tokens, of which 9 in objects; 4 of the 9 have a required condition on the same predicate, 5 do not (all
   `coordinator.decision.reason`: `create-change/01-…`, `coordinator/03-ask-user.json`, `03b-respond-direct.json`,
   `dev-from-task/01a-…`, `01b-…`). semboids' 6 publish actions carry 12 `$message.*` property tokens (`boid_id`,
   `zone_id`), none checked by a condition on the same field. The two `remove_triple` actions
-  (`agent-run/11-resume-awaiting-to-executing.json:34`, `:38`) clear `agent.run.clarification-pending` and
-  `…-resumed`; their only writers are semteams rules (`agent-run/07`, `08`, `10`, `add_triple`;
-  `grep -rn` over semteams' Go and JSON outside tests and docs finds only the vocabulary declarations
-  `cmd/semteams/vocab/vocab.go:172`, `:177`). The pack's description says why the second remove must land: "clarification_resumed
-  MUST be cleared or rule 09 stays permanently blocked" (`11-resume-awaiting-to-executing.json:5`); the run entity is
-  also written by the lifecycle manager, so a remove can meet a revision mismatch.
+  (`agent-run/11-resume-awaiting-to-executing.json:34`, `:38`) clear `agent.run.clarification-pending` and `…-resumed`;
+  their only writers are semteams rules (`agent-run/07`, `08`, `10`, `add_triple`; `grep -rn` over semteams' Go and JSON
+  outside tests and docs finds only the vocabulary declarations `cmd/semteams/vocab/vocab.go:172`, `:177`). The pack's
+  description says why the second remove must land: "clarification_resumed MUST be cleared or rule 09 stays permanently
+  blocked" (`11-resume-awaiting-to-executing.json:5`); the run entity is also written by the lifecycle manager, so a
+  remove can meet a revision mismatch.
 
 ## 6. Category 4: who each name is for
 

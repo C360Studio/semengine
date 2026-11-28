@@ -58,11 +58,10 @@ concurrent runs.
 
 ### Requirement: A handler changes the world through its outputs
 
-The outputs handed to every handler SHALL publish a message and add one triple, and the built-in actions SHALL also
-remove and replace through them. Every statement they write SHALL carry the source `rule_engine`, a timestamp taken
-when it is written and confidence 1; a handler SHALL NOT choose the source. Each triple write SHALL go to graph-ingest
-through its typed mutation operations. A built-in handed outputs the executor did not build SHALL refuse, classified
-invalid, with nothing sent.
+The outputs handed to every handler SHALL publish and add one triple; the built-ins SHALL also remove and replace
+through them. Each statement SHALL carry source `rule_engine`, its write time and confidence 1, never a handler's
+choice, and go to graph-ingest's typed mutation operations. A built-in handed outputs the executor did not build SHALL
+refuse, classified invalid, sending nothing: an in-package guard, not a product-facing contract.
 
 #### Scenario: A handler's triple carries the rule source
 
@@ -120,9 +119,8 @@ every other value as written, or `null` when the action has none.
 ### Requirement: An add appends the rule's statement
 
 `add_triple` SHALL append its statement to an existing entity. An append that adds nothing SHALL succeed. An entity
-that does not exist SHALL be refused classified invalid with code `entity_not_found`, for `add_triple`,
-`remove_triple` and `update_triple` alike; a subject the reply reports failed SHALL be refused with the reply's class
-and code.
+that does not exist SHALL be refused classified invalid with code `entity_not_found`; a subject the reply reports
+failed SHALL be refused with the reply's class and code.
 
 #### Scenario: An add to an entity that does not exist
 
@@ -134,7 +132,8 @@ and code.
 
 `remove_triple` SHALL read its subject exactly and send a conditional replace that removes every statement of its
 predicate whose source is `rule_engine`, and SHALL leave the predicate's statements from every other source. A remove
-with no `rule_engine` statement to clear SHALL succeed.
+with no `rule_engine` statement to clear SHALL succeed; one whose entity does not exist SHALL fail with the read's
+`entity_not_found`, classified invalid.
 
 #### Scenario: Another writer's value stays
 
@@ -147,7 +146,8 @@ with no `rule_engine` statement to clear SHALL succeed.
 
 `update_triple` SHALL read its subject exactly and send a conditional replace that makes the `rule_engine` statements
 of its predicate exactly its one statement, committing at most one write, and SHALL leave the predicate's statements
-from every other source.
+from every other source. An update whose entity does not exist SHALL fail with the read's `entity_not_found`,
+classified invalid.
 
 #### Scenario: An update over a held value
 

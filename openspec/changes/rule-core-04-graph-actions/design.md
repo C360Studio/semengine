@@ -34,7 +34,7 @@ replace, with no product reader, are unexported methods of that value; the built
 write) reach them by asserting its type, refusing any other `Outputs`, classified invalid. `Outputs` widens only for a
 named product need, and every stand-in then adds the method. The page's three-argument sketch changes (archived page
 not edited, as PR 3 D4). (b) fields on `ExecutionContext` that `run` fills per call: one route, but `run` writes the
-caller's context, a caller can set the same fields (which wins needs a rule), and the rule ID is one more field. (c)
+caller's context, a field the caller set and one `run` sets conflict, and the rule ID is one more field. (c)
 nothing: no guard, routing or skip; products write through the public `pkg/projection.MutationClient` under any source.
 The writer stamps `rule_engine`, time and confidence 1 (the lane accepts any source, ADR-110 Decision 5).
 
@@ -64,8 +64,9 @@ exported, one constructor taking set, publisher, writer: semteams renames. Proof
   found: not atomic; a rule could erase a lifecycle phase or another component's fact.
 - Update (owner decision): exact read, conditional replace leaving the one new rule statement. (a, recommended) one
   write; another source's statement stays, and a single-value read (`GetTriple`, `graph/types.go:44-55`) picks the
-  latest timestamp, so the rule's value wins until that writer writes again (the pin cleared every source). (b) the
-  pin's remove then append (two writes, a swallowed failure, P10). (c) drop it (0 uses).
+  latest timestamp (the pin cleared every source). (b) the pin's remove then append (two writes, a swallowed failure,
+  P10). (c) drop it: 0 loaded uses, but semteams' parked `replace_owned` (9 actions, no handler) is this replace and
+  maps onto (a), where a product handler would need the private replace.
 - An absent entity fails remove and update with the read's `entity_not_found` (`processor/graph-ingest/query.go:87-96`);
   a reply of unchanged (nothing to clear, same value) succeeds.
 - Retry: a mismatch commits nothing, so remove and update re-read and retry, at most five attempts, per ADR-110

@@ -14,13 +14,10 @@ a value that cannot be filled is written out as its own text.
 
 ## What changes
 
-- An action runs through its type's handler, built-in or a product's, from the one set PR 2 built. The engine's runner
-  is built once with its publisher and graph writer.
-- Every handler is handed the same outputs, to publish a message and add a triple. They refuse the reserved reply
-  space and stamp who wrote a triple and when.
+- An action runs through its type's handler, from the one set PR 2 built, by a runner built once. Every handler is
+  handed outputs to publish and add a triple, which refuse the reserved reply space and stamp who wrote and when.
 - Triple actions write through graph-ingest's typed writes; each commits at most one write, and a firing writes
-  nothing of its own. A remove or update that loses a race to another writer reads again and retries, up to five
-  times, as the lifecycle manager does. With graph writes off, a rule with a triple action is refused at load.
+  nothing of its own. With graph writes off, a rule with a triple action is refused at load.
 - A product's deny result passes through for PR 7 to stop on. The rule package is checked to reach no agentic or
   governance code.
 
@@ -40,10 +37,10 @@ a value that cannot be filled is written out as its own text.
 - **Removing a value removes only what rules wrote (recommended).** SemEngine's write rules let a conditional write name
   one writer; semteams' two removes clear values only its rules write. The other way is one write per writer found,
   which lets a rule erase a lifecycle phase or another component's fact.
-- **An update replaces the rule's value in one write (recommended).** No product uses it. A value another writer
-  stored stays beside it; a reader asking for one value gets the newest, so the rule's wins until that writer writes
-  again. Today it is two writes that first clear every writer's value, and a failed first half is ignored. Other ways:
-  carry it as it is, or drop it.
+- **An update replaces the rule's value in one write (recommended).** No loaded rule uses it, but semteams' parked
+  pack asks for exactly this in 9 actions of a type with no handler (`replace_owned`), which could map onto it. A value
+  another writer stored stays beside it; a reader asking for one value gets the newest. Today it is two writes that
+  clear every writer's value, and a failed first half is ignored. Other ways: carry it as it is, or drop it.
 - **Three settings that do nothing are refused at load (recommended):** time-to-live (nothing ever expires a triple),
   update's properties (never written), remove's object (ignored; the whole value goes). No product rule sets them. The
   other way keeps time-to-live, documented as never enforced.
@@ -58,7 +55,5 @@ a value that cannot be filled is written out as its own text.
 
 ## Impact
 
-`processor/rule` (runner, outputs, four built-ins, `DenyVerdict`; partial until PR 12), `internal/graphmutation`
-and `pkg/projection` (one shared reading of a write's result, both ledger rows), the agentic import guard,
-`processor/rule/docs/actions.md` and `syntax.md`. semboids' publish message keeps its shape. Independent of open PRs;
-PR 5 waits for this.
+`processor/rule` (partial until PR 12), `internal/graphmutation`, `pkg/projection`, the import guard, the ledger and
+the rule guides (design D1, D10). Independent of open PRs; PR 5 waits for this.

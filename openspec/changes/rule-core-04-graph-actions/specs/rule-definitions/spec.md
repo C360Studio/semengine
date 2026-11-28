@@ -5,10 +5,9 @@
 ### Requirement: The action handler set is built once
 
 `NewHandlers(product, cfg)` SHALL be the one way to build the handler set `Load` and the executor take: the nine
-built-in types plus the product's map, with the settings in `cfg` that the built-in checks read. It SHALL refuse a
-product type name that is exactly a built-in name (compared as written), an empty name or a nil handler, classified
-invalid and naming the type. `Load` SHALL refuse a handler set that `NewHandlers` did not build. The zero `cfg` SHALL
-mean the rule processor writes no triples.
+built-in types, the product's map, and the settings in `cfg`, whose zero value writes no triples. It SHALL refuse,
+classified invalid and naming the type, a product type name equal to a built-in name as written, an empty name or a
+nil handler. `Load` SHALL refuse a set `NewHandlers` did not build.
 
 #### Scenario: A product name reuses a built-in one
 
@@ -22,12 +21,11 @@ mean the rule processor writes no triples.
 
 ### Requirement: Built-in actions refuse settings they do not read
 
-Each built-in action type SHALL refuse at load a body key that neither the core nor that type reads, naming the key,
-the action's position, the rule and the source. `add_triple` SHALL read `subject`, `predicate` and `object`;
-`remove_triple` `subject` and `predicate`; `update_triple` `subject`, `predicate` and `object`; `publish` `subject`
-and `properties`. `publish` SHALL refuse a declared subject in `user.response.>`; the triple types SHALL refuse a
-predicate that is not a declared literal, and SHALL refuse every action when the handler set was built with triple
-writes off, saying the rule processor writes no triples; and `max_iterations` SHALL be 0 or more.
+Each built-in type SHALL refuse at load a body key neither the core nor it reads, naming key, position, rule and
+source: `add_triple` and `update_triple` read `subject`, `predicate`, `object`; `remove_triple` `subject`,
+`predicate`; `publish` `subject`, `properties`. `publish` SHALL refuse a declared `user.response.>` subject; triple
+types an undeclared predicate, and any action with triple writes off, saying the rule processor writes no triples;
+`max_iterations` SHALL be 0 or more.
 
 #### Scenario: A misspelt setting
 

@@ -51,9 +51,11 @@ with `publish_agent` (#27). The graph-event files test the dropped graph-event p
 
 ## 2. Pin probe (commands in `notes/inventory-probe.md`)
 
-- PR 4's 39 unit tests (the carried ranges of `actions_test.go` and all of `actions_subject_override_test.go`) on the
-  pin copy: `-race` ok, 39 top-level `--- PASS`; `-count=5 -cpu=1 -shuffle=on` ok, `-test.shuffle
-  1795863972197797000`, 0 `--- FAIL`.
+- 39 top-level unit tests on the pin copy: 18 in the carried ranges of `actions_test.go` and 11 in
+  `actions_subject_override_test.go` (29 carried); 5 in `typed_substitution_test.go:60-272`, forwarded by PR 3 (34
+  owned by PR 4); and 5 in dropped ranges the `-run` pattern also matches (`actions_test.go:186`, `:257`, `:268`,
+  `:335`, `:378`). `-race` ok, 39 `--- PASS`; `-count=5 -cpu=1 -shuffle=on` ok, `-test.shuffle 1795863972197797000`, 0
+  `--- FAIL`.
 - The two integration tests of `triple_mutator_revision_integration_test.go` (`-tags integration`, `-race`), Docker
   29.9.3 reachable: both `--- PASS`.
 - Behaviour probe, P1 to P10 (same notes file), each observed as stated:
@@ -168,12 +170,27 @@ with `publish_agent` (#27). The graph-event files test the dropped graph-event p
 - Owner ruling on #350 (comment 6710782733, Q3): "the projection client only, for now … When it [`processor/rule`] is
   [ported], its write path must validate too". The validator does not exist: `git grep -n -i
   'ValidateCandidateState\|CandidateState' -- ':!openspec/changes/archive'`: 0.
-- Consumer use (symbol level): semteams `test/contract/rule_family_consumer_test.go:155`, `:160` and
-  `research_loop_budget_test.go:65`, `:70`, `:230-231`, `:473`, `:502` call `rule.NewActionExecutorFull(…, nil,
-  publisher, platform)` and `executor.Execute(ctx, action, ec)`; `:474`, `:503` pass the executor to
-  `NewStatefulEvaluator`. semboids: no executor symbol. semsource: no `processor/rule` import. No consumer names
-  `ExecuteAddTriple`, `ExecuteRemoveTriple`, `ParseTTL`, `TripleMutator`, `Publisher`, `MutationTimeout`,
-  `DenyVerdict` or `ErrDenyVerdict` (`grep -rn` over the three trees).
+- Consumer use (symbol level; searched by selector, with any package alias: `grep -rn --include='*.go' -E
+  '\.(NewActionExecutor[A-Za-z]*|Set[A-Za-z]+Manager|Execute)\('` and every file importing `processor/rule`, 15 in
+  semteams, several as `rulepkg`). semteams, four test files run rule actions in-process, all through the executor:
+  - `test/contract/rule_family_consumer_test.go:155`, `:160` and `research_loop_budget_test.go:65`, `:70`,
+    `:230-231`, `:473`, `:502` call `rule.NewActionExecutorFull(…, nil, publisher, platform)` and `Execute` for its
+    `publish_agent` family; `:474`, `:503` pass the executor to `NewStatefulEvaluator`.
+  - `cmd/semteams/approvalpause/rule_order_test.go:32`, `:50-51`, `:95`: `rulepkg.NewActionExecutor`,
+    `SetLifecycleManager(h)`, `Execute` over the real `agent-run/12` and `13` packs, running the built-in
+    `lifecycle_transition` against its own fake lifecycle manager.
+  - `test/contract/autoresearch_reply_integration_test.go:46`, `:65-71`, `:106-154`: the harness implements
+    `AddTriple`, `RemoveTriple` and `Publish` (a structural implementer of the pin's `TripleMutator` and `Publisher`,
+    though it never names them), builds `NewActionExecutorFull(h.logger, h, h, …)` and `SetLifecycleManager(h)`, runs
+    the real `autoresearch` pack's built-in `add_triple`, `remove_triple` and `lifecycle_transition` over those
+    fakes, and passes itself to `NewStatefulEvaluator` as the executor (its own `Execute`, `:139-154`).
+  - Not PR 4's seam: `cmd/semteams/research_loop_budget_integration_test.go:164-188` implements the pin's
+    `ActionExecutorInterface` (`stateful_evaluator.go:68-70`) for the cron scheduler (PRs 7 and 11).
+  semboids: no executor symbol. semsource: no `processor/rule` import. No consumer names `ExecuteAddTriple`,
+  `ExecuteRemoveTriple`, `ParseTTL`, `TripleMutator`, `Publisher`, `MutationTimeout`, `DenyVerdict` or
+  `ErrDenyVerdict`. With the executor unexported (design D3), the four files cannot run a built-in outside the
+  processor; the approved target-shape consequence (proposal `:44`, "need a writer or must use no triple action")
+  assumed an exported one.
 - semboids reads the publish payload: `internal/sim/steering.go:47-62` decodes `{properties: {boid_id, zone_id, kind,
   ttl_ticks}}`, coercing numbers given as strings ("`$message.*` substitution can render numbers as strings",
   `:49-50`). The pin's ADR-093 names the envelope as a product contract: `entity_id`, `subject`, an RFC 3339
@@ -191,17 +208,19 @@ with `publish_agent` (#27). The graph-event files test the dropped graph-event p
   (`agent-run/11-resume-awaiting-to-executing.json:34`, `:38`) clear `agent.run.clarification-pending` and
   `…-resumed`; their only writers are semteams rules (`agent-run/07`, `08`, `10`, `add_triple`;
   `grep -rn` over semteams' Go and JSON outside tests and docs finds only the vocabulary declarations
-  `cmd/semteams/vocab/vocab.go:172`, `:177`).
+  `cmd/semteams/vocab/vocab.go:172`, `:177`). The pack's description says why the second remove must land: "clarification_resumed
+  MUST be cleared or rule 09 stays permanently blocked" (`11-resume-awaiting-to-executing.json:5`); the run entity is
+  also written by the lifecycle manager, so a remove can meet a revision mismatch.
 
 ## 6. Category 4: who each name is for
 
 | Name | Pin production readers | Consumer readers | Disposition basis |
 | --- | --- | --- | --- |
-| `ActionExecutor`, `Execute` | `processor.go:665-711`, `stateful_evaluator.go:426`, `cron_scheduler.go:609` | semteams contract tests (§ 5) | target-shape § 2: "the executor … may be unexported"; the design decides |
-| `NewActionExecutor`, `…WithMutator`, `…Full`, `…Complete` | `processor.go:670-678` (two) | semteams tests (`Full`) | ruling item 6: one constructor |
+| `ActionExecutor`, `Execute` | `processor.go:665-711`, `stateful_evaluator.go:426`, `cron_scheduler.go:609` | semteams, four test files (§ 5) | target-shape § 2: "the executor … may be unexported"; the design decides |
+| `NewActionExecutor`, `…WithMutator`, `…Full`, `…Complete`, `SetLifecycleManager` | `processor.go:670-678` (two) | semteams tests (`NewActionExecutor`, `Full`, `SetLifecycleManager`) | ruling item 6: one constructor, no setters |
 | `ExecuteAddTriple`, `ExecuteRemoveTriple` | `actions.go:919`, `:922` only | 0 | surface audit (a): no outside reader |
 | `ParseTTL` | `actions.go:1026`, `:1271` (and `:1359`, PR 5's reconcile) | 0 | goes if `ttl` goes (F8) |
-| `TripleMutator`, `Publisher` | the executor's fields; one production implementer each (`triple_mutator.go:17`, `publisher.go:29`) | 0 | the design decides what replaces them |
+| `TripleMutator`, `Publisher` | the executor's fields; one production implementer each (`triple_mutator.go:17`, `publisher.go:29`) | not named; one structural implementer, semteams' `autoresearch_reply_integration_test.go:106-124` | the design decides what replaces them |
 | `MutationTimeout` | `triple_mutator.go:28`, `:31` | 0 | surface audit (a) |
 | `DenyVerdict`, `ErrDenyVerdict`, `(*DenyVerdict).Is` | producer `actions.go:2111` (deny, not carried); readers `stateful_evaluator.go:427`, `cron_scheduler.go:610` | 0 | ported; contract: #28's matrix row ("a `*DenyVerdict` stops the chain"); a product's deny handler is its producer |
 | `newTripleMutator`, `tripleMutator` (unexported) | `processor.go:670` | — | plumbing; PR 8 builds it |
@@ -242,11 +261,14 @@ DenyVerdict|executePublish|ActionExecutor|rule_engine|publish action` (039, 040,
 - **ADR-091, graph mutation authority without semantic ownership** (pin; superseded for the seam by SemEngine's
   ADR-110): graph-ingest is the one physical writer; any component may request one of four typed operations; "Rule
   reconcile performs one exact read and one mutation request. It surfaces `revision_mismatch` and `commit_unknown`
-  without automatic retry" (pin `091-…md:96-97`). Governs `triple_mutator.go`.
+  without automatic retry" (pin `091-…md:96-97`). Governs `triple_mutator.go`. Its no-retry consequence does not
+  survive: ADR-110 Decision 2 (`docs/adr/110-write-seam.md:84-85`) says "callers of the typed operations keep a bounded
+  re-read and retry", as `pkg/lifecycle/manager.go:505-509`, `:557` does; a mismatch commits nothing.
 - **ADR-110, the write seam** (`docs/adr/110-write-seam.md`): Decision 1, everyone but graph-ingest changes entity
-  state through the four typed operations; Decision 4, append is must-exist and keyed on (subject, predicate,
-  datatype, source, context, object), a conditional replace names one source; Decision 5, every statement carries a
-  `Source` and a `Timestamp`, an originator may assert its own time. Governs every triple write.
+  state through the four typed operations; Decision 2, their callers keep a bounded re-read and retry; Decision 4,
+  append is must-exist and keyed on (subject, predicate, datatype, source, context, object), a conditional replace
+  names one source; Decision 5, every statement carries a `Source` and a `Timestamp`, an originator may assert its own
+  time. Governs every triple write.
 - **ADR-055, graph write intent taxonomy** (pin; mutation-lane taxonomy superseded by ADR-091): must-exist append;
   "the `add_triple` rule action supports `action.Subject` override … targeting an entity OTHER than the trigger"
   (`055-…md:225-226`).
@@ -267,12 +289,22 @@ DenyVerdict|executePublish|ActionExecutor|rule_engine|publish action` (039, 040,
   **ADR-053** (lifecycle and agent runs, read by `publish_agent`), **ADR-039** and **ADR-055 § 3a** (deny/approve,
   `VerdictAuditor`): not carried (Q15; #27, #28).
 - **ADR-076**: the graph-event identity; decisions 1-3 and 5 not ported, ruled.
+- **ADR-040, retire the boid subsystem** (pin): removed `executePublishBoidSignal` in favour of the generic `publish`
+  (`040-…md:32`, `:142`), which semboids now uses. Nothing left to bind.
+- **ADR-049, lifecycle harness prime schema** (pin): its `add_triples` and `remove_triples` (`049-…md:214-215`) are
+  lifecycle request fields, not rule actions. Not binding.
+- **ADR-054** (pin): lists `processor/rule/triple_mutator.go:17` as a mutation-API writer with likely indexing profile
+  `control` (`054-…md:89`). Not binding: a rule append is must-exist and never creates an entity, so no profile is
+  chosen by the rule writer.
+- **ADR-059, epistemic trust tier** (pin): its `add_triples` (`059-…md:93`, `:180-188`) is agentic memory's
+  operation, not the rule action. Not binding.
 
 ## 9. Open issues against `processor/rule`
 
 Queries: `gh issue list --state open --search "<q>" --limit 200` for `rule`, `action`, `actions`, `triple`, `publish`,
 `deny`, `DenyVerdict`, `executor`, `mutator`, `ActionExecutor`, `add_triple`, `remove_triple`, `update_triple`, `ttl`,
-`ExpiresAt`, `graphmutation`, `ExactEntityReader`, `NewExactEntityReader`, `user.response`, `governance`, `agentic`.
+`ExpiresAt`, `graphmutation`, `ExactEntityReader`, `NewExactEntityReader`, `user.response`, `governance`, `agentic`,
+`projection` (#350, #477, #24, #9; #477 is `pkg/graphview` adoption, no PR 4 file).
 Kept, as naming a carried package or file:
 
 - #27 (`publish_agent` leaves the core; import guard; an `adapt` ledger row whose contract cites the matrix row).
@@ -359,7 +391,7 @@ optional ([Bounded port scope](../../../.agents/protocol.md#bounded-port-scope))
 | Ownership | one graph-ingest process (ADR-091 § 2); the revision is the only fence (ADR-110 Decision 3); a conditional replace names one source (Decision 4) |
 | Readers | graph-ingest's mutation handlers; every `ENTITY_STATES` watcher, the rule's own from PR 10 |
 | Writers | graph-ingest only, physically (`graph-entity-writes`, "One rule per write mode") |
-| Recovery | none in the writer: `commit_unknown` and `revision_mismatch` are returned, never retried (ADR-091 consequences; ADR-111 Decision 3) |
+| Recovery | a `revision_mismatch` on remove or update is re-read and retried, bounded (ADR-110 Decision 2, as `pkg/lifecycle`); `commit_unknown` is returned, never retried (ADR-111 Decision 3) |
 
 ## 12. Adopter seam inventory
 
@@ -372,16 +404,24 @@ Two developers: semteams' author moving `publish_agent` into a product handler, 
    The rule author: a remove now removes only what rules wrote (if the owner rules so); `ttl`, update's `properties`
    and remove's `object` are refused (if ruled); an action with an unfillable name fails instead of writing the text
    (if ruled).
-2. **If they do nothing.** semteams' five test sites stop compiling (`NewActionExecutorFull`, `Execute`): a compile
-   error. A handler that publishes over its own connection compiles and runs, and silently has no reserved-subject
-  refusal. A rule
-   with a refused key fails `Load` naming key, rule and file (boot error, PR 8). A rule whose object token does not
-   resolve fails that action with an error naming the field and the token.
+2. **If they do nothing.** semteams' four in-process test files stop compiling (`NewActionExecutor`,
+   `NewActionExecutorFull`, `SetLifecycleManager`, `Execute`): a compile error, and the two that run built-in actions
+   over fakes have no in-process replacement; they move to processor tests at PR 8. A handler that publishes over its
+   own connection compiles and runs, and silently has no reserved-subject refusal. A product handler's triple add with
+   triple writes off fails at fire with a typed error (the pin skipped it silently, `actions.go:2061`). A rule with a
+   refused key fails `Load` naming key, rule and file (boot error, PR 8). A rule whose object token does not resolve
+   fails that action with an error naming the field and the token.
 3. **Where they find out.** Compile error (executor names gone; `Run` added to the interface); boot error (refused
    keys); typed runtime error (unfilled names, reserved subject, entity not found); doc only for "use what you are
    handed".
 4. **What they should have to know.** Nothing beyond `Check` and `Run`. The gap: a product can always reach NATS some
    other way, so whatever the framework hands a handler has to be its easiest path, not a fact it must learn.
+
+Facts for the outputs decision (design D2): `publish_agent` uses only the executor's publish and triple add (pin
+`actions.go:737-749`, `:2024-2036`, `:2062-2073`); `NewHandlers` builds `builtinHandler` with no dependencies
+(`action.go:203-205`), so whatever reaches a handler at run is also the built-ins' only route to the writer, and PR 5's
+to its reconciler and KV writer; `Lifecycle` already rides on the context (`execution_context.go:48`, PR 3's ruling);
+`pkg/projection.MutationClient` is public, so a product handed nothing can still write the graph, naming any source.
 
 Prefer observation: the source name and the statement time are the writer's, never the caller's to supply; the
 rule ID a write is tracked under (PR 10) comes from the rule the executor runs, not from the context's state, which a
@@ -396,7 +436,8 @@ core. Dropping `ttl` removes a key no code honours, not a capability (§ 4, F8).
 
 - **PR 5:** the five built-in types whose `Run` arrives there (`reconcile_predicates`, `update_kv`, `lifecycle_*`);
   `reconcile_predicates`' own `ttl` key (`builtin.go:29`) gets the same answer as D6.
-- **PR 7:** `Fire` calls the executor with the rule's ID; what a failed action means (ruling item 7); the stop on a
+- **PR 7:** `Fire` calls the executor with the rule's ID; the pin's `ActionExecutorInterface`, which semteams
+  implements twice in tests (§ 5); what a failed action means (ruling item 7); the stop on a
   `*DenyVerdict` (#28); `action_failure_metrics_test.go`; whether the triple time takes `Fire`'s `now`.
 - **PR 8:** builds the publisher (`publisher.go:26-77`, port routing) and the triple writer from its NATS client and
   `enable_graph_integration`; the executor once in `Start`; `events_published` for publish actions.

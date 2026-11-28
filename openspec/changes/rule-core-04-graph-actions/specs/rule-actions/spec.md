@@ -58,15 +58,28 @@ concurrent runs.
 
 ### Requirement: A handler changes the world through its outputs
 
-The outputs handed to every handler SHALL publish a message and add, remove and replace one triple. Every statement
-they write SHALL carry the source `rule_engine`, a timestamp taken when it is written and confidence 1; a handler
-SHALL NOT choose the source. Each triple write SHALL go to graph-ingest through its typed mutation operations.
+The outputs handed to every handler SHALL publish a message and add one triple, and the built-in actions SHALL also
+remove and replace through them. Every statement they write SHALL carry the source `rule_engine`, a timestamp taken
+when it is written and confidence 1; a handler SHALL NOT choose the source. Each triple write SHALL go to graph-ingest
+through its typed mutation operations. A built-in handed outputs the executor did not build SHALL refuse, classified
+invalid, with nothing sent.
 
 #### Scenario: A handler's triple carries the rule source
 
 - **WHEN** a product handler adds a triple through its outputs
 - **THEN** the stored statement's source is `rule_engine` and its timestamp is set
 - **AND** the test that verifies this is `TestTripleWriter`
+
+### Requirement: A product's triple add fails when triple writes are off
+
+With the handler set built with triple writes off, a product handler's triple add through its outputs SHALL fail at
+fire, classified invalid, saying the rule processor writes no triples, with nothing sent.
+
+#### Scenario: A product handler adds a triple with writes off
+
+- **WHEN** the set was built with triple writes off and a product handler adds a triple through its outputs
+- **THEN** the add fails, classified invalid, and no request is sent
+- **AND** the test that verifies this is `TestOutputsAddTripleWritesOff`
 
 ### Requirement: A triple write is checked before it is sent
 
@@ -107,8 +120,9 @@ every other value as written, or `null` when the action has none.
 ### Requirement: An add appends the rule's statement
 
 `add_triple` SHALL append its statement to an existing entity. An append that adds nothing SHALL succeed. An entity
-that does not exist SHALL be refused classified invalid with code `entity_not_found`; a subject the reply reports
-failed SHALL be refused with the reply's class and code.
+that does not exist SHALL be refused classified invalid with code `entity_not_found`, for `add_triple`,
+`remove_triple` and `update_triple` alike; a subject the reply reports failed SHALL be refused with the reply's class
+and code.
 
 #### Scenario: An add to an entity that does not exist
 
@@ -118,35 +132,52 @@ failed SHALL be refused with the reply's class and code.
 
 ### Requirement: A remove clears only what rules wrote
 
-`remove_triple` SHALL make one exact read of its subject and one conditional replace that removes every statement of
-its predicate whose source is `rule_engine`, and SHALL leave the predicate's statements from every other source.
+`remove_triple` SHALL read its subject exactly and send a conditional replace that removes every statement of its
+predicate whose source is `rule_engine`, and SHALL leave the predicate's statements from every other source. A remove
+with no `rule_engine` statement to clear SHALL succeed.
 
 #### Scenario: Another writer's value stays
 
 - **WHEN** a predicate holds one statement from `rule_engine` and one from another source, and a `remove_triple` action
   names it
 - **THEN** the predicate holds only the other source's statement
+- **AND** the test that verifies this is `TestTripleWriter`
 
 ### Requirement: An update replaces in one write
 
-`update_triple` SHALL make one exact read of its subject and one conditional replace that makes the `rule_engine`
-statements of its predicate exactly its one statement, raising the entity's revision by at most one, and SHALL leave
-the predicate's statements from every other source.
+`update_triple` SHALL read its subject exactly and send a conditional replace that makes the `rule_engine` statements
+of its predicate exactly its one statement, committing at most one write, and SHALL leave the predicate's statements
+from every other source.
 
 #### Scenario: An update over a held value
 
 - **WHEN** a predicate holds a `rule_engine` statement and an `update_triple` action gives it another value
-- **THEN** the entity's revision rises by exactly one and the predicate holds the new `rule_engine` value only
+- **THEN** the entity's revision rises by exactly one and the predicate's only `rule_engine` statement is the new value
+- **AND** the test that verifies this is `TestTripleWriter`
 
-### Requirement: A graph write is never retried
+### Requirement: A graph write retries only what committed nothing
 
-A triple write that fails on a revision mismatch or with its commit unknown SHALL return that failure with its
-classification, and SHALL NOT be retried.
+A remove or update whose conditional replace meets a revision mismatch SHALL read the entity again and retry, at most
+five attempts in all, and then SHALL return the last mismatch with its classification. A triple write whose commit is
+unknown SHALL return that failure at once and SHALL NOT be retried. An add SHALL be sent once.
 
-#### Scenario: A revision mismatch
+#### Scenario: A mismatch, then success
 
-- **WHEN** graph-ingest refuses a remove's conditional replace on a revision mismatch
-- **THEN** the action fails, `errors.Is(err, errs.ErrRevisionMismatch)` holds, and exactly one replace was sent
+- **WHEN** a remove's first conditional replace meets a revision mismatch and its second is applied
+- **THEN** the action succeeds after two reads and two replaces
+- **AND** the test that verifies this is `TestTripleWriterRetries`
+
+#### Scenario: Mismatches every time
+
+- **WHEN** every conditional replace of a remove meets a revision mismatch
+- **THEN** the action fails after exactly five replaces and `errors.Is(err, errs.ErrRevisionMismatch)` holds
+- **AND** the test that verifies this is `TestTripleWriterRetries`
+
+#### Scenario: Commit unknown
+
+- **WHEN** a remove's conditional replace fails with its commit unknown
+- **THEN** the action fails with that classification after exactly one replace
+- **AND** the test that verifies this is `TestTripleWriterRetries`
 
 ### Requirement: A triple action targets the firing entity unless it names one
 

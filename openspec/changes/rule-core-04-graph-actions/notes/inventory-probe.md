@@ -6,8 +6,10 @@ scratch copy of the SemStreams pin `8b99efe9` (`gh api repos/C360Studio/semstrea
 
 ## PR 4's tests on the pin copy
 
-In the pin copy's root. The `-run` list is the 39 top-level tests of the carried ranges of `actions_test.go` and of
-`actions_subject_override_test.go`.
+In the pin copy's root. The `-run` pattern selects 39 top-level tests: 18 in the carried ranges of `actions_test.go`
+and 11 in `actions_subject_override_test.go` (29 carried), 5 in `typed_substitution_test.go:60-272` that PR 3
+forwarded (34 owned by PR 4), and 5 in dropped ranges it also matches (`actions_test.go:186`, `:257`, `:268`, `:335`,
+`:378`).
 
 ```bash
 R='^(TestAction_AddTriple|TestAction_RemoveTriple|TestAction|TestActionConstants|TestAction_TTLParsing|TestAction_VariableSubstitution|TestActionExecutor|TestAction_Publish|TestAction_Publish_PayloadFormat|TestExecutePublish_SubstitutesPropertyTemplates|TestExecutePublish_NilPropertiesNoOp|TestAction_Publish_NoPublisher|TestAction_Publish_ErrorHandling|TestAction_UpdateTriple|TestAction_UpdateTriple_NoMutator|TestAction_UpdateTriple_RemoveFailsContinues|TestAction_UpdateTriple_AddFails|TestExecutionContext_SubstituteVariables|TestExecutionContext_SubstituteVariables_WarnsOnUnresolved|TestExecutionContext_SubstituteVariables_NoWarnOnClean|TestDenyVerdict_ErrorString|TestDenyVerdict_ErrorsIs|TestDenyVerdict_ErrorsAs|TestExecuteAddTriple_.*|TestExecuteRemoveTriple_.*|TestExecuteUpdateTriple_.*|TestResolveTripleSubject_TruthTable)$'

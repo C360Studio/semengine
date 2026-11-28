@@ -132,14 +132,28 @@ failed SHALL be refused with the reply's class and code.
 
 `remove_triple` SHALL read its subject exactly and send a conditional replace that removes every statement of its
 predicate whose source is `rule_engine`, and SHALL leave the predicate's statements from every other source. A remove
-with no `rule_engine` statement to clear SHALL succeed; one whose entity does not exist SHALL fail with the read's
-`entity_not_found`, classified invalid.
+over a predicate holding statements only from other sources SHALL fail, classified invalid, and send nothing. A remove
+whose entity does not exist SHALL fail with the read's `entity_not_found`, classified invalid.
 
 #### Scenario: Another writer's value stays
 
 - **WHEN** a predicate holds one statement from `rule_engine` and one from another source, and a `remove_triple` action
   names it
 - **THEN** the predicate holds only the other source's statement
+- **AND** the test that verifies this is `TestTripleWriter`
+
+#### Scenario: Only another writer's value is there
+
+- **WHEN** a predicate holds statements only from a source other than `rule_engine`, and a `remove_triple` action
+  names it
+- **THEN** the action fails, classified invalid, with an error naming the predicate and that source
+- **AND** nothing is sent and the entity's revision is unchanged
+- **AND** the test that verifies this is `TestTripleWriter`
+
+#### Scenario: Nothing to clear
+
+- **WHEN** a predicate holds no statement, and a `remove_triple` action names it
+- **THEN** the action succeeds
 - **AND** the test that verifies this is `TestTripleWriter`
 
 ### Requirement: An update replaces in one write

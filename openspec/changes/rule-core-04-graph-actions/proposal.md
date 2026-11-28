@@ -35,9 +35,9 @@ a value that cannot be filled is written out as its own text.
   remove) over their own stand-ins. All four move to processor tests on NATS once PR 8 lands; a test of a product's
   own action type calls it directly. This replaces the approved page's "those tests need a writer". Exporting the runner
   keeps them a rename away but exports two more interfaces PRs 7 to 10 must keep stable.
-- **Removing a value removes only what rules wrote (recommended).** SemEngine's write rules let a conditional write name
-  one writer; semteams' two removes clear values only its rules write. The other way is one write per writer found,
-  which lets a rule erase a lifecycle phase or another component's fact.
+- **Removing a value removes only what rules wrote (recommended).** A conditional write names one writer; semteams'
+  two removes clear only its rules' values. A remove finding only another writer's value fails, naming it (your #782
+  ruling). The other way, one write per writer found, lets a rule erase a lifecycle phase or another's fact.
 - **An update replaces the rule's value in one write (recommended).** No loaded rule uses it, but semteams' parked
   pack asks for exactly this in 9 actions of a type with no handler (`replace_owned`), which could map onto it. A value
   another writer stored stays beside it; a reader asking for one value gets the newest. Today it is two writes that

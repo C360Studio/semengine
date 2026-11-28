@@ -6,11 +6,11 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 - [ ] 1.1 OPEN-Q: the inventory review passes, the design review passes; the owner fills `Approved-by:`.
   Hold: OPEN-Q proposal awaits owner approval.
-- [ ] 1.2 Fable answers, before any code, "Is a fourth `Run` argument handing every handler one `Outputs` (publish and
+- [x] 1.2 Fable answers, before any code, "Is a fourth `Run` argument handing every handler one `Outputs` (publish and
   add a triple; the framework stamping source and time and refusing the reserved space; the built-ins reaching remove
   and replace privately through it), with the executor unexported and a remove clearing only what rules wrote, the
   right exported dispatch surface and graph-write rule?" (`design.md` D2, D3, D4), or the owner declines that read.
-  Hold: Fable's read of the design on PR #782.
+  Done: APPROVE on PR #782 (comment 7238866089); its one gap ruled by the owner (comment 7238878634) and folded.
 - [ ] 1.3 Start implementation once 1.1 and 1.2 are done; merge `origin/main` into this branch first if it moved.
 
 ## 2. Port
@@ -53,9 +53,10 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
   - `TestTripleWriter` (D4), integration, real graph-ingest on the package's shared NATS server
     (`natsfixture.Open`, as `pkg/lifecycle/harness_gate_integration_test.go:74-104`): add appends under `rule_engine`
     and a repeat succeeds unchanged; an absent entity gives `entity_not_found` for add, remove and update and creates
-    nothing; remove leaves another source's statement of the predicate and clears the rule's; a remove with no rule
-    statement succeeds; update over a held value raises the revision by exactly one, leaves another source's statement,
-    and the new rule value is what `GetTriple` returns.
+    nothing; remove leaves another source's statement of the predicate and clears the rule's; a remove over an empty
+    predicate succeeds; a remove over only another source's statements fails, classified invalid, naming predicate and
+    source, with the revision unchanged; update over a held value raises the revision by exactly one, leaves another
+    source's statement, and the new rule value is what `GetTriple` returns.
   - `TestBuiltinCheck` gains: `ttl` on add and update, `properties` on update, `object` on remove refused naming the
     key (D6); each triple type refused with triple writes off and accepted with them on (D9). The cases at
     `builtin_test.go:58`, `:65`, `:71` change to match.
@@ -105,7 +106,8 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 ## 3. Docs
 
 - [ ] 3.1 Port `processor/rule/docs/actions.md`'s `add_triple`, `remove_triple`, `update_triple` and `publish` sections
-  corrected to the code (inventory F15: no TTL, no "atomic remove+add" claim, the real envelope, no `${entity.type}`),
+  corrected to the code (inventory F15: no TTL, no "atomic remove+add" claim, the real envelope, no `${entity.type}`;
+  a remove leaves another writer's value, and fails when that is all there is),
   plus a section on a product's action type and its outputs; update `syntax.md`'s key table (`:210-212`) and
   `doc.go`'s Actions section. Check: `task docs:check`.
 - [ ] 3.2 Update the `processor/rule/` row of `docs/repository-map.md`: actions run; the processor and its inputs are

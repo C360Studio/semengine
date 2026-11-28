@@ -59,16 +59,16 @@ exported, one constructor taking set, publisher, writer: semteams renames. Proof
 - Add: one append; applied or unchanged succeeds; failures via `graphmutation.AppendResultError`, shared with
   `pkg/projection` (`:219-228`, `:518-527`): missing entity is invalid `entity_not_found` (P9); a failed subject keeps
   its reply's class and code (F5).
-- Remove (owner decision): exact read, conditional replace under `rule_engine` desiring nothing. (a, recommended) clears
-  rules' statements only (semteams' two removes clear predicates only its rules write). (b) one replace per source
-  found: not atomic; a rule could erase a lifecycle phase or another component's fact.
+- Remove (owner decision): exact read, conditional replace under `rule_engine` desiring nothing. (a, ruled) clears
+  rules' statements only; only another source's statements fail, invalid, naming predicate and source, sending
+  nothing (owner, PR #782). (b) one replace per source: not atomic; could erase a lifecycle phase.
 - Update (owner decision): exact read, conditional replace leaving the one new rule statement. (a, recommended) one
   write; another source's statement stays, and a single-value read (`GetTriple`, `graph/types.go:44-55`) picks the
   latest timestamp (the pin cleared every source). (b) the pin's remove then append (two writes, a swallowed failure,
   P10). (c) drop it: 0 loaded uses, but semteams' parked `replace_owned` (9 actions, no handler) is this replace and
   maps onto (a), where a product handler would need the private replace.
 - An absent entity fails remove and update with the read's `entity_not_found` (`processor/graph-ingest/query.go:87-96`);
-  a reply of unchanged (nothing to clear, same value) succeeds.
+  a reply of unchanged (same value) succeeds.
 - Retry: a mismatch commits nothing, so remove and update re-read and retry, at most five attempts, per ADR-110
   Decision 2 (`docs/adr/110-write-seam.md:84-85`) and as `pkg/lifecycle/manager.go:505-509`; the last mismatch returns
   (`errs.ErrRevisionMismatch`). Commit-unknown returns at once (ADR-111 Decision 3). Trigger: semteams' `agent-run/11`

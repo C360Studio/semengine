@@ -1,6 +1,6 @@
 # Proposal: rule-core-04-graph-actions
 
-Approved-by:
+Approved-by: cglusky (2026-11-28) <https://github.com/C360Studio/semengine/pull/782#issuecomment-7238909271> sha256:c283b34d65d4
 
 Track: `design`. PR 4 of the rule-core split plan (`archive/2026-11-25-design-rule-core-split-plan/`). Adds the
 `rule-actions` capability and changes two `rule-definitions` requirements. Closes #27.

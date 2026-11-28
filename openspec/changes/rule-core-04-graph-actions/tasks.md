@@ -4,8 +4,7 @@ Gates per code task: `task verify` on a clean tree. Pin paths are SemStreams `8b
 
 ## 1. Design
 
-- [ ] 1.1 OPEN-Q: the inventory review passes, the design review passes; the owner fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval.
+- [x] 1.1 The inventory review passes, the design review passes; the owner fills `Approved-by:`.
 - [x] 1.2 Fable answers, before any code, "Is a fourth `Run` argument handing every handler one `Outputs` (publish and
   add a triple; the framework stamping source and time and refusing the reserved space; the built-ins reaching remove
   and replace privately through it), with the executor unexported and a remove clearing only what rules wrote, the
